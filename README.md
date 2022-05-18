@@ -68,6 +68,7 @@ Keys that are stored in K2V under PK `keys`:
 Operations:
 
 - **Initialize**(`password`):
+  - if `"salt"` or `"public"` already exist, BAIL
   - generate salt `S` (32 random bytes)
   - write `S` at `"salt"`
   - `write("salt", S)`
@@ -79,6 +80,7 @@ Operations:
   - serialize `box_contents = (private, master)`
   - seal box `blob = seal_key(box_contents)`
   - write `concat(Skey, blob)` at `"password:{hex(digest[..16])}"`
+  - write `public` at `"public"`
 
 - **Open**(`password`):
   - load `S = read("salt")`
