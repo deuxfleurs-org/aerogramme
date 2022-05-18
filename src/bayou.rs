@@ -5,10 +5,12 @@ use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
 
-use k2v_client::{BatchReadOp, Filter, K2vClient, K2vValue};
+use k2v_client::{BatchDeleteOp, BatchReadOp, Filter, K2vClient, K2vValue};
 use rusoto_core::HttpClient;
 use rusoto_credential::{AwsCredentials, StaticProvider};
-use rusoto_s3::{GetObjectRequest, ListObjectsV2Request, S3Client, S3};
+use rusoto_s3::{
+    DeleteObjectRequest, GetObjectRequest, ListObjectsV2Request, PutObjectRequest, S3Client, S3,
+};
 use rusoto_signature::Region;
 
 use crate::cryptoblob::*;
@@ -19,8 +21,18 @@ const SAVE_STATE_EVERY: usize = 64;
 // Checkpointing interval constants: a checkpoint is not made earlier
 // than CHECKPOINT_INTERVAL time after the last one, and is not made
 // if there are less than CHECKPOINT_MIN_OPS new operations since last one.
-const CHECKPOINT_INTERVAL: Duration = Duration::from_secs(3600);
-const CHECKPOINT_MIN_OPS: usize = 16;
+const CHECKPOINT_INTERVAL: Duration = Duration::from_secs(60);
+const CHECKPOINT_MIN_OPS: usize = 4;
+// HYPOTHESIS: processes are able to communicate in a synchronous
+// fashion in times that are small compared to CHECKPOINT_INTERVAL.
+// More precisely, if a process tried to save an operation within the last
+// CHECKPOINT_INTERVAL, we are sure to read it from storage if it was
+// successfully saved (and if we don't read it, it means it has been
+// definitely discarded due to an error).
+
+// Keep at least two checkpoints, here three, to avoid race conditions
+// between processes doing .checkpoint() and those doing .sync()
+const CHECKPOINTS_TO_KEEP: usize = 3;
 
 pub trait BayouState:
     Default + Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync + 'static
@@ -76,26 +88,7 @@ impl<S: BayouState> Bayou<S> {
     /// Re-reads the state from persistent storage backend
     pub async fn sync(&mut self) -> Result<()> {
         // 1. List checkpoints
-        let prefix = format!("{}/checkpoint/", self.path);
-
-        let mut lor = ListObjectsV2Request::default();
-        lor.bucket = self.bucket.clone();
-        lor.max_keys = Some(1000);
-        lor.prefix = Some(prefix.clone());
-
-        let checkpoints_res = self.s3.list_objects_v2(lor).await?;
-
-        let mut checkpoints = vec![];
-        for object in checkpoints_res.contents.unwrap_or_default() {
-            if let Some(key) = object.key {
-                if let Some(ckid) = key.strip_prefix(&prefix) {
-                    if let Some(ts) = Timestamp::parse(ckid) {
-                        checkpoints.push((ts, key));
-                    }
-                }
-            }
-        }
-        checkpoints.sort_by_key(|(ts, _)| *ts);
+        let checkpoints = self.list_checkpoints().await?;
         eprintln!("(sync) listed checkpoints: {:?}", checkpoints);
 
         // 2. Load last checkpoint if different from currently used one
@@ -184,10 +177,8 @@ impl<S: BayouState> Bayou<S> {
         ops.sort_by_key(|(ts, _)| *ts);
         eprintln!("(sync) {} operations", ops.len());
 
-        // if no operations, clean up and return now
-        if ops.is_empty() {
-            self.history.clear();
-            return Ok(());
+        if ops.len() < self.history.len() {
+            bail!("Some operations have disappeared from storage!");
         }
 
         // 4. Check that first operation has same timestamp as checkpoint (if not zero)
@@ -205,7 +196,7 @@ impl<S: BayouState> Bayou<S> {
             .iter()
             .enumerate()
             .zip(ops.iter())
-            .skip_while(|((i, (ts1, _, _)), (ts2, _))| ts1 == ts2)
+            .skip_while(|((_, (ts1, _, _)), (ts2, _))| ts1 == ts2)
             .map(|((i, _), _)| i)
             .next()
             .unwrap_or(self.history.len());
@@ -292,7 +283,104 @@ impl<S: BayouState> Bayou<S> {
     pub async fn checkpoint(&mut self) -> Result<()> {
         self.check_recent_sync().await?;
 
-        eprintln!("Mock checkpointing, not implemented");
+        // Check what would be the possible time for a checkpoint in the history we have
+        let now = now_msec() as i128;
+        let i_cp = match self
+            .history
+            .iter()
+            .enumerate()
+            .rev()
+            .skip_while(|(_, (ts, _, _))| {
+                (now - ts.msec as i128) < CHECKPOINT_INTERVAL.as_millis() as i128
+            })
+            .map(|(i, _)| i)
+            .next()
+        {
+            Some(i) => i,
+            None => {
+                eprintln!("(cp) Oldest operation is too recent to trigger checkpoint");
+                return Ok(());
+            }
+        };
+
+        if i_cp < CHECKPOINT_MIN_OPS {
+            eprintln!("(cp) Not enough old operations to trigger checkpoint");
+            return Ok(());
+        }
+
+        let ts_cp = self.history[i_cp].0;
+        eprintln!(
+            "(cp) we could checkpoint at time {} (index {} in history)",
+            ts_cp.serialize(),
+            i_cp
+        );
+
+        // Check existing checkpoints: if last one is too recent, don't checkpoint again.
+        let existing_checkpoints = self.list_checkpoints().await?;
+        eprintln!("(cp) listed checkpoints: {:?}", existing_checkpoints);
+
+        if let Some(last_cp) = existing_checkpoints.last() {
+            if (ts_cp.msec as i128 - last_cp.0.msec as i128)
+                < CHECKPOINT_INTERVAL.as_millis() as i128
+            {
+                eprintln!(
+                    "(cp) last checkpoint is too recent: {}, not checkpointing",
+                    last_cp.0.serialize()
+                );
+                return Ok(());
+            }
+        }
+
+        eprintln!("(cp) saving checkpoint at {}", ts_cp.serialize());
+
+        // Calculate state at time of checkpoint
+        let mut last_known_state = (0, &self.checkpoint.1);
+        for (i, (_, _, st)) in self.history[..i_cp].iter().enumerate() {
+            if let Some(s) = st {
+                last_known_state = (i + 1, s);
+            }
+        }
+        let mut state_cp = last_known_state.1.clone();
+        for (_, op, _) in self.history[last_known_state.0..i_cp].iter() {
+            state_cp = state_cp.apply(op);
+        }
+
+        // Serialize and save checkpoint
+        let cryptoblob = seal_serialize(&state_cp, &self.key)?;
+
+        let mut por = PutObjectRequest::default();
+        por.bucket = self.bucket.clone();
+        por.key = format!("{}/checkpoint/{}", self.path, ts_cp.serialize());
+        por.body = Some(cryptoblob.into());
+        self.s3.put_object(por).await?;
+
+        // Drop old checkpoints (but keep at least CHECKPOINTS_TO_KEEP of them)
+        let ecp_len = existing_checkpoints.len();
+        if ecp_len + 1 > CHECKPOINTS_TO_KEEP {
+            let last_to_keep = ecp_len + 1 - CHECKPOINTS_TO_KEEP;
+
+            // Delete blobs
+            for (_ts, key) in existing_checkpoints[..last_to_keep].iter() {
+                eprintln!("(cp) drop old checkpoint {}", key);
+                let mut dor = DeleteObjectRequest::default();
+                dor.bucket = self.bucket.clone();
+                dor.key = key.to_string();
+                self.s3.delete_object(dor).await?;
+            }
+
+            // Delete corresponding range of operations
+            let ts_ser = existing_checkpoints[last_to_keep].0.serialize();
+            self.k2v
+                .delete_batch(&[BatchDeleteOp {
+                    partition_key: &self.path,
+                    prefix: None,
+                    start: None,
+                    end: Some(&ts_ser),
+                    single_item: false,
+                }])
+                .await?;
+        }
+
         Ok(())
     }
 
@@ -302,6 +390,32 @@ impl<S: BayouState> Bayou<S> {
         } else {
             &self.checkpoint.1
         }
+    }
+
+    // ---- INTERNAL ----
+
+    async fn list_checkpoints(&self) -> Result<Vec<(Timestamp, String)>> {
+        let prefix = format!("{}/checkpoint/", self.path);
+
+        let mut lor = ListObjectsV2Request::default();
+        lor.bucket = self.bucket.clone();
+        lor.max_keys = Some(1000);
+        lor.prefix = Some(prefix.clone());
+
+        let checkpoints_res = self.s3.list_objects_v2(lor).await?;
+
+        let mut checkpoints = vec![];
+        for object in checkpoints_res.contents.unwrap_or_default() {
+            if let Some(key) = object.key {
+                if let Some(ckid) = key.strip_prefix(&prefix) {
+                    if let Some(ts) = Timestamp::parse(ckid) {
+                        checkpoints.push((ts, key));
+                    }
+                }
+            }
+        }
+        checkpoints.sort_by_key(|(ts, _)| *ts);
+        Ok(checkpoints)
     }
 }
 
