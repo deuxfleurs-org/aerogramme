@@ -63,7 +63,6 @@ Keys that are stored in K2V under PK `keys`:
   - followed a secret box
   - that is encrypted with a strong argon2 digest of the password (using the salt `Skey`)
   - that contains the master secret key and the curve25519 private key
-- if recovery passwords are available, `recovery:<truncated digest>`: the same as for passwords
 
 Operations:
 
@@ -71,7 +70,6 @@ Operations:
   - if `"salt"` or `"public"` already exist, BAIL
   - generate salt `S` (32 random bytes)
   - write `S` at `"salt"`
-  - `write("salt", S)`
   - generate `public`, `private` (curve25519 keypair)
   - generate `master` (secretbox secret key)
   - calculate `digest = argon2_S(password)`
@@ -80,6 +78,13 @@ Operations:
   - serialize `box_contents = (private, master)`
   - seal box `blob = seal_key(box_contents)`
   - write `concat(Skey, blob)` at `"password:{hex(digest[..16])}"`
+  - write `public` at `"public"`
+
+- **InitializeWithoutPassword**(`private`, `master`):
+  - if `"salt"` or `"public"` already exist, BAIL
+  - generate salt `S` (32 random bytes)
+  - write `S` at `"salt"`
+  - calculate `public` the public key associated with `private`
   - write `public` at `"public"`
 
 - **Open**(`password`):
@@ -92,12 +97,16 @@ Operations:
   - retrieve `master` and `private` from `box_contents`
   - retrieve `public = read("public")`
 
-- **ChangePassword**(`old_password`, `new_password`):
+- **OpenWithoutPassword**(`private`, `master`):
+  - load `public = read("public")`
+  - check that `public` is the correct public key associated with `private`
+
+- **AddPassword**(`existing_password`, `new_password`):
   - load `S = read("salt")`
-  - calculate `digest = argon2_S(old_password)`
-  - load `blob = read("old_password:{hex(digest[..16])}")
+  - calculate `digest = argon2_S(existing_password)`
+  - load `blob = read("existing_password:{hex(digest[..16])}")
   - set `Skey = blob[..32]`
-  - calculate `key = argon2_Skey(old_password)`
+  - calculate `key = argon2_Skey(existing_password)`
   - open secret box `box_contents = open_key(blob[32..])`
   - retrieve `master` and `private` from `box_contents`
 
@@ -107,6 +116,10 @@ Operations:
   - serialize `box_contents_new = (private, master)`
   - seal box `blob_new = seal_key_new(box_contents_new)`
   - write `concat(Skeynew, blob_new)` at `"new_password:{hex(digest_new[..16])}"`
-  - delete `"old_password:{hex(digest[..16])}"`
 
-- **ResetPassword**(`recovery_key`, `new_password`): same as ChangePassword
+- **RemovePassword**(`password`):
+  - load `S = read("salt")`
+  - calculate `digest = argon2_S(existing_password)`
+  - check that `"password:{hex(digest[..16])}"` exists
+  - check that other passwords exist ?? (or not)
+  - delete `"password:{hex(digest[..16])}"`
