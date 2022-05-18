@@ -53,6 +53,7 @@ pub struct Bayou<S: BayouState> {
     checkpoint: (Timestamp, S),
     history: Vec<(Timestamp, S::Op, Option<S>)>,
     last_sync: Option<Instant>,
+    last_try_checkpoint: Option<Instant>,
 }
 
 impl<S: BayouState> Bayou<S> {
@@ -82,6 +83,7 @@ impl<S: BayouState> Bayou<S> {
             checkpoint: (Timestamp::zero(), S::default()),
             history: vec![],
             last_sync: None,
+            last_try_checkpoint: None,
         })
     }
 
@@ -106,6 +108,8 @@ impl<S: BayouState> Bayou<S> {
                 let obj_body = obj_res.body.ok_or(anyhow!("Missing object body"))?;
                 let mut buf = Vec::with_capacity(obj_res.content_length.unwrap_or(128) as usize);
                 obj_body.into_async_read().read_to_end(&mut buf).await?;
+
+                eprintln!("(sync) checkpoint body length: {}", buf.len());
 
                 let ck = open_deserialize::<S>(&buf, &self.key)?;
                 (*ts, Some(ck))
@@ -250,6 +254,8 @@ impl<S: BayouState> Bayou<S> {
     pub async fn push(&mut self, op: S::Op) -> Result<()> {
         self.check_recent_sync().await?;
 
+        eprintln!("(push) add operation: {:?}", op);
+
         let ts = Timestamp::after(
             self.history
                 .last()
@@ -281,6 +287,19 @@ impl<S: BayouState> Bayou<S> {
 
     /// Save a new checkpoint if previous checkpoint is too old
     pub async fn checkpoint(&mut self) -> Result<()> {
+        match self.last_try_checkpoint {
+            Some(ts) if Instant::now() - ts < CHECKPOINT_INTERVAL / 10 => Ok(()),
+            _ => {
+                let res = self.checkpoint_internal().await;
+                if res.is_ok() {
+                    self.last_try_checkpoint = Some(Instant::now());
+                }
+                res
+            }
+        }
+    }
+
+    async fn checkpoint_internal(&mut self) -> Result<()> {
         self.check_recent_sync().await?;
 
         // Check what would be the possible time for a checkpoint in the history we have
@@ -347,6 +366,7 @@ impl<S: BayouState> Bayou<S> {
 
         // Serialize and save checkpoint
         let cryptoblob = seal_serialize(&state_cp, &self.key)?;
+        eprintln!("(cp) checkpoint body length: {}", cryptoblob.len());
 
         let mut por = PutObjectRequest::default();
         por.bucket = self.bucket.clone();

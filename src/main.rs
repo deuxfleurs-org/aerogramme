@@ -47,13 +47,29 @@ async fn do_stuff() -> Result<()> {
     dump(&uid_index);
 
     let mut rand_id = [0u8; 24];
-    rand_id[..8].copy_from_slice(&u64::to_be_bytes(thread_rng().gen()));
+    rand_id[..16].copy_from_slice(&u128::to_be_bytes(thread_rng().gen()));
     let add_mail_op = uid_index
         .state()
         .op_mail_add(MailUuid(rand_id), vec!["\\Unseen".into()]);
     uid_index.push(add_mail_op).await?;
 
     dump(&uid_index);
+
+    if uid_index.state().mails_by_uid.len() > 6 {
+        for i in 0..2 {
+            let (_, uuid) = uid_index
+                .state()
+                .mails_by_uid
+                .iter()
+                .skip(3 + i)
+                .next()
+                .unwrap();
+            let del_mail_op = uid_index.state().op_mail_del(*uuid);
+            uid_index.push(del_mail_op).await?;
+
+            dump(&uid_index);
+        }
+    }
 
     Ok(())
 }
