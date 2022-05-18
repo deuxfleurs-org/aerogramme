@@ -152,7 +152,7 @@ impl<S: BayouState> Bayou<S> {
                 },
                 single_item: false,
                 conflicts_only: false,
-                include_tombstones: false,
+                tombstones: false,
             }])
             .await?
             .into_iter()
