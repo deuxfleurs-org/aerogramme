@@ -28,6 +28,30 @@ pub struct UidIndex {
 pub enum UidIndexOp {
     MailAdd(MailUuid, ImapUid, Vec<String>),
     MailDel(MailUuid),
+    FlagAdd(MailUuid, Vec<String>),
+    FlagDel(MailUuid, Vec<String>),
+}
+
+impl UidIndex {
+    #[must_use]
+    pub fn op_mail_add(&self, uuid: MailUuid, flags: Vec<String>) -> UidIndexOp {
+        UidIndexOp::MailAdd(uuid, self.internalseq, flags)
+    }
+
+    #[must_use]
+    pub fn op_mail_del(&self, uuid: MailUuid) -> UidIndexOp {
+        UidIndexOp::MailDel(uuid)
+    }
+
+    #[must_use]
+    pub fn op_flag_add(&self, uuid: MailUuid, flags: Vec<String>) -> UidIndexOp {
+        UidIndexOp::FlagAdd(uuid, flags)
+    }
+
+    #[must_use]
+    pub fn op_flag_del(&self, uuid: MailUuid, flags: Vec<String>) -> UidIndexOp {
+        UidIndexOp::FlagDel(uuid, flags)
+    }
 }
 
 impl Default for UidIndex {
@@ -73,6 +97,19 @@ impl BayouState for UidIndex {
                     new.mail_flags.remove(uuid);
                 }
                 new.internalseq += 1;
+            }
+            UidIndexOp::FlagAdd(uuid, new_flags) => {
+                let mail_flags = new.mail_flags.entry(*uuid).or_insert(vec![]);
+                for flag in new_flags {
+                    if !mail_flags.contains(flag) {
+                        mail_flags.push(flag.to_string());
+                    }
+                }
+            }
+            UidIndexOp::FlagDel(uuid, rm_flags) => {
+                if let Some(mail_flags) = new.mail_flags.get_mut(uuid) {
+                    mail_flags.retain(|x| !rm_flags.contains(x));
+                }
             }
         }
         new

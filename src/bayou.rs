@@ -62,17 +62,28 @@ impl<S: BayouState> Bayou<S> {
         })
     }
 
+    /// Re-reads the state from persistent storage backend
     pub async fn sync(&mut self) -> Result<()> {
         // 1. List checkpoints
-        // 2. Load last checkpoint
+        // 2. Load last checkpoint if different from currently used one
         // 3. List all operations starting from checkpoint
         // 4. Check that first operation has same timestamp as checkpoint (if not zero)
         // 5. Apply all operations in order
         unimplemented!()
     }
 
-    pub fn state(&self) -> &S {
+    /// Applies a new operation on the state. Once this function returns,
+    /// the option has been safely persisted to storage backend
+    pub async fn push(&mut self, op: S::Op) -> Result<()> {
         unimplemented!()
+    }
+
+    pub fn state(&self) -> &S {
+        if let Some(last) = self.history.last() {
+            last.2.as_ref().unwrap()
+        } else {
+            &self.checkpoint.1
+        }
     }
 }
 

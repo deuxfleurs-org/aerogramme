@@ -8,9 +8,9 @@ mod cryptoblob;
 mod time;
 mod uidindex;
 
-use bayou::Bayou;
+use bayou::*;
 use cryptoblob::Key;
-use uidindex::{UidIndex, UidIndexOp};
+use uidindex::*;
 
 #[tokio::main]
 async fn main() {
@@ -42,6 +42,11 @@ async fn do_stuff() -> Result<()> {
     )?;
 
     mail_index.sync().await?;
+
+    let add_mail_op = mail_index
+        .state()
+        .op_mail_add(MailUuid([0xFFu8; 24]), vec!["\\Unseen".into()]);
+    mail_index.push(add_mail_op).await?;
 
     Ok(())
 }
