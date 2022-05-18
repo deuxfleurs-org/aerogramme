@@ -9,22 +9,22 @@ type ImapUidvalidity = u32;
 /// A Mail UUID is composed of two components:
 /// - a process identifier, 128 bits
 /// - a sequence number, 64 bits
-#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Debug)]
 pub struct MailUuid(pub [u8; 24]);
 
 #[derive(Clone)]
 pub struct UidIndex {
-    mail_uid: OrdMap<MailUuid, ImapUid>,
-    mail_flags: OrdMap<MailUuid, Vec<String>>,
+    pub mail_uid: OrdMap<MailUuid, ImapUid>,
+    pub mail_flags: OrdMap<MailUuid, Vec<String>>,
 
-    mails_by_uid: OrdMap<ImapUid, MailUuid>,
+    pub mails_by_uid: OrdMap<ImapUid, MailUuid>,
 
-    uidvalidity: ImapUidvalidity,
-    uidnext: ImapUid,
-    internalseq: ImapUid,
+    pub uidvalidity: ImapUidvalidity,
+    pub uidnext: ImapUid,
+    pub internalseq: ImapUid,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum UidIndexOp {
     MailAdd(MailUuid, ImapUid, Vec<String>),
     MailDel(MailUuid),

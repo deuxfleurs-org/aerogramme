@@ -1,12 +1,13 @@
-use anyhow::Result;
-
-use rusoto_credential::{EnvironmentProvider, ProvideAwsCredentials};
-use rusoto_signature::Region;
-
 mod bayou;
 mod cryptoblob;
 mod time;
 mod uidindex;
+
+use anyhow::Result;
+
+use rand::prelude::*;
+use rusoto_credential::{EnvironmentProvider, ProvideAwsCredentials};
+use rusoto_signature::Region;
 
 use bayou::*;
 use cryptoblob::Key;
@@ -32,21 +33,48 @@ async fn do_stuff() -> Result<()> {
 
     let key = Key::from_slice(&[0u8; 32]).unwrap();
 
-    let mut mail_index = Bayou::<UidIndex>::new(
+    let mut uid_index = Bayou::<UidIndex>::new(
         creds,
         k2v_region,
         s3_region,
-        "alex".into(),
+        "mail".into(),
         "TestMailbox".into(),
         key,
     )?;
 
-    mail_index.sync().await?;
+    uid_index.sync().await?;
 
-    let add_mail_op = mail_index
+    dump(&uid_index);
+
+    let mut rand_id = [0u8; 24];
+    rand_id[..8].copy_from_slice(&u64::to_be_bytes(thread_rng().gen()));
+    let add_mail_op = uid_index
         .state()
-        .op_mail_add(MailUuid([0xFFu8; 24]), vec!["\\Unseen".into()]);
-    mail_index.push(add_mail_op).await?;
+        .op_mail_add(MailUuid(rand_id), vec!["\\Unseen".into()]);
+    uid_index.push(add_mail_op).await?;
+
+    dump(&uid_index);
 
     Ok(())
+}
+
+fn dump(uid_index: &Bayou<UidIndex>) {
+    let s = uid_index.state();
+    println!("---- MAILBOX STATE ----");
+    println!("UIDVALIDITY {}", s.uidvalidity);
+    println!("UIDNEXT {}", s.uidnext);
+    println!("INTERNALSEQ {}", s.internalseq);
+    for (uid, uuid) in s.mails_by_uid.iter() {
+        println!(
+            "{} {} {}",
+            uid,
+            hex::encode(uuid.0),
+            s.mail_flags
+                .get(uuid)
+                .cloned()
+                .unwrap_or_default()
+                .join(", ")
+        );
+    }
+    println!("");
 }

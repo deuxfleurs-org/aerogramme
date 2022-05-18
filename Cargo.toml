@@ -8,8 +8,10 @@ description = "Encrypted mail storage over Garage"
 
 [dependencies]
 anyhow = "1.0.28"
+base64 = "0.13"
 hex = "0.4"
 im = "15"
+itertools = "0.10"
 rusoto_core = "0.48.0"
 rusoto_credential = "0.48.0"
 rusoto_s3 = "0.48"
