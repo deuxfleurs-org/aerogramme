@@ -9,14 +9,14 @@ pub struct LdapLoginProvider {
 }
 
 impl LdapLoginProvider {
-    pub fn new(config: LoginLdapConfig) -> Result<Self> {
+    pub fn new(_config: LoginLdapConfig) -> Result<Self> {
         unimplemented!()
     }
 }
 
 #[async_trait]
 impl LoginProvider for LdapLoginProvider {
-    async fn login(&self, username: &str, password: &str) -> Result<Credentials> {
+    async fn login(&self, _username: &str, _password: &str) -> Result<Credentials> {
         unimplemented!()
     }
 }

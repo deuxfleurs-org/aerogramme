@@ -1,15 +1,13 @@
-use anyhow::{anyhow, bail, Result};
-use k2v_client::{BatchDeleteOp, BatchReadOp, Filter, K2vClient, K2vValue};
-use rusoto_core::HttpClient;
-use rusoto_credential::{AwsCredentials, StaticProvider, ProvideAwsCredentials};
-use rusoto_s3::{
-    DeleteObjectRequest, GetObjectRequest, ListObjectsV2Request, PutObjectRequest, S3Client, S3,
-};
-use rusoto_signature::Region;
+use anyhow::Result;
+use k2v_client::K2vClient;
 use rand::prelude::*;
+use rusoto_core::HttpClient;
+use rusoto_credential::{ProvideAwsCredentials, StaticProvider};
+use rusoto_s3::S3Client;
+use rusoto_signature::Region;
 
-use crate::cryptoblob::Key;
 use crate::bayou::Bayou;
+use crate::cryptoblob::Key;
 use crate::login::Credentials;
 use crate::uidindex::*;
 
@@ -25,11 +23,14 @@ pub struct Mailbox {
 }
 
 impl Mailbox {
-    pub async fn new(k2v_region: Region, s3_region: Region, creds: Credentials,name: String) -> Result<Self> {
-        let aws_creds_provider = StaticProvider::new_minimal(
-            creds.aws_access_key_id,
-            creds.aws_secret_access_key,
-        );
+    pub async fn new(
+        k2v_region: Region,
+        s3_region: Region,
+        creds: Credentials,
+        name: String,
+    ) -> Result<Self> {
+        let aws_creds_provider =
+            StaticProvider::new_minimal(creds.aws_access_key_id, creds.aws_secret_access_key);
         let aws_creds = aws_creds_provider.credentials().await?;
 
         let uid_index = Bayou::<UidIndex>::new(
@@ -40,7 +41,7 @@ impl Mailbox {
             name.clone(),
             creds.master_key.clone(),
         )?;
-        
+
         let k2v_client = K2vClient::new(k2v_region, creds.bucket.clone(), aws_creds, None)?;
         let s3_client = S3Client::new_with(HttpClient::new()?, aws_creds_provider, s3_region);
 
@@ -54,16 +55,15 @@ impl Mailbox {
         })
     }
 
-
     pub async fn test(&mut self) -> Result<()> {
-
         self.uid_index.sync().await?;
 
         dump(&self.uid_index);
 
         let mut rand_id = [0u8; 24];
         rand_id[..16].copy_from_slice(&u128::to_be_bytes(thread_rng().gen()));
-        let add_mail_op = self.uid_index
+        let add_mail_op = self
+            .uid_index
             .state()
             .op_mail_add(MailUuid(rand_id), vec!["\\Unseen".into()]);
         self.uid_index.push(add_mail_op).await?;
@@ -72,7 +72,8 @@ impl Mailbox {
 
         if self.uid_index.state().mails_by_uid.len() > 6 {
             for i in 0..2 {
-                let (_, uuid) = self.uid_index
+                let (_, uuid) = self
+                    .uid_index
                     .state()
                     .mails_by_uid
                     .iter()

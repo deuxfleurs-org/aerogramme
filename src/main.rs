@@ -2,22 +2,17 @@ mod bayou;
 mod config;
 mod cryptoblob;
 mod login;
+mod mailbox;
 mod time;
 mod uidindex;
-mod mailbox;
 
 use anyhow::{bail, Result};
 use std::sync::Arc;
 
-use rand::prelude::*;
-use rusoto_credential::{EnvironmentProvider, ProvideAwsCredentials};
 use rusoto_signature::Region;
 
-use bayou::*;
 use config::*;
-use cryptoblob::Key;
 use login::{ldap_provider::*, static_provider::*, *};
-use uidindex::*;
 use mailbox::Mailbox;
 
 #[tokio::main]
@@ -68,10 +63,13 @@ impl Main {
     async fn run(self: &Arc<Self>) -> Result<()> {
         let creds = self.login_provider.login("lx", "plop").await?;
 
-        let mut mailbox = Mailbox::new(self.k2v_region.clone(),
-        self.s3_region.clone(),
-        creds.clone(),
-        "TestMailbox".to_string()).await?;
+        let mut mailbox = Mailbox::new(
+            self.k2v_region.clone(),
+            self.s3_region.clone(),
+            creds.clone(),
+            "TestMailbox".to_string(),
+        )
+        .await?;
 
         mailbox.test().await?;
 
