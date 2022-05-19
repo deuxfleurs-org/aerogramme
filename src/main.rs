@@ -64,9 +64,9 @@ impl Main {
         let creds = self.login_provider.login("lx", "plop").await?;
 
         let mut mailbox = Mailbox::new(
-            self.k2v_region.clone(),
-            self.s3_region.clone(),
-            creds.clone(),
+            &self.k2v_region,
+            &self.s3_region,
+            &creds,
             "TestMailbox".to_string(),
         )
         .await?;

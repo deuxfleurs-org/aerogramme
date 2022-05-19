@@ -1,8 +1,6 @@
 use anyhow::Result;
 use k2v_client::K2vClient;
 use rand::prelude::*;
-use rusoto_core::HttpClient;
-use rusoto_credential::{ProvideAwsCredentials, StaticProvider};
 use rusoto_s3::S3Client;
 use rusoto_signature::Region;
 
@@ -24,33 +22,19 @@ pub struct Mailbox {
 
 impl Mailbox {
     pub async fn new(
-        k2v_region: Region,
-        s3_region: Region,
-        creds: Credentials,
+        k2v_region: &Region,
+        s3_region: &Region,
+        creds: &Credentials,
         name: String,
     ) -> Result<Self> {
-        let aws_creds_provider =
-            StaticProvider::new_minimal(creds.aws_access_key_id, creds.aws_secret_access_key);
-        let aws_creds = aws_creds_provider.credentials().await?;
-
-        let uid_index = Bayou::<UidIndex>::new(
-            aws_creds.clone(),
-            k2v_region.clone(),
-            s3_region.clone(),
-            creds.bucket.clone(),
-            name.clone(),
-            creds.master_key.clone(),
-        )?;
-
-        let k2v_client = K2vClient::new(k2v_region, creds.bucket.clone(), aws_creds, None)?;
-        let s3_client = S3Client::new_with(HttpClient::new()?, aws_creds_provider, s3_region);
+        let uid_index = Bayou::<UidIndex>::new(k2v_region, s3_region, creds, name.clone())?;
 
         Ok(Self {
-            bucket: creds.bucket,
+            bucket: creds.bucket.clone(),
             name,
-            key: creds.master_key,
-            k2v: k2v_client,
-            s3: s3_client,
+            key: creds.master_key.clone(),
+            k2v: creds.k2v_client(&k2v_region)?,
+            s3: creds.s3_client(&s3_region)?,
             uid_index,
         })
     }

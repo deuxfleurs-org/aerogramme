@@ -6,14 +6,13 @@ use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
 
 use k2v_client::{BatchDeleteOp, BatchReadOp, Filter, K2vClient, K2vValue};
-use rusoto_core::HttpClient;
-use rusoto_credential::{AwsCredentials, StaticProvider};
 use rusoto_s3::{
     DeleteObjectRequest, GetObjectRequest, ListObjectsV2Request, PutObjectRequest, S3Client, S3,
 };
 use rusoto_signature::Region;
 
 use crate::cryptoblob::*;
+use crate::login::Credentials;
 use crate::time::now_msec;
 
 const SAVE_STATE_EVERY: usize = 64;
@@ -58,26 +57,18 @@ pub struct Bayou<S: BayouState> {
 
 impl<S: BayouState> Bayou<S> {
     pub fn new(
-        creds: AwsCredentials,
-        k2v_region: Region,
-        s3_region: Region,
-        bucket: String,
+        k2v_region: &Region,
+        s3_region: &Region,
+        creds: &Credentials,
         path: String,
-        key: Key,
     ) -> Result<Self> {
-        let k2v_client = K2vClient::new(k2v_region, bucket.clone(), creds.clone(), None)?;
-        let static_creds = StaticProvider::new(
-            creds.aws_access_key_id().to_string(),
-            creds.aws_secret_access_key().to_string(),
-            creds.token().clone(),
-            None,
-        );
-        let s3_client = S3Client::new_with(HttpClient::new()?, static_creds, s3_region);
+        let k2v_client = creds.k2v_client(k2v_region)?;
+        let s3_client = creds.s3_client(s3_region)?;
 
         Ok(Self {
-            bucket,
+            bucket: creds.bucket.clone(),
             path,
-            key,
+            key: creds.master_key.clone(),
             k2v: k2v_client,
             s3: s3_client,
             checkpoint: (Timestamp::zero(), S::default()),
