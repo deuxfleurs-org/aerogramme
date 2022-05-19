@@ -14,11 +14,11 @@ pub struct Server {
 impl Server {
     pub fn new(config: Config) -> Result<Arc<Self>> {
         let s3_region = Region::Custom {
-            name: config.s3_region,
+            name: config.aws_region.clone(),
             endpoint: config.s3_endpoint,
         };
         let k2v_region = Region::Custom {
-            name: config.k2v_region,
+            name: config.aws_region,
             endpoint: config.k2v_endpoint,
         };
         let login_provider: Box<dyn LoginProvider> = match (config.login_static, config.login_ldap)
@@ -28,19 +28,13 @@ impl Server {
             (Some(_), Some(_)) => bail!("A single login provider must be set up in config file"),
             (None, None) => bail!("No login provider is set up in config file"),
         };
-        Ok(Arc::new(Self {
-            login_provider,
-        }))
+        Ok(Arc::new(Self { login_provider }))
     }
 
     pub async fn run(self: &Arc<Self>) -> Result<()> {
         let creds = self.login_provider.login("lx", "plop").await?;
 
-        let mut mailbox = Mailbox::new(
-            &creds,
-            "TestMailbox".to_string(),
-        )
-        .await?;
+        let mut mailbox = Mailbox::new(&creds, "TestMailbox".to_string()).await?;
 
         mailbox.test().await?;
 

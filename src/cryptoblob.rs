@@ -5,14 +5,16 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use zstd::stream::{decode_all as zstd_decode, encode_all as zstd_encode};
 
-use sodiumoxide::crypto::secretbox::xsalsa20poly1305 as secretbox;
 use sodiumoxide::crypto::box_ as publicbox;
+use sodiumoxide::crypto::secretbox::xsalsa20poly1305 as secretbox;
 
+pub use sodiumoxide::crypto::box_::{
+    gen_keypair, PublicKey, SecretKey, PUBLICKEYBYTES, SECRETKEYBYTES,
+};
 pub use sodiumoxide::crypto::secretbox::xsalsa20poly1305::{gen_key, Key, KEYBYTES};
-pub use sodiumoxide::crypto::box_::{gen_keypair, PublicKey, SecretKey, PUBLICKEYBYTES, SECRETKEYBYTES};
 
 pub fn open(cryptoblob: &[u8], key: &Key) -> Result<Vec<u8>> {
-    use secretbox::{NONCEBYTES, Nonce};
+    use secretbox::{Nonce, NONCEBYTES};
 
     if cryptoblob.len() < NONCEBYTES {
         return Err(anyhow!("Cyphertext too short"));
@@ -31,7 +33,7 @@ pub fn open(cryptoblob: &[u8], key: &Key) -> Result<Vec<u8>> {
 }
 
 pub fn seal(plainblob: &[u8], key: &Key) -> Result<Vec<u8>> {
-    use secretbox::{NONCEBYTES, gen_nonce};
+    use secretbox::{gen_nonce, NONCEBYTES};
 
     // Compress data using zstd
     let mut reader = &plainblob[..];

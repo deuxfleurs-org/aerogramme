@@ -56,10 +56,7 @@ pub struct Bayou<S: BayouState> {
 }
 
 impl<S: BayouState> Bayou<S> {
-    pub fn new(
-        creds: &Credentials,
-        path: String,
-    ) -> Result<Self> {
+    pub fn new(creds: &Credentials, path: String) -> Result<Self> {
         let k2v_client = creds.k2v_client()?;
         let s3_client = creds.s3_client()?;
 

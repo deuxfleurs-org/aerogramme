@@ -58,19 +58,24 @@ impl LoginProvider for StaticLoginProvider {
                             .ok_or(anyhow!("Invalid master key"))?;
                         let secret_key = SecretKey::from_slice(&base64::decode(m)?)
                             .ok_or(anyhow!("Invalid secret key"))?;
-                        CryptoKeys::open_without_password(&storage, &master_key, &secret_key)?
+                        CryptoKeys::open_without_password(&storage, &master_key, &secret_key).await?
                     }
                     (None, None) => {
-                        CryptoKeys::open(&storage, password)?
+                        CryptoKeys::open(&storage, password).await?
                     }
                     _ => bail!("Either both master and secret key or none of them must be specified for user"),
                 };
 
-                Ok(Credentials {
-                    storage,
-                    keys,
-                })
+                Ok(Credentials { storage, keys })
             }
         }
     }
+}
+
+pub fn hash_password(password: &str) -> String {
+    unimplemented!()
+}
+
+pub fn verify_password(password: &str, hash: &str) -> bool {
+    unimplemented!()
 }

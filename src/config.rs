@@ -8,9 +8,8 @@ use serde::Deserialize;
 #[derive(Deserialize, Debug, Clone)]
 pub struct Config {
     pub s3_endpoint: String,
-    pub s3_region: String,
     pub k2v_endpoint: String,
-    pub k2v_region: String,
+    pub aws_region: String,
 
     pub login_static: Option<LoginStaticConfig>,
     pub login_ldap: Option<LoginLdapConfig>,

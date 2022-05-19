@@ -53,12 +53,6 @@ impl Credentials {
     pub fn bucket(&self) -> &str {
         self.storage.bucket.as_str()
     }
-    pub fn dump_config(&self) {
-        println!("aws_access_key_id = \"{}\"", self.storage.aws_access_key_id);
-        println!("aws_secret_access_key = \"{}\"", self.storage.aws_secret_access_key);
-        println!("master_key = \"{}\"", base64::encode(&self.keys.master));
-        println!("secret_key = \"{}\"", base64::encode(&self.keys.secret));
-    }
 }
 
 impl StorageCredentials {
@@ -93,28 +87,40 @@ impl StorageCredentials {
 }
 
 impl CryptoKeys {
-    pub fn init(storage: &StorageCredentials) -> Result<Self> {
+    pub async fn init(storage: &StorageCredentials, password: &str) -> Result<Self> {
         unimplemented!()
     }
 
-    pub fn init_without_password(storage: &StorageCredentials, master_key: &Key, secret_key: &SecretKey) -> Result<Self> {
+    pub async fn init_without_password(
+        storage: &StorageCredentials,
+        master_key: &Key,
+        secret_key: &SecretKey,
+    ) -> Result<Self> {
         unimplemented!()
     }
 
-    pub fn open(storage: &StorageCredentials, password: &str) -> Result<Self> {
+    pub async fn open(storage: &StorageCredentials, password: &str) -> Result<Self> {
         unimplemented!()
     }
 
-    pub fn open_without_password(storage: &StorageCredentials, master_key: &Key, secret_key: &SecretKey) -> Result<Self> {
+    pub async fn open_without_password(
+        storage: &StorageCredentials,
+        master_key: &Key,
+        secret_key: &SecretKey,
+    ) -> Result<Self> {
         unimplemented!()
     }
 
-    pub fn add_password(&self, storage: &StorageCredentials, password: &str) -> Result<()> {
+    pub async fn add_password(&self, storage: &StorageCredentials, password: &str) -> Result<()> {
         unimplemented!()
     }
 
-    pub fn remove_password(&self, storage: &StorageCredentials, password: &str, allow_remove_all: bool) -> Result<()> {
+    pub async fn delete_password(
+        &self,
+        storage: &StorageCredentials,
+        password: &str,
+        allow_delete_all: bool,
+    ) -> Result<()> {
         unimplemented!()
     }
 }
-
