@@ -1,96 +1,80 @@
 mod bayou;
+mod config;
 mod cryptoblob;
+mod login;
 mod time;
 mod uidindex;
+mod mailbox;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
+use std::sync::Arc;
 
 use rand::prelude::*;
 use rusoto_credential::{EnvironmentProvider, ProvideAwsCredentials};
 use rusoto_signature::Region;
 
 use bayou::*;
+use config::*;
 use cryptoblob::Key;
+use login::{ldap_provider::*, static_provider::*, *};
 use uidindex::*;
+use mailbox::Mailbox;
 
 #[tokio::main]
 async fn main() {
-    do_stuff().await.expect("Something failed");
+    if let Err(e) = main2().await {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
 }
 
-async fn do_stuff() -> Result<()> {
-    let creds = EnvironmentProvider::default().credentials().await.unwrap();
+async fn main2() -> Result<()> {
+    let config = read_config("mailrage.toml".into())?;
 
-    let k2v_region = Region::Custom {
-        name: "garage-staging".to_owned(),
-        endpoint: "https://k2v-staging.home.adnab.me".to_owned(),
-    };
-
-    let s3_region = Region::Custom {
-        name: "garage-staging".to_owned(),
-        endpoint: "https://garage-staging.home.adnab.me".to_owned(),
-    };
-
-    let key = Key::from_slice(&[0u8; 32]).unwrap();
-
-    let mut uid_index = Bayou::<UidIndex>::new(
-        creds,
-        k2v_region,
-        s3_region,
-        "mail".into(),
-        "TestMailbox".into(),
-        key,
-    )?;
-
-    uid_index.sync().await?;
-
-    dump(&uid_index);
-
-    let mut rand_id = [0u8; 24];
-    rand_id[..16].copy_from_slice(&u128::to_be_bytes(thread_rng().gen()));
-    let add_mail_op = uid_index
-        .state()
-        .op_mail_add(MailUuid(rand_id), vec!["\\Unseen".into()]);
-    uid_index.push(add_mail_op).await?;
-
-    dump(&uid_index);
-
-    if uid_index.state().mails_by_uid.len() > 6 {
-        for i in 0..2 {
-            let (_, uuid) = uid_index
-                .state()
-                .mails_by_uid
-                .iter()
-                .skip(3 + i)
-                .next()
-                .unwrap();
-            let del_mail_op = uid_index.state().op_mail_del(*uuid);
-            uid_index.push(del_mail_op).await?;
-
-            dump(&uid_index);
-        }
-    }
-
-    Ok(())
+    let main = Main::new(config)?;
+    main.run().await
 }
 
-fn dump(uid_index: &Bayou<UidIndex>) {
-    let s = uid_index.state();
-    println!("---- MAILBOX STATE ----");
-    println!("UIDVALIDITY {}", s.uidvalidity);
-    println!("UIDNEXT {}", s.uidnext);
-    println!("INTERNALSEQ {}", s.internalseq);
-    for (uid, uuid) in s.mails_by_uid.iter() {
-        println!(
-            "{} {} {}",
-            uid,
-            hex::encode(uuid.0),
-            s.mail_flags
-                .get(uuid)
-                .cloned()
-                .unwrap_or_default()
-                .join(", ")
-        );
+struct Main {
+    pub s3_region: Region,
+    pub k2v_region: Region,
+    pub login_provider: Box<dyn LoginProvider>,
+}
+
+impl Main {
+    fn new(config: Config) -> Result<Arc<Self>> {
+        let s3_region = Region::Custom {
+            name: config.s3_region,
+            endpoint: config.s3_endpoint,
+        };
+        let k2v_region = Region::Custom {
+            name: config.k2v_region,
+            endpoint: config.k2v_endpoint,
+        };
+        let login_provider: Box<dyn LoginProvider> = match (config.login_static, config.login_ldap)
+        {
+            (Some(st), None) => Box::new(StaticLoginProvider::new(st, k2v_region.clone())?),
+            (None, Some(ld)) => Box::new(LdapLoginProvider::new(ld)?),
+            (Some(_), Some(_)) => bail!("A single login provider must be set up in config file"),
+            (None, None) => bail!("No login provider is set up in config file"),
+        };
+        Ok(Arc::new(Self {
+            s3_region,
+            k2v_region,
+            login_provider,
+        }))
     }
-    println!("");
+
+    async fn run(self: &Arc<Self>) -> Result<()> {
+        let creds = self.login_provider.login("lx", "plop").await?;
+
+        let mut mailbox = Mailbox::new(self.k2v_region.clone(),
+        self.s3_region.clone(),
+        creds.clone(),
+        "TestMailbox".to_string()).await?;
+
+        mailbox.test().await?;
+
+        Ok(())
+    }
 }
