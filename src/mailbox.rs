@@ -2,7 +2,6 @@ use anyhow::Result;
 use k2v_client::K2vClient;
 use rand::prelude::*;
 use rusoto_s3::S3Client;
-use rusoto_signature::Region;
 
 use crate::bayou::Bayou;
 use crate::cryptoblob::Key;

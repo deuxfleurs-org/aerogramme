@@ -9,7 +9,6 @@ use k2v_client::{BatchDeleteOp, BatchReadOp, Filter, K2vClient, K2vValue};
 use rusoto_s3::{
     DeleteObjectRequest, GetObjectRequest, ListObjectsV2Request, PutObjectRequest, S3Client, S3,
 };
-use rusoto_signature::Region;
 
 use crate::cryptoblob::*;
 use crate::login::Credentials;

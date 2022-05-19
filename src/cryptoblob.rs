@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use zstd::stream::{decode_all as zstd_decode, encode_all as zstd_encode};
 
-use sodiumoxide::crypto::box_ as publicbox;
+//use sodiumoxide::crypto::box_ as publicbox;
 use sodiumoxide::crypto::secretbox::xsalsa20poly1305 as secretbox;
 
 pub use sodiumoxide::crypto::box_::{

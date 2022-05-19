@@ -8,7 +8,6 @@ mod time;
 mod uidindex;
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
@@ -18,8 +17,7 @@ use rusoto_signature::Region;
 
 use config::*;
 use cryptoblob::*;
-use login::{ldap_provider::*, static_provider::*, *};
-use mailbox::Mailbox;
+use login::{static_provider::*, *};
 use server::Server;
 
 #[derive(Parser, Debug)]

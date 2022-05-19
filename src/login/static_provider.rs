@@ -32,8 +32,7 @@ impl LoginProvider for StaticLoginProvider {
         match self.users.get(username) {
             None => bail!("User {} does not exist", username),
             Some(u) => {
-                if u.password != password {
-                    // TODO cryptographic password compare
+                if !verify_password(password, &u.password) {
                     bail!("Wrong password");
                 }
                 let bucket = u
@@ -56,7 +55,7 @@ impl LoginProvider for StaticLoginProvider {
                     (Some(m), Some(s)) => {
                         let master_key = Key::from_slice(&base64::decode(m)?)
                             .ok_or(anyhow!("Invalid master key"))?;
-                        let secret_key = SecretKey::from_slice(&base64::decode(m)?)
+                        let secret_key = SecretKey::from_slice(&base64::decode(s)?)
                             .ok_or(anyhow!("Invalid secret key"))?;
                         CryptoKeys::open_without_password(&storage, &master_key, &secret_key).await?
                     }
