@@ -5,21 +5,23 @@ use async_trait::async_trait;
 use rusoto_signature::Region;
 
 use crate::config::*;
-use crate::cryptoblob::Key;
+use crate::cryptoblob::{Key, SecretKey};
 use crate::login::*;
 
 pub struct StaticLoginProvider {
     default_bucket: Option<String>,
     users: HashMap<String, LoginStaticUser>,
     k2v_region: Region,
+    s3_region: Region,
 }
 
 impl StaticLoginProvider {
-    pub fn new(config: LoginStaticConfig, k2v_region: Region) -> Result<Self> {
+    pub fn new(config: LoginStaticConfig, k2v_region: Region, s3_region: Region) -> Result<Self> {
         Ok(Self {
             default_bucket: config.default_bucket,
             users: config.users,
             k2v_region,
+            s3_region,
         })
     }
 }
@@ -42,18 +44,31 @@ impl LoginProvider for StaticLoginProvider {
                         "No bucket configured and no default bucket specieid"
                     ))?;
 
-                // TODO if master key is not specified, retrieve it from K2V key storage
-                let master_key_str = u.master_key.as_ref().ok_or(anyhow!(
-                    "Master key must be specified in config file for now, this will change"
-                ))?;
-                let master_key = Key::from_slice(&base64::decode(master_key_str)?)
-                    .ok_or(anyhow!("Invalid master key"))?;
-
-                Ok(Credentials {
+                let storage = StorageCredentials {
+                    k2v_region: self.k2v_region.clone(),
+                    s3_region: self.s3_region.clone(),
                     aws_access_key_id: u.aws_access_key_id.clone(),
                     aws_secret_access_key: u.aws_secret_access_key.clone(),
                     bucket,
-                    master_key,
+                };
+
+                let keys = match (&u.master_key, &u.secret_key) {
+                    (Some(m), Some(s)) => {
+                        let master_key = Key::from_slice(&base64::decode(m)?)
+                            .ok_or(anyhow!("Invalid master key"))?;
+                        let secret_key = SecretKey::from_slice(&base64::decode(m)?)
+                            .ok_or(anyhow!("Invalid secret key"))?;
+                        CryptoKeys::open_without_password(&storage, &master_key, &secret_key)?
+                    }
+                    (None, None) => {
+                        CryptoKeys::open(&storage, password)?
+                    }
+                    _ => bail!("Either both master and secret key or none of them must be specified for user"),
+                };
+
+                Ok(Credentials {
+                    storage,
+                    keys,
                 })
             }
         }

@@ -22,19 +22,17 @@ pub struct Mailbox {
 
 impl Mailbox {
     pub async fn new(
-        k2v_region: &Region,
-        s3_region: &Region,
         creds: &Credentials,
         name: String,
     ) -> Result<Self> {
-        let uid_index = Bayou::<UidIndex>::new(k2v_region, s3_region, creds, name.clone())?;
+        let uid_index = Bayou::<UidIndex>::new(creds, name.clone())?;
 
         Ok(Self {
-            bucket: creds.bucket.clone(),
+            bucket: creds.bucket().to_string(),
             name,
-            key: creds.master_key.clone(),
-            k2v: creds.k2v_client(&k2v_region)?,
-            s3: creds.s3_client(&s3_region)?,
+            key: creds.keys.master.clone(),
+            k2v: creds.k2v_client()?,
+            s3: creds.s3_client()?,
             uid_index,
         })
     }

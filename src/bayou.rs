@@ -57,18 +57,16 @@ pub struct Bayou<S: BayouState> {
 
 impl<S: BayouState> Bayou<S> {
     pub fn new(
-        k2v_region: &Region,
-        s3_region: &Region,
         creds: &Credentials,
         path: String,
     ) -> Result<Self> {
-        let k2v_client = creds.k2v_client(k2v_region)?;
-        let s3_client = creds.s3_client(s3_region)?;
+        let k2v_client = creds.k2v_client()?;
+        let s3_client = creds.s3_client()?;
 
         Ok(Self {
-            bucket: creds.bucket.clone(),
+            bucket: creds.bucket().to_string(),
             path,
-            key: creds.master_key.clone(),
+            key: creds.keys.master.clone(),
             k2v: k2v_client,
             s3: s3_client,
             checkpoint: (Timestamp::zero(), S::default()),
