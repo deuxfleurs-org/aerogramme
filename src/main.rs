@@ -158,7 +158,10 @@ async fn main() -> Result<()> {
             let existing_password =
                 rpassword::prompt_password("Enter existing password to decrypt keys: ")?;
             let new_password = if gen {
-                let password = base64::encode(&u128::to_be_bytes(thread_rng().gen())[..10]);
+                let password = base64::encode_config(
+                    &u128::to_be_bytes(thread_rng().gen())[..10],
+                    base64::URL_SAFE_NO_PAD,
+                );
                 println!("Your new password: {}", password);
                 println!("Keep it safe!");
                 password

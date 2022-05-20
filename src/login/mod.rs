@@ -95,7 +95,7 @@ impl CryptoKeys {
     pub async fn init(storage: &StorageCredentials, password: &str) -> Result<Self> {
         // Check that salt and public don't exist already
         let k2v = storage.k2v_client()?;
-        Self::check_uninitialized(&k2v).await?;
+        let (salt_ct, public_ct) = Self::check_uninitialized(&k2v).await?;
 
         // Generate salt for password identifiers
         let mut ident_salt = [0u8; 32];
@@ -129,8 +129,8 @@ impl CryptoKeys {
 
         // Write values to storage
         k2v.insert_batch(&[
-            k2v_insert_single_key("keys", "salt", None, &ident_salt),
-            k2v_insert_single_key("keys", "public", None, &keys.public),
+            k2v_insert_single_key("keys", "salt", salt_ct, &ident_salt),
+            k2v_insert_single_key("keys", "public", public_ct, &keys.public),
             k2v_insert_single_key("keys", &password_sortkey, None, &password_blob),
         ])
         .await
@@ -146,7 +146,7 @@ impl CryptoKeys {
     ) -> Result<Self> {
         // Check that salt and public don't exist already
         let k2v = storage.k2v_client()?;
-        Self::check_uninitialized(&k2v).await?;
+        let (salt_ct, public_ct) = Self::check_uninitialized(&k2v).await?;
 
         // Generate salt for password identifiers
         let mut ident_salt = [0u8; 32];
@@ -162,8 +162,8 @@ impl CryptoKeys {
 
         // Write values to storage
         k2v.insert_batch(&[
-            k2v_insert_single_key("keys", "salt", None, &ident_salt),
-            k2v_insert_single_key("keys", "public", None, &keys.public),
+            k2v_insert_single_key("keys", "salt", salt_ct, &ident_salt),
+            k2v_insert_single_key("keys", "public", public_ct, &keys.public),
         ])
         .await
         .context("InsertBatch for salt and public")?;
@@ -184,7 +184,7 @@ impl CryptoKeys {
         let password_blob = {
             let mut val = match k2v.read_item("keys", &password_sortkey).await {
                 Err(k2v_client::Error::NotFound) => {
-                    bail!("given password does not exist in storage")
+                    bail!("invalid password")
                 }
                 x => x?,
             };
@@ -193,7 +193,7 @@ impl CryptoKeys {
             }
             match val.value.pop().unwrap() {
                 K2vValue::Value(v) => v,
-                K2vValue::Tombstone => bail!("password is a tombstone"),
+                K2vValue::Tombstone => bail!("invalid password"),
             }
         };
 
@@ -257,15 +257,15 @@ impl CryptoKeys {
         let password_blob = [&kdf_salt[..], &password_sealed].concat();
 
         // List existing passwords to overwrite existing entry if necessary
-        let existing_passwords = Self::list_existing_passwords(&k2v).await?;
-        let ct = match existing_passwords.get(&password_sortkey) {
-            Some(p) => {
-                if p.value.iter().any(|x| matches!(x, K2vValue::Value(_))) {
-                    bail!("Password already exists");
+        let ct = match k2v.read_item("keys", &password_sortkey).await {
+            Err(k2v_client::Error::NotFound) => None,
+            v => {
+                let entry = v?;
+                if entry.value.iter().any(|x| matches!(x, K2vValue::Value(_))) {
+                    bail!("password already exists");
                 }
-                Some(p.causality.clone())
+                Some(entry.causality.clone())
             }
-            None => None,
         };
 
         // Write values to storage
@@ -315,11 +315,13 @@ impl CryptoKeys {
 
     // ---- STORAGE UTIL ----
 
-    async fn check_uninitialized(k2v: &K2vClient) -> Result<()> {
+    async fn check_uninitialized(
+        k2v: &K2vClient,
+    ) -> Result<(Option<CausalityToken>, Option<CausalityToken>)> {
         let params = k2v
             .read_batch(&[
-                k2v_read_single_key("keys", "salt"),
-                k2v_read_single_key("keys", "public"),
+                k2v_read_single_key("keys", "salt", true),
+                k2v_read_single_key("keys", "public", true),
             ])
             .await
             .context("ReadBatch for salt and public in check_uninitialized")?;
@@ -329,18 +331,41 @@ impl CryptoKeys {
                 params
             );
         }
-        if !params[0].items.is_empty() || !params[1].items.is_empty() {
-            bail!("`salt` or `public` already exists in keys storage.");
+        if params[0].items.len() > 1 || params[1].items.len() > 1 {
+            bail!(
+                "invalid response from k2v storage: {:?} (several items in single_item read)",
+                params
+            );
         }
 
-        Ok(())
+        let salt_ct = match params[0].items.iter().next() {
+            None => None,
+            Some((_, CausalValue { causality, value })) => {
+                if value.iter().any(|x| matches!(x, K2vValue::Value(_))) {
+                    bail!("key storage already initialized");
+                }
+                Some(causality.clone())
+            }
+        };
+
+        let public_ct = match params[1].items.iter().next() {
+            None => None,
+            Some((_, CausalValue { causality, value })) => {
+                if value.iter().any(|x| matches!(x, K2vValue::Value(_))) {
+                    bail!("key storage already initialized");
+                }
+                Some(causality.clone())
+            }
+        };
+
+        Ok((salt_ct, public_ct))
     }
 
     async fn load_salt_and_public(k2v: &K2vClient) -> Result<([u8; 32], PublicKey)> {
         let mut params = k2v
             .read_batch(&[
-                k2v_read_single_key("keys", "salt"),
-                k2v_read_single_key("keys", "public"),
+                k2v_read_single_key("keys", "salt", false),
+                k2v_read_single_key("keys", "public", false),
             ])
             .await
             .context("ReadBatch for salt and public in load_salt_and_public")?;
@@ -351,7 +376,7 @@ impl CryptoKeys {
             );
         }
         if params[0].items.len() != 1 || params[1].items.len() != 1 {
-            bail!("`salt` or `public` do not exist in storage.");
+            bail!("cryptographic keys not initialized for user");
         }
 
         // Retrieve salt from given response
@@ -453,7 +478,11 @@ pub fn argon2_kdf(salt: &[u8], password: &[u8], output_len: usize) -> Result<Vec
     Ok(hash.as_bytes().to_vec())
 }
 
-pub fn k2v_read_single_key<'a>(partition_key: &'a str, sort_key: &'a str) -> BatchReadOp<'a> {
+pub fn k2v_read_single_key<'a>(
+    partition_key: &'a str,
+    sort_key: &'a str,
+    tombstones: bool,
+) -> BatchReadOp<'a> {
     BatchReadOp {
         partition_key: partition_key,
         filter: Filter {
@@ -464,7 +493,7 @@ pub fn k2v_read_single_key<'a>(partition_key: &'a str, sort_key: &'a str) -> Bat
             reverse: false,
         },
         conflicts_only: false,
-        tombstones: false,
+        tombstones,
         single_item: true,
     }
 }
