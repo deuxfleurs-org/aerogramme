@@ -182,25 +182,17 @@ impl CryptoKeys {
         let password_sortkey = format!("password:{}", hex::encode(&ident));
 
         let password_blob = {
-            let mut params = k2v
-                .read_batch(&[k2v_read_single_key("keys", &password_sortkey)])
-                .await
-                .context("ReadBatch to read password")?;
-            if params.len() != 1 {
-                bail!(
-                    "Invalid response from k2v storage: {:?} (expected one item)",
-                    params
-                );
+            let mut val = match k2v.read_item("keys", &password_sortkey).await {
+                Err(k2v_client::Error::NotFound) => {
+                    bail!("given password does not exist in storage")
+                }
+                x => x?,
+            };
+            if val.value.len() != 1 {
+                bail!("multiple values for password in storage");
             }
-            if params[0].items.len() != 1 {
-                bail!("given password does not exist in storage.");
-            }
-            let vals = &mut params[0].items.iter_mut().next().unwrap().1.value;
-            if vals.len() != 1 {
-                bail!("Multiple values for password in storage");
-            }
-            match &mut vals[0] {
-                K2vValue::Value(v) => std::mem::take(v),
+            match val.value.pop().unwrap() {
+                K2vValue::Value(v) => v,
                 K2vValue::Tombstone => bail!("password is a tombstone"),
             }
         };
