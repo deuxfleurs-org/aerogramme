@@ -19,8 +19,8 @@ const SAVE_STATE_EVERY: usize = 64;
 // Checkpointing interval constants: a checkpoint is not made earlier
 // than CHECKPOINT_INTERVAL time after the last one, and is not made
 // if there are less than CHECKPOINT_MIN_OPS new operations since last one.
-const CHECKPOINT_INTERVAL: Duration = Duration::from_secs(60);
-const CHECKPOINT_MIN_OPS: usize = 4;
+const CHECKPOINT_INTERVAL: Duration = Duration::from_secs(3600);
+const CHECKPOINT_MIN_OPS: usize = 16;
 // HYPOTHESIS: processes are able to communicate in a synchronous
 // fashion in times that are small compared to CHECKPOINT_INTERVAL.
 // More precisely, if a process tried to save an operation within the last

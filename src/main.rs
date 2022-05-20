@@ -92,6 +92,11 @@ struct StorageCredsArgs {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    if std::env::var("RUST_LOG").is_err() {
+        std::env::set_var("RUST_LOG", "mailrage=info,k2v_client=info")
+    }
+    pretty_env_logger::init();
+
     let args = Args::parse();
 
     match args.command {

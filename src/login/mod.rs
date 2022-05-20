@@ -3,7 +3,7 @@ pub mod static_provider;
 
 use std::collections::BTreeMap;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use k2v_client::{
     BatchInsertOp, BatchReadOp, CausalValue, CausalityToken, Filter, K2vClient, K2vValue,
@@ -133,7 +133,8 @@ impl CryptoKeys {
             k2v_insert_single_key("keys", "public", None, &keys.public),
             k2v_insert_single_key("keys", &password_sortkey, None, &password_blob),
         ])
-        .await?;
+        .await
+        .context("InsertBatch for salt, public, and password")?;
 
         Ok(keys)
     }
@@ -164,7 +165,8 @@ impl CryptoKeys {
             k2v_insert_single_key("keys", "salt", None, &ident_salt),
             k2v_insert_single_key("keys", "public", None, &keys.public),
         ])
-        .await?;
+        .await
+        .context("InsertBatch for salt and public")?;
 
         Ok(keys)
     }
@@ -182,7 +184,8 @@ impl CryptoKeys {
         let password_blob = {
             let mut params = k2v
                 .read_batch(&[k2v_read_single_key("keys", &password_sortkey)])
-                .await?;
+                .await
+                .context("ReadBatch to read password")?;
             if params.len() != 1 {
                 bail!(
                     "Invalid response from k2v storage: {:?} (expected one item)",
@@ -280,7 +283,8 @@ impl CryptoKeys {
             ct,
             &password_blob,
         )])
-        .await?;
+        .await
+        .context("InsertBatch for new password")?;
 
         Ok(())
     }
@@ -311,7 +315,8 @@ impl CryptoKeys {
         }
 
         k2v.delete_item("keys", &password_sortkey, pw.causality.clone())
-            .await?;
+            .await
+            .context("DeleteItem for password")?;
 
         Ok(())
     }
@@ -324,7 +329,8 @@ impl CryptoKeys {
                 k2v_read_single_key("keys", "salt"),
                 k2v_read_single_key("keys", "public"),
             ])
-            .await?;
+            .await
+            .context("ReadBatch for salt and public in check_uninitialized")?;
         if params.len() != 2 {
             bail!(
                 "Invalid response from k2v storage: {:?} (expected two items)",
@@ -344,7 +350,8 @@ impl CryptoKeys {
                 k2v_read_single_key("keys", "salt"),
                 k2v_read_single_key("keys", "public"),
             ])
-            .await?;
+            .await
+            .context("ReadBatch for salt and public in load_salt_and_public")?;
         if params.len() != 2 {
             bail!(
                 "Invalid response from k2v storage: {:?} (expected two items)",
@@ -399,7 +406,8 @@ impl CryptoKeys {
                 tombstones: false,
                 single_item: false,
             }])
-            .await?;
+            .await
+            .context("ReadBatch for prefix password: in list_existing_passwords")?;
         if res.len() != 1 {
             bail!("unexpected k2v result: {:?}, expected one item", res);
         }
@@ -443,7 +451,7 @@ pub fn argon2_kdf(salt: &[u8], password: &[u8], output_len: usize) -> Result<Vec
         .map_err(|e| anyhow!("Invalid argon2 params: {}", e))?;
     let argon2 = Argon2::new(Algorithm::default(), Version::default(), params);
 
-    let salt = base64::encode(salt);
+    let salt = base64::encode_config(salt, base64::STANDARD_NO_PAD);
     let hash = argon2
         .hash_password(password, &salt)
         .map_err(|e| anyhow!("Unable to hash: {}", e))?;

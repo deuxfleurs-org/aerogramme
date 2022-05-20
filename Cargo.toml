@@ -15,6 +15,7 @@ clap = { version = "3.1.18", features = ["derive", "env"] }
 hex = "0.4"
 im = "15"
 itertools = "0.10"
+pretty_env_logger = "0.4"
 rusoto_core = "0.48.0"
 rusoto_credential = "0.48.0"
 rusoto_s3 = "0.48"
@@ -28,4 +29,5 @@ tokio = "1.17.0"
 toml = "0.5"
 zstd = { version = "0.9", default-features = false }
 
-k2v-client = { git = "https://git.deuxfleurs.fr/Deuxfleurs/garage.git" }
+#k2v-client = { git = "https://git.deuxfleurs.fr/Deuxfleurs/garage.git" }
+k2v-client = { path = "../garage/src/k2v-client" }
