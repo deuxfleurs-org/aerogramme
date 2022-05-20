@@ -1,9 +1,13 @@
 pub mod ldap_provider;
 pub mod static_provider;
 
+use std::collections::BTreeMap;
+
 use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
-use k2v_client::{BatchInsertOp, BatchReadOp, CausalityToken, Filter, K2vClient, K2vValue};
+use k2v_client::{
+    BatchInsertOp, BatchReadOp, CausalValue, CausalityToken, Filter, K2vClient, K2vValue,
+};
 use rand::prelude::*;
 use rusoto_core::HttpClient;
 use rusoto_credential::{AwsCredentials, StaticProvider};
@@ -237,7 +241,48 @@ impl CryptoKeys {
     }
 
     pub async fn add_password(&self, storage: &StorageCredentials, password: &str) -> Result<()> {
-        unimplemented!()
+        let k2v = storage.k2v_client()?;
+        let (ident_salt, _public) = Self::load_salt_and_public(&k2v).await?;
+
+        // Generate short password digest (= password identity)
+        let ident = argon2_kdf(&ident_salt, password.as_bytes(), 16)?;
+
+        // Generate salt for KDF
+        let mut kdf_salt = [0u8; 32];
+        thread_rng().fill(&mut kdf_salt);
+
+        // Calculate key for password secret box
+        let password_key =
+            Key::from_slice(&argon2_kdf(&kdf_salt, password.as_bytes(), 32)?).unwrap();
+
+        // Seal a secret box that contains our crypto keys
+        let password_sealed = seal(&self.serialize(), &password_key)?;
+
+        let password_sortkey = format!("password:{}", hex::encode(&ident));
+        let password_blob = [&kdf_salt[..], &password_sealed].concat();
+
+        // List existing passwords to overwrite existing entry if necessary
+        let existing_passwords = Self::list_existing_passwords(&k2v).await?;
+        let ct = match existing_passwords.get(&password_sortkey) {
+            Some(p) => {
+                if p.value.iter().any(|x| matches!(x, K2vValue::Value(_))) {
+                    bail!("Password already exists");
+                }
+                Some(p.causality.clone())
+            }
+            None => None,
+        };
+
+        // Write values to storage
+        k2v.insert_batch(&[k2v_insert_single_key(
+            "keys",
+            &password_sortkey,
+            ct,
+            &password_blob,
+        )])
+        .await?;
+
+        Ok(())
     }
 
     pub async fn delete_password(
@@ -246,7 +291,29 @@ impl CryptoKeys {
         password: &str,
         allow_delete_all: bool,
     ) -> Result<()> {
-        unimplemented!()
+        let k2v = storage.k2v_client()?;
+        let (ident_salt, _public) = Self::load_salt_and_public(&k2v).await?;
+
+        // Generate short password digest (= password identity)
+        let ident = argon2_kdf(&ident_salt, password.as_bytes(), 16)?;
+        let password_sortkey = format!("password:{}", hex::encode(&ident));
+
+        // List existing passwords
+        let existing_passwords = Self::list_existing_passwords(&k2v).await?;
+
+        // Check password is there
+        let pw = existing_passwords
+            .get(&password_sortkey)
+            .ok_or(anyhow!("password does not exist"))?;
+
+        if !allow_delete_all && existing_passwords.len() < 2 {
+            bail!("No other password exists, not deleting last password.");
+        }
+
+        k2v.delete_item("keys", &password_sortkey, pw.causality.clone())
+            .await?;
+
+        Ok(())
     }
 
     // ---- STORAGE UTIL ----
@@ -315,6 +382,28 @@ impl CryptoKeys {
         let public = PublicKey::from_slice(&public).ok_or(anyhow!("Invalid public key length"))?;
 
         Ok((salt_constlen, public))
+    }
+
+    async fn list_existing_passwords(k2v: &K2vClient) -> Result<BTreeMap<String, CausalValue>> {
+        let mut res = k2v
+            .read_batch(&[BatchReadOp {
+                partition_key: "keys",
+                filter: Filter {
+                    start: None,
+                    end: None,
+                    prefix: Some("password:"),
+                    limit: None,
+                    reverse: false,
+                },
+                conflicts_only: false,
+                tombstones: false,
+                single_item: false,
+            }])
+            .await?;
+        if res.len() != 1 {
+            bail!("unexpected k2v result: {:?}, expected one item", res);
+        }
+        Ok(res.pop().unwrap().items)
     }
 
     fn serialize(&self) -> [u8; 64] {
