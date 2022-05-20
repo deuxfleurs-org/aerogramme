@@ -69,7 +69,6 @@ Operations:
 - **Initialize**(`password`):
   - if `"salt"` or `"public"` already exist, BAIL
   - generate salt `S` (32 random bytes)
-  - write `S` at `"salt"`
   - generate `public`, `private` (curve25519 keypair)
   - generate `master` (secretbox secret key)
   - calculate `digest = argon2_S(password)`
@@ -77,6 +76,7 @@ Operations:
   - calculate `key = argon2_Skey(password)`
   - serialize `box_contents = (private, master)`
   - seal box `blob = seal_key(box_contents)`
+  - write `S` at `"salt"`
   - write `concat(Skey, blob)` at `"password:{hex(digest[..16])}"`
   - write `public` at `"public"`
 

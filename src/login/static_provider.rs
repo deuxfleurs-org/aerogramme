@@ -86,7 +86,7 @@ pub fn hash_password(password: &str) -> Result<String> {
 
 pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
     use argon2::{
-        password_hash::{rand_core::OsRng, PasswordHash, PasswordVerifier},
+        password_hash::{PasswordHash, PasswordVerifier},
         Argon2,
     };
     let parsed_hash =
