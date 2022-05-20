@@ -222,7 +222,10 @@ fn make_storage_creds(c: StorageCredsArgs) -> StorageCredentials {
 
 fn dump_config(password: &str, creds: &StorageCredentials) {
     println!("[login_static.users.<username>]");
-    println!("password = \"{}\"", hash_password(password)); //TODO
+    println!(
+        "password = \"{}\"",
+        hash_password(password).expect("unable to hash password")
+    );
     println!("aws_access_key_id = \"{}\"", creds.aws_access_key_id);
     println!(
         "aws_secret_access_key = \"{}\"",
