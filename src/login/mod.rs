@@ -318,7 +318,6 @@ impl CryptoKeys {
     }
 
     pub async fn delete_password(
-        &self,
         storage: &StorageCredentials,
         password: &str,
         allow_delete_all: bool,

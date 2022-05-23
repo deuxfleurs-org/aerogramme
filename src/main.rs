@@ -218,14 +218,17 @@ async fn main() -> Result<()> {
 
             let existing_password = rpassword::prompt_password("Enter password to delete: ")?;
 
-            let keys = CryptoKeys::open(&creds, &user_secrets, &existing_password).await?;
-            keys.delete_password(&creds, &existing_password, allow_delete_all)
-                .await?;
+            let keys = match allow_delete_all {
+                true => Some(CryptoKeys::open(&creds, &user_secrets, &existing_password).await?),
+                false => None,
+            };
+
+            CryptoKeys::delete_password(&creds, &existing_password, allow_delete_all).await?;
 
             println!("");
             println!("Password was deleted successfully.");
 
-            if allow_delete_all {
+            if let Some(keys) = keys {
                 println!("As a reminder, here are your cryptographic keys:");
                 dump_keys(&keys);
             }
