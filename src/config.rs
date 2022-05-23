@@ -29,6 +29,10 @@ pub struct LoginStaticUser {
     pub aws_secret_access_key: String,
     pub bucket: Option<String>,
 
+    pub user_secret: String,
+    #[serde(default)]
+    pub alternate_user_secrets: Vec<String>,
+
     pub master_key: Option<String>,
     pub secret_key: Option<String>,
 }
@@ -41,6 +45,8 @@ pub struct LoginLdapConfig {
     pub username_attr: String,
     pub aws_access_key_id_attr: String,
     pub aws_secret_access_key_attr: String,
+    pub user_secret_attr: String,
+    pub alternate_user_secrets_attr: Option<String>,
 
     pub bucket: Option<String>,
     pub bucket_attr: Option<String>,

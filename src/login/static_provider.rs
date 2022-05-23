@@ -60,7 +60,11 @@ impl LoginProvider for StaticLoginProvider {
                         CryptoKeys::open_without_password(&storage, &master_key, &secret_key).await?
                     }
                     (None, None) => {
-                        CryptoKeys::open(&storage, password).await?
+                        let user_secrets = UserSecrets {
+                            user_secret: u.user_secret.clone(),
+                            alternate_user_secrets: u.alternate_user_secrets.clone(),
+                        };
+                        CryptoKeys::open(&storage, &user_secrets, password).await?
                     }
                     _ => bail!("Either both master and secret key or none of them must be specified for user"),
                 };

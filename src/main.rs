@@ -38,6 +38,8 @@ enum Command {
     FirstLogin {
         #[clap(flatten)]
         creds: StorageCredsArgs,
+        #[clap(flatten)]
+        user_secrets: UserSecretsArgs,
     },
     /// Initializes key pairs for a user and dumps keys to stdout for usage with static
     /// login provider
@@ -49,6 +51,8 @@ enum Command {
     AddPassword {
         #[clap(flatten)]
         creds: StorageCredsArgs,
+        #[clap(flatten)]
+        user_secrets: UserSecretsArgs,
         /// Automatically generate password
         #[clap(short, long)]
         gen: bool,
@@ -57,6 +61,8 @@ enum Command {
     DeletePassword {
         #[clap(flatten)]
         creds: StorageCredsArgs,
+        #[clap(flatten)]
+        user_secrets: UserSecretsArgs,
         /// Allow to delete all passwords
         #[clap(long)]
         allow_delete_all: bool,
@@ -65,6 +71,8 @@ enum Command {
     ShowKeys {
         #[clap(flatten)]
         creds: StorageCredsArgs,
+        #[clap(flatten)]
+        user_secrets: UserSecretsArgs,
     },
 }
 
@@ -90,6 +98,16 @@ struct StorageCredsArgs {
     bucket: String,
 }
 
+#[derive(Parser, Debug)]
+struct UserSecretsArgs {
+    /// User secret
+    #[clap(short = 'U', long, env = "USER_SECRET")]
+    user_secret: String,
+    /// Alternate user secrets (comma-separated list of strings)
+    #[clap(long, env = "ALTERNATE_USER_SECRETS", default_value = "")]
+    alternate_user_secrets: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     if std::env::var("RUST_LOG").is_err() {
@@ -106,8 +124,12 @@ async fn main() -> Result<()> {
             let server = Server::new(config)?;
             server.run().await?;
         }
-        Command::FirstLogin { creds } => {
+        Command::FirstLogin {
+            creds,
+            user_secrets,
+        } => {
             let creds = make_storage_creds(creds);
+            let user_secrets = make_user_secrets(user_secrets);
 
             println!("Please enter your password for key decryption.");
             println!("If you are using LDAP login, this must be your LDAP password.");
@@ -118,7 +140,7 @@ async fn main() -> Result<()> {
                 bail!("Passwords don't match.");
             }
 
-            CryptoKeys::init(&creds, &password).await?;
+            CryptoKeys::init(&creds, &user_secrets, &password).await?;
 
             println!("");
             println!("Cryptographic key setup is complete.");
@@ -153,8 +175,14 @@ async fn main() -> Result<()> {
             dump_config(&password, &creds);
             dump_keys(&keys);
         }
-        Command::AddPassword { creds, gen } => {
+        Command::AddPassword {
+            creds,
+            user_secrets,
+            gen,
+        } => {
             let creds = make_storage_creds(creds);
+            let user_secrets = make_user_secrets(user_secrets);
+
             let existing_password =
                 rpassword::prompt_password("Enter existing password to decrypt keys: ")?;
             let new_password = if gen {
@@ -174,19 +202,23 @@ async fn main() -> Result<()> {
                 password
             };
 
-            let keys = CryptoKeys::open(&creds, &existing_password).await?;
-            keys.add_password(&creds, &new_password).await?;
+            let keys = CryptoKeys::open(&creds, &user_secrets, &existing_password).await?;
+            keys.add_password(&creds, &user_secrets, &new_password)
+                .await?;
             println!("");
             println!("New password added successfully.");
         }
         Command::DeletePassword {
             creds,
+            user_secrets,
             allow_delete_all,
         } => {
             let creds = make_storage_creds(creds);
+            let user_secrets = make_user_secrets(user_secrets);
+
             let existing_password = rpassword::prompt_password("Enter password to delete: ")?;
 
-            let keys = CryptoKeys::open(&creds, &existing_password).await?;
+            let keys = CryptoKeys::open(&creds, &user_secrets, &existing_password).await?;
             keys.delete_password(&creds, &existing_password, allow_delete_all)
                 .await?;
 
@@ -198,11 +230,16 @@ async fn main() -> Result<()> {
                 dump_keys(&keys);
             }
         }
-        Command::ShowKeys { creds } => {
+        Command::ShowKeys {
+            creds,
+            user_secrets,
+        } => {
             let creds = make_storage_creds(creds);
+            let user_secrets = make_user_secrets(user_secrets);
+
             let existing_password = rpassword::prompt_password("Enter key decryption password: ")?;
 
-            let keys = CryptoKeys::open(&creds, &existing_password).await?;
+            let keys = CryptoKeys::open(&creds, &user_secrets, &existing_password).await?;
             dump_keys(&keys);
         }
     }
@@ -225,6 +262,19 @@ fn make_storage_creds(c: StorageCredsArgs) -> StorageCredentials {
         aws_access_key_id: c.aws_access_key_id,
         aws_secret_access_key: c.aws_secret_access_key,
         bucket: c.bucket,
+    }
+}
+
+fn make_user_secrets(c: UserSecretsArgs) -> UserSecrets {
+    UserSecrets {
+        user_secret: c.user_secret,
+        alternate_user_secrets: c
+            .alternate_user_secrets
+            .split(",")
+            .map(|x| x.trim())
+            .filter(|x| !x.is_empty())
+            .map(|x| x.to_string())
+            .collect(),
     }
 }
 

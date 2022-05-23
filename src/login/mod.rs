@@ -16,17 +16,27 @@ use rusoto_signature::Region;
 
 use crate::cryptoblob::*;
 
+/// The trait LoginProvider defines the interface for a login provider that allows
+/// to retrieve storage and cryptographic credentials for access to a user account
+/// from their username and password.
 #[async_trait]
 pub trait LoginProvider {
+    /// The login method takes an account's password as an input to decypher
+    /// decryption keys and obtain full access to the user's account.
     async fn login(&self, username: &str, password: &str) -> Result<Credentials>;
 }
 
+/// The struct Credentials represent all of the necessary information to interact
+/// with a user account's data after they are logged in.
 #[derive(Clone, Debug)]
 pub struct Credentials {
+    /// The storage credentials are used to authenticate access to the underlying storage (S3, K2V)
     pub storage: StorageCredentials,
+    /// The cryptographic keys are used to encrypt and decrypt data stored in S3 and K2V
     pub keys: CryptoKeys,
 }
 
+/// The struct StorageCredentials contains access key to an S3 and K2V bucket
 #[derive(Clone, Debug)]
 pub struct StorageCredentials {
     pub s3_region: Region,
@@ -37,12 +47,28 @@ pub struct StorageCredentials {
     pub bucket: String,
 }
 
+/// The struct UserSecrets represents intermediary secrets that are mixed in with the user's
+/// password when decrypting the cryptographic keys that are stored in their bucket.
+/// These secrets should be stored somewhere else (e.g. in the LDAP server or in the
+/// local config file), as an additionnal authentification factor so that the password
+/// isn't enough just alone to decrypt the content of a user's bucket.
+pub struct UserSecrets {
+    /// The main user secret that will be used to encrypt keys when a new password is added
+    pub user_secret: String,
+    /// Alternative user secrets that will be tried when decrypting keys that were encrypted
+    /// with old passwords
+    pub alternate_user_secrets: Vec<String>,
+}
+
+/// The struct CryptoKeys contains the cryptographic keys used to encrypt and decrypt
+/// data in a user's mailbox.
 #[derive(Clone, Debug)]
 pub struct CryptoKeys {
-    // Master key for symmetric encryption of mailbox data
+    /// Master key for symmetric encryption of mailbox data
     pub master: Key,
-    // Public/private keypair for encryption of incomming emails
+    /// Public/private keypair for encryption of incomming emails (secret part)
     pub secret: SecretKey,
+    /// Public/private keypair for encryption of incomming emails (public part)
     pub public: PublicKey,
 }
 
@@ -92,7 +118,11 @@ impl StorageCredentials {
 }
 
 impl CryptoKeys {
-    pub async fn init(storage: &StorageCredentials, password: &str) -> Result<Self> {
+    pub async fn init(
+        storage: &StorageCredentials,
+        user_secrets: &UserSecrets,
+        password: &str,
+    ) -> Result<Self> {
         // Check that salt and public don't exist already
         let k2v = storage.k2v_client()?;
         let (salt_ct, public_ct) = Self::check_uninitialized(&k2v).await?;
@@ -118,8 +148,7 @@ impl CryptoKeys {
         thread_rng().fill(&mut kdf_salt);
 
         // Calculate key for password secret box
-        let password_key =
-            Key::from_slice(&argon2_kdf(&kdf_salt, password.as_bytes(), 32)?).unwrap();
+        let password_key = user_secrets.derive_password_key(&kdf_salt, password)?;
 
         // Seal a secret box that contains our crypto keys
         let password_sealed = seal(&keys.serialize(), &password_key)?;
@@ -171,7 +200,11 @@ impl CryptoKeys {
         Ok(keys)
     }
 
-    pub async fn open(storage: &StorageCredentials, password: &str) -> Result<Self> {
+    pub async fn open(
+        storage: &StorageCredentials,
+        user_secrets: &UserSecrets,
+        password: &str,
+    ) -> Result<Self> {
         let k2v = storage.k2v_client()?;
         let (ident_salt, expected_public) = Self::load_salt_and_public(&k2v).await?;
 
@@ -199,9 +232,8 @@ impl CryptoKeys {
 
         // Try to open blob
         let kdf_salt = &password_blob[..32];
-        let password_key =
-            Key::from_slice(&argon2_kdf(kdf_salt, password.as_bytes(), 32)?).unwrap();
-        let password_openned = open(&password_blob[32..], &password_key)?;
+        let password_openned =
+            user_secrets.try_open_encrypted_keys(&kdf_salt, password, &password_blob[32..])?;
 
         let keys = Self::deserialize(&password_openned)?;
         if keys.public != expected_public {
@@ -235,7 +267,12 @@ impl CryptoKeys {
         Ok(keys)
     }
 
-    pub async fn add_password(&self, storage: &StorageCredentials, password: &str) -> Result<()> {
+    pub async fn add_password(
+        &self,
+        storage: &StorageCredentials,
+        user_secrets: &UserSecrets,
+        password: &str,
+    ) -> Result<()> {
         let k2v = storage.k2v_client()?;
         let (ident_salt, _public) = Self::load_salt_and_public(&k2v).await?;
 
@@ -247,8 +284,7 @@ impl CryptoKeys {
         thread_rng().fill(&mut kdf_salt);
 
         // Calculate key for password secret box
-        let password_key =
-            Key::from_slice(&argon2_kdf(&kdf_salt, password.as_bytes(), 32)?).unwrap();
+        let password_key = user_secrets.derive_password_key(&kdf_salt, password)?;
 
         // Seal a secret box that contains our crypto keys
         let password_sealed = seal(&self.serialize(), &password_key)?;
@@ -450,6 +486,34 @@ impl CryptoKeys {
             secret,
             public,
         })
+    }
+}
+
+impl UserSecrets {
+    fn derive_password_key_with(user_secret: &str, kdf_salt: &[u8], password: &str) -> Result<Key> {
+        let tmp = format!("{}\n\n{}", user_secret, password);
+        Ok(Key::from_slice(&argon2_kdf(&kdf_salt, tmp.as_bytes(), 32)?).unwrap())
+    }
+
+    fn derive_password_key(&self, kdf_salt: &[u8], password: &str) -> Result<Key> {
+        Self::derive_password_key_with(&self.user_secret, kdf_salt, password)
+    }
+
+    fn try_open_encrypted_keys(
+        &self,
+        kdf_salt: &[u8],
+        password: &str,
+        encrypted_keys: &[u8],
+    ) -> Result<Vec<u8>> {
+        let secrets_to_try =
+            std::iter::once(&self.user_secret).chain(self.alternate_user_secrets.iter());
+        for user_secret in secrets_to_try {
+            let password_key = Self::derive_password_key_with(user_secret, kdf_salt, password)?;
+            if let Ok(res) = open(encrypted_keys, &password_key) {
+                return Ok(res);
+            }
+        }
+        bail!("Unable to decrypt password blob.");
     }
 }
 
