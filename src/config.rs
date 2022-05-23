@@ -41,8 +41,16 @@ pub struct LoginStaticUser {
 pub struct LoginLdapConfig {
     pub ldap_server: String,
 
-    pub search_dn: String,
+    #[serde(default)]
+    pub pre_bind_on_login: bool,
+    pub bind_dn: Option<String>,
+    pub bind_password: Option<String>,
+
+    pub search_base: String,
     pub username_attr: String,
+    #[serde(default = "default_mail_attr")]
+    pub mail_attr: String,
+
     pub aws_access_key_id_attr: String,
     pub aws_secret_access_key_attr: String,
     pub user_secret_attr: String,
@@ -61,4 +69,8 @@ pub fn read_config(config_file: PathBuf) -> Result<Config> {
     file.read_to_string(&mut config)?;
 
     Ok(toml::from_str(&config)?)
+}
+
+fn default_mail_attr() -> String {
+    "mail".into()
 }
