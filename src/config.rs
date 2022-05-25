@@ -3,9 +3,9 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use anyhow::Result;
-use serde::Deserialize;
+use serde::{Serialize,Deserialize};
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
     pub s3_endpoint: String,
     pub k2v_endpoint: String,
@@ -15,13 +15,13 @@ pub struct Config {
     pub login_ldap: Option<LoginLdapConfig>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LoginStaticConfig {
     pub default_bucket: Option<String>,
     pub users: HashMap<String, LoginStaticUser>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LoginStaticUser {
     pub password: String,
 
@@ -37,7 +37,7 @@ pub struct LoginStaticUser {
     pub secret_key: Option<String>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LoginLdapConfig {
     pub ldap_server: String,
 

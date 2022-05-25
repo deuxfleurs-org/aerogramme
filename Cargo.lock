@@ -669,7 +669,7 @@ dependencies = [
 [[package]]
 name = "k2v-client"
 version = "0.1.0"
-source = "git+https://git.deuxfleurs.fr/Deuxfleurs/garage.git?branch=improve-k2v-client#a73f174ada005f71a77f12e185da154aa5c254a9"
+source = "git+https://git.deuxfleurs.fr/Deuxfleurs/garage.git?branch=main#9f303f6308a313c8310c3597ecb6828e46352821"
 dependencies = [
  "base64",
  "http",
