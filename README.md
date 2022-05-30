@@ -1,5 +1,56 @@
 # Mailrage - Encrypted e-mail storage over Garage
 
+## Usage
+
+Start by running:
+
+```
+$ cargo run --bin main -- first-login --region garage --k2v-endpoint http://127.0.0.1:3904 --s3-endpoint http://127.0.0.1:3900 --aws-access-key-id GK... --aws-secret-access-key c0ffee... --bucket mailrage-quentin --user-secret poupou
+Please enter your password for key decryption.
+If you are using LDAP login, this must be your LDAP password.
+If you are using the static login provider, enter any password, and this will also become your password for local IMAP access.
+Enter password:
+Confirm password:
+
+Cryptographic key setup is complete.
+
+If you are using the static login provider, add the following section to your .toml configuration file:
+
+[login_static.users.<username>]
+password = "$argon2id$v=19$m=4096,t=3,p=1$..."
+aws_access_key_id = "GK..."
+aws_secret_access_key = "c0ffee..."
+```
+
+Next create the config file `mailrage.toml`:
+
+```
+s3_endpoint = "http://127.0.0.1:3900"
+k2v_endpoint = "http://127.0.0.1:3904"
+aws_region = "garage"
+
+[login_static]
+default_bucket = "mailrage"
+[login_static.users.quentin]
+bucket = "mailrage-quentin"
+user_secret = "poupou"
+alternate_user_secrets = []
+password = "$argon2id$v=19$m=4096,t=3,p=1$..."
+aws_access_key_id = "GK..."
+aws_secret_access_key = "c0ffee..."
+```
+
+You can dump your keys with:
+
+```
+$ cargo run --bin main -- show-keys --region garage --k2v-endpoint http://127.0.0.1:3904 --s3-endpoint http://127.0.0.1:3900 --aws-access-key-id GK... --aws-secret-access-key c0ffee... --bucket mailrage-quentin --user-secret poupou
+Enter key decryption password:
+master_key = "..."
+secret_key = "..."
+```
+
+
+
 ## Bayou storage module
 
 Checkpoints are stored in S3 at `<path>/checkpoint/<timestamp>`. Example:

@@ -37,3 +37,7 @@ k2v-client = { git = "https://git.deuxfleurs.fr/Deuxfleurs/garage.git", branch =
 [[bin]]
 name = "test"
 path = "src/test.rs"
+
+[[bin]]
+name = "main"
+path = "src/main.rs"

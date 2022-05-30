@@ -32,7 +32,7 @@ impl Server {
     }
 
     pub async fn run(self: &Arc<Self>) -> Result<()> {
-        let creds = self.login_provider.login("lx", "plop").await?;
+        let creds = self.login_provider.login("quentin", "poupou").await?;
 
         let mut mailbox = Mailbox::new(&creds, "TestMailbox".to_string()).await?;
 
