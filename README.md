@@ -49,6 +49,23 @@ master_key = "..."
 secret_key = "..."
 ```
 
+Run a test instance with:
+
+```
+$ cargo run --bin main -- server
+---- MAILBOX STATE ----
+UIDVALIDITY 1
+UIDNEXT 2
+INTERNALSEQ 2
+1 c3d4524f557f19108480063f3216afa20000000000000000 \Unseen
+
+---- MAILBOX STATE ----
+UIDVALIDITY 1
+UIDNEXT 3
+INTERNALSEQ 3
+1 c3d4524f557f19108480063f3216afa20000000000000000 \Unseen
+2 6a1ab4d87af3d424a3a8f8720c4db3b60000000000000000 \Unseen
+```
 
 
 ## Bayou storage module
