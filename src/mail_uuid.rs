@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::str::FromStr;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use lazy_static::lazy_static;
 use rand::prelude::*;
