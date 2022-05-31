@@ -23,6 +23,8 @@ pub struct LoginStaticConfig {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct LoginStaticUser {
+    #[serde(default)]
+    pub email_addresses: Vec<String>,
     pub password: String,
 
     pub aws_access_key_id: String,
