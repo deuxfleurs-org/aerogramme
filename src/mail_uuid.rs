@@ -1,4 +1,5 @@
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::str::FromStr;
 
 use lazy_static::lazy_static;
 use rand::prelude::*;
@@ -54,15 +55,7 @@ impl<'de> Deserialize<'de> for MailUuid {
         D: Deserializer<'de>,
     {
         let v = String::deserialize(d)?;
-        let bytes = hex::decode(v).map_err(|_| D::Error::custom("invalid hex"))?;
-
-        if bytes.len() != 24 {
-            return Err(D::Error::custom("bad length"));
-        }
-
-        let mut tmp = [0u8; 24];
-        tmp[..].copy_from_slice(&bytes);
-        Ok(Self(tmp))
+        MailUuid::from_str(&v).map_err(D::Error::custom)
     }
 }
 
@@ -78,5 +71,21 @@ impl Serialize for MailUuid {
 impl ToString for MailUuid {
     fn to_string(&self) -> String {
         hex::encode(self.0)
+    }
+}
+
+impl FromStr for MailUuid {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<MailUuid, &'static str> {
+        let bytes = hex::decode(s).map_err(|_| "invalid hex")?;
+
+        if bytes.len() != 24 {
+            return Err("bad length");
+        }
+
+        let mut tmp = [0u8; 24];
+        tmp[..].copy_from_slice(&bytes);
+        Ok(MailUuid(tmp))
     }
 }
