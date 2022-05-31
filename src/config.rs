@@ -68,6 +68,7 @@ pub struct LoginLdapConfig {
 #[derive(Deserialize, Debug, Clone)]
 pub struct LmtpConfig {
     pub bind_addr: SocketAddr,
+    pub hostname: String,
 }
 
 pub fn read_config(config_file: PathBuf) -> Result<Config> {

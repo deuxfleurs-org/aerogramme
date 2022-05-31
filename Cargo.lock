@@ -1106,6 +1106,8 @@ dependencies = [
  "async-trait",
  "base64",
  "clap",
+ "duplexify",
+ "futures",
  "hex",
  "im",
  "itertools",
@@ -1122,9 +1124,11 @@ dependencies = [
  "rusoto_s3",
  "rusoto_signature",
  "serde",
+ "smtp-message",
  "smtp-server",
  "sodiumoxide",
  "tokio",
+ "tokio-util",
  "toml",
  "zstd",
 ]
@@ -2059,6 +2063,7 @@ checksum = "f988a1a1adc2fb21f9c12aa96441da33a1728193ae0b95d2be22dbd17fcb4e5c"
 dependencies = [
  "bytes",
  "futures-core",
+ "futures-io",
  "futures-sink",
  "pin-project-lite 0.2.9",
  "tokio",

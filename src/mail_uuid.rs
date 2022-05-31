@@ -71,6 +71,12 @@ impl Serialize for MailUuid {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&hex::encode(self.0))
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl ToString for MailUuid {
+    fn to_string(&self) -> String {
+        hex::encode(self.0)
     }
 }
