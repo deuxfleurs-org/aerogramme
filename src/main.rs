@@ -2,6 +2,7 @@ mod bayou;
 mod config;
 mod cryptoblob;
 mod login;
+mod mail_uuid;
 mod mailbox;
 mod server;
 mod time;

@@ -15,6 +15,7 @@ clap = { version = "3.1.18", features = ["derive", "env"] }
 hex = "0.4"
 im = "15"
 itertools = "0.10"
+lazy_static = "1.4"
 ldap3 = { version = "0.10", default-features = false, features = ["tls"] }
 log = "0.4"
 pretty_env_logger = "0.4"
@@ -30,6 +31,8 @@ sodiumoxide = "0.2"
 tokio = "1.17.0"
 toml = "0.5"
 zstd = { version = "0.9", default-features = false }
+
+smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 
 k2v-client = { git = "https://git.deuxfleurs.fr/Deuxfleurs/garage.git", branch = "improve-k2v-client" }
 #k2v-client = { path = "../garage/src/k2v-client" }
