@@ -3,7 +3,7 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use anyhow::Result;
-use serde::{Serialize,Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {

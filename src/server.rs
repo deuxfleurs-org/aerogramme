@@ -7,8 +7,18 @@ use crate::config::*;
 use crate::login::{ldap_provider::*, static_provider::*, *};
 use crate::mailbox::Mailbox;
 
+use boitalettres::proto::{Request, Response};
+use boitalettres::server::accept::addr::{AddrIncoming, AddrStream};
+use boitalettres::server::Server as ImapServer;
+use tracing_subscriber;
+
 pub struct Server {
     pub login_provider: Box<dyn LoginProvider>,
+}
+
+async fn handle_req(req: Request) -> Result<Response> {
+    tracing::debug!("Got request: {:#?}", req);
+    Ok(Response::ok("Done")?)
 }
 
 impl Server {
@@ -32,11 +42,25 @@ impl Server {
     }
 
     pub async fn run(self: &Arc<Self>) -> Result<()> {
-        let creds = self.login_provider.login("quentin", "poupou").await?;
+        // tracing_subscriber::fmt::init();
+
+        let incoming = AddrIncoming::new("127.0.0.1:4567").await?;
+
+        let make_service = tower::service_fn(|addr: &AddrStream| {
+            tracing::debug!(remote_addr = %addr.remote_addr, local_addr = %addr.local_addr, "accept");
+            let service = tower::ServiceBuilder::new().service_fn(handle_req);
+            futures::future::ok::<_, std::convert::Infallible>(service)
+        });
+
+
+        let server = ImapServer::new(incoming).serve(make_service);
+        let _ = server.await?;
+
+        /*let creds = self.login_provider.login("quentin", "poupou").await?;
 
         let mut mailbox = Mailbox::new(&creds, "TestMailbox".to_string()).await?;
 
-        mailbox.test().await?;
+        mailbox.test().await?;*/
 
         Ok(())
     }
