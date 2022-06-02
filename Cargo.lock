@@ -973,6 +973,7 @@ dependencies = [
  "futures",
  "hex",
  "im",
+ "imap-codec",
  "itertools",
  "k2v-client",
  "ldap3",

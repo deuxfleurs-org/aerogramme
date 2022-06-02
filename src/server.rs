@@ -10,14 +10,10 @@ use crate::mailbox::Mailbox;
 use boitalettres::proto::{Request, Response};
 use boitalettres::server::accept::addr::{AddrIncoming, AddrStream};
 use boitalettres::server::Server as ImapServer;
-use tracing_subscriber;
 
+use std::pin::Pin;
 use std::task::{Context, Poll};
 use tower::Service;
-use std::future::Future;
-use std::pin::Pin;
-
-use std::error::Error;
 
 pub struct Server {
     pub login_provider: Box<dyn LoginProvider>,
@@ -25,38 +21,57 @@ pub struct Server {
 
 struct Connection;
 impl Service<Request> for Connection {
-  type Response = Response;
-  type Error = anyhow::Error;
-  type Future = Pin<Box<dyn futures::Future<Output = Result<Self::Response>> + Send>>;
+    type Response = Response;
+    type Error = anyhow::Error;
+    type Future = Pin<Box<dyn futures::Future<Output = Result<Self::Response>> + Send>>;
 
-  fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-    Poll::Ready(Ok(()))
-  }
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
 
-  fn call(&mut self, req: Request) -> Self::Future {
-    Box::pin(async move {
-      println!("Got request: {:#?}", req);
-      Ok(Response::ok("Done")?)
-    })
-  }
+    fn call(&mut self, req: Request) -> Self::Future {
+        tracing::debug!("Got request: {:#?}", req);
+        Box::pin(async move {
+            use imap_codec::types::{
+                command::CommandBody,
+                response::{Capability, Data},
+            };
+
+            let r = match req.body {
+                CommandBody::Capability => {
+                    let capabilities = vec![Capability::Imap4Rev1, Capability::Idle];
+                    let body = vec![Data::Capability(capabilities)];
+                    Response::ok(
+                        "Pre-login capabilities listed, post-login capabilities have more.",
+                    )?
+                    .with_body(body)
+                }
+                CommandBody::Login {
+                    username: _,
+                    password: _,
+                } => Response::ok("Logged in")?,
+                _ => Response::bad("Error in IMAP command received by server.")?,
+            };
+
+            Ok(r)
+        })
+    }
 }
 
 struct Instance;
 impl<'a> Service<&'a AddrStream> for Instance {
-  type Response = Connection;
-  type Error = anyhow::Error;
-  type Future = Pin<Box<dyn futures::Future<Output = Result<Self::Response>> + Send>>;
+    type Response = Connection;
+    type Error = anyhow::Error;
+    type Future = Pin<Box<dyn futures::Future<Output = Result<Self::Response>> + Send>>;
 
-  fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-    Poll::Ready(Ok(()))
-  }
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
 
-  fn call(&mut self, addr: &'a AddrStream) -> Self::Future {
-    println!("{}, {}", addr.remote_addr, addr.local_addr);
-    Box::pin(async {
-      Ok(Connection)
-    })
-  }
+    fn call(&mut self, addr: &'a AddrStream) -> Self::Future {
+        tracing::info!(remote_addr = %addr.remote_addr, local_addr = %addr.local_addr, "accept");
+        Box::pin(async { Ok(Connection) })
+    }
 }
 
 impl Server {
