@@ -46,6 +46,22 @@ impl Service<Request> for Echo {
   }
 }
 
+struct Charlie;
+impl<'a> Service<&'a AddrStream> for Charlie {
+  type Response = Echo;
+  type Error = anyhow::Error;
+  type Future = Pin<Box<dyn futures::Future<Output = Result<Self::Response>> + Send>>;
+
+  fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    Poll::Ready(Ok(()))
+  }
+
+  fn call(&mut self, addr: &'a AddrStream) -> Self::Future {
+    println!("{}, {}", addr.remote_addr, addr.local_addr);
+    let fut = futures::future::ok(Echo);
+    Box::pin(fut)
+  }
+}
 
 impl Server {
     pub fn new(config: Config) -> Result<Arc<Self>> {
@@ -73,18 +89,18 @@ impl Server {
         let incoming = AddrIncoming::new("127.0.0.1:4567").await?;
 
         
-        let make_service = tower::service_fn(|addr: &AddrStream| {
+        /*let make_service = tower::service_fn(|addr: &AddrStream| {
             tracing::debug!(remote_addr = %addr.remote_addr, local_addr = %addr.local_addr, "accept");
             //let service = tower::ServiceBuilder::new().service_fn(handle_req);
             //let service = tower::service_fn(handle_req);
             let service = Echo;
             futures::future::ok::<_, std::convert::Infallible>(service)
             //service
-        });
+        });*/
 
 
         //println!("{:?}", make_service);
-        let server = ImapServer::new(incoming).serve(make_service);
+        let server = ImapServer::new(incoming).serve(Charlie);
         let _ = server.await?;
 
         /*let creds = self.login_provider.login("quentin", "poupou").await?;
