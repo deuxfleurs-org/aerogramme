@@ -23,14 +23,8 @@ pub struct Server {
     pub login_provider: Box<dyn LoginProvider>,
 }
 
-async fn handle_req(req: Request) -> Result<Response> {
-    tracing::debug!("Got request: {:#?}", req);
-    Ok(Response::ok("Done")?)
-}
-
-
-struct Echo;
-impl Service<Request> for Echo {
+struct Connection;
+impl Service<Request> for Connection {
   type Response = Response;
   type Error = anyhow::Error;
   type Future = Pin<Box<dyn futures::Future<Output = Result<Self::Response>> + Send>>;
@@ -40,15 +34,16 @@ impl Service<Request> for Echo {
   }
 
   fn call(&mut self, req: Request) -> Self::Future {
-    println!("Got request: {:#?}", req);
-    let fut = futures::future::ok(Response::ok("Done").unwrap());
-    Box::pin(fut)
+    Box::pin(async move {
+      println!("Got request: {:#?}", req);
+      Ok(Response::ok("Done")?)
+    })
   }
 }
 
-struct Charlie;
-impl<'a> Service<&'a AddrStream> for Charlie {
-  type Response = Echo;
+struct Instance;
+impl<'a> Service<&'a AddrStream> for Instance {
+  type Response = Connection;
   type Error = anyhow::Error;
   type Future = Pin<Box<dyn futures::Future<Output = Result<Self::Response>> + Send>>;
 
@@ -58,8 +53,9 @@ impl<'a> Service<&'a AddrStream> for Charlie {
 
   fn call(&mut self, addr: &'a AddrStream) -> Self::Future {
     println!("{}, {}", addr.remote_addr, addr.local_addr);
-    let fut = futures::future::ok(Echo);
-    Box::pin(fut)
+    Box::pin(async {
+      Ok(Connection)
+    })
   }
 }
 
@@ -88,19 +84,7 @@ impl Server {
 
         let incoming = AddrIncoming::new("127.0.0.1:4567").await?;
 
-        
-        /*let make_service = tower::service_fn(|addr: &AddrStream| {
-            tracing::debug!(remote_addr = %addr.remote_addr, local_addr = %addr.local_addr, "accept");
-            //let service = tower::ServiceBuilder::new().service_fn(handle_req);
-            //let service = tower::service_fn(handle_req);
-            let service = Echo;
-            futures::future::ok::<_, std::convert::Infallible>(service)
-            //service
-        });*/
-
-
-        //println!("{:?}", make_service);
-        let server = ImapServer::new(incoming).serve(Charlie);
+        let server = ImapServer::new(incoming).serve(Instance);
         let _ = server.await?;
 
         /*let creds = self.login_provider.login("quentin", "poupou").await?;
