@@ -28,28 +28,24 @@ async fn handle_req(req: Request) -> Result<Response> {
     Ok(Response::ok("Done")?)
 }
 
-struct Echo;
 
+struct Echo;
 impl Service<Request> for Echo {
   type Response = Response;
-  type Error = Box<dyn Error + Send + Sync>;
-  type Future = Pin<Box<dyn futures::Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+  type Error = anyhow::Error;
+  type Future = Pin<Box<dyn futures::Future<Output = Result<Self::Response>> + Send>>;
 
   fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
     Poll::Ready(Ok(()))
   }
 
   fn call(&mut self, req: Request) -> Self::Future {
-    Box::pin(Echo::handle_req(req))
+    println!("Got request: {:#?}", req);
+    let fut = futures::future::ok(Response::ok("Done").unwrap());
+    Box::pin(fut)
   }
 }
 
-impl Echo {
-  async fn handle_req(req: Request) -> Result<Response, Box<dyn Error + Send + Sync>> {
-    println!("Got request: {:#?}", req);
-    Ok(Response::ok("Done").unwrap())
-  }
-}
 
 impl Server {
     pub fn new(config: Config) -> Result<Arc<Self>> {
