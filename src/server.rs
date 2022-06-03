@@ -16,11 +16,10 @@ use std::task::{Context, Poll};
 use tower::Service;
 use futures::future::BoxFuture;
 
-pub struct Server {
-    pub login_provider: Box<dyn LoginProvider>,
+pub struct Connection {
+    pub login_provider: Arc<Box<dyn LoginProvider + Send + Sync>>,
 }
 
-struct Connection;
 impl Service<Request> for Connection {
     type Response = Response;
     type Error = anyhow::Error;
@@ -58,8 +57,16 @@ impl Service<Request> for Connection {
         })
     }
 }
+impl Connection {
+  pub fn new(login_provider: Arc<Box<dyn LoginProvider + Send + Sync>>) -> Self {
+    Self { login_provider: login_provider }
+  }
+}
 
-struct Instance;
+pub struct Instance {
+    pub login_provider: Arc<Box<dyn LoginProvider + Send + Sync>>,
+}
+
 impl<'a> Service<&'a AddrStream> for Instance {
     type Response = Connection;
     type Error = anyhow::Error;
@@ -71,12 +78,14 @@ impl<'a> Service<&'a AddrStream> for Instance {
 
     fn call(&mut self, addr: &'a AddrStream) -> Self::Future {
         tracing::info!(remote_addr = %addr.remote_addr, local_addr = %addr.local_addr, "accept");
-        Box::pin(async { Ok(Connection) })
+        let lp = self.login_provider.clone();
+        Box::pin(async move { 
+            Ok(Connection::new(lp)) 
+        })
     }
 }
-
-impl Server {
-    pub fn new(config: Config) -> Result<Arc<Self>> {
+impl Instance {
+   pub fn new(config: Config) -> Result<Self> {
         let s3_region = Region::Custom {
             name: config.aws_region.clone(),
             endpoint: config.s3_endpoint,
@@ -85,22 +94,32 @@ impl Server {
             name: config.aws_region,
             endpoint: config.k2v_endpoint,
         };
-        let login_provider: Box<dyn LoginProvider> = match (config.login_static, config.login_ldap)
+        let login_provider: Arc<Box<dyn LoginProvider + Send + Sync>> = match (config.login_static, config.login_ldap)
         {
-            (Some(st), None) => Box::new(StaticLoginProvider::new(st, k2v_region, s3_region)?),
-            (None, Some(ld)) => Box::new(LdapLoginProvider::new(ld, k2v_region, s3_region)?),
+            (Some(st), None) => Arc::new(Box::new(StaticLoginProvider::new(st, k2v_region, s3_region)?)),
+            (None, Some(ld)) => Arc::new(Box::new(LdapLoginProvider::new(ld, k2v_region, s3_region)?)),
             (Some(_), Some(_)) => bail!("A single login provider must be set up in config file"),
             (None, None) => bail!("No login provider is set up in config file"),
         };
-        Ok(Arc::new(Self { login_provider }))
+        Ok(Self { login_provider })
+    }
+}
+
+pub struct Server {
+    pub incoming: AddrIncoming,
+    pub instance: Instance,
+}
+
+impl Server {
+    pub async fn new(config: Config) -> Result<Self> {
+        Ok(Self { 
+            incoming: AddrIncoming::new("127.0.0.1:4567").await?,
+            instance: Instance::new(config)?,
+        })
     }
 
-    pub async fn run(self: &Arc<Self>) -> Result<()> {
-        // tracing_subscriber::fmt::init();
-
-        let incoming = AddrIncoming::new("127.0.0.1:4567").await?;
-
-        let server = ImapServer::new(incoming).serve(Instance);
+    pub async fn run(self: Self) -> Result<()> {
+        let server = ImapServer::new(self.incoming).serve(self.instance);
         let _ = server.await?;
 
         /*let creds = self.login_provider.login("quentin", "poupou").await?;
