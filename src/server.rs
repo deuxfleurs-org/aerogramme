@@ -130,13 +130,12 @@ impl Server {
     }
 
     pub async fn run(self: Self) -> Result<()> {
+        tracing::info!("Starting server on {:#}", self.incoming.local_addr);
         let server = ImapServer::new(self.incoming).serve(Instance::new(self.mailstore.clone()));
         let _ = server.await?;
 
         /*let creds = self.login_provider.login("quentin", "poupou").await?;
-
         let mut mailbox = Mailbox::new(&creds, "TestMailbox".to_string()).await?;
-
         mailbox.test().await?;*/
 
         Ok(())
