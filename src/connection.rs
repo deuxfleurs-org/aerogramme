@@ -4,8 +4,10 @@ use std::task::{Context, Poll};
 use boitalettres::errors::Error as BalError;
 use boitalettres::proto::{Request, Response};
 use futures::future::BoxFuture;
+use imap_codec::types::command::CommandBody;
 use tower::Service;
 
+use crate::command;
 use crate::mailstore::Mailstore;
 
 pub struct Connection {
@@ -27,42 +29,13 @@ impl Service<Request> for Connection {
 
     fn call(&mut self, req: Request) -> Self::Future {
         tracing::debug!("Got request: {:#?}", req);
-        let mailstore = self.mailstore.clone();
+        let cmd = command::Command::new(self.mailstore.clone());
         Box::pin(async move {
-            use imap_codec::types::{
-                command::CommandBody,
-                response::{Capability, Data},
-            };
-
-            let r = match req.body {
-                CommandBody::Capability => {
-                    let capabilities = vec![Capability::Imap4Rev1, Capability::Idle];
-                    let body = vec![Data::Capability(capabilities)];
-                    Response::ok(
-                        "Pre-login capabilities listed, post-login capabilities have more.",
-                    )?
-                    .with_body(body)
-                }
-                CommandBody::Login { username, password } => {
-                    let (u, p) = match (String::try_from(username), String::try_from(password)) {
-                        (Ok(u), Ok(p)) => (u, p),
-                        _ => return Response::bad("Invalid characters"),
-                    };
-
-                    tracing::debug!(user = %u, "command.login");
-                    let creds = match mailstore.login_provider.login(&u, &p).await {
-                        Err(_) => {
-                            return Response::no("[AUTHENTICATIONFAILED] Authentication failed.")
-                        }
-                        Ok(c) => c,
-                    };
-
-                    Response::ok("Logged in")?
-                }
-                _ => Response::bad("Error in IMAP command received by server.")?,
-            };
-
-            Ok(r)
+            match req.body {
+                CommandBody::Capability => cmd.capability().await,
+                CommandBody::Login { username, password } => cmd.login(username, password).await,
+                _ => Response::bad("Error in IMAP command received by server."),
+            }
         })
     }
 }

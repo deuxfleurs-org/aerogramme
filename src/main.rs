@@ -1,4 +1,5 @@
 mod bayou;
+mod command;
 mod config;
 mod connection;
 mod cryptoblob;
