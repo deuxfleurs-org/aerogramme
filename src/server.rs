@@ -23,11 +23,11 @@ impl Server {
     pub async fn run(self: Self) -> Result<()> {
         tracing::info!("Starting server on {:#}", self.incoming.local_addr);
 
-        let creds = self
+        /*let creds = self
             .mailstore
             .login_provider
             .login("quentin", "poupou")
-            .await?;
+            .await?;*/
         //let mut mailbox = Mailbox::new(&creds, "TestMailbox".to_string()).await?;
         //mailbox.test().await?;
 
