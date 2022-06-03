@@ -44,6 +44,8 @@ impl Service<Request> for Connection {
 
             let r = match req.body {
                 CommandBody::Capability => {
+                    use tokio::time::{sleep, Duration};
+                    sleep(Duration::from_millis(100)).await;
                     let capabilities = vec![Capability::Imap4Rev1, Capability::Idle];
                     let body = vec![Data::Capability(capabilities)];
                     Response::ok(
@@ -148,8 +150,8 @@ impl Server {
 
 
         let creds = self.mailstore.login_provider.login("quentin", "poupou").await?;
-        let mut mailbox = Mailbox::new(&creds, "TestMailbox".to_string()).await?;
-        mailbox.test().await?;
+        //let mut mailbox = Mailbox::new(&creds, "TestMailbox".to_string()).await?;
+        //mailbox.test().await?;
 
         let server = ImapServer::new(self.incoming).serve(Instance::new(self.mailstore.clone()));
         let _ = server.await?;
