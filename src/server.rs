@@ -26,8 +26,8 @@ impl Connection {
 }
 impl Service<Request> for Connection {
     type Response = Response;
-    type Error = anyhow::Error;
-    type Future = BoxFuture<'static, Result<Self::Response>>;
+    type Error = boitalettres::errors::Error;
+    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -35,6 +35,7 @@ impl Service<Request> for Connection {
 
     fn call(&mut self, req: Request) -> Self::Future {
         tracing::debug!("Got request: {:#?}", req);
+        let mailstore = self.mailstore.clone();
         Box::pin(async move {
             use imap_codec::types::{
                 command::CommandBody,
@@ -51,9 +52,22 @@ impl Service<Request> for Connection {
                     .with_body(body)
                 }
                 CommandBody::Login {
-                    username: _,
-                    password: _,
-                } => Response::ok("Logged in")?,
+                    username,
+                    password,
+                } => {
+                    let (u, p) = match (String::try_from(username), String::try_from(password)) {
+                      (Ok(u), Ok(p)) => (u, p),
+                      _ => { return Response::bad("Invalid characters") }
+                    };
+
+                    tracing::debug!(user = %u, "command.login");
+                    let creds = match mailstore.login_provider.login(&u, &p).await {
+                        Err(_) => { return Response::no("[AUTHENTICATIONFAILED] Authentication failed.") }
+                        Ok(c) => c,
+                    };
+
+                    Response::ok("Logged in")?
+                }
                 _ => Response::bad("Error in IMAP command received by server.")?,
             };
 

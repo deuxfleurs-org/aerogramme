@@ -29,12 +29,15 @@ impl StaticLoginProvider {
 #[async_trait]
 impl LoginProvider for StaticLoginProvider {
     async fn login(&self, username: &str, password: &str) -> Result<Credentials> {
+        tracing::debug!(user=%username, "login");
         match self.users.get(username) {
             None => bail!("User {} does not exist", username),
             Some(u) => {
+                tracing::debug!(user=%username, "verify password");
                 if !verify_password(password, &u.password)? {
                     bail!("Wrong password");
                 }
+                tracing::debug!(user=%username, "fetch bucket");
                 let bucket = u
                     .bucket
                     .clone()
@@ -43,6 +46,7 @@ impl LoginProvider for StaticLoginProvider {
                         "No bucket configured and no default bucket specieid"
                     ))?;
 
+                tracing::debug!(user=%username, "fetch configuration");
                 let storage = StorageCredentials {
                     k2v_region: self.k2v_region.clone(),
                     s3_region: self.s3_region.clone(),
@@ -51,6 +55,7 @@ impl LoginProvider for StaticLoginProvider {
                     bucket,
                 };
 
+                tracing::debug!(user=%username, "fetch keys");
                 let keys = match (&u.master_key, &u.secret_key) {
                     (Some(m), Some(s)) => {
                         let master_key = Key::from_slice(&base64::decode(m)?)
@@ -69,6 +74,7 @@ impl LoginProvider for StaticLoginProvider {
                     _ => bail!("Either both master and secret key or none of them must be specified for user"),
                 };
 
+                tracing::debug!(user=%username, "logged");
                 Ok(Credentials { storage, keys })
             }
         }
