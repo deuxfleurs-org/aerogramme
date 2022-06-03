@@ -17,9 +17,13 @@ use tower::Service;
 use futures::future::BoxFuture;
 
 pub struct Connection {
-    pub login_provider: Arc<Box<dyn LoginProvider + Send + Sync>>,
+    pub mailstore: Arc<Mailstore>,
 }
-
+impl Connection {
+  pub fn new(mailstore: Arc<Mailstore>) -> Self {
+    Self { mailstore }
+  }
+}
 impl Service<Request> for Connection {
     type Response = Response;
     type Error = anyhow::Error;
@@ -57,16 +61,15 @@ impl Service<Request> for Connection {
         })
     }
 }
-impl Connection {
-  pub fn new(login_provider: Arc<Box<dyn LoginProvider + Send + Sync>>) -> Self {
-    Self { login_provider: login_provider }
-  }
-}
 
 pub struct Instance {
-    pub login_provider: Arc<Box<dyn LoginProvider + Send + Sync>>,
+    pub mailstore: Arc<Mailstore>
 }
-
+impl Instance {
+   pub fn new(mailstore: Arc<Mailstore>) -> Self {
+      Self { mailstore }
+   }
+}
 impl<'a> Service<&'a AddrStream> for Instance {
     type Response = Connection;
     type Error = anyhow::Error;
@@ -78,14 +81,21 @@ impl<'a> Service<&'a AddrStream> for Instance {
 
     fn call(&mut self, addr: &'a AddrStream) -> Self::Future {
         tracing::info!(remote_addr = %addr.remote_addr, local_addr = %addr.local_addr, "accept");
-        let lp = self.login_provider.clone();
-        Box::pin(async move { 
-            Ok(Connection::new(lp)) 
+        let ms = self.mailstore.clone();
+        Box::pin(async { 
+            Ok(Connection::new(ms)) 
         })
     }
 }
-impl Instance {
-   pub fn new(config: Config) -> Result<Self> {
+
+
+
+
+pub struct Mailstore {
+    pub login_provider: Box<dyn LoginProvider + Send + Sync>,
+}
+impl Mailstore {
+    pub fn new(config: Config) -> Result<Arc<Self>> {
         let s3_region = Region::Custom {
             name: config.aws_region.clone(),
             endpoint: config.s3_endpoint,
@@ -94,32 +104,33 @@ impl Instance {
             name: config.aws_region,
             endpoint: config.k2v_endpoint,
         };
-        let login_provider: Arc<Box<dyn LoginProvider + Send + Sync>> = match (config.login_static, config.login_ldap)
+        let login_provider: Box<dyn LoginProvider + Send + Sync> = match (config.login_static, config.login_ldap)
         {
-            (Some(st), None) => Arc::new(Box::new(StaticLoginProvider::new(st, k2v_region, s3_region)?)),
-            (None, Some(ld)) => Arc::new(Box::new(LdapLoginProvider::new(ld, k2v_region, s3_region)?)),
+            (Some(st), None) => Box::new(StaticLoginProvider::new(st, k2v_region, s3_region)?),
+            (None, Some(ld)) => Box::new(LdapLoginProvider::new(ld, k2v_region, s3_region)?),
             (Some(_), Some(_)) => bail!("A single login provider must be set up in config file"),
             (None, None) => bail!("No login provider is set up in config file"),
         };
-        Ok(Self { login_provider })
+        Ok(Arc::new(Self { login_provider }))
     }
 }
 
+
+
 pub struct Server {
     pub incoming: AddrIncoming,
-    pub instance: Instance,
+    pub mailstore: Arc<Mailstore>,
 }
-
 impl Server {
     pub async fn new(config: Config) -> Result<Self> {
         Ok(Self { 
             incoming: AddrIncoming::new("127.0.0.1:4567").await?,
-            instance: Instance::new(config)?,
+            mailstore: Mailstore::new(config)?,
         })
     }
 
     pub async fn run(self: Self) -> Result<()> {
-        let server = ImapServer::new(self.incoming).serve(self.instance);
+        let server = ImapServer::new(self.incoming).serve(Instance::new(self.mailstore.clone()));
         let _ = server.await?;
 
         /*let creds = self.login_provider.login("quentin", "poupou").await?;
