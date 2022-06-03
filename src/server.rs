@@ -14,6 +14,7 @@ use boitalettres::server::Server as ImapServer;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tower::Service;
+use futures::future::BoxFuture;
 
 pub struct Server {
     pub login_provider: Box<dyn LoginProvider>,
@@ -23,7 +24,7 @@ struct Connection;
 impl Service<Request> for Connection {
     type Response = Response;
     type Error = anyhow::Error;
-    type Future = Pin<Box<dyn futures::Future<Output = Result<Self::Response>> + Send>>;
+    type Future = BoxFuture<'static, Result<Self::Response>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -62,7 +63,7 @@ struct Instance;
 impl<'a> Service<&'a AddrStream> for Instance {
     type Response = Connection;
     type Error = anyhow::Error;
-    type Future = Pin<Box<dyn futures::Future<Output = Result<Self::Response>> + Send>>;
+    type Future = BoxFuture<'static, Result<Self::Response>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
