@@ -10,12 +10,12 @@ use crate::connection::Connection;
 use crate::mailstore::Mailstore;
 
 pub struct Instance {
-    pub mailstore: Arc<Mailstore>
+    pub mailstore: Arc<Mailstore>,
 }
 impl Instance {
-   pub fn new(mailstore: Arc<Mailstore>) -> Self {
-      Self { mailstore }
-   }
+    pub fn new(mailstore: Arc<Mailstore>) -> Self {
+        Self { mailstore }
+    }
 }
 impl<'a> Service<&'a AddrStream> for Instance {
     type Response = Connection;
@@ -29,10 +29,6 @@ impl<'a> Service<&'a AddrStream> for Instance {
     fn call(&mut self, addr: &'a AddrStream) -> Self::Future {
         tracing::info!(remote_addr = %addr.remote_addr, local_addr = %addr.local_addr, "accept");
         let ms = self.mailstore.clone();
-        Box::pin(async { 
-            Ok(Connection::new(ms)) 
-        })
+        Box::pin(async { Ok(Connection::new(ms)) })
     }
 }
-
-

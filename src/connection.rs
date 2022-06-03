@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use boitalettres::errors::Error as BalError;
-use boitalettres::proto::{Request,Response};
+use boitalettres::proto::{Request, Response};
 use futures::future::BoxFuture;
 use tower::Service;
 
@@ -12,9 +12,9 @@ pub struct Connection {
     pub mailstore: Arc<Mailstore>,
 }
 impl Connection {
-  pub fn new(mailstore: Arc<Mailstore>) -> Self {
-    Self { mailstore }
-  }
+    pub fn new(mailstore: Arc<Mailstore>) -> Self {
+        Self { mailstore }
+    }
 }
 impl Service<Request> for Connection {
     type Response = Response;
@@ -43,18 +43,17 @@ impl Service<Request> for Connection {
                     )?
                     .with_body(body)
                 }
-                CommandBody::Login {
-                    username,
-                    password,
-                } => {
+                CommandBody::Login { username, password } => {
                     let (u, p) = match (String::try_from(username), String::try_from(password)) {
-                      (Ok(u), Ok(p)) => (u, p),
-                      _ => { return Response::bad("Invalid characters") }
+                        (Ok(u), Ok(p)) => (u, p),
+                        _ => return Response::bad("Invalid characters"),
                     };
 
                     tracing::debug!(user = %u, "command.login");
                     let creds = match mailstore.login_provider.login(&u, &p).await {
-                        Err(_) => { return Response::no("[AUTHENTICATIONFAILED] Authentication failed.") }
+                        Err(_) => {
+                            return Response::no("[AUTHENTICATIONFAILED] Authentication failed.")
+                        }
                         Ok(c) => c,
                     };
 
@@ -67,5 +66,3 @@ impl Service<Request> for Connection {
         })
     }
 }
-
-
