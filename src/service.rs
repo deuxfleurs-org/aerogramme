@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 use anyhow::Result;
@@ -10,6 +10,7 @@ use imap_codec::types::command::CommandBody;
 use tower::Service;
 
 use crate::command;
+use crate::login::Credentials;
 use crate::mailstore::Mailstore;
 
 pub struct Instance {
@@ -36,12 +37,17 @@ impl<'a> Service<&'a AddrStream> for Instance {
     }
 }
 
+pub struct Session {
+    pub creds: Option<Credentials>,
+}
+
 pub struct Connection {
     pub mailstore: Arc<Mailstore>,
+    pub session: Arc<Mutex<Session>>,
 }
 impl Connection {
     pub fn new(mailstore: Arc<Mailstore>) -> Self {
-        Self { mailstore }
+        Self { mailstore, session: Arc::new(Mutex::new(Session { creds: None })) }
     }
 }
 impl Service<Request> for Connection {
@@ -55,7 +61,7 @@ impl Service<Request> for Connection {
 
     fn call(&mut self, req: Request) -> Self::Future {
         tracing::debug!("Got request: {:#?}", req);
-        let cmd = command::Command::new(self.mailstore.clone());
+        let cmd = command::Command::new(self.mailstore.clone(), self.session.clone());
         Box::pin(async move {
             match req.body {
                 CommandBody::Capability => cmd.capability().await,

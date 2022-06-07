@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use boitalettres::errors::Error as BalError;
 use boitalettres::proto::{Request, Response};
@@ -6,14 +6,16 @@ use imap_codec::types::core::AString;
 use imap_codec::types::response::{Capability, Data};
 
 use crate::mailstore;
+use crate::service;
 
 pub struct Command {
     mailstore: Arc<mailstore::Mailstore>,
+    session: Arc<Mutex<service::Session>>,
 }
 
 impl Command {
-    pub fn new(mailstore: Arc<mailstore::Mailstore>) -> Self {
-        Self { mailstore }
+    pub fn new(mailstore: Arc<mailstore::Mailstore>, session: Arc<Mutex<service::Session>>) -> Self {
+        Self { mailstore, session }
     }
 
     pub async fn capability(self) -> Result<Response, BalError> {
@@ -35,6 +37,12 @@ impl Command {
             Err(_) => return Response::no("[AUTHENTICATIONFAILED] Authentication failed."),
             Ok(c) => c,
         };
+
+        let mut session = match self.session.lock() {
+          Err(_) => return Response::bad("[AUTHENTICATIONFAILED] Unable to acquire mutex."),
+          Ok(s) => s,
+        };
+        session.creds = Some(creds);
 
         Response::ok("Logged in")
     }
