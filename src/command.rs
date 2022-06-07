@@ -4,11 +4,12 @@ use boitalettres::errors::Error as BalError;
 use boitalettres::proto::{Request, Response};
 use imap_codec::types::core::{Tag, AString};
 use imap_codec::types::response::{Capability, Data};
-use imap_codec::types::mailbox::{Mailbox, ListMailbox};
+use imap_codec::types::mailbox::{Mailbox as MailboxCodec, ListMailbox};
 use imap_codec::types::sequence::SequenceSet;
 use imap_codec::types::fetch_attributes::MacroOrFetchAttributes;
 
 use crate::mailstore::Mailstore;
+use crate::mailbox::Mailbox;
 use crate::service::Session;
 
 pub struct Command {
@@ -43,23 +44,34 @@ impl Command {
         };
 
         let mut session = match self.session.lock() {
-          Err(_) => return Response::bad("[AUTHENTICATIONFAILED] Unable to acquire mutex."),
+          Err(_) => return Response::bad("[AUTHENTICATIONFAILED] Unable to acquire lock on session."),
           Ok(s) => s,
         };
         session.creds = Some(creds);
+        drop(session);
 
         Response::ok("Logged in")
     }
 
-    pub async fn lsub(&self, reference: Mailbox, mailbox_wildcard: ListMailbox) -> Result<Response, BalError> {
+    pub async fn lsub(&self, reference: MailboxCodec, mailbox_wildcard: ListMailbox) -> Result<Response, BalError> {
         Response::bad("Not implemented")
     }
 
-    pub async fn list(&self, reference: Mailbox, mailbox_wildcard: ListMailbox) -> Result<Response, BalError> {
+    pub async fn list(&self, reference: MailboxCodec, mailbox_wildcard: ListMailbox) -> Result<Response, BalError> {
         Response::bad("Not implemented")
     }
 
-    pub async fn select(&self, mailbox: Mailbox) -> Result<Response, BalError> {
+    pub async fn select(&self, mailbox: MailboxCodec) -> Result<Response, BalError> {
+
+        let mut session = match self.session.lock() {
+            Err(_) => return Response::no("[SELECTFAILED] Unable to acquire lock on session."),
+            Ok(s) => s,
+        };
+
+        let mb = Mailbox::new(session.creds.as_ref().unwrap(), "TestMailbox".to_string()).unwrap();
+        session.selected = Some(mb);
+        drop(session);
+
         Response::bad("Not implemented")
     }
 

@@ -12,6 +12,7 @@ use tower::Service;
 use crate::command;
 use crate::login::Credentials;
 use crate::mailstore::Mailstore;
+use crate::mailbox::Mailbox;
 
 pub struct Instance {
     pub mailstore: Arc<Mailstore>,
@@ -39,6 +40,7 @@ impl<'a> Service<&'a AddrStream> for Instance {
 
 pub struct Session {
     pub creds: Option<Credentials>,
+    pub selected: Option<Mailbox>,
 }
 
 pub struct Connection {
@@ -47,7 +49,7 @@ pub struct Connection {
 }
 impl Connection {
     pub fn new(mailstore: Arc<Mailstore>) -> Self {
-        Self { mailstore, session: Arc::new(Mutex::new(Session { creds: None })) }
+        Self { mailstore, session: Arc::new(Mutex::new(Session { creds: None, selected: None, })) }
     }
 }
 impl Service<Request> for Connection {

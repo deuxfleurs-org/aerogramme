@@ -20,7 +20,7 @@ pub struct Mailbox {
 }
 
 impl Mailbox {
-    pub async fn new(creds: &Credentials, name: String) -> Result<Self> {
+    pub fn new(creds: &Credentials, name: String) -> Result<Self> {
         let uid_index = Bayou::<UidIndex>::new(creds, name.clone())?;
 
         Ok(Self {
