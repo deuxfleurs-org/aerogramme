@@ -61,12 +61,16 @@ impl Service<Request> for Connection {
 
     fn call(&mut self, req: Request) -> Self::Future {
         tracing::debug!("Got request: {:#?}", req);
-        let cmd = command::Command::new(self.mailstore.clone(), self.session.clone());
+        let cmd = command::Command::new(req.tag, self.mailstore.clone(), self.session.clone());
         Box::pin(async move {
             match req.body {
                 CommandBody::Capability => cmd.capability().await,
                 CommandBody::Login { username, password } => cmd.login(username, password).await,
-                _ => Response::bad("Error in IMAP command received by server."),
+                CommandBody::Lsub { reference, mailbox_wildcard } => cmd.lsub(reference, mailbox_wildcard).await,
+                CommandBody::List { reference, mailbox_wildcard } => cmd.list(reference, mailbox_wildcard).await,
+                CommandBody::Select { mailbox } => cmd.select(mailbox).await,
+                CommandBody::Fetch { sequence_set, attributes, uid } => cmd.fetch(sequence_set, attributes, uid).await,
+               _ => Response::bad("Error in IMAP command received by server."),
             }
         })
     }

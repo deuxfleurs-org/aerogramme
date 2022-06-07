@@ -2,23 +2,27 @@ use std::sync::{Arc, Mutex};
 
 use boitalettres::errors::Error as BalError;
 use boitalettres::proto::{Request, Response};
-use imap_codec::types::core::AString;
+use imap_codec::types::core::{Tag, AString};
 use imap_codec::types::response::{Capability, Data};
+use imap_codec::types::mailbox::{Mailbox, ListMailbox};
+use imap_codec::types::sequence::SequenceSet;
+use imap_codec::types::fetch_attributes::MacroOrFetchAttributes;
 
-use crate::mailstore;
-use crate::service;
+use crate::mailstore::Mailstore;
+use crate::service::Session;
 
 pub struct Command {
-    mailstore: Arc<mailstore::Mailstore>,
-    session: Arc<Mutex<service::Session>>,
+    tag: Tag,
+    mailstore: Arc<Mailstore>,
+    session: Arc<Mutex<Session>>,
 }
 
 impl Command {
-    pub fn new(mailstore: Arc<mailstore::Mailstore>, session: Arc<Mutex<service::Session>>) -> Self {
-        Self { mailstore, session }
+    pub fn new(tag: Tag, mailstore: Arc<Mailstore>, session: Arc<Mutex<Session>>) -> Self {
+        Self { tag, mailstore, session }
     }
 
-    pub async fn capability(self) -> Result<Response, BalError> {
+    pub async fn capability(&self) -> Result<Response, BalError> {
         let capabilities = vec![Capability::Imap4Rev1, Capability::Idle];
         let body = vec![Data::Capability(capabilities)];
         let r = Response::ok("Pre-login capabilities listed, post-login capabilities have more.")?
@@ -26,7 +30,7 @@ impl Command {
         Ok(r)
     }
 
-    pub async fn login(self, username: AString, password: AString) -> Result<Response, BalError> {
+    pub async fn login(&self, username: AString, password: AString) -> Result<Response, BalError> {
         let (u, p) = match (String::try_from(username), String::try_from(password)) {
             (Ok(u), Ok(p)) => (u, p),
             _ => return Response::bad("Invalid characters"),
@@ -45,5 +49,21 @@ impl Command {
         session.creds = Some(creds);
 
         Response::ok("Logged in")
+    }
+
+    pub async fn lsub(&self, reference: Mailbox, mailbox_wildcard: ListMailbox) -> Result<Response, BalError> {
+        Response::bad("Not implemented")
+    }
+
+    pub async fn list(&self, reference: Mailbox, mailbox_wildcard: ListMailbox) -> Result<Response, BalError> {
+        Response::bad("Not implemented")
+    }
+
+    pub async fn select(&self, mailbox: Mailbox) -> Result<Response, BalError> {
+        Response::bad("Not implemented")
+    }
+
+    pub async fn fetch(&self, sequence_set: SequenceSet, attributes: MacroOrFetchAttributes, uid: bool) -> Result<Response, BalError> {
+        Response::bad("Not implemented")
     }
 }
