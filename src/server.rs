@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::sync::Arc;
 
 use crate::config::*;
-use crate::instance;
+use crate::service;
 use crate::mailstore;
 
 use boitalettres::server::accept::addr::AddrIncoming;
@@ -32,7 +32,7 @@ impl Server {
         //mailbox.test().await?;
 
         let server =
-            ImapServer::new(self.incoming).serve(instance::Instance::new(self.mailstore.clone()));
+            ImapServer::new(self.incoming).serve(service::Instance::new(self.mailstore.clone()));
         let _ = server.await?;
 
         Ok(())

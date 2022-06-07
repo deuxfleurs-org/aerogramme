@@ -1,13 +1,12 @@
 mod bayou;
 mod command;
 mod config;
-mod connection;
 mod cryptoblob;
-mod instance;
 mod login;
 mod mailbox;
 mod mailstore;
 mod server;
+mod service;
 mod time;
 mod uidindex;
 
