@@ -6,13 +6,18 @@ use boitalettres::server::accept::addr::AddrStream;
 use boitalettres::errors::Error as BalError;
 use boitalettres::proto::{Request, Response};
 use futures::future::BoxFuture;
+use futures::future::FutureExt;
 use imap_codec::types::command::CommandBody;
+use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::TrySendError;
 use tower::Service;
 
 use crate::command;
 use crate::login::Credentials;
 use crate::mailstore::Mailstore;
 use crate::mailbox::Mailbox;
+
+const MAX_PIPELINED_COMMANDS: usize = 10;
 
 pub struct Instance {
     pub mailstore: Arc<Mailstore>,
@@ -38,18 +43,17 @@ impl<'a> Service<&'a AddrStream> for Instance {
     }
 }
 
-pub struct Session {
-    pub creds: Option<Credentials>,
-    pub selected: Option<Mailbox>,
-}
-
 pub struct Connection {
-    pub mailstore: Arc<Mailstore>,
-    pub session: Arc<Mutex<Session>>,
+    pub tx: mpsc::Sender<Request>,
 }
 impl Connection {
     pub fn new(mailstore: Arc<Mailstore>) -> Self {
-        Self { mailstore, session: Arc::new(Mutex::new(Session { creds: None, selected: None, })) }
+        let (tx, mut rx) = mpsc::channel(MAX_PIPELINED_COMMANDS);
+        tokio::spawn(async move { 
+            let mut session = Session::new(mailstore, rx);
+            session.run().await; 
+        });
+        Self { tx }
     }
 }
 impl Service<Request> for Connection {
@@ -63,9 +67,32 @@ impl Service<Request> for Connection {
 
     fn call(&mut self, req: Request) -> Self::Future {
         tracing::debug!("Got request: {:#?}", req);
-        let cmd = command::Command::new(req.tag, self.mailstore.clone(), self.session.clone());
-        Box::pin(async move {
-            match req.body {
+        match self.tx.try_send(req) {
+            Ok(()) => return async { Response::ok("Ok") }.boxed(),
+            Err(TrySendError::Full(_)) => return async { Response::bad("Too fast! Send less pipelined requests!") }.boxed(),
+            Err(TrySendError::Closed(_)) => return async { Response::bad("The session task has exited") }.boxed(),
+        }
+
+        // send a future that await here later a oneshot command
+    }
+}
+
+pub struct Session {
+    pub mailstore: Arc<Mailstore>,
+    pub creds: Option<Credentials>,
+    pub selected: Option<Mailbox>,
+    rx: mpsc::Receiver<Request>,
+}
+
+impl Session {
+    pub fn new(mailstore: Arc<Mailstore>, rx: mpsc::Receiver<Request>) -> Self {
+        Self { mailstore, rx, creds: None, selected: None, }
+    }
+
+    pub async fn run(&mut self) {
+        while let Some(req) = self.rx.recv().await {
+             let mut cmd = command::Command::new(req.tag, self);
+             let _ = match req.body {
                 CommandBody::Capability => cmd.capability().await,
                 CommandBody::Login { username, password } => cmd.login(username, password).await,
                 CommandBody::Lsub { reference, mailbox_wildcard } => cmd.lsub(reference, mailbox_wildcard).await,
@@ -73,8 +100,8 @@ impl Service<Request> for Connection {
                 CommandBody::Select { mailbox } => cmd.select(mailbox).await,
                 CommandBody::Fetch { sequence_set, attributes, uid } => cmd.fetch(sequence_set, attributes, uid).await,
                _ => Response::bad("Error in IMAP command received by server."),
-            }
-        })
+            };
+        }
     }
 }
 

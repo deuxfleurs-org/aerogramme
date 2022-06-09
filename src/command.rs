@@ -12,15 +12,14 @@ use crate::mailstore::Mailstore;
 use crate::mailbox::Mailbox;
 use crate::service::Session;
 
-pub struct Command {
+pub struct Command<'a> {
     tag: Tag,
-    mailstore: Arc<Mailstore>,
-    session: Arc<Mutex<Session>>,
+    session: &'a mut Session,
 }
 
-impl Command {
-    pub fn new(tag: Tag, mailstore: Arc<Mailstore>, session: Arc<Mutex<Session>>) -> Self {
-        Self { tag, mailstore, session }
+impl<'a> Command<'a> {
+    pub fn new(tag: Tag, session: &'a mut Session) -> Self {
+        Self { tag, session }
     }
 
     pub async fn capability(&self) -> Result<Response, BalError> {
@@ -31,24 +30,19 @@ impl Command {
         Ok(r)
     }
 
-    pub async fn login(&self, username: AString, password: AString) -> Result<Response, BalError> {
+    pub async fn login(&mut self, username: AString, password: AString) -> Result<Response, BalError> {
         let (u, p) = match (String::try_from(username), String::try_from(password)) {
             (Ok(u), Ok(p)) => (u, p),
             _ => return Response::bad("Invalid characters"),
         };
 
         tracing::debug!(user = %u, "command.login");
-        let creds = match self.mailstore.login_provider.login(&u, &p).await {
+        let creds = match self.session.mailstore.login_provider.login(&u, &p).await {
             Err(_) => return Response::no("[AUTHENTICATIONFAILED] Authentication failed."),
             Ok(c) => c,
         };
 
-        let mut session = match self.session.lock() {
-          Err(_) => return Response::bad("[AUTHENTICATIONFAILED] Unable to acquire lock on session."),
-          Ok(s) => s,
-        };
-        session.creds = Some(creds);
-        drop(session);
+        self.session.creds = Some(creds);
 
         Response::ok("Logged in")
     }
@@ -61,16 +55,10 @@ impl Command {
         Response::bad("Not implemented")
     }
 
-    pub async fn select(&self, mailbox: MailboxCodec) -> Result<Response, BalError> {
+    pub async fn select(&mut self, mailbox: MailboxCodec) -> Result<Response, BalError> {
 
-        let mut session = match self.session.lock() {
-            Err(_) => return Response::no("[SELECTFAILED] Unable to acquire lock on session."),
-            Ok(s) => s,
-        };
-
-        let mb = Mailbox::new(session.creds.as_ref().unwrap(), "TestMailbox".to_string()).unwrap();
-        session.selected = Some(mb);
-        drop(session);
+        let mb = Mailbox::new(self.session.creds.as_ref().unwrap(), "TestMailbox".to_string()).unwrap();
+        self.session.selected = Some(mb);
 
         Response::bad("Not implemented")
     }
