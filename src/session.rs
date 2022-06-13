@@ -21,7 +21,7 @@ const MAX_PIPELINED_COMMANDS: usize = 10;
 
 struct Message {
     req: Request,
-    tx: oneshot::Sender<Response>,
+    tx: oneshot::Sender<Result<Response, BalError>>,
 }
 
 pub struct Manager {
@@ -55,10 +55,13 @@ impl Manager {
 
         // @FIXME add a timeout, handle a session that fails.
         async {
-            rx.await.or_else(|e| {
-                tracing::warn!("Got error {:#?}", e);
-                Response::bad("No response from the session handler")
-            })
+            match rx.await {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!("Got error {:#?}", e);
+                    Response::bad("No response from the session handler")
+                },
+            }
         }.boxed()
     }
 }
@@ -85,7 +88,7 @@ impl Instance {
 
         while let Some(msg) = self.rx.recv().await {
             let mut cmd = command::Command::new(msg.req.tag, self);
-            let _ = match msg.req.body {
+            let res = match msg.req.body {
                 CommandBody::Capability => cmd.capability().await,
                 CommandBody::Login { username, password } => cmd.login(username, password).await,
                 CommandBody::Lsub { reference, mailbox_wildcard } => cmd.lsub(reference, mailbox_wildcard).await,
@@ -94,6 +97,10 @@ impl Instance {
                 CommandBody::Fetch { sequence_set, attributes, uid } => cmd.fetch(sequence_set, attributes, uid).await,
                 _ => Response::bad("Error in IMAP command received by server."),
             };
+
+            //@FIXME I think we should quit this thread on error and having our manager watch it,
+            // and then abort the session as it is corrupted.
+            msg.tx.send(res).unwrap_or_else(|e| tracing::warn!("failed to send imap response to manager: {:#?}", e));
         }
 
         //@FIXME add more info about the runner
