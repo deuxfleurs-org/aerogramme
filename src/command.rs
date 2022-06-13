@@ -41,7 +41,9 @@ impl<'a> Command<'a> {
         };
 
         self.session.creds = Some(creds);
+        self.session.username = Some(u.clone());
 
+        tracing::info!(username=%u, "connected");
         Response::ok("Logged in")
     }
 
@@ -54,10 +56,20 @@ impl<'a> Command<'a> {
     }
 
     pub async fn select(&mut self, mailbox: MailboxCodec) -> Result<Response, BalError> {
+        let (name, creds) = match (String::try_from(mailbox), self.session.creds.as_ref()) {
+            (Ok(n), Some(c)) => (n, c),
+            (_, None) => return Response::no("You must be connected to use SELECT"),
+            (Err(e), _) => {
+                tracing::warn!("Unable to decode mailbox name: {:#?}", e);
+                return Response::bad("Unable to decode mailbox name")
+            },
+        };
 
-        let mb = Mailbox::new(self.session.creds.as_ref().unwrap(), "TestMailbox".to_string()).unwrap();
+        let mb = Mailbox::new(creds, name.clone()).unwrap();
         self.session.selected = Some(mb);
+        let user = self.session.username.as_ref().unwrap();
 
+        tracing::info!(username=%user, mailbox=%name, "mailbox-selected");
         Response::bad("Not implemented")
     }
 

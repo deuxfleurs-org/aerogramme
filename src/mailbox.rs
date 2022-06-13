@@ -10,7 +10,7 @@ use crate::uidindex::*;
 
 pub struct Mailbox {
     bucket: String,
-    name: String,
+    pub name: String,
     key: Key,
 
     k2v: K2vClient,

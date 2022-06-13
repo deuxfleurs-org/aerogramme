@@ -72,10 +72,11 @@ pub struct Instance {
     pub mailstore: Arc<Mailstore>, 
     pub creds: Option<Credentials>,
     pub selected: Option<Mailbox>,
+    pub username: Option<String>,
 }
 impl Instance {
     fn new(mailstore: Arc<Mailstore>, rx: mpsc::Receiver<Message>) -> Self {
-        Self { mailstore, rx, creds: None, selected: None, }
+        Self { mailstore, rx, creds: None, selected: None, username: None, }
     }
 
     //@FIXME add a function that compute the runner's name from its local info
