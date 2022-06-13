@@ -1,5 +1,3 @@
-use std::sync::{Arc, Mutex};
-
 use boitalettres::errors::Error as BalError;
 use boitalettres::proto::{Request, Response};
 use imap_codec::types::core::{Tag, AString};
@@ -10,15 +8,15 @@ use imap_codec::types::fetch_attributes::MacroOrFetchAttributes;
 
 use crate::mailstore::Mailstore;
 use crate::mailbox::Mailbox;
-use crate::service::Session;
+use crate::session;
 
 pub struct Command<'a> {
     tag: Tag,
-    session: &'a mut Session,
+    session: &'a mut session::Instance,
 }
 
 impl<'a> Command<'a> {
-    pub fn new(tag: Tag, session: &'a mut Session) -> Self {
+    pub fn new(tag: Tag, session: &'a mut session::Instance) -> Self {
         Self { tag, session }
     }
 

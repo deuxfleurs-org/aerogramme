@@ -7,6 +7,7 @@ mod mailbox;
 mod mailstore;
 mod server;
 mod service;
+mod session;
 mod time;
 mod uidindex;
 
