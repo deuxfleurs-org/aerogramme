@@ -66,17 +66,21 @@ impl Manager {
     }
 }
 
+pub struct User {
+    pub name: String,
+    pub creds: Credentials,
+}
+
 pub struct Instance {
     rx: mpsc::Receiver<Message>,
 
     pub mailstore: Arc<Mailstore>, 
-    pub creds: Option<Credentials>,
     pub selected: Option<Mailbox>,
-    pub username: Option<String>,
+    pub user: Option<User>,
 }
 impl Instance {
     fn new(mailstore: Arc<Mailstore>, rx: mpsc::Receiver<Message>) -> Self {
-        Self { mailstore, rx, creds: None, selected: None, username: None, }
+        Self { mailstore, rx, selected: None, user: None, }
     }
 
     //@FIXME add a function that compute the runner's name from its local info
@@ -96,12 +100,20 @@ impl Instance {
                 CommandBody::List { reference, mailbox_wildcard } => cmd.list(reference, mailbox_wildcard).await,
                 CommandBody::Select { mailbox } => cmd.select(mailbox).await,
                 CommandBody::Fetch { sequence_set, attributes, uid } => cmd.fetch(sequence_set, attributes, uid).await,
-                _ => Response::bad("Error in IMAP command received by server."),
+                _ => Response::bad("Error in IMAP command received by server.").map_err(anyhow::Error::new),
             };
+
+            let wrapped_res = res.or_else(|e| match e.downcast::<BalError>() {
+                Ok(be) => Err(be),
+                Err(ae) => {
+                    tracing::warn!(error=%ae, "internal.error");
+                    Response::bad("Internal error")
+                }
+            });
 
             //@FIXME I think we should quit this thread on error and having our manager watch it,
             // and then abort the session as it is corrupted.
-            msg.tx.send(res).unwrap_or_else(|e| tracing::warn!("failed to send imap response to manager: {:#?}", e));
+            msg.tx.send(wrapped_res).unwrap_or_else(|e| tracing::warn!("failed to send imap response to manager: {:#?}", e));
         }
 
         //@FIXME add more info about the runner

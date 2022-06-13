@@ -8,6 +8,17 @@ use crate::cryptoblob::Key;
 use crate::login::Credentials;
 use crate::uidindex::*;
 
+pub struct Summary {
+  pub validity: ImapUidvalidity,
+  pub next: ImapUid,
+  pub exists: usize,
+}
+impl std::fmt::Display for Summary {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "uidvalidity: {}, uidnext: {}, exists: {}", self.validity, self.next, self.exists)
+    }
+}
+
 pub struct Mailbox {
     bucket: String,
     pub name: String,
@@ -30,6 +41,17 @@ impl Mailbox {
             k2v: creds.k2v_client()?,
             s3: creds.s3_client()?,
             uid_index,
+        })
+    }
+
+    pub async fn summary(&mut self) -> Result<Summary> {
+        self.uid_index.sync().await?;
+        let state = self.uid_index.state();
+
+        return Ok(Summary {
+          validity: state.uidvalidity,
+          next: state.uidnext,
+          exists: state.mail_uid.len(),
         })
     }
 

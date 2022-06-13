@@ -3,8 +3,8 @@ use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::bayou::*;
 
-type ImapUid = u32;
-type ImapUidvalidity = u32;
+pub type ImapUid = u32;
+pub type ImapUidvalidity = u32;
 
 /// A Mail UUID is composed of two components:
 /// - a process identifier, 128 bits
@@ -18,6 +18,7 @@ pub struct UidIndex {
     pub mail_flags: OrdMap<MailUuid, Vec<String>>,
 
     pub mails_by_uid: OrdMap<ImapUid, MailUuid>,
+
 
     pub uidvalidity: ImapUidvalidity,
     pub uidnext: ImapUid,
