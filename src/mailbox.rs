@@ -9,13 +9,17 @@ use crate::login::Credentials;
 use crate::uidindex::*;
 
 pub struct Summary {
-  pub validity: ImapUidvalidity,
-  pub next: ImapUid,
-  pub exists: usize,
+    pub validity: ImapUidvalidity,
+    pub next: ImapUid,
+    pub exists: usize,
 }
 impl std::fmt::Display for Summary {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "uidvalidity: {}, uidnext: {}, exists: {}", self.validity, self.next, self.exists)
+        write!(
+            f,
+            "uidvalidity: {}, uidnext: {}, exists: {}",
+            self.validity, self.next, self.exists
+        )
     }
 }
 
@@ -49,10 +53,10 @@ impl Mailbox {
         let state = self.uid_index.state();
 
         return Ok(Summary {
-          validity: state.uidvalidity,
-          next: state.uidnext,
-          exists: state.mail_uid.len(),
-        })
+            validity: state.uidvalidity,
+            next: state.uidnext,
+            exists: state.mail_uid.len(),
+        });
     }
 
     pub async fn test(&mut self) -> Result<()> {

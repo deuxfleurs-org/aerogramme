@@ -2,8 +2,8 @@ use anyhow::Result;
 use std::sync::Arc;
 
 use crate::config::*;
-use crate::service;
 use crate::mailstore;
+use crate::service;
 
 use boitalettres::server::accept::addr::AddrIncoming;
 use boitalettres::server::Server as ImapServer;
@@ -24,10 +24,10 @@ impl Server {
         tracing::info!("Starting server on {:#}", self.incoming.local_addr);
 
         /*let creds = self
-            .mailstore
-            .login_provider
-            .login("quentin", "poupou")
-            .await?;*/
+        .mailstore
+        .login_provider
+        .login("quentin", "poupou")
+        .await?;*/
         //let mut mailbox = Mailbox::new(&creds, "TestMailbox".to_string()).await?;
         //mailbox.test().await?;
 

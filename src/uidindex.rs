@@ -1,4 +1,4 @@
-use im::OrdMap;
+use im::{HashMap, HashSet, OrdMap};
 use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::bayou::*;
@@ -9,16 +9,20 @@ pub type ImapUidvalidity = u32;
 /// A Mail UUID is composed of two components:
 /// - a process identifier, 128 bits
 /// - a sequence number, 64 bits
-#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Debug)]
 pub struct MailUuid(pub [u8; 24]);
 
 #[derive(Clone)]
+/// A UidIndex handles the mutable part of a mailbox
+/// It is built by running the event log on it
+/// Each applied log generates a new UidIndex by cloning the previous one
+/// and applying the event. This is why we use immutable datastructures
+/// that are optimized for cloning (they clone underlying values only if they are modified)
 pub struct UidIndex {
     pub mail_uid: OrdMap<MailUuid, ImapUid>,
     pub mail_flags: OrdMap<MailUuid, Vec<String>>,
-
     pub mails_by_uid: OrdMap<ImapUid, MailUuid>,
-
+    pub flags: HashMap<String, HashSet<MailUuid>>,
 
     pub uidvalidity: ImapUidvalidity,
     pub uidnext: ImapUid,
@@ -61,6 +65,7 @@ impl Default for UidIndex {
             mail_flags: OrdMap::new(),
             mail_uid: OrdMap::new(),
             mails_by_uid: OrdMap::new(),
+            flags: HashMap::new(),
             uidvalidity: 1,
             uidnext: 1,
             internalseq: 1,
@@ -100,12 +105,21 @@ impl BayouState for UidIndex {
                 new.internalseq += 1;
             }
             UidIndexOp::FlagAdd(uuid, new_flags) => {
+                // Upate mapping Email -> Flag
                 let mail_flags = new.mail_flags.entry(*uuid).or_insert(vec![]);
                 for flag in new_flags {
                     if !mail_flags.contains(flag) {
                         mail_flags.push(flag.to_string());
                     }
                 }
+
+                // Update mapping Flag -> Email
+                let _ = new_flags.iter().map(|flag| {
+                    new.flags
+                        .entry(flag.clone())
+                        .or_insert(HashSet::new())
+                        .update(*uuid)
+                });
             }
             UidIndexOp::FlagDel(uuid, rm_flags) => {
                 if let Some(mail_flags) = new.mail_flags.get_mut(uuid) {
@@ -138,6 +152,7 @@ impl<'de> Deserialize<'de> for UidIndex {
             mail_flags: OrdMap::new(),
             mail_uid: OrdMap::new(),
             mails_by_uid: OrdMap::new(),
+            flags: HashMap::new(),
             uidvalidity: val.uidvalidity,
             uidnext: val.uidnext,
             internalseq: val.internalseq,

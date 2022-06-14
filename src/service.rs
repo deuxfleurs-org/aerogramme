@@ -2,9 +2,9 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use anyhow::Result;
-use boitalettres::server::accept::addr::AddrStream;
 use boitalettres::errors::Error as BalError;
 use boitalettres::proto::{Request, Response};
+use boitalettres::server::accept::addr::AddrStream;
 use futures::future::BoxFuture;
 use futures::future::FutureExt;
 use tower::Service;
@@ -41,7 +41,9 @@ pub struct Connection {
 }
 impl Connection {
     pub fn new(mailstore: Arc<Mailstore>) -> Self {
-        Self { session: session::Manager::new(mailstore) }
+        Self {
+            session: session::Manager::new(mailstore),
+        }
     }
 }
 impl Service<Request> for Connection {
@@ -58,6 +60,3 @@ impl Service<Request> for Connection {
         self.session.process(req)
     }
 }
-
-
-

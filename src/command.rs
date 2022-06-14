@@ -1,14 +1,14 @@
 use anyhow::Result;
-use boitalettres::proto::{Request, Response};
 use boitalettres::errors::Error as BalError;
-use imap_codec::types::core::{Tag, AString};
-use imap_codec::types::response::{Capability, Data};
-use imap_codec::types::mailbox::{Mailbox as MailboxCodec, ListMailbox};
-use imap_codec::types::sequence::SequenceSet;
+use boitalettres::proto::{Request, Response};
+use imap_codec::types::core::{AString, Tag};
 use imap_codec::types::fetch_attributes::MacroOrFetchAttributes;
+use imap_codec::types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
+use imap_codec::types::response::{Capability, Data};
+use imap_codec::types::sequence::SequenceSet;
 
-use crate::mailstore::Mailstore;
 use crate::mailbox::Mailbox;
+use crate::mailstore::Mailstore;
 use crate::session;
 
 pub struct Command<'a> {
@@ -34,40 +34,55 @@ impl<'a> Command<'a> {
         tracing::info!(user = %u, "command.login");
 
         let creds = match self.session.mailstore.login_provider.login(&u, &p).await {
-            Err(_) => return Ok(Response::no("[AUTHENTICATIONFAILED] Authentication failed.")?),
+            Err(_) => {
+                return Ok(Response::no(
+                    "[AUTHENTICATIONFAILED] Authentication failed.",
+                )?)
+            }
             Ok(c) => c,
         };
 
-        self.session.user = Some(session::User { creds, name: u.clone(), });
+        self.session.user = Some(session::User {
+            creds,
+            name: u.clone(),
+        });
 
         tracing::info!(username=%u, "connected");
         Ok(Response::ok("Logged in")?)
     }
 
-    pub async fn lsub(&self, reference: MailboxCodec, mailbox_wildcard: ListMailbox) -> Result<Response> {
+    pub async fn lsub(
+        &self,
+        reference: MailboxCodec,
+        mailbox_wildcard: ListMailbox,
+    ) -> Result<Response> {
         Ok(Response::bad("Not implemented")?)
     }
 
-    pub async fn list(&self, reference: MailboxCodec, mailbox_wildcard: ListMailbox) -> Result<Response> {
+    pub async fn list(
+        &self,
+        reference: MailboxCodec,
+        mailbox_wildcard: ListMailbox,
+    ) -> Result<Response> {
         Ok(Response::bad("Not implemented")?)
     }
 
     /*
-     * TRACE BEGIN ---
+      * TRACE BEGIN ---
 
 
-   Example:    C: A142 SELECT INBOX
-               S: * 172 EXISTS
-               S: * 1 RECENT
-               S: * OK [UNSEEN 12] Message 12 is first unseen
-               S: * OK [UIDVALIDITY 3857529045] UIDs valid
-               S: * OK [UIDNEXT 4392] Predicted next UID
-               S: * FLAGS (\Answered \Flagged \Deleted \Seen \Draft)
-               S: * OK [PERMANENTFLAGS (\Deleted \Seen \*)] Limited
-               S: A142 OK [READ-WRITE] SELECT completed
+    Example:    C: A142 SELECT INBOX
+                S: * 172 EXISTS
+                S: * 1 RECENT
+                S: * OK [UNSEEN 12] Message 12 is first unseen
+                S: * OK [UIDVALIDITY 3857529045] UIDs valid
+                S: * OK [UIDNEXT 4392] Predicted next UID
+                S: * FLAGS (\Answered \Flagged \Deleted \Seen \Draft)
+                S: * OK [PERMANENTFLAGS (\Deleted \Seen \*)] Limited
+                S: A142 OK [READ-WRITE] SELECT completed
 
-     * TRACE END ---
-     */
+      * TRACE END ---
+      */
     pub async fn select(&mut self, mailbox: MailboxCodec) -> Result<Response> {
         let name = String::try_from(mailbox)?;
         let user = match self.session.user.as_ref() {
@@ -81,16 +96,18 @@ impl<'a> Command<'a> {
         let sum = mb.summary().await?;
         tracing::trace!(summary=%sum, "mailbox.summary");
 
-        let body = vec![
-          Data::Exists(sum.exists.try_into()?),
-          Data::Recent(0),
-        ];
+        let body = vec![Data::Exists(sum.exists.try_into()?), Data::Recent(0)];
 
         self.session.selected = Some(mb);
         Ok(Response::ok("[READ-WRITE] Select completed")?.with_body(body))
     }
 
-    pub async fn fetch(&self, sequence_set: SequenceSet, attributes: MacroOrFetchAttributes, uid: bool) -> Result<Response> {
+    pub async fn fetch(
+        &self,
+        sequence_set: SequenceSet,
+        attributes: MacroOrFetchAttributes,
+        uid: bool,
+    ) -> Result<Response> {
         Ok(Response::bad("Not implemented")?)
     }
 }
