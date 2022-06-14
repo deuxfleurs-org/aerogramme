@@ -5,6 +5,7 @@ use crate::bayou::*;
 
 pub type ImapUid = u32;
 pub type ImapUidvalidity = u32;
+pub type Flag = String;
 
 /// A Mail UUID is composed of two components:
 /// - a process identifier, 128 bits
@@ -20,9 +21,9 @@ pub struct MailUuid(pub [u8; 24]);
 /// that are optimized for cloning (they clone underlying values only if they are modified)
 pub struct UidIndex {
     pub mail_uid: OrdMap<MailUuid, ImapUid>,
-    pub mail_flags: OrdMap<MailUuid, Vec<String>>,
+    pub mail_flags: OrdMap<MailUuid, Vec<Flag>>,
     pub mails_by_uid: OrdMap<ImapUid, MailUuid>,
-    pub flags: HashMap<String, HashSet<MailUuid>>,
+    pub flags: HashMap<Flag, HashSet<MailUuid>>,
 
     pub uidvalidity: ImapUidvalidity,
     pub uidnext: ImapUid,
@@ -31,15 +32,15 @@ pub struct UidIndex {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum UidIndexOp {
-    MailAdd(MailUuid, ImapUid, Vec<String>),
+    MailAdd(MailUuid, ImapUid, Vec<Flag>),
     MailDel(MailUuid),
-    FlagAdd(MailUuid, Vec<String>),
-    FlagDel(MailUuid, Vec<String>),
+    FlagAdd(MailUuid, Vec<Flag>),
+    FlagDel(MailUuid, Vec<Flag>),
 }
 
 impl UidIndex {
     #[must_use]
-    pub fn op_mail_add(&self, uuid: MailUuid, flags: Vec<String>) -> UidIndexOp {
+    pub fn op_mail_add(&self, uuid: MailUuid, flags: Vec<Flag>) -> UidIndexOp {
         UidIndexOp::MailAdd(uuid, self.internalseq, flags)
     }
 
@@ -49,12 +50,12 @@ impl UidIndex {
     }
 
     #[must_use]
-    pub fn op_flag_add(&self, uuid: MailUuid, flags: Vec<String>) -> UidIndexOp {
+    pub fn op_flag_add(&self, uuid: MailUuid, flags: Vec<Flag>) -> UidIndexOp {
         UidIndexOp::FlagAdd(uuid, flags)
     }
 
     #[must_use]
-    pub fn op_flag_del(&self, uuid: MailUuid, flags: Vec<String>) -> UidIndexOp {
+    pub fn op_flag_del(&self, uuid: MailUuid, flags: Vec<Flag>) -> UidIndexOp {
         UidIndexOp::FlagDel(uuid, flags)
     }
 }
@@ -122,9 +123,17 @@ impl BayouState for UidIndex {
                 });
             }
             UidIndexOp::FlagDel(uuid, rm_flags) => {
+                // Upate mapping Email -> Flag
                 if let Some(mail_flags) = new.mail_flags.get_mut(uuid) {
                     mail_flags.retain(|x| !rm_flags.contains(x));
                 }
+
+                // Update mapping Flag -> Email
+                rm_flags.iter().for_each(|flag| {
+                    new.flags
+                        .entry(flag.clone())
+                        .and_modify(|hs| { hs.remove(uuid); });
+                });
             }
         }
         new
@@ -135,7 +144,7 @@ impl BayouState for UidIndex {
 
 #[derive(Serialize, Deserialize)]
 struct UidIndexSerializedRepr {
-    mails: Vec<(ImapUid, MailUuid, Vec<String>)>,
+    mails: Vec<(ImapUid, MailUuid, Vec<Flag>)>,
     uidvalidity: ImapUidvalidity,
     uidnext: ImapUid,
     internalseq: ImapUid,
