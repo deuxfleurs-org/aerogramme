@@ -69,7 +69,7 @@ impl Mailbox {
         let add_mail_op = self
             .uid_index
             .state()
-            .op_mail_add(MailUuid(rand_id), vec!["\\Unseen".into()]);
+            .op_mail_add(MailIdent(rand_id), vec!["\\Unseen".into()]);
         self.uid_index.push(add_mail_op).await?;
 
         dump(&self.uid_index);
