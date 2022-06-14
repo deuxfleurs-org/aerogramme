@@ -55,7 +55,7 @@ impl Mailbox {
         return Ok(Summary {
             validity: state.uidvalidity,
             next: state.uidnext,
-            exists: state.mail_uid.len(),
+            exists: state.idx_by_uid.len(),
         });
     }
 
@@ -74,12 +74,12 @@ impl Mailbox {
 
         dump(&self.uid_index);
 
-        if self.uid_index.state().mails_by_uid.len() > 6 {
+        if self.uid_index.state().idx_by_uid.len() > 6 {
             for i in 0..2 {
                 let (_, uuid) = self
                     .uid_index
                     .state()
-                    .mails_by_uid
+                    .idx_by_uid
                     .iter()
                     .skip(3 + i)
                     .next()
@@ -101,16 +101,12 @@ fn dump(uid_index: &Bayou<UidIndex>) {
     println!("UIDVALIDITY {}", s.uidvalidity);
     println!("UIDNEXT {}", s.uidnext);
     println!("INTERNALSEQ {}", s.internalseq);
-    for (uid, uuid) in s.mails_by_uid.iter() {
+    for (uid, ident) in s.idx_by_uid.iter() {
         println!(
             "{} {} {}",
             uid,
-            hex::encode(uuid.0),
-            s.mail_flags
-                .get(uuid)
-                .cloned()
-                .unwrap_or_default()
-                .join(", ")
+            hex::encode(ident.0),
+            s.table.get(ident).cloned().unwrap_or_default().1.join(", ")
         );
     }
     println!("");

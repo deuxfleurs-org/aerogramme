@@ -1,4 +1,4 @@
-use im::{HashMap, HashSet, OrdSet, OrdMap};
+use im::{HashMap, HashSet, OrdMap, OrdSet};
 use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::bayou::*;
@@ -22,13 +22,16 @@ pub struct MailIdent(pub [u8; 24]);
 /// It is built by running the event log on it
 /// Each applied log generates a new UidIndex by cloning the previous one
 /// and applying the event. This is why we use immutable datastructures
-/// that are optimized for cloning (they clone underlying values only if they are modified)
+/// that are optimized for cloning: they clone underlying values only if they are modified.
 pub struct UidIndex {
-    pub mail_uid: OrdMap<MailIdent, ImapUid>,
-    pub mail_flags: OrdMap<MailIdent, Vec<Flag>>,
-    pub mails_by_uid: OrdMap<ImapUid, MailIdent>,
-    pub flags: HashMap<Flag, OrdSet<ImapUid>>,
+    // Source of trust
+    pub table: OrdMap<MailIdent, (ImapUid, Vec<Flag>)>,
 
+    // Indexes optimized for queries
+    pub idx_by_uid: OrdMap<ImapUid, MailIdent>,
+    pub idx_by_flag: FlagIndex,
+
+    // Counters
     pub uidvalidity: ImapUidvalidity,
     pub uidnext: ImapUid,
     pub internalseq: ImapUid,
@@ -62,15 +65,38 @@ impl UidIndex {
     pub fn op_flag_del(&self, ident: MailIdent, flags: Vec<Flag>) -> UidIndexOp {
         UidIndexOp::FlagDel(ident, flags)
     }
+
+    fn add_email(&mut self, ident: MailIdent, uid: ImapUid, flags: &Vec<Flag>) {
+        // Insert the email in our table
+        self.table.insert(ident, (uid, flags.clone()));
+
+        // Update the indexes/caches
+        self.idx_by_uid.insert(uid, ident);
+        self.idx_by_flag.insert(uid, flags);
+    }
+
+    fn rm_email(&mut self, ident: &MailIdent) {
+        // We do nothing if the mail does not exist
+        let (uid, flags) = match self.table.get(ident) {
+            Some(v) => v,
+            None => return,
+        };
+
+        // Delete all cache entries
+        self.idx_by_uid.remove(uid);
+        self.idx_by_flag.remove(*uid, flags);
+
+        // Remove from source of trust
+        self.table.remove(ident);
+    }
 }
 
 impl Default for UidIndex {
     fn default() -> Self {
         Self {
-            mail_flags: OrdMap::new(),
-            mail_uid: OrdMap::new(),
-            mails_by_uid: OrdMap::new(),
-            flags: HashMap::new(),
+            table: OrdMap::new(),
+            idx_by_uid: OrdMap::new(),
+            idx_by_flag: FlagIndex::new(),
             uidvalidity: 1,
             uidnext: 1,
             internalseq: 1,
@@ -90,62 +116,75 @@ impl BayouState for UidIndex {
                     new.uidvalidity += new.internalseq - *uid;
                 }
 
-                // Assign the real uid
+                // Assign the real uid of the email
                 let new_uid = new.internalseq;
 
-                if let Some(prev_uid) = new.mail_uid.get(ident) {
-                    new.mails_by_uid.remove(prev_uid);
-                } else {
-                    new.mail_flags.insert(*ident, flags.clone());
-                }
-                new.mails_by_uid.insert(new_uid, *ident);
-                new.mail_uid.insert(*ident, new_uid);
+                // Delete the previous entry if any.
+                // Our proof has no assumption on `ident` uniqueness,
+                // so we must handle this case even it is very unlikely
+                // In this case, we overwrite the email.
+                // Note: assigning a new UID is mandatory.
+                new.rm_email(ident);
 
+                // We record our email and update ou caches
+                new.add_email(*ident, *uid, flags);
+
+                // Update counters
                 new.internalseq += 1;
                 new.uidnext = new.internalseq;
             }
             UidIndexOp::MailDel(ident) => {
-                if let Some(uid) = new.mail_uid.get(ident) {
-                    new.mails_by_uid.remove(uid);
-                    new.mail_uid.remove(ident);
-                    new.mail_flags.remove(ident);
-                }
+                // If the email is known locally, we remove its references in all our indexes
+                new.rm_email(ident);
+
+                // We update the counter
                 new.internalseq += 1;
             }
             UidIndexOp::FlagAdd(ident, new_flags) => {
-                // Upate mapping Email -> Flag
-                let mail_flags = new.mail_flags.entry(*ident).or_insert(vec![]);
-                for flag in new_flags {
-                    if !mail_flags.contains(flag) {
-                        mail_flags.push(flag.to_string());
-                    }
+                if let Some((uid, existing_flags)) = new.table.get_mut(ident) {
+                    // Add flags to the source of trust and the cache
+                    let mut to_add: Vec<Flag> = new_flags
+                        .iter()
+                        .filter(|f| !existing_flags.contains(f))
+                        .cloned()
+                        .collect();
+                    new.idx_by_flag.insert(*uid, &to_add);
+                    existing_flags.append(&mut to_add);
                 }
-
-                // Update mapping Flag -> ImapUid
-                
-/*
-                let _ = new_flags.iter().map(|flag| {
-                    new.flags
-                        .entry(flag.clone())
-                        .or_insert(OrdSet::new())
-                        .update(*uuid)
-                });*/
             }
             UidIndexOp::FlagDel(ident, rm_flags) => {
-                // Upate mapping Email -> Flag
-                if let Some(mail_flags) = new.mail_flags.get_mut(ident) {
-                    mail_flags.retain(|x| !rm_flags.contains(x));
+                if let Some((uid, existing_flags)) = new.table.get_mut(ident) {
+                    // Remove flags from the source of trust and the cache
+                    existing_flags.retain(|x| !rm_flags.contains(x));
+                    new.idx_by_flag.remove(*uid, rm_flags);
                 }
-
-                // Update mapping Flag -> ImapUid
-                /*rm_flags.iter().for_each(|flag| {
-                    new.flags
-                        .entry(flag.clone())
-                        .and_modify(|hs| { hs.remove(uuid); });
-                });*/
             }
         }
         new
+    }
+}
+
+// ---- FlagIndex implementation ----
+#[derive(Clone)]
+pub struct FlagIndex(HashMap<Flag, OrdSet<ImapUid>>);
+
+impl FlagIndex {
+    fn new() -> Self {
+        Self(HashMap::new())
+    }
+    fn insert(&mut self, uid: ImapUid, flags: &Vec<Flag>) {
+        flags.iter().for_each(|flag| {
+            self.0
+                .entry(flag.clone())
+                .or_insert(OrdSet::new())
+                .insert(uid);
+        });
+    }
+
+    fn remove(&mut self, uid: ImapUid, flags: &Vec<Flag>) -> () {
+        flags.iter().for_each(|flag| {
+            self.0.get_mut(flag).and_then(|set| set.remove(&uid));
+        });
     }
 }
 
@@ -167,20 +206,17 @@ impl<'de> Deserialize<'de> for UidIndex {
         let val: UidIndexSerializedRepr = UidIndexSerializedRepr::deserialize(d)?;
 
         let mut uidindex = UidIndex {
-            mail_flags: OrdMap::new(),
-            mail_uid: OrdMap::new(),
-            mails_by_uid: OrdMap::new(),
-            flags: HashMap::new(),
+            table: OrdMap::new(),
+            idx_by_uid: OrdMap::new(),
+            idx_by_flag: FlagIndex::new(),
             uidvalidity: val.uidvalidity,
             uidnext: val.uidnext,
             internalseq: val.internalseq,
         };
 
-        for (uid, uuid, flags) in val.mails {
-            uidindex.mail_flags.insert(uuid, flags);
-            uidindex.mail_uid.insert(uuid, uid);
-            uidindex.mails_by_uid.insert(uid, uuid);
-        }
+        val.mails
+            .iter()
+            .for_each(|(u, i, f)| uidindex.add_email(*i, *u, f));
 
         Ok(uidindex)
     }
@@ -192,12 +228,8 @@ impl Serialize for UidIndex {
         S: Serializer,
     {
         let mut mails = vec![];
-        for (uid, uuid) in self.mails_by_uid.iter() {
-            mails.push((
-                *uid,
-                *uuid,
-                self.mail_flags.get(uuid).cloned().unwrap_or_default(),
-            ));
+        for (ident, (uid, flags)) in self.table.iter() {
+            mails.push((*uid, *ident, flags.clone()));
         }
 
         let val = UidIndexSerializedRepr {
@@ -237,3 +269,5 @@ impl Serialize for MailIdent {
         serializer.serialize_str(&hex::encode(self.0))
     }
 }
+
+// ---- TESTS ----
