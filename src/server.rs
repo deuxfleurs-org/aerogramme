@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-
-
 use boitalettres::server::accept::addr::AddrIncoming;
 use boitalettres::server::accept::addr::AddrStream;
 use boitalettres::server::Server as ImapServer;
@@ -13,7 +11,6 @@ use rusoto_signature::Region;
 use tokio::sync::watch;
 use tower::Service;
 
-use crate::mailstore;
 use crate::service;
 use crate::lmtp::*;
 use crate::config::*;

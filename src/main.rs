@@ -6,7 +6,6 @@ mod lmtp;
 mod login;
 mod mail_ident;
 mod mailbox;
-mod mailstore;
 mod server;
 mod service;
 mod session;
