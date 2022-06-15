@@ -8,7 +8,6 @@ use imap_codec::types::response::{Capability, Data};
 use imap_codec::types::sequence::SequenceSet;
 
 use crate::mailbox::Mailbox;
-use crate::mailstore::Mailstore;
 use crate::session;
 
 pub struct Command<'a> {
@@ -33,7 +32,7 @@ impl<'a> Command<'a> {
         let (u, p) = (String::try_from(username)?, String::try_from(password)?);
         tracing::info!(user = %u, "command.login");
 
-        let creds = match self.session.mailstore.login_provider.login(&u, &p).await {
+        let creds = match self.session.login_provider.login(&u, &p).await {
             Err(_) => {
                 return Ok(Response::no(
                     "[AUTHENTICATIONFAILED] Authentication failed.",

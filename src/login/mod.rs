@@ -24,6 +24,9 @@ pub trait LoginProvider {
     /// The login method takes an account's password as an input to decypher
     /// decryption keys and obtain full access to the user's account.
     async fn login(&self, username: &str, password: &str) -> Result<Credentials>;
+    /// The public_login method takes an account's email address and returns
+    /// public credentials for adding mails to the user's inbox.
+    async fn public_login(&self, email: &str) -> Result<PublicCredentials>;
 }
 
 /// The struct Credentials represent all of the necessary information to interact
@@ -34,6 +37,13 @@ pub struct Credentials {
     pub storage: StorageCredentials,
     /// The cryptographic keys are used to encrypt and decrypt data stored in S3 and K2V
     pub keys: CryptoKeys,
+}
+
+#[derive(Clone, Debug)]
+pub struct PublicCredentials {
+    /// The storage credentials are used to authenticate access to the underlying storage (S3, K2V)
+    pub storage: StorageCredentials,
+    pub public_key: PublicKey,
 }
 
 /// The struct StorageCredentials contains access key to an S3 and K2V bucket
@@ -396,7 +406,7 @@ impl CryptoKeys {
         Ok((salt_ct, public_ct))
     }
 
-    async fn load_salt_and_public(k2v: &K2vClient) -> Result<([u8; 32], PublicKey)> {
+    pub async fn load_salt_and_public(k2v: &K2vClient) -> Result<([u8; 32], PublicKey)> {
         let mut params = k2v
             .read_batch(&[
                 k2v_read_single_key("keys", "salt", false),

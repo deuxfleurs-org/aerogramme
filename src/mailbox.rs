@@ -1,11 +1,11 @@
 use anyhow::Result;
 use k2v_client::K2vClient;
-use rand::prelude::*;
 use rusoto_s3::S3Client;
 
 use crate::bayou::Bayou;
 use crate::cryptoblob::Key;
 use crate::login::Credentials;
+use crate::mail_ident::*;
 use crate::uidindex::*;
 
 pub struct Summary {
@@ -64,19 +64,17 @@ impl Mailbox {
 
         dump(&self.uid_index);
 
-        let mut rand_id = [0u8; 24];
-        rand_id[..16].copy_from_slice(&u128::to_be_bytes(thread_rng().gen()));
         let add_mail_op = self
             .uid_index
             .state()
-            .op_mail_add(MailIdent(rand_id), vec!["\\Unseen".into()]);
+            .op_mail_add(gen_ident(), vec!["\\Unseen".into()]);
         self.uid_index.push(add_mail_op).await?;
 
         dump(&self.uid_index);
 
         if self.uid_index.state().idx_by_uid.len() > 6 {
             for i in 0..2 {
-                let (_, uuid) = self
+                let (_, ident) = self
                     .uid_index
                     .state()
                     .idx_by_uid
@@ -84,7 +82,7 @@ impl Mailbox {
                     .skip(3 + i)
                     .next()
                     .unwrap();
-                let del_mail_op = self.uid_index.state().op_mail_del(*uuid);
+                let del_mail_op = self.uid_index.state().op_mail_del(*ident);
                 self.uid_index.push(del_mail_op).await?;
 
                 dump(&self.uid_index);

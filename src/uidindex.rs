@@ -2,20 +2,11 @@ use im::{HashMap, HashSet, OrdMap, OrdSet};
 use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::bayou::*;
+use crate::mail_ident::MailIdent;
 
 pub type ImapUid = u32;
 pub type ImapUidvalidity = u32;
 pub type Flag = String;
-
-/// Mail Identifier (MailIdent) are composed of two components:
-/// - a process identifier, 128 bits
-/// - a sequence number, 64 bits
-/// They are not part of the protocol but an internal representation
-/// required by Mailrage/Aerogramme.
-/// Their main property is to be unique without having to rely
-/// on synchronization between IMAP processes.
-#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Debug)]
-pub struct MailIdent(pub [u8; 24]);
 
 #[derive(Clone)]
 /// A UidIndex handles the mutable part of a mailbox
@@ -241,33 +232,6 @@ impl Serialize for UidIndex {
         };
 
         val.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for MailIdent {
-    fn deserialize<D>(d: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let v = String::deserialize(d)?;
-        let bytes = hex::decode(v).map_err(|_| D::Error::custom("invalid hex"))?;
-
-        if bytes.len() != 24 {
-            return Err(D::Error::custom("bad length"));
-        }
-
-        let mut tmp = [0u8; 24];
-        tmp[..].copy_from_slice(&bytes);
-        Ok(Self(tmp))
-    }
-}
-
-impl Serialize for MailIdent {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&hex::encode(self.0))
     }
 }
 

@@ -9,15 +9,15 @@ use futures::future::BoxFuture;
 use futures::future::FutureExt;
 use tower::Service;
 
-use crate::mailstore::Mailstore;
 use crate::session;
+use crate::LoginProvider;
 
 pub struct Instance {
-    pub mailstore: Arc<Mailstore>,
+    login_provider: Arc<dyn LoginProvider + Send + Sync>,
 }
 impl Instance {
-    pub fn new(mailstore: Arc<Mailstore>) -> Self {
-        Self { mailstore }
+    pub fn new(login_provider: Arc<dyn LoginProvider + Send + Sync>) -> Self {
+        Self { login_provider }
     }
 }
 impl<'a> Service<&'a AddrStream> for Instance {
@@ -31,8 +31,8 @@ impl<'a> Service<&'a AddrStream> for Instance {
 
     fn call(&mut self, addr: &'a AddrStream) -> Self::Future {
         tracing::info!(remote_addr = %addr.remote_addr, local_addr = %addr.local_addr, "accept");
-        let ms = self.mailstore.clone();
-        async { Ok(Connection::new(ms)) }.boxed()
+        let lp = self.login_provider.clone();
+        async { Ok(Connection::new(lp)) }.boxed()
     }
 }
 
@@ -40,9 +40,9 @@ pub struct Connection {
     session: session::Manager,
 }
 impl Connection {
-    pub fn new(mailstore: Arc<Mailstore>) -> Self {
+    pub fn new(login_provider: Arc<dyn LoginProvider + Send + Sync>) -> Self {
         Self {
-            session: session::Manager::new(mailstore),
+            session: session::Manager::new(login_provider),
         }
     }
 }

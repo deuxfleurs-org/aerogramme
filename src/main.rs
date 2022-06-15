@@ -2,7 +2,9 @@ mod bayou;
 mod command;
 mod config;
 mod cryptoblob;
+mod lmtp;
 mod login;
+mod mail_ident;
 mod mailbox;
 mod mailstore;
 mod server;
@@ -35,6 +37,11 @@ struct Args {
 enum Command {
     /// Runs the IMAP+LMTP server daemon
     Server {
+        #[clap(short, long, env = "CONFIG_FILE", default_value = "mailrage.toml")]
+        config_file: PathBuf,
+    },
+    /// TEST TEST TEST
+    Test {
         #[clap(short, long, env = "CONFIG_FILE", default_value = "mailrage.toml")]
         config_file: PathBuf,
     },
@@ -128,6 +135,12 @@ async fn main() -> Result<()> {
 
             let server = Server::new(config).await?;
             server.run().await?;
+        }
+        Command::Test { config_file } => {
+            let config = read_config(config_file)?;
+
+            let server = Server::new(config).await?;
+            //server.test().await?;
         }
         Command::FirstLogin {
             creds,

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::Read;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -13,6 +14,8 @@ pub struct Config {
 
     pub login_static: Option<LoginStaticConfig>,
     pub login_ldap: Option<LoginLdapConfig>,
+
+    pub lmtp: Option<LmtpConfig>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -23,6 +26,8 @@ pub struct LoginStaticConfig {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LoginStaticUser {
+    #[serde(default)]
+    pub email_addresses: Vec<String>,
     pub password: String,
 
     pub aws_access_key_id: String,
@@ -58,6 +63,12 @@ pub struct LoginLdapConfig {
 
     pub bucket: Option<String>,
     pub bucket_attr: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LmtpConfig {
+    pub bind_addr: SocketAddr,
+    pub hostname: String,
 }
 
 pub fn read_config(config_file: PathBuf) -> Result<Config> {

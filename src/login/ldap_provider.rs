@@ -84,24 +84,36 @@ impl LdapLoginProvider {
             bucket_source,
         })
     }
+
+    fn storage_creds_from_ldap_user(&self, user: &SearchEntry) -> Result<StorageCredentials> {
+        let aws_access_key_id = get_attr(user, &self.aws_access_key_id_attr)?;
+        let aws_secret_access_key = get_attr(user, &self.aws_secret_access_key_attr)?;
+        let bucket = match &self.bucket_source {
+            BucketSource::Constant(b) => b.clone(),
+            BucketSource::Attr(a) => get_attr(user, a)?,
+        };
+
+        Ok(StorageCredentials {
+            k2v_region: self.k2v_region.clone(),
+            s3_region: self.s3_region.clone(),
+            aws_access_key_id,
+            aws_secret_access_key,
+            bucket,
+        })
+    }
 }
 
 #[async_trait]
 impl LoginProvider for LdapLoginProvider {
     async fn login(&self, username: &str, password: &str) -> Result<Credentials> {
+        check_identifier(username)?;
+
         let (conn, mut ldap) = LdapConnAsync::new(&self.ldap_server).await?;
         ldap3::drive!(conn);
 
         if self.pre_bind_on_login {
             let (dn, pw) = self.bind_dn_and_pw.as_ref().unwrap();
             ldap.simple_bind(dn, pw).await?.success()?;
-        }
-
-        let username_is_ok = username
-            .chars()
-            .all(|c| c.is_alphanumeric() || "-+_.@".contains(c));
-        if !username_is_ok {
-            bail!("Invalid username, must contain only a-z A-Z 0-9 - + _ . @");
         }
 
         let (matches, _res) = ldap
@@ -137,32 +149,9 @@ impl LoginProvider for LdapLoginProvider {
             .context("Invalid password")?;
         debug!("Ldap login with user name {} successfull", username);
 
-        let get_attr = |attr: &str| -> Result<String> {
-            Ok(user
-                .attrs
-                .get(attr)
-                .ok_or(anyhow!("Missing attr: {}", attr))?
-                .iter()
-                .next()
-                .ok_or(anyhow!("No value for attr: {}", attr))?
-                .clone())
-        };
-        let aws_access_key_id = get_attr(&self.aws_access_key_id_attr)?;
-        let aws_secret_access_key = get_attr(&self.aws_secret_access_key_attr)?;
-        let bucket = match &self.bucket_source {
-            BucketSource::Constant(b) => b.clone(),
-            BucketSource::Attr(a) => get_attr(a)?,
-        };
+        let storage = self.storage_creds_from_ldap_user(&user)?;
 
-        let storage = StorageCredentials {
-            k2v_region: self.k2v_region.clone(),
-            s3_region: self.s3_region.clone(),
-            aws_access_key_id,
-            aws_secret_access_key,
-            bucket,
-        };
-
-        let user_secret = get_attr(&self.user_secret_attr)?;
+        let user_secret = get_attr(&user, &self.user_secret_attr)?;
         let alternate_user_secrets = match &self.alternate_user_secrets_attr {
             None => vec![],
             Some(a) => user.attrs.get(a).cloned().unwrap_or_default(),
@@ -178,4 +167,71 @@ impl LoginProvider for LdapLoginProvider {
 
         Ok(Credentials { storage, keys })
     }
+
+    async fn public_login(&self, email: &str) -> Result<PublicCredentials> {
+        check_identifier(email)?;
+
+        let (dn, pw) = match self.bind_dn_and_pw.as_ref() {
+            Some(x) => x,
+            None => bail!("Missing bind_dn and bind_password in LDAP login provider config"),
+        };
+
+        let (conn, mut ldap) = LdapConnAsync::new(&self.ldap_server).await?;
+        ldap3::drive!(conn);
+        ldap.simple_bind(dn, pw).await?.success()?;
+
+        let (matches, _res) = ldap
+            .search(
+                &self.search_base,
+                Scope::Subtree,
+                &format!(
+                    "(&(objectClass=inetOrgPerson)({}={}))",
+                    self.mail_attr, email
+                ),
+                &self.attrs_to_retrieve,
+            )
+            .await?
+            .success()?;
+
+        if matches.is_empty() {
+            bail!("No such user account");
+        }
+        if matches.len() > 1 {
+            bail!("Multiple matching user accounts");
+        }
+        let user = SearchEntry::construct(matches.into_iter().next().unwrap());
+        debug!("Found matching LDAP user for email {}: {}", email, user.dn);
+
+        let storage = self.storage_creds_from_ldap_user(&user)?;
+        drop(ldap);
+
+        let k2v_client = storage.k2v_client()?;
+        let (_, public_key) = CryptoKeys::load_salt_and_public(&k2v_client).await?;
+
+        Ok(PublicCredentials {
+            storage,
+            public_key,
+        })
+    }
+}
+
+fn get_attr(user: &SearchEntry, attr: &str) -> Result<String> {
+    Ok(user
+        .attrs
+        .get(attr)
+        .ok_or(anyhow!("Missing attr: {}", attr))?
+        .iter()
+        .next()
+        .ok_or(anyhow!("No value for attr: {}", attr))?
+        .clone())
+}
+
+fn check_identifier(id: &str) -> Result<()> {
+    let is_ok = id
+        .chars()
+        .all(|c| c.is_alphanumeric() || "-+_.@".contains(c));
+    if !is_ok {
+        bail!("Invalid username/email address, must contain only a-z A-Z 0-9 - + _ . @");
+    }
+    Ok(())
 }

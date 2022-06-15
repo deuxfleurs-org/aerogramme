@@ -11,7 +11,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::command;
 use crate::login::Credentials;
 use crate::mailbox::Mailbox;
-use crate::mailstore::Mailstore;
+use crate::LoginProvider;
 
 /* This constant configures backpressure in the system,
  * or more specifically, how many pipelined messages are allowed
@@ -30,10 +30,10 @@ pub struct Manager {
 
 //@FIXME we should garbage collect the Instance when the Manager is destroyed.
 impl Manager {
-    pub fn new(mailstore: Arc<Mailstore>) -> Self {
+    pub fn new(login_provider: Arc<dyn LoginProvider + Send + Sync>) -> Self {
         let (tx, rx) = mpsc::channel(MAX_PIPELINED_COMMANDS);
         tokio::spawn(async move {
-            let mut instance = Instance::new(mailstore, rx);
+            let mut instance = Instance::new(login_provider, rx);
             instance.start().await;
         });
         Self { tx }
@@ -79,14 +79,14 @@ pub struct User {
 pub struct Instance {
     rx: mpsc::Receiver<Message>,
 
-    pub mailstore: Arc<Mailstore>,
+    pub login_provider: Arc<dyn LoginProvider + Send + Sync>,
     pub selected: Option<Mailbox>,
     pub user: Option<User>,
 }
 impl Instance {
-    fn new(mailstore: Arc<Mailstore>, rx: mpsc::Receiver<Message>) -> Self {
+    fn new(login_provider: Arc<dyn LoginProvider + Send + Sync>, rx: mpsc::Receiver<Message>) -> Self {
         Self {
-            mailstore,
+            login_provider,
             rx,
             selected: None,
             user: None,
