@@ -21,8 +21,8 @@ pub struct MailIdent(pub [u8; 24]);
 /// A UidIndex handles the mutable part of a mailbox
 /// It is built by running the event log on it
 /// Each applied log generates a new UidIndex by cloning the previous one
-/// and applying the event. This is why we use immutable datastructures
-/// that are optimized for cloning: they clone underlying values only if they are modified.
+/// and applying the event. This is why we use immutable datastructures:
+/// they are cheap to clone.
 pub struct UidIndex {
     // Source of trust
     pub table: OrdMap<MailIdent, (ImapUid, Vec<Flag>)>,
@@ -66,7 +66,9 @@ impl UidIndex {
         UidIndexOp::FlagDel(ident, flags)
     }
 
-    fn add_email(&mut self, ident: MailIdent, uid: ImapUid, flags: &Vec<Flag>) {
+    // INTERNAL functions to keep state consistent
+
+    fn reg_email(&mut self, ident: MailIdent, uid: ImapUid, flags: &Vec<Flag>) {
         // Insert the email in our table
         self.table.insert(ident, (uid, flags.clone()));
 
@@ -75,7 +77,7 @@ impl UidIndex {
         self.idx_by_flag.insert(uid, flags);
     }
 
-    fn rm_email(&mut self, ident: &MailIdent) {
+    fn unreg_email(&mut self, ident: &MailIdent) {
         // We do nothing if the mail does not exist
         let (uid, flags) = match self.table.get(ident) {
             Some(v) => v,
@@ -124,10 +126,10 @@ impl BayouState for UidIndex {
                 // so we must handle this case even it is very unlikely
                 // In this case, we overwrite the email.
                 // Note: assigning a new UID is mandatory.
-                new.rm_email(ident);
+                new.unreg_email(ident);
 
                 // We record our email and update ou caches
-                new.add_email(*ident, *uid, flags);
+                new.reg_email(*ident, new_uid, flags);
 
                 // Update counters
                 new.internalseq += 1;
@@ -135,7 +137,7 @@ impl BayouState for UidIndex {
             }
             UidIndexOp::MailDel(ident) => {
                 // If the email is known locally, we remove its references in all our indexes
-                new.rm_email(ident);
+                new.unreg_email(ident);
 
                 // We update the counter
                 new.internalseq += 1;
@@ -180,7 +182,6 @@ impl FlagIndex {
                 .insert(uid);
         });
     }
-
     fn remove(&mut self, uid: ImapUid, flags: &Vec<Flag>) -> () {
         flags.iter().for_each(|flag| {
             self.0.get_mut(flag).and_then(|set| set.remove(&uid));
@@ -216,7 +217,7 @@ impl<'de> Deserialize<'de> for UidIndex {
 
         val.mails
             .iter()
-            .for_each(|(u, i, f)| uidindex.add_email(*i, *u, f));
+            .for_each(|(u, i, f)| uidindex.reg_email(*i, *u, f));
 
         Ok(uidindex)
     }
@@ -271,3 +272,97 @@ impl Serialize for MailIdent {
 }
 
 // ---- TESTS ----
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_uidindex() {
+        let mut state = UidIndex::default();
+
+        // Add message 1
+        {
+            let m = MailIdent([0x01; 24]);
+            let f = vec!["\\Recent".to_string(), "\\Archive".to_string()];
+            let ev = state.op_mail_add(m, f);
+            state = state.apply(&ev);
+
+            // Early checks
+            assert_eq!(state.table.len(), 1);
+            let (uid, flags) = state.table.get(&m).unwrap();
+            assert_eq!(*uid, 1);
+            assert_eq!(flags.len(), 2);
+            let ident = state.idx_by_uid.get(&1).unwrap();
+            assert_eq!(&m, ident);
+            let recent = state.idx_by_flag.0.get("\\Recent").unwrap();
+            assert_eq!(recent.len(), 1);
+            assert_eq!(recent.iter().next().unwrap(), &1);
+            assert_eq!(state.uidnext, 2);
+            assert_eq!(state.uidvalidity, 1);
+        }
+
+        // Add message 2
+        {
+            let m = MailIdent([0x02; 24]);
+            let f = vec!["\\Seen".to_string(), "\\Archive".to_string()];
+            let ev = state.op_mail_add(m, f);
+            state = state.apply(&ev);
+
+            let archive = state.idx_by_flag.0.get("\\Archive").unwrap();
+            assert_eq!(archive.len(), 2);
+        }
+
+        // Add flags to message 1
+        {
+            let m = MailIdent([0x01; 24]);
+            let f = vec!["Important".to_string(), "$cl_1".to_string()];
+            let ev = state.op_flag_add(m, f);
+            state = state.apply(&ev);
+        }
+
+        // Delete flags from message 1
+        {
+            let m = MailIdent([0x01; 24]);
+            let f = vec!["\\Recent".to_string()];
+            let ev = state.op_flag_del(m, f);
+            state = state.apply(&ev);
+
+            let archive = state.idx_by_flag.0.get("\\Archive").unwrap();
+            assert_eq!(archive.len(), 2);
+        }
+
+        // Delete message 2
+        {
+            let m = MailIdent([0x02; 24]);
+            let ev = state.op_mail_del(m);
+            state = state.apply(&ev);
+
+            let archive = state.idx_by_flag.0.get("\\Archive").unwrap();
+            assert_eq!(archive.len(), 1);
+        }
+
+        // Add a message 3 concurrent to message 1 (trigger a uid validity change)
+        {
+            let m = MailIdent([0x03; 24]);
+            let f = vec!["\\Archive".to_string(), "\\Recent".to_string()];
+            let ev = UidIndexOp::MailAdd(m, 1, f);
+            state = state.apply(&ev);
+        }
+
+        // Checks
+        {
+            assert_eq!(state.table.len(), 2);
+            assert!(state.uidvalidity > 1);
+
+            let (last_uid, ident) = state.idx_by_uid.get_max().unwrap();
+            assert_eq!(ident, &MailIdent([0x03; 24]));
+
+            let archive = state.idx_by_flag.0.get("\\Archive").unwrap();
+            assert_eq!(archive.len(), 2);
+            let mut iter = archive.iter();
+            assert_eq!(iter.next().unwrap(), &1);
+            assert_eq!(iter.next().unwrap(), last_uid);
+        }
+    }
+}
