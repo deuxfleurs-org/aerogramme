@@ -11,11 +11,11 @@ use rusoto_signature::Region;
 use tokio::sync::watch;
 use tower::Service;
 
-use crate::service;
-use crate::lmtp::*;
 use crate::config::*;
+use crate::lmtp::*;
 use crate::login::{ldap_provider::*, static_provider::*, *};
 use crate::mailbox::Mailbox;
+use crate::service;
 
 pub struct Server {
     lmtp_server: Option<Arc<LmtpServer>>,
@@ -38,7 +38,6 @@ impl Server {
         })
     }
 
-
     pub async fn run(self) -> Result<()> {
         //tracing::info!("Starting server on {:#}", self.imap.incoming.local_addr);
         tracing::info!("Starting Aerogramme...");
@@ -49,20 +48,23 @@ impl Server {
             let _ = provoke_exit.send(true);
         };
 
-
-        try_join!(async {
-            match self.lmtp_server.as_ref() {
-                None => Ok(()),
-                Some(s) => s.run(exit_signal.clone()).await,
+        try_join!(
+            async {
+                match self.lmtp_server.as_ref() {
+                    None => Ok(()),
+                    Some(s) => s.run(exit_signal.clone()).await,
+                }
+            },
+            //@FIXME handle ctrl + c
+            async {
+                let mut must_exit = exit_signal.clone();
+                tokio::select! {
+                    s = self.imap_server => s?,
+                    _ = must_exit.changed() => tracing::info!("IMAP server received CTRL+C, exiting."),
+                }
+                Ok(())
             }
-        },
-        //@FIXME handle ctrl + c
-        async {
-            self.imap_server.await?;
-            Ok(())
-        }
         )?;
-
 
         Ok(())
     }

@@ -84,7 +84,10 @@ pub struct Instance {
     pub user: Option<User>,
 }
 impl Instance {
-    fn new(login_provider: Arc<dyn LoginProvider + Send + Sync>, rx: mpsc::Receiver<Message>) -> Self {
+    fn new(
+        login_provider: Arc<dyn LoginProvider + Send + Sync>,
+        rx: mpsc::Receiver<Message>,
+    ) -> Self {
         Self {
             login_provider,
             rx,
