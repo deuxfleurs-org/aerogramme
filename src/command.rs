@@ -1,10 +1,10 @@
-use anyhow::Result;
+use anyhow::{Error, Result};
 use boitalettres::errors::Error as BalError;
 use boitalettres::proto::{Request, Response};
 use imap_codec::types::core::{AString, Tag};
 use imap_codec::types::fetch_attributes::MacroOrFetchAttributes;
 use imap_codec::types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
-use imap_codec::types::response::{Capability, Data};
+use imap_codec::types::response::{Capability, Code, Data, Response as ImapRes, Status};
 use imap_codec::types::sequence::SequenceSet;
 
 use crate::mailbox::Mailbox;
@@ -22,10 +22,14 @@ impl<'a> Command<'a> {
 
     pub async fn capability(&self) -> Result<Response> {
         let capabilities = vec![Capability::Imap4Rev1, Capability::Idle];
-        let body = vec![Data::Capability(capabilities)];
-        let r = Response::ok("Pre-login capabilities listed, post-login capabilities have more.")?
-            .with_body(body);
-        Ok(r)
+        let res = vec![
+            ImapRes::Data(Data::Capability(capabilities)),
+            ImapRes::Status(
+                Status::ok(Some(self.tag.clone()), None, "Server capabilities")
+                    .map_err(Error::msg)?,
+            ),
+        ];
+        Ok(res)
     }
 
     pub async fn login(&mut self, username: AString, password: AString) -> Result<Response> {
@@ -33,10 +37,12 @@ impl<'a> Command<'a> {
         tracing::info!(user = %u, "command.login");
 
         let creds = match self.session.login_provider.login(&u, &p).await {
-            Err(_) => {
-                return Ok(Response::no(
-                    "[AUTHENTICATIONFAILED] Authentication failed.",
-                )?)
+            Err(e) => {
+                tracing::debug!(error=%e, "authentication failed");
+                return Ok(vec![ImapRes::Status(
+                    Status::no(Some(self.tag.clone()), None, "Authentication failed")
+                        .map_err(Error::msg)?,
+                )]);
             }
             Ok(c) => c,
         };
@@ -47,7 +53,12 @@ impl<'a> Command<'a> {
         });
 
         tracing::info!(username=%u, "connected");
-        Ok(Response::ok("Logged in")?)
+        Ok(vec![
+            //@FIXME we could send a capability status here too
+            ImapRes::Status(
+                Status::ok(Some(self.tag.clone()), None, "completed").map_err(Error::msg)?,
+            ),
+        ])
     }
 
     pub async fn lsub(
@@ -55,7 +66,9 @@ impl<'a> Command<'a> {
         reference: MailboxCodec,
         mailbox_wildcard: ListMailbox,
     ) -> Result<Response> {
-        Ok(Response::bad("Not implemented")?)
+        Ok(vec![ImapRes::Status(
+            Status::bad(Some(self.tag.clone()), None, "Not implemented").map_err(Error::msg)?,
+        )])
     }
 
     pub async fn list(
@@ -63,7 +76,9 @@ impl<'a> Command<'a> {
         reference: MailboxCodec,
         mailbox_wildcard: ListMailbox,
     ) -> Result<Response> {
-        Ok(Response::bad("Not implemented")?)
+        Ok(vec![ImapRes::Status(
+            Status::bad(Some(self.tag.clone()), None, "Not implemented").map_err(Error::msg)?,
+        )])
     }
 
     /*
@@ -86,7 +101,12 @@ impl<'a> Command<'a> {
         let name = String::try_from(mailbox)?;
         let user = match self.session.user.as_ref() {
             Some(u) => u,
-            _ => return Ok(Response::no("You must be connected to use SELECT")?),
+            _ => {
+                return Ok(vec![ImapRes::Status(
+                    Status::no(Some(self.tag.clone()), None, "Not implemented")
+                        .map_err(Error::msg)?,
+                )])
+            }
         };
 
         let mut mb = Mailbox::new(&user.creds, name.clone())?;
@@ -98,7 +118,14 @@ impl<'a> Command<'a> {
         let body = vec![Data::Exists(sum.exists.try_into()?), Data::Recent(0)];
 
         self.session.selected = Some(mb);
-        Ok(Response::ok("[READ-WRITE] Select completed")?.with_body(body))
+        Ok(vec![ImapRes::Status(
+            Status::ok(
+                Some(self.tag.clone()),
+                Some(Code::ReadWrite),
+                "Select completed",
+            )
+            .map_err(Error::msg)?,
+        )])
     }
 
     pub async fn fetch(
@@ -107,6 +134,8 @@ impl<'a> Command<'a> {
         attributes: MacroOrFetchAttributes,
         uid: bool,
     ) -> Result<Response> {
-        Ok(Response::bad("Not implemented")?)
+        Ok(vec![ImapRes::Status(
+            Status::bad(Some(self.tag.clone()), None, "Not implemented").map_err(Error::msg)?,
+        )])
     }
 }

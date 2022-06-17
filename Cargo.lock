@@ -362,7 +362,7 @@ dependencies = [
 [[package]]
 name = "boitalettres"
 version = "0.0.1"
-source = "git+https://git.deuxfleurs.fr/KokaKiwi/boitalettres.git?branch=main#fc5f09356466d51404317c1b09e19720dd50c314"
+source = "git+https://git.deuxfleurs.fr/quentin/boitalettres.git?branch=expose_req_res#2c43b7686a7cd06f733719350bd61f792d20338e"
 dependencies = [
  "async-compat",
  "bytes",
