@@ -15,31 +15,24 @@ use crate::config::*;
 use crate::lmtp::*;
 use crate::login::{ldap_provider::*, static_provider::*, *};
 use crate::mailbox::Mailbox;
-use crate::service;
+use crate::imap;
 
 pub struct Server {
     lmtp_server: Option<Arc<LmtpServer>>,
-    imap_server: ImapServer<AddrIncoming, service::Instance>,
+    imap_server: Option<imap::Server>,
 }
 
 impl Server {
     pub async fn new(config: Config) -> Result<Self> {
-        let lmtp_config = config.lmtp.clone(); //@FIXME
-        let login = authenticator(config)?;
+        let (login, lmtp_conf, imap_conf) = build(config)?;
 
-        let lmtp = lmtp_config.map(|cfg| LmtpServer::new(cfg, login.clone()));
+        let lmtp_server = lmtp_conf.map(|cfg| LmtpServer::new(cfg, login.clone()));
+        let imap_server = imap_conf.map(|cfg| imap::new(cfg, login.clone()));
 
-        let incoming = AddrIncoming::new("127.0.0.1:4567").await?;
-        let imap = ImapServer::new(incoming).serve(service::Instance::new(login.clone()));
-
-        Ok(Self {
-            lmtp_server: lmtp,
-            imap_server: imap,
-        })
+        Ok(Self { lmtp_server, imap_server })
     }
 
     pub async fn run(self) -> Result<()> {
-        //tracing::info!("Starting server on {:#}", self.imap.incoming.local_addr);
         tracing::info!("Starting Aerogramme...");
 
         let (exit_signal, provoke_exit) = watch_ctrl_c();
@@ -55,14 +48,11 @@ impl Server {
                     Some(s) => s.run(exit_signal.clone()).await,
                 }
             },
-            //@FIXME handle ctrl + c
             async {
-                let mut must_exit = exit_signal.clone();
-                tokio::select! {
-                    s = self.imap_server => s?,
-                    _ = must_exit.changed() => tracing::info!("IMAP server received CTRL+C, exiting."),
+                match self.imap_server.as_ref() {
+                    None => Ok(()),
+                    Some(s) => s.run(exit_signal.clone()).await,
                 }
-                Ok(())
             }
         )?;
 
@@ -70,7 +60,7 @@ impl Server {
     }
 }
 
-fn authenticator(config: Config) -> Result<Arc<dyn LoginProvider + Send + Sync>> {
+fn build(config: Config) -> Result<(Arc<dyn LoginProvider + Send + Sync>, Option<LmtpConfig>, Option<ImapConfig>> {
     let s3_region = Region::Custom {
         name: config.aws_region.clone(),
         endpoint: config.s3_endpoint,
@@ -88,7 +78,8 @@ fn authenticator(config: Config) -> Result<Arc<dyn LoginProvider + Send + Sync>>
         }
         (None, None) => bail!("No login provider is set up in config file"),
     };
-    Ok(lp)
+
+    Ok(lp, self.lmtp_config, self.imap_config)
 }
 
 pub fn watch_ctrl_c() -> (watch::Receiver<bool>, Arc<watch::Sender<bool>>) {

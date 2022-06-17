@@ -1,14 +1,12 @@
 mod bayou;
-mod command;
 mod config;
 mod cryptoblob;
+mod imap;
 mod lmtp;
 mod login;
 mod mail_ident;
 mod mailbox;
 mod server;
-mod service;
-mod session;
 mod time;
 mod uidindex;
 

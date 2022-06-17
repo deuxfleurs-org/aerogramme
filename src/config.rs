@@ -16,6 +16,7 @@ pub struct Config {
     pub login_ldap: Option<LoginLdapConfig>,
 
     pub lmtp: Option<LmtpConfig>,
+    pub imap: Option<ImapConfig>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -69,6 +70,11 @@ pub struct LoginLdapConfig {
 pub struct LmtpConfig {
     pub bind_addr: SocketAddr,
     pub hostname: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ImapConfig {
+    pub bind_addr: SocketAddr,
 }
 
 pub fn read_config(config_file: PathBuf) -> Result<Config> {

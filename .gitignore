@@ -2,3 +2,5 @@
 .vimrc
 env.sh
 mailrage.toml
+*.swo
+*.swp

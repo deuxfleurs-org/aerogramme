@@ -2,6 +2,7 @@ pub mod ldap_provider;
 pub mod static_provider;
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
@@ -28,6 +29,10 @@ pub trait LoginProvider {
     /// public credentials for adding mails to the user's inbox.
     async fn public_login(&self, email: &str) -> Result<PublicCredentials>;
 }
+
+/// ArcLoginProvider is simply an alias on a structure that is used
+/// in many places in the code
+pub type ArcLoginProvider = Arc<dyn LoginProvider + Send + Sync>;
 
 /// The struct Credentials represent all of the necessary information to interact
 /// with a user account's data after they are logged in.
