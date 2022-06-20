@@ -1,23 +1,28 @@
 
-use boitalettres::proto::{Request, Response};
-use crate::login::ArcLoginProvider;
-use crate::imap::Context;
+use anyhow::{Result, Error};
+use boitalettres::proto::Response;
+use imap_codec::types::command::CommandBody;
+use imap_codec::types::core::AString;
+use imap_codec::types::response::{Capability, Data, Response as ImapRes, Status};
+
+use crate::imap::flow;
+use crate::imap::session::InnerContext;
 
 //--- dispatching
 
-pub async fn dispatch(ctx: Context) -> Result<Response> {
+pub async fn dispatch<'a>(ctx: &'a InnerContext<'a>) -> Result<Response> {
     match ctx.req.body {
-        CommandBody::Capability => anonymous::capability(ctx).await,
-        CommandBody::Login { username, password } => anonymous::login(ctx, username, password).await,
+        CommandBody::Capability => capability(ctx).await,
+        CommandBody::Login { username, password } => login(ctx, username, password).await,
         _ => Status::no(Some(ctx.req.tag.clone()), None, "This command is not available in the ANONYMOUS state.")
             .map(|s| vec![ImapRes::Status(s)])
             .map_err(Error::msg),
     }
 }
 
-//--- Command controllers
+//--- Command controllers, private
 
-pub async fn capability(ctx: Context) -> Result<Response> {
+async fn capability<'a>(ctx: InnerContext<'a>) -> Result<Response> {
     let capabilities = vec![Capability::Imap4Rev1, Capability::Idle];
     let res = vec![
         ImapRes::Data(Data::Capability(capabilities)),
@@ -29,7 +34,7 @@ pub async fn capability(ctx: Context) -> Result<Response> {
     Ok(res)
 }
 
-pub async fn login(ctx: Context, username: AString, password: AString) -> Result<Response> {
+async fn login<'a>(ctx: InnerContext<'a>, username: AString, password: AString) -> Result<Response> {
     let (u, p) = (String::try_from(username)?, String::try_from(password)?);
     tracing::info!(user = %u, "command.login");
 

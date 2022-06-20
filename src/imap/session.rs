@@ -1,19 +1,15 @@
-use std::sync::Arc;
-
 use anyhow::Error;
 use boitalettres::errors::Error as BalError;
 use boitalettres::proto::{Request, Response};
 use futures::future::BoxFuture;
 use futures::future::FutureExt;
-use imap_codec::types::command::CommandBody;
-use imap_codec::types::response::{Capability, Code, Data, Response as ImapRes, Status};
+use imap_codec::types::response::{Response as ImapRes, Status};
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::command::{anonymous,authenticated,selected};
-use crate::login::Credentials;
-use crate::mailbox::Mailbox;
-use crate::LoginProvider;
+use crate::imap::command::{anonymous,authenticated,selected};
+use crate::imap::flow;
+use crate::login::ArcLoginProvider;
 
 /* This constant configures backpressure in the system,
  * or more specifically, how many pipelined messages are allowed
@@ -89,10 +85,10 @@ impl Manager {
 
 //-----
 
-pub struct Context<'a> {
+pub struct InnerContext<'a> {
     req: &'a Request,
-    state: &'a mut flow::State,
-    login: ArcLoginProvider,
+    state: &'a flow::State,
+    login: &'a ArcLoginProvider,
 }
 
 pub struct Instance {
@@ -105,7 +101,7 @@ impl Instance {
     fn new(
         login_provider: ArcLoginProvider,
         rx: mpsc::Receiver<Message>,
-    ) -> Self {
+        ) -> Self {
         Self {
             login_provider,
             rx,
@@ -122,80 +118,38 @@ impl Instance {
         tracing::debug!("starting runner");
 
         while let Some(msg) = self.rx.recv().await {
-            let ctx = Context { req: &msg.req, state: &mut self.state, login: self.login_provider };
+            let ctx = InnerContext { req: &msg.req, state: &self.state, login: &self.login_provider };
 
             // Command behavior is modulated by the state.
             // To prevent state error, we handle the same command in separate code path depending
             // on the State.
-            let cmd_res =  match self.state {
-                flow::State::NotAuthenticated => anonymous::dispatch(ctx).await, 
-                flow::State::Authenticated(user) => authenticated::dispatch(ctx).await,
-                flow::State::Selected(user, mailbox) => selected::dispatch(ctx).await,
+            let cmd_res =  match ctx.state {
+                flow::State::NotAuthenticated => anonymous::dispatch(&ctx).await, 
+                flow::State::Authenticated(user) => authenticated::dispatch(&ctx, &user).await,
+                flow::State::Selected(user, mailbox) => selected::dispatch(&ctx, &user, &mailbox).await,
                 flow::State::Logout => Status::bad(Some(ctx.req.tag.clone()), None, "No commands are allowed in the LOGOUT state.")
                     .map(|s| vec![ImapRes::Status(s)])
                     .map_err(Error::msg),
             };
 
-/*
-
-                match req.body {
-                    CommandBody::Capability => anonymous::capability().await,
-                    CommandBody::Login { username, password } => anonymous::login(self.login_provider, username, password).await.and_then(|(user, response)| {
-                        self.state.authenticate(user)?;
-                        Ok(response)
-                    },
-                    _ => Status::no(Some(msg.req.tag.clone()), None, "This command is not available in the ANONYMOUS state.")
-                        .map(|s| vec![ImapRes::Status(s)])
-                        .map_err(Error::msg),
-
-                },
-                flow::State::Authenticated(user) => match req.body {
-                    CommandBody::Capability => anonymous::capability().await, // we use the same implem for now
-                    CommandBody::Lsub { reference, mailbox_wildcard, } => authenticated::lsub(reference, mailbox_wildcard).await,
-                    CommandBody::List { reference, mailbox_wildcard, } => authenticated::list(reference, mailbox_wildcard).await,
-                    CommandBody::Select { mailbox } => authenticated::select(user, mailbox).await.and_then(|(mailbox, response)| {
-                        self.state.select(mailbox);
-                        Ok(response)
-                    }),
-                    _ => Status::no(Some(msg.req.tag.clone()), None, "This command is not available in the AUTHENTICATED state.")
-                        .map(|s| vec![ImapRes::Status(s)])
-                        .map_err(Error::msg),
-                },
-                flow::State::Selected(user, mailbox) => match req.body {
-                    CommandBody::Capability => anonymous::capability().await, // we use the same implem for now
-                    CommandBody::Fetch { sequence_set, attributes, uid, } => selected::fetch(sequence_set, attributes, uid).await,
-                    _ => Status::no(Some(msg.req.tag.clone()), None, "This command is not available in the SELECTED state.")
-                        .map(|s| vec![ImapRes::Status(s)])
-                        .map_err(Error::msg),
-                },
-                flow::State::Logout => Status::bad(Some(msg.req.tag.clone()), None, "No commands are allowed in the LOGOUT state.")
-                    .map(|s| vec![ImapRes::Status(s)])
-                    .map_err(Error::msg),
-            }
-            */
-
-            let imap_res = match cmd_res {
-                Ok(new_state, imap_res) => {
-                    self.state = new_state;
-                    Ok(imap_res)
-                },
-                Err(e) if Ok(be) = e.downcast::<BalError>() => Err(be),
+            let imap_res = cmd_res.or_else(|e| match e.downcast::<BalError>() {
+                Ok(be) => Err(be),
                 Err(e) => {
                     tracing::warn!(error=%e, "internal.error");
-                    Ok(Status::bad(Some(msg.req.tag.clone()), None, "Internal error")
-                        .map(|s| vec![ImapRes::Status(s)])
-                        .map_err(|e| BalError::Text(e.to_string())))
+                    Status::bad(Some(msg.req.tag.clone()), None, "Internal error")
+                       .map(|s| vec![ImapRes::Status(s)])
+                       .map_err(|e| BalError::Text(e.to_string()))
                 }
-            };
+            });
 
             //@FIXME I think we should quit this thread on error and having our manager watch it,
             // and then abort the session as it is corrupted.
             msg.tx.send(imap_res).unwrap_or_else(|e| {
                 tracing::warn!("failed to send imap response to manager: {:#?}", e)
             });
-        }
-
-        //@FIXME add more info about the runner
-        tracing::debug!("exiting runner");
     }
+
+    //@FIXME add more info about the runner
+    tracing::debug!("exiting runner");
+}
 }

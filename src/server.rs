@@ -1,21 +1,16 @@
 use std::sync::Arc;
 
-use boitalettres::server::accept::addr::AddrIncoming;
-use boitalettres::server::accept::addr::AddrStream;
-use boitalettres::server::Server as ImapServer;
-
 use anyhow::{bail, Result};
 use futures::{try_join, StreamExt};
 use log::*;
 use rusoto_signature::Region;
 use tokio::sync::watch;
-use tower::Service;
 
 use crate::config::*;
 use crate::lmtp::*;
 use crate::login::{ldap_provider::*, static_provider::*, *};
-use crate::mailbox::Mailbox;
 use crate::imap;
+use crate::login::ArcLoginProvider;
 
 pub struct Server {
     lmtp_server: Option<Arc<LmtpServer>>,
@@ -60,7 +55,7 @@ impl Server {
     }
 }
 
-fn build(config: Config) -> Result<(Arc<dyn LoginProvider + Send + Sync>, Option<LmtpConfig>, Option<ImapConfig>> {
+fn build(config: Config) -> Result<(ArcLoginProvider, Option<LmtpConfig>, Option<ImapConfig>)> {
     let s3_region = Region::Custom {
         name: config.aws_region.clone(),
         endpoint: config.s3_endpoint,
@@ -70,7 +65,7 @@ fn build(config: Config) -> Result<(Arc<dyn LoginProvider + Send + Sync>, Option
         endpoint: config.k2v_endpoint,
     };
 
-    let lp: Arc<dyn LoginProvider + Send + Sync> = match (config.login_static, config.login_ldap) {
+    let lp: ArcLoginProvider = match (config.login_static, config.login_ldap) {
         (Some(st), None) => Arc::new(StaticLoginProvider::new(st, k2v_region, s3_region)?),
         (None, Some(ld)) => Arc::new(LdapLoginProvider::new(ld, k2v_region, s3_region)?),
         (Some(_), Some(_)) => {
@@ -79,7 +74,7 @@ fn build(config: Config) -> Result<(Arc<dyn LoginProvider + Send + Sync>, Option
         (None, None) => bail!("No login provider is set up in config file"),
     };
 
-    Ok(lp, self.lmtp_config, self.imap_config)
+    Ok(lp, config.lmtp_config, config.imap_config)
 }
 
 pub fn watch_ctrl_c() -> (watch::Receiver<bool>, Arc<watch::Sender<bool>>) {

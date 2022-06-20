@@ -2,39 +2,41 @@ mod session;
 mod flow;
 mod command;
 
-use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use anyhow::Result;
 use boitalettres::errors::Error as BalError;
 use boitalettres::proto::{Request, Response};
+use boitalettres::server::accept::addr::AddrIncoming;
 use boitalettres::server::accept::addr::AddrStream;
 use boitalettres::server::Server as ImapServer;
 use futures::future::BoxFuture;
 use futures::future::FutureExt;
+use tokio::sync::watch;
 use tower::Service;
 
-use crate::LoginProvider;
+use crate::login::ArcLoginProvider;
+use crate::config::ImapConfig;
 
 /// Server is a thin wrapper to register our Services in BàL
-pub struct Server(ImapServer<AddrIncoming, service::Instance>);
+pub struct Server(ImapServer<AddrIncoming, Instance>);
 pub async fn new(
     config: ImapConfig,
-    login: Arc<dyn LoginProvider + Send + Sync>,
+    login: ArcLoginProvider,
 ) -> Result<Server> {
 
     //@FIXME add a configuration parameter
     let incoming = AddrIncoming::new(config.bind_addr).await?;
-    let imap = ImapServer::new(incoming).serve(service::Instance::new(login.clone()));
+    tracing::info!("IMAP activated, will listen on {:#}", imap.incoming.local_addr);
 
-    tracing::info!("IMAP activated, will listen on {:#}", self.imap.incoming.local_addr);
-    Server(imap)
+    let imap = ImapServer::new(incoming).serve(Instance::new(login.clone()));
+    Ok(Server(imap))
 }
 impl Server {
-    pub async fn run(&self, mut must_exit: watch::Receiver<bool>) -> Result<()> {
+    pub async fn run(self, mut must_exit: watch::Receiver<bool>) -> Result<()> {
         tracing::info!("IMAP started!");
         tokio::select! {
-            s = self => s?,
+            s = self.0 => s?,
             _ = must_exit.changed() => tracing::info!("Stopped IMAP server"),
         }
 
@@ -47,10 +49,10 @@ impl Server {
 /// Instance is the main Tokio Tower service that we register in BàL.
 /// It receives new connection demands and spawn a dedicated service.
 struct Instance {
-    login_provider: Arc<dyn LoginProvider + Send + Sync>,
+    login_provider: ArcLoginProvider,
 }
 impl Instance {
-    pub fn new(login_provider: Arc<dyn LoginProvider + Send + Sync>) -> Self {
+    pub fn new(login_provider: ArcLoginProvider) -> Self {
         Self { login_provider }
     }
 }
@@ -78,7 +80,7 @@ struct Connection {
     session: session::Manager,
 }
 impl Connection {
-    pub fn new(login_provider: Arc<dyn LoginProvider + Send + Sync>) -> Self {
+    pub fn new(login_provider: ArcLoginProvider) -> Self {
         Self {
             session: session::Manager::new(login_provider),
         }
