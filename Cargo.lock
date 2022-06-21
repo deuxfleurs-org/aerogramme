@@ -2106,7 +2106,7 @@ dependencies = [
 [[package]]
 name = "smtp-message"
 version = "0.1.0"
-source = "git+http://github.com/Alexis211/kannader?branch=feature/lmtp#8c01360230f21c20d4c2da462dcf62e8a801ce0f"
+source = "git+http://github.com/Alexis211/kannader?branch=feature/lmtp#245cd13212db727d4085768b813a0ee09a137bc3"
 dependencies = [
  "auto_enums",
  "futures",
@@ -2121,7 +2121,7 @@ dependencies = [
 [[package]]
 name = "smtp-server"
 version = "0.1.0"
-source = "git+http://github.com/Alexis211/kannader?branch=feature/lmtp#8c01360230f21c20d4c2da462dcf62e8a801ce0f"
+source = "git+http://github.com/Alexis211/kannader?branch=feature/lmtp#245cd13212db727d4085768b813a0ee09a137bc3"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2135,7 +2135,7 @@ dependencies = [
 [[package]]
 name = "smtp-server-types"
 version = "0.1.0"
-source = "git+http://github.com/Alexis211/kannader?branch=feature/lmtp#8c01360230f21c20d4c2da462dcf62e8a801ce0f"
+source = "git+http://github.com/Alexis211/kannader?branch=feature/lmtp#245cd13212db727d4085768b813a0ee09a137bc3"
 dependencies = [
  "serde",
  "smtp-message",

@@ -88,7 +88,7 @@ pub struct Message {
 
 #[async_trait]
 impl Config for LmtpServer {
-    const PROTOCOL: Protocol = Protocol::Lmtp;
+    type Protocol = smtp_server::protocol::Lmtp;
 
     type ConnectionUserMeta = Conn;
     type MailUserMeta = Message;
@@ -155,19 +155,7 @@ impl Config for LmtpServer {
         }
     }
 
-    async fn handle_mail<'a, R>(
-        &self,
-        reader: &mut EscapedDataReader<'a, R>,
-        _mail: MailMetadata<Message>,
-        _conn_meta: &mut ConnectionMetadata<Conn>,
-    ) -> Decision<()>
-    where
-        R: Send + Unpin + AsyncRead,
-    {
-        unreachable!();
-    }
-
-    async fn handle_mail_multi<'a, 'slife0, 'slife1, 'stream, R>(
+    async fn handle_mail<'a, 'slife0, 'slife1, 'stream, R>(
         &'slife0 self,
         reader: &mut EscapedDataReader<'a, R>,
         meta: MailMetadata<Message>,
