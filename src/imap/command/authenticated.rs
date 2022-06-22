@@ -1,5 +1,5 @@
 
-use anyhow::{Result, Error};
+use anyhow::{Result, Error, anyhow};
 use boitalettres::proto::Response;
 use imap_codec::types::command::CommandBody;
 use imap_codec::types::core::Tag;
@@ -8,11 +8,11 @@ use imap_codec::types::response::{Code, Data, Response as ImapRes, Status};
 
 use crate::imap::command::anonymous;
 use crate::imap::session::InnerContext;
-use crate::imap::flow::User;
+use crate::imap::flow;
 use crate::mailbox::Mailbox;
 
-/*pub async fn dispatch<'a>(inner: &'a mut InnerContext<'a>, user: &'a User) -> Result<Response> {
-    let ctx = StateContext { inner, user, tag: &inner.req.tag };
+pub async fn dispatch<'a>(inner: InnerContext<'a>, user: &'a flow::User) -> Result<(Response, flow::Transition)> {
+    let ctx = StateContext { user, tag: &inner.req.tag, inner };
 
     match &ctx.inner.req.body {
         CommandBody::Lsub { reference, mailbox_wildcard, } => ctx.lsub(reference.clone(), mailbox_wildcard.clone()).await,
@@ -20,14 +20,14 @@ use crate::mailbox::Mailbox;
         CommandBody::Select { mailbox } => ctx.select(mailbox.clone()).await,
         _ => anonymous::dispatch(ctx.inner).await,
     }
-}*/
+}
 
 // --- PRIVATE ---
 
-/*
+
 struct StateContext<'a> {
-    inner: &'a mut InnerContext<'a>,
-    user: &'a User,
+    inner: InnerContext<'a>,
+    user: &'a flow::User,
     tag: &'a Tag,
 }
 
@@ -36,20 +36,20 @@ impl<'a> StateContext<'a> {
         &self,
         reference: MailboxCodec,
         mailbox_wildcard: ListMailbox,
-        ) -> Result<Response> {
-        Ok(vec![ImapRes::Status(
+        ) -> Result<(Response, flow::Transition)> {
+        Ok((vec![ImapRes::Status(
                 Status::bad(Some(self.tag.clone()), None, "Not implemented").map_err(Error::msg)?,
-                )])
+                )], flow::Transition::No))
     }
 
     async fn list(
         &self,
         reference: MailboxCodec,
         mailbox_wildcard: ListMailbox,
-        ) -> Result<Response> {
-        Ok(vec![
+        ) -> Result<(Response, flow::Transition)> {
+        Ok((vec![
            ImapRes::Status(Status::bad(Some(self.tag.clone()), None, "Not implemented").map_err(Error::msg)?),
-        ])
+        ], flow::Transition::No))
     }
 
     /*
@@ -68,36 +68,35 @@ impl<'a> StateContext<'a> {
 
      * TRACE END ---
      */
-    async fn select(&self, mailbox: MailboxCodec) -> Result<Response> {
+    async fn select(&self, mailbox: MailboxCodec) -> Result<(Response, flow::Transition)> {
         let name = String::try_from(mailbox)?;
 
         let mut mb = Mailbox::new(&self.user.creds, name.clone())?;
         tracing::info!(username=%self.user.name, mailbox=%name, "mailbox.selected");
 
+        
         let sum = mb.summary().await?;
         tracing::trace!(summary=%sum, "mailbox.summary");
 
         let body = vec![Data::Exists(sum.exists.try_into()?), Data::Recent(0)];
 
-        self.inner.state.select(mb)?;
+        let tr = flow::Transition::Select(mb);
 
-        let r_unseen = Status::ok(None, Some(Code::Unseen(std::num::NonZeroU32::new(1)?)), "").map_err(Error::msg)?;
+        let r_unseen = Status::ok(None, Some(Code::Unseen(std::num::NonZeroU32::new(1).ok_or(anyhow!("Invalid message identifier"))?)), "First unseen UID").map_err(Error::msg)?;
         //let r_permanentflags = Status::ok(None, Some(Code::
 
-        Ok(vec![
+        Ok((vec![
            ImapRes::Data(Data::Exists(0)),
            ImapRes::Data(Data::Recent(0)),
            ImapRes::Data(Data::Flags(vec![])),
            /*ImapRes::Status(),
              ImapRes::Status(),
              ImapRes::Status(),*/
-           Status::ok(
+           ImapRes::Status(Status::ok(
                Some(self.tag.clone()),
                Some(Code::ReadWrite),
                "Select completed",
-               )
-           .map_err(Error::msg)?,
-        ])
+               ).map_err(Error::msg)?),
+        ], tr))
     }
 }
-*/

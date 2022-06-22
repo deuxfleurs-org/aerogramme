@@ -125,8 +125,8 @@ impl Instance {
             // on the State.
             let ctrl = match &self.state {
                 flow::State::NotAuthenticated => anonymous::dispatch(ctx).await,
-                /*flow::State::Authenticated(user) => authenticated::dispatch(ctx, user).await,
-                flow::State::Selected(user, mailbox) => selected::dispatch(ctx, user, mailbox).await,*/
+                flow::State::Authenticated(user) => authenticated::dispatch(ctx, user).await,
+                /*flow::State::Selected(user, mailbox) => selected::dispatch(ctx, user, mailbox).await,*/
                 _ => Status::bad(Some(ctx.req.tag.clone()), None, "No commands are allowed in the LOGOUT state.")
                     .map(|s| (vec![ImapRes::Status(s)], flow::Transition::No))
                     .map_err(Error::msg),
