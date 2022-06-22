@@ -7,10 +7,10 @@ use rusoto_signature::Region;
 use tokio::sync::watch;
 
 use crate::config::*;
-use crate::lmtp::*;
-use crate::login::{ldap_provider::*, static_provider::*, *};
 use crate::imap;
+use crate::lmtp::*;
 use crate::login::ArcLoginProvider;
+use crate::login::{ldap_provider::*, static_provider::*, *};
 
 pub struct Server {
     lmtp_server: Option<Arc<LmtpServer>>,
@@ -27,7 +27,10 @@ impl Server {
             None => None,
         };
 
-        Ok(Self { lmtp_server, imap_server })
+        Ok(Self {
+            lmtp_server,
+            imap_server,
+        })
     }
 
     pub async fn run(self) -> Result<()> {

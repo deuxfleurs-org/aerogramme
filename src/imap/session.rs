@@ -7,7 +7,7 @@ use imap_codec::types::response::{Response as ImapRes, Status};
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::imap::command::{anonymous,authenticated,selected};
+use crate::imap::command::{anonymous, authenticated, selected};
 use crate::imap::flow;
 use crate::login::ArcLoginProvider;
 
@@ -98,10 +98,7 @@ pub struct Instance {
     pub state: flow::State,
 }
 impl Instance {
-    fn new(
-        login_provider: ArcLoginProvider,
-        rx: mpsc::Receiver<Message>,
-        ) -> Self {
+    fn new(login_provider: ArcLoginProvider, rx: mpsc::Receiver<Message>) -> Self {
         Self {
             login_provider,
             rx,
@@ -118,7 +115,11 @@ impl Instance {
         tracing::debug!("starting runner");
 
         while let Some(msg) = self.rx.recv().await {
-            let ctx = InnerContext { req: &msg.req, state: &self.state, login: &self.login_provider };
+            let ctx = InnerContext {
+                req: &msg.req,
+                state: &self.state,
+                login: &self.login_provider,
+            };
 
             // Command behavior is modulated by the state.
             // To prevent state error, we handle the same command in separate code path depending
@@ -126,10 +127,16 @@ impl Instance {
             let ctrl = match &self.state {
                 flow::State::NotAuthenticated => anonymous::dispatch(ctx).await,
                 flow::State::Authenticated(user) => authenticated::dispatch(ctx, user).await,
-                flow::State::Selected(user, mailbox) => selected::dispatch(ctx, user, mailbox).await,
-                _ => Status::bad(Some(ctx.req.tag.clone()), None, "No commands are allowed in the LOGOUT state.")
-                    .map(|s| (vec![ImapRes::Status(s)], flow::Transition::No))
-                    .map_err(Error::msg),
+                flow::State::Selected(user, mailbox) => {
+                    selected::dispatch(ctx, user, mailbox).await
+                }
+                _ => Status::bad(
+                    Some(ctx.req.tag.clone()),
+                    None,
+                    "No commands are allowed in the LOGOUT state.",
+                )
+                .map(|s| (vec![ImapRes::Status(s)], flow::Transition::No))
+                .map_err(Error::msg),
             };
 
             // Process result
@@ -138,7 +145,7 @@ impl Instance {
                     //@FIXME unwrap
                     self.state = self.state.apply(tr).unwrap();
                     Ok(res)
-                },
+                }
                 // Cast from anyhow::Error to Bal::Error
                 // @FIXME proper error handling would be great
                 Err(e) => match e.downcast::<BalError>() {
@@ -149,7 +156,7 @@ impl Instance {
                             .map(|s| vec![ImapRes::Status(s)])
                             .map_err(|e| BalError::Text(e.to_string()))
                     }
-                }
+                },
             };
 
             //@FIXME I think we should quit this thread on error and having our manager watch it,
@@ -157,9 +164,9 @@ impl Instance {
             msg.tx.send(res).unwrap_or_else(|e| {
                 tracing::warn!("failed to send imap response to manager: {:#?}", e)
             });
-    }
+        }
 
-    //@FIXME add more info about the runner
-    tracing::debug!("exiting runner");
-}
+        //@FIXME add more info about the runner
+        tracing::debug!("exiting runner");
+    }
 }

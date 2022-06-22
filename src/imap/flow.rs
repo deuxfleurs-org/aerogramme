@@ -1,5 +1,5 @@
-use std::fmt;
 use std::error::Error as StdError;
+use std::fmt;
 
 use crate::login::Credentials;
 use crate::mailbox::Mailbox;
@@ -14,26 +14,25 @@ pub enum Error {
     ForbiddenTransition,
 }
 impl fmt::Display for Error {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "Forbidden Transition")
-  }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Forbidden Transition")
+    }
 }
-impl StdError for Error { }
-
+impl StdError for Error {}
 
 pub enum State {
     NotAuthenticated,
     Authenticated(User),
     Selected(User, Mailbox),
-    Logout
+    Logout,
 }
 
 pub enum Transition {
-   No,
-   Authenticate(User),
-   Select(Mailbox),
-   Unselect,
-   Logout,
+    No,
+    Authenticate(User),
+    Select(Mailbox),
+    Unselect,
+    Logout,
 }
 
 // See RFC3501 section 3.
@@ -50,4 +49,3 @@ impl State {
         }
     }
 }
-

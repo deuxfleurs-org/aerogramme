@@ -1,6 +1,6 @@
-mod session;
-mod flow;
 mod command;
+mod flow;
+mod session;
 
 use std::task::{Context, Poll};
 
@@ -15,16 +15,12 @@ use futures::future::FutureExt;
 use tokio::sync::watch;
 use tower::Service;
 
-use crate::login::ArcLoginProvider;
 use crate::config::ImapConfig;
+use crate::login::ArcLoginProvider;
 
 /// Server is a thin wrapper to register our Services in BàL
 pub struct Server(ImapServer<AddrIncoming, Instance>);
-pub async fn new(
-    config: ImapConfig,
-    login: ArcLoginProvider,
-) -> Result<Server> {
-
+pub async fn new(config: ImapConfig, login: ArcLoginProvider) -> Result<Server> {
     //@FIXME add a configuration parameter
     let incoming = AddrIncoming::new(config.bind_addr).await?;
     tracing::info!("IMAP activated, will listen on {:#}", incoming.local_addr);
