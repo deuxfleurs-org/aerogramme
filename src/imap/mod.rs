@@ -27,7 +27,7 @@ pub async fn new(
 
     //@FIXME add a configuration parameter
     let incoming = AddrIncoming::new(config.bind_addr).await?;
-    tracing::info!("IMAP activated, will listen on {:#}", imap.incoming.local_addr);
+    tracing::info!("IMAP activated, will listen on {:#}", incoming.local_addr);
 
     let imap = ImapServer::new(incoming).serve(Instance::new(login.clone()));
     Ok(Server(imap))

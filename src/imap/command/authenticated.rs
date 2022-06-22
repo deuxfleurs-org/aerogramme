@@ -11,21 +11,22 @@ use crate::imap::session::InnerContext;
 use crate::imap::flow::User;
 use crate::mailbox::Mailbox;
 
-pub async fn dispatch<'a>(inner: &'a InnerContext<'a>, user: &'a User) -> Result<Response> {
+/*pub async fn dispatch<'a>(inner: &'a mut InnerContext<'a>, user: &'a User) -> Result<Response> {
     let ctx = StateContext { inner, user, tag: &inner.req.tag };
 
-    match ctx.req.body.as_ref() {
-        CommandBody::Lsub { reference, mailbox_wildcard, } => ctx.lsub(reference, mailbox_wildcard).await,
-        CommandBody::List { reference, mailbox_wildcard, } => ctx.list(reference, mailbox_wildcard).await,
-        CommandBody::Select { mailbox } => ctx.select(mailbox).await,
+    match &ctx.inner.req.body {
+        CommandBody::Lsub { reference, mailbox_wildcard, } => ctx.lsub(reference.clone(), mailbox_wildcard.clone()).await,
+        CommandBody::List { reference, mailbox_wildcard, } => ctx.list(reference.clone(), mailbox_wildcard.clone()).await,
+        CommandBody::Select { mailbox } => ctx.select(mailbox.clone()).await,
         _ => anonymous::dispatch(ctx.inner).await,
     }
-}
+}*/
 
 // --- PRIVATE ---
 
+/*
 struct StateContext<'a> {
-    inner: InnerContext<'a>,
+    inner: &'a mut InnerContext<'a>,
     user: &'a User,
     tag: &'a Tag,
 }
@@ -70,7 +71,7 @@ impl<'a> StateContext<'a> {
     async fn select(&self, mailbox: MailboxCodec) -> Result<Response> {
         let name = String::try_from(mailbox)?;
 
-        let mut mb = Mailbox::new(self.user.creds, name.clone())?;
+        let mut mb = Mailbox::new(&self.user.creds, name.clone())?;
         tracing::info!(username=%self.user.name, mailbox=%name, "mailbox.selected");
 
         let sum = mb.summary().await?;
@@ -80,7 +81,7 @@ impl<'a> StateContext<'a> {
 
         self.inner.state.select(mb)?;
 
-        let r_unseen = Status::ok(None, Some(Code::Unseen(0)), "").map_err(Error::msg)?;
+        let r_unseen = Status::ok(None, Some(Code::Unseen(std::num::NonZeroU32::new(1)?)), "").map_err(Error::msg)?;
         //let r_permanentflags = Status::ok(None, Some(Code::
 
         Ok(vec![
@@ -99,3 +100,4 @@ impl<'a> StateContext<'a> {
         ])
     }
 }
+*/

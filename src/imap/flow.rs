@@ -1,4 +1,5 @@
-
+use std::fmt;
+use std::error::Error as StdError;
 
 use crate::login::Credentials;
 use crate::mailbox::Mailbox;
@@ -8,46 +9,45 @@ pub struct User {
     pub creds: Credentials,
 }
 
+#[derive(Debug)]
+pub enum Error {
+    ForbiddenTransition,
+}
+impl fmt::Display for Error {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "Forbidden Transition")
+  }
+}
+impl StdError for Error { }
+
+
 pub enum State {
     NotAuthenticated,
     Authenticated(User),
     Selected(User, Mailbox),
     Logout
 }
-pub enum Error {
-    ForbiddenTransition,
+
+pub enum Transition {
+   No,
+   Authenticate(User),
+   Select(Mailbox),
+   Unselect,
+   Logout,
 }
 
 // See RFC3501 section 3.
 // https://datatracker.ietf.org/doc/html/rfc3501#page-13
 impl State {
-    pub fn authenticate(&mut self, user: User) -> Result<(), Error> {
-        self = match self {
-            State::NotAuthenticated => State::Authenticated(user),
-            _ => return Err(Error::ForbiddenTransition),
-        };
-        Ok(())
-    }
-
-    pub fn logout(&mut self) -> Self {
-        self = State::Logout;
-        Ok(())
-    }
-
-    pub fn select(&mut self, mailbox: Mailbox) -> Result<(), Error> {
-        self = match self {
-            State::Authenticated(user) => State::Selected(user, mailbox),
-            _ => return Err(Error::ForbiddenTransition),
-        };
-        Ok(())
-    }
-
-    pub fn unselect(&mut self) -> Result<(), Error> {
-        self = match self {
-            State::Selected(user, _) => State::Authenticated(user),
-            _ => return Err(Error::ForbiddenTransition),
-        };
-        Ok(())
+    pub fn apply(self, tr: Transition) -> Result<Self, Error> {
+        match (self, tr) {
+            (s, Transition::No) => Ok(s),
+            (State::NotAuthenticated, Transition::Authenticate(u)) => Ok(State::Authenticated(u)),
+            (State::Authenticated(u), Transition::Select(m)) => Ok(State::Selected(u, m)),
+            (State::Selected(u, _), Transition::Unselect) => Ok(State::Authenticated(u)),
+            (_, Transition::Logout) => Ok(State::Logout),
+            _ => Err(Error::ForbiddenTransition),
+        }
     }
 }
 

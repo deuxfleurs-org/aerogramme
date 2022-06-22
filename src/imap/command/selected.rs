@@ -12,7 +12,8 @@ use crate::imap::session::InnerContext;
 use crate::imap::flow::User;
 use crate::mailbox::Mailbox;
 
-pub async fn dispatch<'a>(inner: &'a InnerContext<'a>, user: &'a User, mailbox: &'a Mailbox) -> Result<Response> {
+/*
+pub async fn dispatch<'a>(inner: InnerContext<'a>, user: &'a User, mailbox: &'a Mailbox) -> Result<Response> {
     let ctx = StateContext { inner, user, mailbox, tag: &inner.req.tag };
 
     match ctx.inner.req.body {
@@ -20,9 +21,11 @@ pub async fn dispatch<'a>(inner: &'a InnerContext<'a>, user: &'a User, mailbox: 
         _ => authenticated::dispatch(inner, user).await,
     }
 }
+*/
 
 // --- PRIVATE ---
 
+/*
 struct StateContext<'a> {
     inner: InnerContext<'a>,
     user: &'a User,
@@ -43,3 +46,4 @@ impl<'a> StateContext<'a> {
         ])
     }
 }
+*/

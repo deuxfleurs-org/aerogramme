@@ -86,9 +86,9 @@ impl Manager {
 //-----
 
 pub struct InnerContext<'a> {
-    req: &'a Request,
-    state: &'a flow::State,
-    login: &'a ArcLoginProvider,
+    pub req: &'a Request,
+    pub state: &'a flow::State,
+    pub login: &'a ArcLoginProvider,
 }
 
 pub struct Instance {
@@ -113,7 +113,7 @@ impl Instance {
     // to ease debug
     // fn name(&self) -> String { }
 
-    async fn start(&mut self) {
+    async fn start(mut self) {
         //@FIXME add more info about the runner
         tracing::debug!("starting runner");
 
@@ -123,28 +123,38 @@ impl Instance {
             // Command behavior is modulated by the state.
             // To prevent state error, we handle the same command in separate code path depending
             // on the State.
-            let cmd_res =  match ctx.state {
-                flow::State::NotAuthenticated => anonymous::dispatch(&ctx).await, 
-                flow::State::Authenticated(user) => authenticated::dispatch(&ctx, &user).await,
-                flow::State::Selected(user, mailbox) => selected::dispatch(&ctx, &user, &mailbox).await,
-                flow::State::Logout => Status::bad(Some(ctx.req.tag.clone()), None, "No commands are allowed in the LOGOUT state.")
-                    .map(|s| vec![ImapRes::Status(s)])
+            let ctrl = match &self.state {
+                flow::State::NotAuthenticated => anonymous::dispatch(ctx).await,
+                /*flow::State::Authenticated(user) => authenticated::dispatch(ctx, user).await,
+                flow::State::Selected(user, mailbox) => selected::dispatch(ctx, user, mailbox).await,*/
+                _ => Status::bad(Some(ctx.req.tag.clone()), None, "No commands are allowed in the LOGOUT state.")
+                    .map(|s| (vec![ImapRes::Status(s)], flow::Transition::No))
                     .map_err(Error::msg),
             };
 
-            let imap_res = cmd_res.or_else(|e| match e.downcast::<BalError>() {
-                Ok(be) => Err(be),
-                Err(e) => {
-                    tracing::warn!(error=%e, "internal.error");
-                    Status::bad(Some(msg.req.tag.clone()), None, "Internal error")
-                       .map(|s| vec![ImapRes::Status(s)])
-                       .map_err(|e| BalError::Text(e.to_string()))
+            // Process result
+            let res = match ctrl {
+                Ok((res, tr)) => {
+                    //@FIXME unwrap
+                    self.state = self.state.apply(tr).unwrap();
+                    Ok(res)
+                },
+                // Cast from anyhow::Error to Bal::Error
+                // @FIXME proper error handling would be great
+                Err(e) => match e.downcast::<BalError>() {
+                    Ok(be) => Err(be),
+                    Err(e) => {
+                        tracing::warn!(error=%e, "internal.error");
+                        Status::bad(Some(msg.req.tag.clone()), None, "Internal error")
+                            .map(|s| vec![ImapRes::Status(s)])
+                            .map_err(|e| BalError::Text(e.to_string()))
+                    }
                 }
-            });
+            };
 
             //@FIXME I think we should quit this thread on error and having our manager watch it,
             // and then abort the session as it is corrupted.
-            msg.tx.send(imap_res).unwrap_or_else(|e| {
+            msg.tx.send(res).unwrap_or_else(|e| {
                 tracing::warn!("failed to send imap response to manager: {:#?}", e)
             });
     }

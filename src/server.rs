@@ -22,7 +22,10 @@ impl Server {
         let (login, lmtp_conf, imap_conf) = build(config)?;
 
         let lmtp_server = lmtp_conf.map(|cfg| LmtpServer::new(cfg, login.clone()));
-        let imap_server = imap_conf.map(|cfg| imap::new(cfg, login.clone()));
+        let imap_server = match imap_conf {
+            Some(cfg) => Some(imap::new(cfg, login.clone()).await?),
+            None => None,
+        };
 
         Ok(Self { lmtp_server, imap_server })
     }
@@ -44,7 +47,7 @@ impl Server {
                 }
             },
             async {
-                match self.imap_server.as_ref() {
+                match self.imap_server {
                     None => Ok(()),
                     Some(s) => s.run(exit_signal.clone()).await,
                 }
@@ -74,7 +77,7 @@ fn build(config: Config) -> Result<(ArcLoginProvider, Option<LmtpConfig>, Option
         (None, None) => bail!("No login provider is set up in config file"),
     };
 
-    Ok(lp, config.lmtp_config, config.imap_config)
+    Ok((lp, config.lmtp, config.imap))
 }
 
 pub fn watch_ctrl_c() -> (watch::Receiver<bool>, Arc<watch::Sender<bool>>) {
