@@ -13,7 +13,7 @@ use crate::imap::session::InnerContext;
 pub async fn dispatch<'a>(ctx: InnerContext<'a>) -> Result<(Response, flow::Transition)> {
     match &ctx.req.body {
         CommandBody::Capability => capability(ctx).await,
-        CommandBody::Login { username, password } => login(ctx, username.clone(), password.clone()).await,
+        CommandBody::Login { username, password } => login(ctx, username, password).await,
         _ => Status::no(Some(ctx.req.tag.clone()), None, "This command is not available in the ANONYMOUS state.")
             .map(|s| (vec![ImapRes::Status(s)], flow::Transition::No))
             .map_err(Error::msg),
@@ -34,8 +34,8 @@ async fn capability<'a>(ctx: InnerContext<'a>) -> Result<(Response, flow::Transi
     Ok((res, flow::Transition::No))
 }
 
-async fn login<'a>(ctx: InnerContext<'a>, username: AString, password: AString) -> Result<(Response, flow::Transition)> {
-    let (u, p) = (String::try_from(username)?, String::try_from(password)?);
+async fn login<'a>(ctx: InnerContext<'a>, username: &AString, password: &AString) -> Result<(Response, flow::Transition)> {
+    let (u, p) = (String::try_from(username.clone())?, String::try_from(password.clone())?);
     tracing::info!(user = %u, "command.login");
 
     let creds = match ctx.login.login(&u, &p).await {

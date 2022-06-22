@@ -15,9 +15,9 @@ pub async fn dispatch<'a>(inner: InnerContext<'a>, user: &'a flow::User) -> Resu
     let ctx = StateContext { user, tag: &inner.req.tag, inner };
 
     match &ctx.inner.req.body {
-        CommandBody::Lsub { reference, mailbox_wildcard, } => ctx.lsub(reference.clone(), mailbox_wildcard.clone()).await,
-        CommandBody::List { reference, mailbox_wildcard, } => ctx.list(reference.clone(), mailbox_wildcard.clone()).await,
-        CommandBody::Select { mailbox } => ctx.select(mailbox.clone()).await,
+        CommandBody::Lsub { reference, mailbox_wildcard, } => ctx.lsub(reference, mailbox_wildcard).await,
+        CommandBody::List { reference, mailbox_wildcard, } => ctx.list(reference, mailbox_wildcard).await,
+        CommandBody::Select { mailbox } => ctx.select(mailbox).await,
         _ => anonymous::dispatch(ctx.inner).await,
     }
 }
@@ -34,8 +34,8 @@ struct StateContext<'a> {
 impl<'a> StateContext<'a> {
     async fn lsub(
         &self,
-        reference: MailboxCodec,
-        mailbox_wildcard: ListMailbox,
+        reference: &MailboxCodec,
+        mailbox_wildcard: &ListMailbox,
         ) -> Result<(Response, flow::Transition)> {
         Ok((vec![ImapRes::Status(
                 Status::bad(Some(self.tag.clone()), None, "Not implemented").map_err(Error::msg)?,
@@ -44,8 +44,8 @@ impl<'a> StateContext<'a> {
 
     async fn list(
         &self,
-        reference: MailboxCodec,
-        mailbox_wildcard: ListMailbox,
+        reference: &MailboxCodec,
+        mailbox_wildcard: &ListMailbox,
         ) -> Result<(Response, flow::Transition)> {
         Ok((vec![
            ImapRes::Status(Status::bad(Some(self.tag.clone()), None, "Not implemented").map_err(Error::msg)?),
@@ -68,8 +68,8 @@ impl<'a> StateContext<'a> {
 
      * TRACE END ---
      */
-    async fn select(&self, mailbox: MailboxCodec) -> Result<(Response, flow::Transition)> {
-        let name = String::try_from(mailbox)?;
+    async fn select(&self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
+        let name = String::try_from(mailbox.clone())?;
 
         let mut mb = Mailbox::new(&self.user.creds, name.clone())?;
         tracing::info!(username=%self.user.name, mailbox=%name, "mailbox.selected");
