@@ -83,6 +83,18 @@ impl<'a> StateContext<'a> {
     S: * OK [PERMANENTFLAGS (\Deleted \Seen \*)] Limited
     S: A142 OK [READ-WRITE] SELECT completed
 
+    --- a mailbox with no unseen message -> no unseen entry
+
+    20 select "INBOX.achats"
+    * FLAGS (\Answered \Flagged \Deleted \Seen \Draft $Forwarded JUNK $label1)
+    * OK [PERMANENTFLAGS (\Answered \Flagged \Deleted \Seen \Draft $Forwarded JUNK $label1 \*)] Flags permitted.
+    * 88 EXISTS
+    * 0 RECENT
+    * OK [UIDVALIDITY 1347986788] UIDs valid
+    * OK [UIDNEXT 91] Predicted next UID
+    * OK [HIGHESTMODSEQ 72] Highest
+    20 OK [READ-WRITE] Select completed (0.001 + 0.000 secs).
+
     * TRACE END ---
     */
     async fn select(&self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
@@ -96,8 +108,6 @@ impl<'a> StateContext<'a> {
 
         let body = vec![Data::Exists(sum.exists.try_into()?), Data::Recent(0)];
 
-        let tr = flow::Transition::Select(mb);
-
         let r_unseen = Status::ok(
             None,
             Some(Code::Unseen(
@@ -108,13 +118,22 @@ impl<'a> StateContext<'a> {
         .map_err(Error::msg)?;
         //let r_permanentflags = Status::ok(None, Some(Code::
 
+        let tr = flow::Transition::Select(mb);
+
         Ok((
             vec![
                 ImapRes::Data(Data::Exists(0)),
                 ImapRes::Data(Data::Recent(0)),
                 ImapRes::Data(Data::Flags(vec![])),
+                ImapRes::Status(
+                    Status::ok(
+                        None,
+                        Some(Code::UidValidity(sum.validity)),
+                        "UIDs valid"
+                    )
+                    .map_err(Error::msg)?,
+                ),
                 /*ImapRes::Status(),
-                ImapRes::Status(),
                 ImapRes::Status(),*/
                 ImapRes::Status(
                     Status::ok(

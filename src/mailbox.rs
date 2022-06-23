@@ -104,7 +104,7 @@ fn dump(uid_index: &Bayou<UidIndex>) {
             "{} {} {}",
             uid,
             hex::encode(ident.0),
-            s.table.get(ident).cloned().unwrap_or_default().1.join(", ")
+            s.table.get(ident).cloned().unwrap().1.join(", ")
         );
     }
     println!("");

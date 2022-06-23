@@ -1,11 +1,13 @@
+use std::num::NonZeroU32;
+
 use im::{HashMap, HashSet, OrdMap, OrdSet};
 use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::bayou::*;
 use crate::mail_ident::MailIdent;
 
-pub type ImapUid = u32;
-pub type ImapUidvalidity = u32;
+pub type ImapUid = NonZeroU32;
+pub type ImapUidvalidity = NonZeroU32;
 pub type Flag = String;
 
 #[derive(Clone)]
@@ -90,9 +92,9 @@ impl Default for UidIndex {
             table: OrdMap::new(),
             idx_by_uid: OrdMap::new(),
             idx_by_flag: FlagIndex::new(),
-            uidvalidity: 1,
-            uidnext: 1,
-            internalseq: 1,
+            uidvalidity: NonZeroU32::new(1).unwrap(),
+            uidnext: NonZeroU32::new(1).unwrap(),
+            internalseq: NonZeroU32::new(1).unwrap(),
         }
     }
 }
@@ -106,7 +108,9 @@ impl BayouState for UidIndex {
             UidIndexOp::MailAdd(ident, uid, flags) => {
                 // Change UIDValidity if there is a conflict
                 if *uid < new.internalseq {
-                    new.uidvalidity += new.internalseq - *uid;
+                    new.uidvalidity =
+                        NonZeroU32::new(new.uidvalidity.get() + new.internalseq.get() - uid.get())
+                            .unwrap();
                 }
 
                 // Assign the real uid of the email
@@ -123,7 +127,7 @@ impl BayouState for UidIndex {
                 new.reg_email(*ident, new_uid, flags);
 
                 // Update counters
-                new.internalseq += 1;
+                new.internalseq = NonZeroU32::new(new.internalseq.get() + 1).unwrap();
                 new.uidnext = new.internalseq;
             }
             UidIndexOp::MailDel(ident) => {
@@ -131,7 +135,7 @@ impl BayouState for UidIndex {
                 new.unreg_email(ident);
 
                 // We update the counter
-                new.internalseq += 1;
+                new.internalseq = NonZeroU32::new(new.internalseq.get() + 1).unwrap();
             }
             UidIndexOp::FlagAdd(ident, new_flags) => {
                 if let Some((uid, existing_flags)) = new.table.get_mut(ident) {
