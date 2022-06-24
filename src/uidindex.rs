@@ -182,6 +182,9 @@ impl FlagIndex {
             self.0.get_mut(flag).and_then(|set| set.remove(&uid));
         });
     }
+    pub fn get(&self, f: &Flag) -> Option<&OrdSet<ImapUid>> {
+        self.0.get(f)
+    } 
 }
 
 // ---- CUSTOM SERIALIZATION AND DESERIALIZATION ----

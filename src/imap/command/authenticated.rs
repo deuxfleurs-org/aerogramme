@@ -106,8 +106,6 @@ impl<'a> StateContext<'a> {
         let sum = mb.summary().await?;
         tracing::trace!(summary=%sum, "mailbox.summary");
 
-        let body = vec![Data::Exists(sum.exists.try_into()?), Data::Recent(0)];
-
         let r_unseen = Status::ok(
             None,
             Some(Code::Unseen(
@@ -118,33 +116,47 @@ impl<'a> StateContext<'a> {
         .map_err(Error::msg)?;
         //let r_permanentflags = Status::ok(None, Some(Code::
 
-        let tr = flow::Transition::Select(mb);
+        let mut res = Vec::<ImapRes>::new();
 
-        Ok((
-            vec![
-                ImapRes::Data(Data::Exists(0)),
-                ImapRes::Data(Data::Recent(0)),
-                ImapRes::Data(Data::Flags(vec![])),
-                ImapRes::Status(
-                    Status::ok(
-                        None,
-                        Some(Code::UidValidity(sum.validity)),
-                        "UIDs valid"
-                    )
-                    .map_err(Error::msg)?,
-                ),
-                /*ImapRes::Status(),
-                ImapRes::Status(),*/
-                ImapRes::Status(
-                    Status::ok(
-                        Some(self.tag.clone()),
-                        Some(Code::ReadWrite),
-                        "Select completed",
-                    )
-                    .map_err(Error::msg)?,
-                ),
-            ],
-            tr,
-        ))
+        res.push(ImapRes::Data(Data::Exists(sum.exists)));
+
+        res.push(ImapRes::Data(Data::Recent(sum.recent)));
+
+        res.push(ImapRes::Data(Data::Flags(vec![])));
+
+        let uid_validity = Status::ok(
+            None,
+            Some(Code::UidValidity(sum.validity)),
+            "UIDs valid"
+            )
+            .map_err(Error::msg)?;
+        res.push(ImapRes::Status(uid_validity));
+
+        let next_uid = Status::ok(
+            None,
+            Some(Code::UidNext(sum.next)),
+            "Predict next UID"
+        ).map_err(Error::msg)?;
+        res.push(ImapRes::Status(next_uid));
+
+        if let Some(unseen) = sum.unseen {
+            let status_unseen = Status::ok(
+                None,
+                Some(Code::Unseen(unseen.clone())),
+                "First unseen UID",
+            )
+            .map_err(Error::msg)?;
+            res.push(ImapRes::Status(status_unseen));
+        }
+
+        let last = Status::ok(
+            Some(self.tag.clone()),
+            Some(Code::ReadWrite),
+            "Select completed",
+        ).map_err(Error::msg)?;
+        res.push(ImapRes::Status(last));
+
+        let tr = flow::Transition::Select(mb);
+        Ok((res, tr))
     }
 }

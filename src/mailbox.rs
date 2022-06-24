@@ -1,3 +1,5 @@
+use std::convert::TryFrom;
+
 use anyhow::Result;
 use k2v_client::K2vClient;
 use rusoto_s3::S3Client;
@@ -8,12 +10,14 @@ use crate::login::Credentials;
 use crate::mail_ident::*;
 use crate::uidindex::*;
 
-pub struct Summary {
+pub struct Summary<'a> {
     pub validity: ImapUidvalidity,
     pub next: ImapUid,
-    pub exists: usize,
+    pub exists: u32,
+    pub recent: u32,
+    pub unseen: Option<&'a ImapUid>,
 }
-impl std::fmt::Display for Summary {
+impl std::fmt::Display for Summary<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
@@ -23,6 +27,9 @@ impl std::fmt::Display for Summary {
     }
 }
 
+
+// Non standard but common flags:
+// https://www.iana.org/assignments/imap-jmap-keywords/imap-jmap-keywords.xhtml
 pub struct Mailbox {
     bucket: String,
     pub name: String,
@@ -34,6 +41,8 @@ pub struct Mailbox {
     uid_index: Bayou<UidIndex>,
 }
 
+// IDEA: We store a specific flag named $unseen.
+// If it is not present, we add the virtual flag \Seen
 impl Mailbox {
     pub fn new(creds: &Credentials, name: String) -> Result<Self> {
         let uid_index = Bayou::<UidIndex>::new(creds, name.clone())?;
@@ -52,10 +61,15 @@ impl Mailbox {
         self.uid_index.sync().await?;
         let state = self.uid_index.state();
 
+        let unseen = state.idx_by_flag.get(&"$unseen".to_string()).and_then(|os| os.get_min());
+        let recent = state.idx_by_flag.get(&"\\Recent".to_string()).map(|os| os.len()).unwrap_or(0);
+
         return Ok(Summary {
             validity: state.uidvalidity,
             next: state.uidnext,
-            exists: state.idx_by_uid.len(),
+            exists: u32::try_from(state.idx_by_uid.len())?,
+            recent: u32::try_from(recent)?,
+            unseen,
         });
     }
 
