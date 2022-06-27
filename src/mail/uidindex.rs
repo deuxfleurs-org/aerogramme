@@ -4,7 +4,7 @@ use im::{HashMap, HashSet, OrdMap, OrdSet};
 use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::bayou::*;
-use crate::mail_ident::MailIdent;
+use crate::mail::mail_ident::MailIdent;
 
 pub type ImapUid = NonZeroU32;
 pub type ImapUidvalidity = NonZeroU32;

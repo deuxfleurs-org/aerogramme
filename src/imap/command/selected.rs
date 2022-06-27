@@ -9,7 +9,7 @@ use imap_codec::types::sequence::SequenceSet;
 use crate::imap::command::authenticated;
 use crate::imap::flow;
 use crate::imap::session::InnerContext;
-use crate::mailbox::Mailbox;
+use crate::mail::Mailbox;
 
 pub async fn dispatch<'a>(
     inner: InnerContext<'a>,

@@ -1,3 +1,6 @@
+pub mod mail_ident;
+mod uidindex;
+
 use std::convert::TryFrom;
 
 use anyhow::Result;
@@ -7,8 +10,8 @@ use rusoto_s3::S3Client;
 use crate::bayou::Bayou;
 use crate::cryptoblob::Key;
 use crate::login::Credentials;
-use crate::mail_ident::*;
-use crate::uidindex::*;
+use crate::mail::mail_ident::*;
+use crate::mail::uidindex::*;
 
 pub struct Summary<'a> {
     pub validity: ImapUidvalidity,

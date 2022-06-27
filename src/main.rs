@@ -4,11 +4,9 @@ mod cryptoblob;
 mod imap;
 mod lmtp;
 mod login;
-mod mail_ident;
-mod mailbox;
+mod mail;
 mod server;
 mod time;
-mod uidindex;
 
 use std::path::PathBuf;
 

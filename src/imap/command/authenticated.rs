@@ -9,7 +9,7 @@ use imap_codec::types::response::{Code, Data, Response as ImapRes, Status};
 use crate::imap::command::anonymous;
 use crate::imap::flow;
 use crate::imap::session::InnerContext;
-use crate::mailbox::Mailbox;
+use crate::mail::Mailbox;
 
 const DEFAULT_FLAGS: [Flag; 5] = [
   Flag::Seen,

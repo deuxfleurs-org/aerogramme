@@ -2,7 +2,7 @@ use std::error::Error as StdError;
 use std::fmt;
 
 use crate::login::Credentials;
-use crate::mailbox::Mailbox;
+use crate::mail::Mailbox;
 
 pub struct User {
     pub name: String,
