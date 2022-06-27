@@ -164,6 +164,7 @@ impl BayouState for UidIndex {
 // ---- FlagIndex implementation ----
 #[derive(Clone)]
 pub struct FlagIndex(HashMap<Flag, OrdSet<ImapUid>>);
+pub type FlagIter<'a> = im::hashmap::Keys<'a, Flag, OrdSet<ImapUid>>;
 
 impl FlagIndex {
     fn new() -> Self {
@@ -182,9 +183,14 @@ impl FlagIndex {
             self.0.get_mut(flag).and_then(|set| set.remove(&uid));
         });
     }
+
     pub fn get(&self, f: &Flag) -> Option<&OrdSet<ImapUid>> {
         self.0.get(f)
     } 
+
+    pub fn flags(&self) -> FlagIter {
+        self.0.keys()
+    }
 }
 
 // ---- CUSTOM SERIALIZATION AND DESERIALIZATION ----

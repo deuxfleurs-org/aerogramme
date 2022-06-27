@@ -15,6 +15,7 @@ pub struct Summary<'a> {
     pub next: ImapUid,
     pub exists: u32,
     pub recent: u32,
+    pub flags: FlagIter<'a>,
     pub unseen: Option<&'a ImapUid>,
 }
 impl std::fmt::Display for Summary<'_> {
@@ -69,6 +70,7 @@ impl Mailbox {
             next: state.uidnext,
             exists: u32::try_from(state.idx_by_uid.len())?,
             recent: u32::try_from(recent)?,
+            flags: state.idx_by_flag.flags(),
             unseen,
         });
     }

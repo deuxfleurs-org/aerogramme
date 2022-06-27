@@ -1,7 +1,8 @@
 use anyhow::{anyhow, Error, Result};
 use boitalettres::proto::Response;
 use imap_codec::types::command::CommandBody;
-use imap_codec::types::core::Tag;
+use imap_codec::types::core::{Atom, Tag};
+use imap_codec::types::flag::Flag;
 use imap_codec::types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
 use imap_codec::types::response::{Code, Data, Response as ImapRes, Status};
 
@@ -9,6 +10,14 @@ use crate::imap::command::anonymous;
 use crate::imap::flow;
 use crate::imap::session::InnerContext;
 use crate::mailbox::Mailbox;
+
+const DEFAULT_FLAGS: [Flag; 5] = [
+  Flag::Seen,
+  Flag::Answered,
+  Flag::Flagged,
+  Flag::Deleted,
+  Flag::Draft,
+];
 
 pub async fn dispatch<'a>(
     inner: InnerContext<'a>,
@@ -114,7 +123,6 @@ impl<'a> StateContext<'a> {
             "First unseen UID",
         )
         .map_err(Error::msg)?;
-        //let r_permanentflags = Status::ok(None, Some(Code::
 
         let mut res = Vec::<ImapRes>::new();
 
@@ -122,7 +130,21 @@ impl<'a> StateContext<'a> {
 
         res.push(ImapRes::Data(Data::Recent(sum.recent)));
 
-        res.push(ImapRes::Data(Data::Flags(vec![])));
+        let mut flags: Vec<Flag> = sum.flags.map(|f| match f.chars().next() {
+            Some('\\') => None,
+            Some('$') if f == "$unseen" => None,
+            Some(_) => match Atom::try_from(f.clone()) {
+                Err(_) => {
+                    tracing::error!(username=%self.user.name, mailbox=%name, flag=%f, "Unable to encode flag as IMAP atom");
+                    None
+                },
+                Ok(a) => Some(Flag::Keyword(a)),
+            },
+            None => None,
+        }).flatten().collect();
+        flags.extend_from_slice(&DEFAULT_FLAGS);
+
+        res.push(ImapRes::Data(Data::Flags(flags.clone())));
 
         let uid_validity = Status::ok(
             None,
@@ -148,6 +170,14 @@ impl<'a> StateContext<'a> {
             .map_err(Error::msg)?;
             res.push(ImapRes::Status(status_unseen));
         }
+
+        flags.push(Flag::Permanent);
+        let permanent_flags = Status::ok(
+            None, 
+            Some(Code::PermanentFlags(flags)),
+            "Flags permitted",
+        ).map_err(Error::msg)?;
+        res.push(ImapRes::Status(permanent_flags));
 
         let last = Status::ok(
             Some(self.tag.clone()),
