@@ -49,16 +49,10 @@ impl Manager {
         match self.tx.try_send(msg) {
             Ok(()) => (),
             Err(TrySendError::Full(_)) => {
-                return async {
-                    Response::bad("Too fast! Send less pipelined requests.")
-                }
-                .boxed()
+                return async { Response::bad("Too fast! Send less pipelined requests.") }.boxed()
             }
             Err(TrySendError::Closed(_)) => {
-                return async {
-                    Response::bad("Session task has existed.")
-                }
-                .boxed()
+                return async { Response::bad("Session task has existed.") }.boxed()
             }
         };
 
@@ -130,8 +124,11 @@ impl Instance {
             // Process result
             let res = match ctrl {
                 Ok((res, tr)) => {
-                    //@FIXME unwrap
+                    //@FIXME remove unwrap
                     self.state = self.state.apply(tr).unwrap();
+
+                    //@FIXME enrich here the command with some status
+
                     Ok(res)
                 }
                 // Cast from anyhow::Error to Bal::Error

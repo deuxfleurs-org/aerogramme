@@ -47,9 +47,6 @@ impl<'a> StateContext<'a> {
         attributes: &MacroOrFetchAttributes,
         uid: &bool,
     ) -> Result<(Response, flow::Transition)> {
-        Ok((
-            Response::bad("Not implemented")?,
-            flow::Transition::No,
-        ))
+        Ok((Response::bad("Not implemented")?, flow::Transition::No))
     }
 }

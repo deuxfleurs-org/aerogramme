@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Error, Result};
-use boitalettres::proto::{Response, res::body::Data as Body};
+use boitalettres::proto::{res::body::Data as Body, Response};
 use imap_codec::types::command::CommandBody;
 use imap_codec::types::core::Atom;
 use imap_codec::types::flag::Flag;
@@ -12,11 +12,11 @@ use crate::imap::session::InnerContext;
 use crate::mail::Mailbox;
 
 const DEFAULT_FLAGS: [Flag; 5] = [
-  Flag::Seen,
-  Flag::Answered,
-  Flag::Flagged,
-  Flag::Deleted,
-  Flag::Draft,
+    Flag::Seen,
+    Flag::Answered,
+    Flag::Flagged,
+    Flag::Deleted,
+    Flag::Draft,
 ];
 
 pub async fn dispatch<'a>(
@@ -52,10 +52,7 @@ impl<'a> StateContext<'a> {
         reference: &MailboxCodec,
         mailbox_wildcard: &ListMailbox,
     ) -> Result<(Response, flow::Transition)> {
-        Ok((
-            Response::bad("Not implemented")?,
-            flow::Transition::No,
-        ))
+        Ok((Response::bad("Not implemented")?, flow::Transition::No))
     }
 
     async fn list(
@@ -63,10 +60,7 @@ impl<'a> StateContext<'a> {
         reference: &MailboxCodec,
         mailbox_wildcard: &ListMailbox,
     ) -> Result<(Response, flow::Transition)> {
-        Ok((
-            Response::bad("Not implemented")?,
-            flow::Transition::No,
-        ))
+        Ok((Response::bad("Not implemented")?, flow::Transition::No))
     }
 
     /*
@@ -128,37 +122,25 @@ impl<'a> StateContext<'a> {
 
         res.push(Body::Data(Data::Flags(flags.clone())));
 
-        let uid_validity = Status::ok(
-            None,
-            Some(Code::UidValidity(sum.validity)),
-            "UIDs valid"
-            )
+        let uid_validity = Status::ok(None, Some(Code::UidValidity(sum.validity)), "UIDs valid")
             .map_err(Error::msg)?;
         res.push(Body::Status(uid_validity));
 
-        let next_uid = Status::ok(
-            None,
-            Some(Code::UidNext(sum.next)),
-            "Predict next UID"
-        ).map_err(Error::msg)?;
+        let next_uid = Status::ok(None, Some(Code::UidNext(sum.next)), "Predict next UID")
+            .map_err(Error::msg)?;
         res.push(Body::Status(next_uid));
 
         if let Some(unseen) = sum.unseen {
-            let status_unseen = Status::ok(
-                None,
-                Some(Code::Unseen(unseen.clone())),
-                "First unseen UID",
-            )
-            .map_err(Error::msg)?;
+            let status_unseen =
+                Status::ok(None, Some(Code::Unseen(unseen.clone())), "First unseen UID")
+                    .map_err(Error::msg)?;
             res.push(Body::Status(status_unseen));
         }
 
         flags.push(Flag::Permanent);
-        let permanent_flags = Status::ok(
-            None, 
-            Some(Code::PermanentFlags(flags)),
-            "Flags permitted",
-        ).map_err(Error::msg)?;
+        let permanent_flags =
+            Status::ok(None, Some(Code::PermanentFlags(flags)), "Flags permitted")
+                .map_err(Error::msg)?;
         res.push(Body::Status(permanent_flags));
 
         Ok((

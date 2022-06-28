@@ -13,6 +13,10 @@ use crate::login::Credentials;
 use crate::mail::mail_ident::*;
 use crate::mail::uidindex::*;
 
+// Internet Message Format
+// aka RFC 822 - RFC 2822 - RFC 5322
+pub struct IMF(Vec<u8>);
+
 pub struct Summary<'a> {
     pub validity: ImapUidvalidity,
     pub next: ImapUid,
@@ -31,7 +35,6 @@ impl std::fmt::Display for Summary<'_> {
     }
 }
 
-
 // Non standard but common flags:
 // https://www.iana.org/assignments/imap-jmap-keywords/imap-jmap-keywords.xhtml
 pub struct Mailbox {
@@ -45,8 +48,6 @@ pub struct Mailbox {
     uid_index: Bayou<UidIndex>,
 }
 
-// IDEA: We store a specific flag named $unseen.
-// If it is not present, we add the virtual flag \Seen
 impl Mailbox {
     pub fn new(creds: &Credentials, name: String) -> Result<Self> {
         let uid_index = Bayou::<UidIndex>::new(creds, name.clone())?;
@@ -61,12 +62,20 @@ impl Mailbox {
         })
     }
 
+    // Get a summary of the mailbox, useful for the SELECT command for example
     pub async fn summary(&mut self) -> Result<Summary> {
         self.uid_index.sync().await?;
         let state = self.uid_index.state();
 
-        let unseen = state.idx_by_flag.get(&"$unseen".to_string()).and_then(|os| os.get_min());
-        let recent = state.idx_by_flag.get(&"\\Recent".to_string()).map(|os| os.len()).unwrap_or(0);
+        let unseen = state
+            .idx_by_flag
+            .get(&"$unseen".to_string())
+            .and_then(|os| os.get_min());
+        let recent = state
+            .idx_by_flag
+            .get(&"\\Recent".to_string())
+            .map(|os| os.len())
+            .unwrap_or(0);
 
         return Ok(Summary {
             validity: state.uidvalidity,
@@ -76,6 +85,34 @@ impl Mailbox {
             flags: state.idx_by_flag.flags(),
             unseen,
         });
+    }
+
+    // Insert an email in the mailbox
+    pub async fn append(&mut self, msg: IMF) -> Result<()> {
+        Ok(())
+    }
+
+    // Copy an email from an external to this mailbox
+    // @FIXME is it needed or could we implement it with append?
+    pub async fn copy(&mut self, mailbox: String, uid: ImapUid) -> Result<()> {
+        Ok(())
+    }
+
+    // Delete all emails with the \Delete flag in the mailbox
+    // Can be called by CLOSE and EXPUNGE
+    // @FIXME do we want to implement this feature or a simpler "delete" command
+    // The controller could then "fetch \Delete" and call delete on each email?
+    pub async fn expunge(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    // Update flags of a range of emails
+    pub async fn store(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    pub async fn fetch(&mut self) -> Result<()> {
+        Ok(())
     }
 
     pub async fn test(&mut self) -> Result<()> {

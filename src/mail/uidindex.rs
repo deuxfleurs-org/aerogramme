@@ -186,7 +186,7 @@ impl FlagIndex {
 
     pub fn get(&self, f: &Flag) -> Option<&OrdSet<ImapUid>> {
         self.0.get(f)
-    } 
+    }
 
     pub fn flags(&self) -> FlagIter {
         self.0.keys()

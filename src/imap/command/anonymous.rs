@@ -11,11 +11,12 @@ use crate::imap::session::InnerContext;
 
 pub async fn dispatch<'a>(ctx: InnerContext<'a>) -> Result<(Response, flow::Transition)> {
     match &ctx.req.command.body {
+        CommandBody::Noop => Ok((Response::ok("Noop completed.")?, flow::Transition::No)),
         CommandBody::Capability => capability(ctx).await,
         CommandBody::Login { username, password } => login(ctx, username, password).await,
         _ => Ok((
             Response::no("This command is not available in the ANONYMOUS state.")?,
-            flow::Transition::No
+            flow::Transition::No,
         )),
     }
 }
@@ -55,6 +56,6 @@ async fn login<'a>(
     tracing::info!(username=%u, "connected");
     Ok((
         Response::ok("Completed")?,
-        flow::Transition::Authenticate(user)
+        flow::Transition::Authenticate(user),
     ))
 }
