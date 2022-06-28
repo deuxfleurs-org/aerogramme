@@ -52,7 +52,7 @@ impl Manager {
                 return async { Response::bad("Too fast! Send less pipelined requests.") }.boxed()
             }
             Err(TrySendError::Closed(_)) => {
-                return async { Response::bad("Session task has existed.") }.boxed()
+                return async { Err(BalError::Text("Terminated session".to_string())) }.boxed()
             }
         };
 
@@ -147,6 +147,10 @@ impl Instance {
             msg.tx.send(res).unwrap_or_else(|e| {
                 tracing::warn!("failed to send imap response to manager: {:#?}", e)
             });
+
+            if let flow::State::Logout = &self.state {
+                break;
+            }
         }
 
         //@FIXME add more info about the runner
