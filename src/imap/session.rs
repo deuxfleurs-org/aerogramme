@@ -127,7 +127,7 @@ impl Instance {
                     //@FIXME remove unwrap
                     self.state = self.state.apply(tr).unwrap();
 
-                    //@FIXME enrich here the command with some status
+                    //@FIXME enrich here the command with some global status
 
                     Ok(res)
                 }

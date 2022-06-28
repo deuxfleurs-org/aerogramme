@@ -144,7 +144,9 @@ impl<'a> StateContext<'a> {
         res.push(Body::Status(permanent_flags));
 
         Ok((
-            Response::ok("Select completed")?.with_body(res),
+            Response::ok("Select completed")?
+                .with_extra_code(Code::ReadWrite)
+                .with_body(res),
             flow::Transition::Select(mb),
         ))
     }
