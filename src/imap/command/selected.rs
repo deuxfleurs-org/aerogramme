@@ -17,13 +17,12 @@ pub async fn dispatch<'a>(
     mailbox: &'a Mailbox,
 ) -> Result<(Response, flow::Transition)> {
     let ctx = StateContext {
-        tag: &inner.req.tag,
         inner,
         user,
         mailbox,
     };
 
-    match &ctx.inner.req.body {
+    match &ctx.inner.req.command.body {
         CommandBody::Fetch {
             sequence_set,
             attributes,
@@ -39,7 +38,6 @@ struct StateContext<'a> {
     inner: InnerContext<'a>,
     user: &'a flow::User,
     mailbox: &'a Mailbox,
-    tag: &'a Tag,
 }
 
 impl<'a> StateContext<'a> {
@@ -50,9 +48,7 @@ impl<'a> StateContext<'a> {
         uid: &bool,
     ) -> Result<(Response, flow::Transition)> {
         Ok((
-            vec![ImapRes::Status(
-                Status::bad(Some(self.tag.clone()), None, "Not implemented").map_err(Error::msg)?,
-            )],
+            Response::bad("Not implemented")?,
             flow::Transition::No,
         ))
     }

@@ -40,7 +40,6 @@ impl Manager {
 
     pub fn process(&self, req: Request) -> BoxFuture<'static, Result<Response, BalError>> {
         let (tx, rx) = oneshot::channel();
-        let tag = req.tag.clone();
         let msg = Message { req, tx };
 
         // We use try_send on a bounded channel to protect the daemons from DoS.
@@ -51,17 +50,13 @@ impl Manager {
             Ok(()) => (),
             Err(TrySendError::Full(_)) => {
                 return async {
-                    Status::bad(Some(tag), None, "Too fast! Send less pipelined requests!")
-                        .map(|s| vec![ImapRes::Status(s)])
-                        .map_err(|e| BalError::Text(e.to_string()))
+                    Response::bad("Too fast! Send less pipelined requests.")
                 }
                 .boxed()
             }
             Err(TrySendError::Closed(_)) => {
                 return async {
-                    Status::bad(Some(tag), None, "The session task has exited")
-                        .map(|s| vec![ImapRes::Status(s)])
-                        .map_err(|e| BalError::Text(e.to_string()))
+                    Response::bad("Session task has existed.")
                 }
                 .boxed()
             }
@@ -73,9 +68,7 @@ impl Manager {
                 Ok(r) => r,
                 Err(e) => {
                     tracing::warn!("Got error {:#?}", e);
-                    Status::bad(Some(tag), None, "No response from the session handler")
-                        .map(|s| vec![ImapRes::Status(s)])
-                        .map_err(|e| BalError::Text(e.to_string()))
+                    Response::bad("No response from the session handler")
                 }
             }
         }
@@ -122,21 +115,16 @@ impl Instance {
             };
 
             // Command behavior is modulated by the state.
-            // To prevent state error, we handle the same command in separate code path depending
-            // on the State.
+            // To prevent state error, we handle the same command in separate code paths.
             let ctrl = match &self.state {
                 flow::State::NotAuthenticated => anonymous::dispatch(ctx).await,
                 flow::State::Authenticated(user) => authenticated::dispatch(ctx, user).await,
                 flow::State::Selected(user, mailbox) => {
                     selected::dispatch(ctx, user, mailbox).await
                 }
-                _ => Status::bad(
-                    Some(ctx.req.tag.clone()),
-                    None,
-                    "No commands are allowed in the LOGOUT state.",
-                )
-                .map(|s| (vec![ImapRes::Status(s)], flow::Transition::No))
-                .map_err(Error::msg),
+                _ => Response::bad("No commands are allowed in the LOGOUT state.")
+                    .map(|r| (r, flow::Transition::No))
+                    .map_err(Error::msg),
             };
 
             // Process result
@@ -152,9 +140,7 @@ impl Instance {
                     Ok(be) => Err(be),
                     Err(e) => {
                         tracing::warn!(error=%e, "internal.error");
-                        Status::bad(Some(msg.req.tag.clone()), None, "Internal error")
-                            .map(|s| vec![ImapRes::Status(s)])
-                            .map_err(|e| BalError::Text(e.to_string()))
+                        Response::bad("Internal error")
                     }
                 },
             };

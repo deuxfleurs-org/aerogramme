@@ -10,16 +10,13 @@ use crate::imap::session::InnerContext;
 //--- dispatching
 
 pub async fn dispatch<'a>(ctx: InnerContext<'a>) -> Result<(Response, flow::Transition)> {
-    match &ctx.req.body {
+    match &ctx.req.command.body {
         CommandBody::Capability => capability(ctx).await,
         CommandBody::Login { username, password } => login(ctx, username, password).await,
-        _ => Status::no(
-            Some(ctx.req.tag.clone()),
-            None,
-            "This command is not available in the ANONYMOUS state.",
-        )
-        .map(|s| (vec![ImapRes::Status(s)], flow::Transition::No))
-        .map_err(Error::msg),
+        _ => Ok((
+            Response::no("This command is not available in the ANONYMOUS state.")?,
+            flow::Transition::No
+        )),
     }
 }
 
@@ -27,13 +24,7 @@ pub async fn dispatch<'a>(ctx: InnerContext<'a>) -> Result<(Response, flow::Tran
 
 async fn capability<'a>(ctx: InnerContext<'a>) -> Result<(Response, flow::Transition)> {
     let capabilities = vec![Capability::Imap4Rev1, Capability::Idle];
-    let res = vec![
-        ImapRes::Data(Data::Capability(capabilities)),
-        ImapRes::Status(
-            Status::ok(Some(ctx.req.tag.clone()), None, "Server capabilities")
-                .map_err(Error::msg)?,
-        ),
-    ];
+    let res = Response::ok("Server capabilities")?.with_body(Data::Capability(capabilities));
     Ok((res, flow::Transition::No))
 }
 
@@ -51,13 +42,7 @@ async fn login<'a>(
     let creds = match ctx.login.login(&u, &p).await {
         Err(e) => {
             tracing::debug!(error=%e, "authentication failed");
-            return Ok((
-                vec![ImapRes::Status(
-                    Status::no(Some(ctx.req.tag.clone()), None, "Authentication failed")
-                        .map_err(Error::msg)?,
-                )],
-                flow::Transition::No,
-            ));
+            return Ok((Response::no("Authentication failed")?, flow::Transition::No));
         }
         Ok(c) => c,
     };
@@ -66,16 +51,10 @@ async fn login<'a>(
         creds,
         name: u.clone(),
     };
-    let tr = flow::Transition::Authenticate(user);
 
     tracing::info!(username=%u, "connected");
     Ok((
-        vec![
-            //@FIXME we could send a capability status here too
-            ImapRes::Status(
-                Status::ok(Some(ctx.req.tag.clone()), None, "completed").map_err(Error::msg)?,
-            ),
-        ],
-        tr,
+        Response::ok("Completed")?,
+        flow::Transition::Authenticate(user)
     ))
 }

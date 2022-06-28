@@ -92,7 +92,7 @@ impl Service<Request> for Connection {
     }
 
     fn call(&mut self, req: Request) -> Self::Future {
-        tracing::debug!("Got request: {:#?}", req);
+        tracing::debug!("Got request: {:#?}", req.command);
         self.session.process(req)
     }
 }

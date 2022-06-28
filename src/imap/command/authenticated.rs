@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Error, Result};
-use boitalettres::proto::Response;
+use boitalettres::proto::{Response, res::body::Data as Body};
 use imap_codec::types::command::CommandBody;
-use imap_codec::types::core::{Atom, Tag};
+use imap_codec::types::core::Atom;
 use imap_codec::types::flag::Flag;
 use imap_codec::types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
 use imap_codec::types::response::{Code, Data, Response as ImapRes, Status};
@@ -23,13 +23,9 @@ pub async fn dispatch<'a>(
     inner: InnerContext<'a>,
     user: &'a flow::User,
 ) -> Result<(Response, flow::Transition)> {
-    let ctx = StateContext {
-        user,
-        tag: &inner.req.tag,
-        inner,
-    };
+    let ctx = StateContext { user, inner };
 
-    match &ctx.inner.req.body {
+    match &ctx.inner.req.command.body {
         CommandBody::Lsub {
             reference,
             mailbox_wildcard,
@@ -48,7 +44,6 @@ pub async fn dispatch<'a>(
 struct StateContext<'a> {
     inner: InnerContext<'a>,
     user: &'a flow::User,
-    tag: &'a Tag,
 }
 
 impl<'a> StateContext<'a> {
@@ -58,9 +53,7 @@ impl<'a> StateContext<'a> {
         mailbox_wildcard: &ListMailbox,
     ) -> Result<(Response, flow::Transition)> {
         Ok((
-            vec![ImapRes::Status(
-                Status::bad(Some(self.tag.clone()), None, "Not implemented").map_err(Error::msg)?,
-            )],
+            Response::bad("Not implemented")?,
             flow::Transition::No,
         ))
     }
@@ -71,9 +64,7 @@ impl<'a> StateContext<'a> {
         mailbox_wildcard: &ListMailbox,
     ) -> Result<(Response, flow::Transition)> {
         Ok((
-            vec![ImapRes::Status(
-                Status::bad(Some(self.tag.clone()), None, "Not implemented").map_err(Error::msg)?,
-            )],
+            Response::bad("Not implemented")?,
             flow::Transition::No,
         ))
     }
@@ -115,20 +106,11 @@ impl<'a> StateContext<'a> {
         let sum = mb.summary().await?;
         tracing::trace!(summary=%sum, "mailbox.summary");
 
-        let r_unseen = Status::ok(
-            None,
-            Some(Code::Unseen(
-                std::num::NonZeroU32::new(1).ok_or(anyhow!("Invalid message identifier"))?,
-            )),
-            "First unseen UID",
-        )
-        .map_err(Error::msg)?;
+        let mut res = Vec::<Body>::new();
 
-        let mut res = Vec::<ImapRes>::new();
+        res.push(Body::Data(Data::Exists(sum.exists)));
 
-        res.push(ImapRes::Data(Data::Exists(sum.exists)));
-
-        res.push(ImapRes::Data(Data::Recent(sum.recent)));
+        res.push(Body::Data(Data::Recent(sum.recent)));
 
         let mut flags: Vec<Flag> = sum.flags.map(|f| match f.chars().next() {
             Some('\\') => None,
@@ -144,7 +126,7 @@ impl<'a> StateContext<'a> {
         }).flatten().collect();
         flags.extend_from_slice(&DEFAULT_FLAGS);
 
-        res.push(ImapRes::Data(Data::Flags(flags.clone())));
+        res.push(Body::Data(Data::Flags(flags.clone())));
 
         let uid_validity = Status::ok(
             None,
@@ -152,14 +134,14 @@ impl<'a> StateContext<'a> {
             "UIDs valid"
             )
             .map_err(Error::msg)?;
-        res.push(ImapRes::Status(uid_validity));
+        res.push(Body::Status(uid_validity));
 
         let next_uid = Status::ok(
             None,
             Some(Code::UidNext(sum.next)),
             "Predict next UID"
         ).map_err(Error::msg)?;
-        res.push(ImapRes::Status(next_uid));
+        res.push(Body::Status(next_uid));
 
         if let Some(unseen) = sum.unseen {
             let status_unseen = Status::ok(
@@ -168,7 +150,7 @@ impl<'a> StateContext<'a> {
                 "First unseen UID",
             )
             .map_err(Error::msg)?;
-            res.push(ImapRes::Status(status_unseen));
+            res.push(Body::Status(status_unseen));
         }
 
         flags.push(Flag::Permanent);
@@ -177,16 +159,11 @@ impl<'a> StateContext<'a> {
             Some(Code::PermanentFlags(flags)),
             "Flags permitted",
         ).map_err(Error::msg)?;
-        res.push(ImapRes::Status(permanent_flags));
+        res.push(Body::Status(permanent_flags));
 
-        let last = Status::ok(
-            Some(self.tag.clone()),
-            Some(Code::ReadWrite),
-            "Select completed",
-        ).map_err(Error::msg)?;
-        res.push(ImapRes::Status(last));
-
-        let tr = flow::Transition::Select(mb);
-        Ok((res, tr))
+        Ok((
+            Response::ok("Select completed")?.with_body(res),
+            flow::Transition::Select(mb),
+        ))
     }
 }
