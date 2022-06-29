@@ -71,6 +71,11 @@ impl Mailbox {
     pub async fn fetch(&self) -> Result<()> {
         unimplemented!()
     }
+
+    /// Test procedure TODO WILL REMOVE THIS
+    pub async fn test(&self) -> Result<()> {
+        self.mbox.write().await.test().await
+    }
 }
 
 // ----
