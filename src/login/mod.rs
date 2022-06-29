@@ -13,7 +13,6 @@ use rand::prelude::*;
 use rusoto_core::HttpClient;
 use rusoto_credential::{AwsCredentials, StaticProvider};
 use rusoto_s3::S3Client;
-use rusoto_signature::Region;
 
 use crate::cryptoblob::*;
 
@@ -52,7 +51,7 @@ pub struct PublicCredentials {
 }
 
 /// The struct StorageCredentials contains access key to an S3 and K2V bucket
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct StorageCredentials {
     pub s3_region: Region,
     pub k2v_region: Region,
@@ -87,6 +86,24 @@ pub struct CryptoKeys {
     pub public: PublicKey,
 }
 
+/// A custom S3 region, composed of a region name and endpoint.
+/// We use this instead of rusoto_signature::Region so that we can
+/// derive Hash and Eq
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct Region {
+    pub name: String,
+    pub endpoint: String,
+}
+
+impl Region {
+    pub fn as_rusoto_region(&self) -> rusoto_signature::Region {
+        rusoto_signature::Region::Custom {
+            name: self.name.clone(),
+            endpoint: self.endpoint.clone(),
+        }
+    }
+}
+
 // ----
 
 impl Credentials {
@@ -111,7 +128,7 @@ impl StorageCredentials {
         );
 
         Ok(K2vClient::new(
-            self.k2v_region.clone(),
+            self.k2v_region.as_rusoto_region(),
             self.bucket.clone(),
             aws_creds,
             None,
@@ -127,7 +144,7 @@ impl StorageCredentials {
         Ok(S3Client::new_with(
             HttpClient::new()?,
             aws_creds_provider,
-            self.s3_region.clone(),
+            self.s3_region.as_rusoto_region(),
         ))
     }
 }

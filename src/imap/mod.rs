@@ -1,5 +1,6 @@
 mod command;
 mod flow;
+mod mailbox_view;
 mod session;
 
 use std::task::{Context, Poll};

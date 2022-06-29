@@ -3,14 +3,13 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 use futures::{try_join, StreamExt};
 use log::*;
-use rusoto_signature::Region;
 use tokio::sync::watch;
 
 use crate::config::*;
 use crate::imap;
 use crate::lmtp::*;
 use crate::login::ArcLoginProvider;
-use crate::login::{ldap_provider::*, static_provider::*};
+use crate::login::{ldap_provider::*, static_provider::*, Region};
 
 pub struct Server {
     lmtp_server: Option<Arc<LmtpServer>>,
@@ -62,11 +61,11 @@ impl Server {
 }
 
 fn build(config: Config) -> Result<(ArcLoginProvider, Option<LmtpConfig>, Option<ImapConfig>)> {
-    let s3_region = Region::Custom {
+    let s3_region = Region {
         name: config.aws_region.clone(),
         endpoint: config.s3_endpoint,
     };
-    let k2v_region = Region::Custom {
+    let k2v_region = Region {
         name: config.aws_region,
         endpoint: config.k2v_endpoint,
     };

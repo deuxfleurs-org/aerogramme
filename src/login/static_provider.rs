@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
-use rusoto_signature::Region;
 
 use crate::config::*;
 use crate::cryptoblob::{Key, SecretKey};

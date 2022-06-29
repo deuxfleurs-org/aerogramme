@@ -1,9 +1,13 @@
+use std::collections::HashMap;
+use std::sync::{Arc, Weak};
+
 use anyhow::Result;
+use lazy_static::lazy_static;
 
 use k2v_client::K2vClient;
 use rusoto_s3::S3Client;
 
-use crate::login::Credentials;
+use crate::login::{Credentials, StorageCredentials};
 use crate::mail::mailbox::Mailbox;
 
 pub struct User {
@@ -31,8 +35,24 @@ impl User {
     }
 
     /// Opens an existing mailbox given its IMAP name.
-    pub fn open_mailbox(&self, name: &str) -> Result<Option<Mailbox>> {
-        Mailbox::new(&self.creds, name).map(Some)
+    pub async fn open_mailbox(&self, name: &str) -> Result<Option<Arc<Mailbox>>> {
+        {
+            let cache = MAILBOX_CACHE.cache.lock().unwrap();
+            if let Some(mb) = cache.get(&self.creds.storage).and_then(Weak::upgrade) {
+                return Ok(Some(mb));
+            }
+        }
+
+        let mb = Arc::new(Mailbox::open(&self.creds, name).await?);
+
+        let mut cache = MAILBOX_CACHE.cache.lock().unwrap();
+        if let Some(concurrent_mb) = cache.get(&self.creds.storage).and_then(Weak::upgrade) {
+            drop(mb);   // we worked for nothing but at least we didn't starve someone else
+            Ok(Some(concurrent_mb))
+        } else {
+            cache.insert(self.creds.storage.clone(), Arc::downgrade(&mb));
+            Ok(Some(mb))
+        }
     }
 
     /// Creates a new mailbox in the user's IMAP namespace.
@@ -49,4 +69,22 @@ impl User {
     pub fn rename_mailbox(&self, old_name: &str, new_name: &str) -> Result<()> {
         unimplemented!()
     }
+}
+
+// ---- Mailbox cache ----
+
+struct MailboxCache {
+    cache: std::sync::Mutex<HashMap<StorageCredentials, Weak<Mailbox>>>,
+}
+
+impl MailboxCache {
+    fn new() -> Self {
+        Self {
+            cache: std::sync::Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+lazy_static! {
+    static ref MAILBOX_CACHE: MailboxCache = MailboxCache::new();
 }

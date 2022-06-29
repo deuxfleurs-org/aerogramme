@@ -2,7 +2,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use ldap3::{LdapConnAsync, Scope, SearchEntry};
 use log::debug;
-use rusoto_signature::Region;
 
 use crate::config::*;
 use crate::login::*;

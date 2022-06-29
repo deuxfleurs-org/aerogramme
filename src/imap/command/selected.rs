@@ -9,6 +9,7 @@ use imap_codec::types::sequence::SequenceSet;
 
 use crate::imap::command::authenticated;
 use crate::imap::flow;
+use crate::imap::mailbox_view::MailboxView;
 
 use crate::mail::mailbox::Mailbox;
 use crate::mail::user::User;
@@ -16,7 +17,7 @@ use crate::mail::user::User;
 pub struct SelectedContext<'a> {
     pub req: &'a Request,
     pub user: &'a User,
-    pub mailbox: &'a mut Mailbox,
+    pub mailbox: &'a mut MailboxView,
 }
 
 pub async fn dispatch<'a>(ctx: SelectedContext<'a>) -> Result<(Response, flow::Transition)> {

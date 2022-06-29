@@ -14,8 +14,6 @@ use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
 use rand::prelude::*;
 
-use rusoto_signature::Region;
-
 use config::*;
 use cryptoblob::*;
 use login::{static_provider::*, *};
@@ -264,11 +262,11 @@ async fn main() -> Result<()> {
 }
 
 fn make_storage_creds(c: StorageCredsArgs) -> StorageCredentials {
-    let s3_region = Region::Custom {
+    let s3_region = Region {
         name: c.region.clone(),
         endpoint: c.s3_endpoint,
     };
-    let k2v_region = Region::Custom {
+    let k2v_region = Region {
         name: c.region,
         endpoint: c.k2v_endpoint,
     };

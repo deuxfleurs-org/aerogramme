@@ -3,6 +3,7 @@ use std::convert::TryFrom;
 use anyhow::Result;
 use k2v_client::K2vClient;
 use rusoto_s3::S3Client;
+use tokio::sync::RwLock;
 
 use crate::bayou::Bayou;
 use crate::cryptoblob::Key;
@@ -11,16 +12,16 @@ use crate::mail::mail_ident::*;
 use crate::mail::uidindex::*;
 use crate::mail::IMF;
 
-pub struct Summary<'a> {
+pub struct Summary {
     pub validity: ImapUidvalidity,
     pub next: ImapUid,
     pub exists: u32,
     pub recent: u32,
-    pub flags: FlagIter<'a>,
-    pub unseen: Option<&'a ImapUid>,
+    pub flags: Vec<String>,
+    pub unseen: Option<ImapUid>,
 }
 
-impl std::fmt::Display for Summary<'_> {
+impl std::fmt::Display for Summary {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
@@ -30,11 +31,67 @@ impl std::fmt::Display for Summary<'_> {
     }
 }
 
+pub struct Mailbox(RwLock<MailboxInternal>);
+
+impl Mailbox {
+    pub(super) async fn open(creds: &Credentials, name: &str) -> Result<Self> {
+        let index_path = format!("index/{}", name);
+        let mail_path = format!("mail/{}", name);
+
+        let mut uid_index = Bayou::<UidIndex>::new(creds, index_path)?;
+        uid_index.sync().await?;
+
+        Ok(Self(RwLock::new(MailboxInternal {
+            bucket: creds.bucket().to_string(),
+            key: creds.keys.master.clone(),
+            k2v: creds.k2v_client()?,
+            s3: creds.s3_client()?,
+            uid_index,
+            mail_path,
+        })))
+    }
+
+    /// Get a clone of the current UID Index of this mailbox
+    /// (cloning is cheap so don't hesitate to use this)
+    pub async fn current_uid_index(&self) -> UidIndex {
+        self.0.read().await.uid_index.state().clone()
+    }
+
+    /// Insert an email in the mailbox
+    pub async fn append<'a>(&self, _msg: IMF<'a>) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Copy an email from an other Mailbox to this mailbox
+    /// (use this when possible, as it allows for a certain number of storage optimizations)
+    pub async fn copy(&self, _from: &Mailbox, _uid: ImapUid) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Delete all emails with the \Delete flag in the mailbox
+    /// Can be called by CLOSE and EXPUNGE
+    /// @FIXME do we want to implement this feature or a simpler "delete" command
+    /// The controller could then "fetch \Delete" and call delete on each email?
+    pub async fn expunge(&self) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Update flags of a range of emails
+    pub async fn store(&self) -> Result<()> {
+        unimplemented!()
+    }
+
+    pub async fn fetch(&self) -> Result<()> {
+        unimplemented!()
+    }
+}
+
+// ----
+
 // Non standard but common flags:
 // https://www.iana.org/assignments/imap-jmap-keywords/imap-jmap-keywords.xhtml
-pub struct Mailbox {
+struct MailboxInternal {
     bucket: String,
-    pub name: String,
     key: Key,
 
     k2v: K2vClient,
@@ -44,78 +101,7 @@ pub struct Mailbox {
     mail_path: String,
 }
 
-impl Mailbox {
-    pub(super) fn new(creds: &Credentials, name: &str) -> Result<Self> {
-        let index_path = format!("index/{}", name);
-        let mail_path = format!("mail/{}", name);
-        let uid_index = Bayou::<UidIndex>::new(creds, index_path)?;
-
-        Ok(Self {
-            bucket: creds.bucket().to_string(),
-            name: name.to_string(), // TODO: don't use name field if possible, use mail_path instead
-            key: creds.keys.master.clone(),
-            k2v: creds.k2v_client()?,
-            s3: creds.s3_client()?,
-            uid_index,
-            mail_path,
-        })
-    }
-
-    /// Get a summary of the mailbox, useful for the SELECT command for example
-    pub async fn summary(&mut self) -> Result<Summary> {
-        self.uid_index.sync().await?;
-        let state = self.uid_index.state();
-
-        let unseen = state
-            .idx_by_flag
-            .get(&"$unseen".to_string())
-            .and_then(|os| os.get_min());
-        let recent = state
-            .idx_by_flag
-            .get(&"\\Recent".to_string())
-            .map(|os| os.len())
-            .unwrap_or(0);
-
-        return Ok(Summary {
-            validity: state.uidvalidity,
-            next: state.uidnext,
-            exists: u32::try_from(state.idx_by_uid.len())?,
-            recent: u32::try_from(recent)?,
-            flags: state.idx_by_flag.flags(),
-            unseen,
-        });
-    }
-
-    /// Insert an email in the mailbox
-    pub async fn append(&mut self, _msg: IMF) -> Result<()> {
-        unimplemented!()
-    }
-
-    /// Copy an email from an other Mailbox to this mailbox
-    /// (use this when possible, as it allows for a certain number of storage optimizations)
-    pub async fn copy(&mut self, _from: &Mailbox, _uid: ImapUid) -> Result<()> {
-        unimplemented!()
-    }
-
-    /// Delete all emails with the \Delete flag in the mailbox
-    /// Can be called by CLOSE and EXPUNGE
-    /// @FIXME do we want to implement this feature or a simpler "delete" command
-    /// The controller could then "fetch \Delete" and call delete on each email?
-    pub async fn expunge(&mut self) -> Result<()> {
-        unimplemented!()
-    }
-
-    /// Update flags of a range of emails
-    pub async fn store(&mut self) -> Result<()> {
-        unimplemented!()
-    }
-
-    pub async fn fetch(&mut self) -> Result<()> {
-        unimplemented!()
-    }
-
-    // ----
-
+impl MailboxInternal {
     pub async fn test(&mut self) -> Result<()> {
         self.uid_index.sync().await?;
 

@@ -8,17 +8,10 @@ use imap_codec::types::response::{Code, Data, Status};
 
 use crate::imap::command::anonymous;
 use crate::imap::flow;
+use crate::imap::mailbox_view::MailboxView;
 
 use crate::mail::mailbox::Mailbox;
 use crate::mail::user::User;
-
-const DEFAULT_FLAGS: [Flag; 5] = [
-    Flag::Seen,
-    Flag::Answered,
-    Flag::Flagged,
-    Flag::Deleted,
-    Flag::Draft,
-];
 
 pub struct AuthenticatedContext<'a> {
     pub req: &'a Request,
@@ -96,59 +89,24 @@ impl<'a> AuthenticatedContext<'a> {
     async fn select(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
         let name = String::try_from(mailbox.clone())?;
 
-        let mut mb = self.user.open_mailbox(name)?;
+        let mb_opt = self.user.open_mailbox(&name).await?;
+        let mb = match mb_opt {
+            Some(mb) => mb,
+            None => {
+                return Ok((
+                    Response::no("Mailbox does not exist")?,
+                    flow::Transition::None,
+                ))
+            }
+        };
         tracing::info!(username=%self.user.username, mailbox=%name, "mailbox.selected");
 
-        let sum = mb.summary().await?;
-        tracing::trace!(summary=%sum, "mailbox.summary");
-
-        let mut res = Vec::<Body>::new();
-
-        res.push(Body::Data(Data::Exists(sum.exists)));
-
-        res.push(Body::Data(Data::Recent(sum.recent)));
-
-        let mut flags: Vec<Flag> = sum.flags.map(|f| match f.chars().next() {
-            Some('\\') => None,
-            Some('$') if f == "$unseen" => None,
-            Some(_) => match Atom::try_from(f.clone()) {
-                Err(_) => {
-                    tracing::error!(username=%self.user.username, mailbox=%name, flag=%f, "Unable to encode flag as IMAP atom");
-                    None
-                },
-                Ok(a) => Some(Flag::Keyword(a)),
-            },
-            None => None,
-        }).flatten().collect();
-        flags.extend_from_slice(&DEFAULT_FLAGS);
-
-        res.push(Body::Data(Data::Flags(flags.clone())));
-
-        let uid_validity = Status::ok(None, Some(Code::UidValidity(sum.validity)), "UIDs valid")
-            .map_err(Error::msg)?;
-        res.push(Body::Status(uid_validity));
-
-        let next_uid = Status::ok(None, Some(Code::UidNext(sum.next)), "Predict next UID")
-            .map_err(Error::msg)?;
-        res.push(Body::Status(next_uid));
-
-        if let Some(unseen) = sum.unseen {
-            let status_unseen =
-                Status::ok(None, Some(Code::Unseen(unseen.clone())), "First unseen UID")
-                    .map_err(Error::msg)?;
-            res.push(Body::Status(status_unseen));
-        }
-
-        flags.push(Flag::Permanent);
-        let permanent_flags =
-            Status::ok(None, Some(Code::PermanentFlags(flags)), "Flags permitted")
-                .map_err(Error::msg)?;
-        res.push(Body::Status(permanent_flags));
+        let (mb, data) = MailboxView::new(mb).await?;
 
         Ok((
             Response::ok("Select completed")?
                 .with_extra_code(Code::ReadWrite)
-                .with_body(res),
+                .with_body(data),
             flow::Transition::Select(mb),
         ))
     }

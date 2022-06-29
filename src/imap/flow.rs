@@ -1,6 +1,7 @@
 use std::error::Error as StdError;
 use std::fmt;
 
+use crate::imap::mailbox_view::MailboxView;
 use crate::mail::mailbox::Mailbox;
 use crate::mail::user::User;
 
@@ -18,14 +19,14 @@ impl StdError for Error {}
 pub enum State {
     NotAuthenticated,
     Authenticated(User),
-    Selected(User, Mailbox),
+    Selected(User, MailboxView),
     Logout,
 }
 
 pub enum Transition {
     None,
     Authenticate(User),
-    Select(Mailbox),
+    Select(MailboxView),
     Unselect,
     Logout,
 }

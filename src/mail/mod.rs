@@ -1,6 +1,6 @@
 pub mod mail_ident;
 pub mod mailbox;
-mod uidindex;
+pub mod uidindex;
 pub mod user;
 
 use std::convert::TryFrom;
@@ -17,4 +17,7 @@ use crate::mail::uidindex::*;
 
 // Internet Message Format
 // aka RFC 822 - RFC 2822 - RFC 5322
-pub struct IMF(Vec<u8>);
+pub struct IMF<'a> {
+    raw: &'a [u8],
+    parsed: mail_parser::Message<'a>,
+}
