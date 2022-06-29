@@ -21,6 +21,7 @@ pub struct SelectedContext<'a> {
 
 pub async fn dispatch<'a>(ctx: SelectedContext<'a>) -> Result<(Response, flow::Transition)> {
     match &ctx.req.command.body {
+        CommandBody::Noop => ctx.noop().await,
         CommandBody::Fetch {
             sequence_set,
             attributes,
@@ -46,5 +47,13 @@ impl<'a> SelectedContext<'a> {
         _uid: &bool,
     ) -> Result<(Response, flow::Transition)> {
         Ok((Response::bad("Not implemented")?, flow::Transition::None))
+    }
+
+    pub async fn noop(self) -> Result<(Response, flow::Transition)> {
+        let updates = self.mailbox.update().await?;
+        Ok((
+            Response::ok("Noop completed.")?.with_body(updates),
+            flow::Transition::None,
+        ))
     }
 }

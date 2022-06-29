@@ -1,10 +1,11 @@
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
 use boitalettres::proto::res::body::Data as Body;
 use imap_codec::types::core::Atom;
 use imap_codec::types::flag::Flag;
-use imap_codec::types::response::{Code, Data, Status};
+use imap_codec::types::response::{Code, Data, MessageAttribute, Status};
 
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::UidIndex;
@@ -56,6 +57,79 @@ impl MailboxView {
         }
 
         Ok((new_view, data))
+    }
+
+    /// Looks up state changes in the mailbox and produces a set of IMAP
+    /// responses describing the new state.
+    pub async fn update(&mut self) -> Result<Vec<Body>> {
+        self.mailbox.sync().await?;
+        // TODO THIS IS JUST A TEST REMOVE LATER
+        self.mailbox.test().await?;
+
+        let new_view = MailboxView {
+            mailbox: self.mailbox.clone(),
+            known_state: self.mailbox.current_uid_index().await,
+        };
+
+        let mut data = Vec::<Body>::new();
+
+        if new_view.known_state.uidvalidity != self.known_state.uidvalidity {
+            // TODO: do we want to push less/more info than this?
+            data.push(new_view.uidvalidity()?);
+            data.push(new_view.exists()?);
+            data.push(new_view.uidnext()?);
+        } else {
+            // Calculate diff between two mailbox states
+            // See example in IMAP RFC in section on NOOP command:
+            // we want to produce something like this:
+            // C: a047 NOOP
+            // S: * 22 EXPUNGE
+            // S: * 23 EXISTS
+            // S: * 14 FETCH (UID 1305 FLAGS (\Seen \Deleted))
+            // S: a047 OK Noop completed
+            // In other words:
+            // - notify client of expunged mails
+            // - if new mails arrived, notify client of number of existing mails
+            // - if flags changed for existing mails, tell client
+
+            // - notify client of expunged mails
+            let mut n_expunge = 0;
+            for (i, (uid, uuid)) in self.known_state.idx_by_uid.iter().enumerate() {
+                if !new_view.known_state.table.contains_key(uuid) {
+                    data.push(Body::Data(Data::Expunge(
+                        NonZeroU32::try_from((i + 1 - n_expunge) as u32).unwrap(),
+                    )));
+                    n_expunge += 1;
+                }
+            }
+
+            // - if new mails arrived, notify client of number of existing mails
+            if new_view.known_state.table.len() != self.known_state.table.len() - n_expunge {
+                data.push(new_view.exists()?);
+            }
+
+            // - if flags changed for existing mails, tell client
+            for (i, (uid, uuid)) in new_view.known_state.idx_by_uid.iter().enumerate() {
+                let old_mail = self.known_state.table.get(uuid);
+                let new_mail = new_view.known_state.table.get(uuid);
+                if old_mail.is_some() && old_mail != new_mail {
+                    if let Some((uid, flags)) = new_mail {
+                        data.push(Body::Data(Data::Fetch {
+                            seq_or_uid: NonZeroU32::try_from((i + 1) as u32).unwrap(),
+                            attributes: vec![
+                                MessageAttribute::Uid((*uid).try_into().unwrap()),
+                                MessageAttribute::Flags(
+                                    flags.iter().filter_map(|f| string_to_flag(f)).collect(),
+                                ),
+                            ],
+                        }));
+                    }
+                }
+            }
+        }
+
+        *self = new_view;
+        Ok(data)
     }
 
     // ----
@@ -128,18 +202,7 @@ impl MailboxView {
             .known_state
             .idx_by_flag
             .flags()
-            .map(|f| match f.chars().next() {
-                Some('\\') => None,
-                Some('$') if f == "$unseen" => None,
-                Some(_) => match Atom::try_from(f.clone()) {
-                    Err(_) => {
-                        tracing::error!(flag=%f, "Unable to encode flag as IMAP atom");
-                        None
-                    }
-                    Ok(a) => Some(Flag::Keyword(a)),
-                },
-                None => None,
-            })
+            .map(|f| string_to_flag(f))
             .flatten()
             .collect();
         for f in DEFAULT_FLAGS.iter() {
@@ -156,5 +219,20 @@ impl MailboxView {
         ret.push(Body::Status(permanent_flags));
 
         Ok(ret)
+    }
+}
+
+fn string_to_flag(f: &str) -> Option<Flag> {
+    match f.chars().next() {
+        Some('\\') => None,
+        Some('$') if f == "$unseen" => None,
+        Some(_) => match Atom::try_from(f.clone()) {
+            Err(_) => {
+                tracing::error!(flag=%f, "Unable to encode flag as IMAP atom");
+                None
+            }
+            Ok(a) => Some(Flag::Keyword(a)),
+        },
+        None => None,
     }
 }

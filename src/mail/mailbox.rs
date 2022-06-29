@@ -36,6 +36,11 @@ impl Mailbox {
         Ok(Self { id, mbox })
     }
 
+    /// Sync data with backing store
+    pub async fn sync(&self) -> Result<()> {
+        self.mbox.write().await.uid_index.sync().await
+    }
+
     /// Get a clone of the current UID Index of this mailbox
     /// (cloning is cheap so don't hesitate to use this)
     pub async fn current_uid_index(&self) -> UidIndex {

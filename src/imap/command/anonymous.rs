@@ -21,10 +21,7 @@ pub async fn dispatch<'a>(ctx: AnonymousContext<'a>) -> Result<(Response, flow::
         CommandBody::Capability => ctx.capability().await,
         CommandBody::Logout => ctx.logout().await,
         CommandBody::Login { username, password } => ctx.login(username, password).await,
-        _ => Ok((
-            Response::no("This command is not available in the ANONYMOUS state.")?,
-            flow::Transition::None,
-        )),
+        _ => Ok((Response::no("Command unavailable")?, flow::Transition::None)),
     }
 }
 
