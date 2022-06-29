@@ -246,6 +246,11 @@ impl MailboxView {
                             IString::Literal(meta.headers.clone().try_into().unwrap()),
                         ))))
                     }
+                    FetchAttribute::Rfc822 => {
+                        attributes.push(MessageAttribute::Rfc822(NString(Some(
+                            IString::Literal(body.as_ref().unwrap().clone().try_into().unwrap()),
+                        ))))
+                    }
                     FetchAttribute::Envelope => {
                         attributes.push(MessageAttribute::Envelope(message_envelope(&parsed)))
                     }
@@ -260,7 +265,6 @@ impl MailboxView {
             }));
         }
 
-        tracing::info!("Fetch result: {:?}", ret);
         Ok(ret)
     }
 

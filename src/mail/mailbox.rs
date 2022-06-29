@@ -239,7 +239,8 @@ impl MailboxInternal {
         let mail = br#"From: Garage team <garagehq@deuxfleurs.fr>
 Subject: Welcome to Aerogramme!!
 
-This is just a test email, feel free to ignore."#;
+This is just a test email, feel free to ignore.
+"#;
         let mail = IMF::try_from(&mail[..]).unwrap();
         self.append(mail, None).await?;
 
