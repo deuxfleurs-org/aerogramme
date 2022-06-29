@@ -42,6 +42,8 @@ impl LmtpServer {
 
     pub async fn run(self: &Arc<Self>, mut must_exit: watch::Receiver<bool>) -> Result<()> {
         let tcp = TcpListener::bind(self.bind_addr).await?;
+        info!("LMTP server listening on {:#}", self.bind_addr);
+
         let mut connections = FuturesUnordered::new();
 
         while !*must_exit.borrow() {
@@ -155,17 +157,14 @@ impl Config for LmtpServer {
         }
     }
 
-    async fn handle_mail<'a, 'slife0, 'slife1, 'stream, R>(
-        &'slife0 self,
-        reader: &mut EscapedDataReader<'a, R>,
+    async fn handle_mail<'resp, R>(
+        &'resp self,
+        reader: &mut EscapedDataReader<'_, R>,
         meta: MailMetadata<Message>,
-        conn_meta: &'slife1 mut ConnectionMetadata<Conn>,
-    ) -> Pin<Box<dyn futures::Stream<Item = Decision<()>> + Send + 'stream>>
+        conn_meta: &'resp mut ConnectionMetadata<Conn>,
+    ) -> Pin<Box<dyn futures::Stream<Item = Decision<()>> + Send + 'resp>>
     where
         R: Send + Unpin + AsyncRead,
-        'slife0: 'stream,
-        'slife1: 'stream,
-        Self: 'stream,
     {
         let err_response_stream = |meta: MailMetadata<Message>, msg: String| {
             Box::pin(

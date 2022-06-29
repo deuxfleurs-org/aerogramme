@@ -28,7 +28,7 @@ pub enum State {
 }
 
 pub enum Transition {
-    No,
+    None,
     Authenticate(User),
     Select(Mailbox),
     Unselect,
@@ -40,7 +40,7 @@ pub enum Transition {
 impl State {
     pub fn apply(self, tr: Transition) -> Result<Self, Error> {
         match (self, tr) {
-            (s, Transition::No) => Ok(s),
+            (s, Transition::None) => Ok(s),
             (State::NotAuthenticated, Transition::Authenticate(u)) => Ok(State::Authenticated(u)),
             (State::Authenticated(u), Transition::Select(m)) => Ok(State::Selected(u, m)),
             (State::Selected(u, _), Transition::Unselect) => Ok(State::Authenticated(u)),

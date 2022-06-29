@@ -10,12 +10,12 @@ pub type ImapUid = NonZeroU32;
 pub type ImapUidvalidity = NonZeroU32;
 pub type Flag = String;
 
-#[derive(Clone)]
 /// A UidIndex handles the mutable part of a mailbox
 /// It is built by running the event log on it
 /// Each applied log generates a new UidIndex by cloning the previous one
 /// and applying the event. This is why we use immutable datastructures:
 /// they are cheap to clone.
+#[derive(Clone)]
 pub struct UidIndex {
     // Source of trust
     pub table: OrdMap<MailIdent, (ImapUid, Vec<Flag>)>,
@@ -162,6 +162,7 @@ impl BayouState for UidIndex {
 }
 
 // ---- FlagIndex implementation ----
+
 #[derive(Clone)]
 pub struct FlagIndex(HashMap<Flag, OrdSet<ImapUid>>);
 pub type FlagIter<'a> = im::hashmap::Keys<'a, Flag, OrdSet<ImapUid>>;

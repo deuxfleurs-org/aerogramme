@@ -102,23 +102,36 @@ impl Instance {
         tracing::debug!("starting runner");
 
         while let Some(msg) = self.rx.recv().await {
-            let ctx = InnerContext {
-                req: &msg.req,
-                state: &self.state,
-                login: &self.login_provider,
-            };
-
             // Command behavior is modulated by the state.
             // To prevent state error, we handle the same command in separate code paths.
-            let ctrl = match &self.state {
-                flow::State::NotAuthenticated => anonymous::dispatch(ctx).await,
-                flow::State::Authenticated(user) => authenticated::dispatch(ctx, user).await,
-                flow::State::Selected(user, mailbox) => {
-                    selected::dispatch(ctx, user, mailbox).await
+            let ctrl = match &mut self.state {
+                flow::State::NotAuthenticated => {
+                    let ctx = anonymous::AnonymousContext {
+                        req: &msg.req,
+                        login_provider: Some(&self.login_provider),
+                    };
+                    anonymous::dispatch(ctx).await
                 }
-                _ => Response::bad("No commands are allowed in the LOGOUT state.")
-                    .map(|r| (r, flow::Transition::No))
-                    .map_err(Error::msg),
+                flow::State::Authenticated(ref user) => {
+                    let ctx = authenticated::AuthenticatedContext {
+                        req: &msg.req,
+                        user,
+                    };
+                    authenticated::dispatch(ctx).await
+                }
+                flow::State::Selected(ref user, ref mut mailbox) => {
+                    let ctx = selected::SelectedContext {
+                        req: &msg.req,
+                        user,
+                        mailbox,
+                    };
+                    selected::dispatch(ctx).await
+                }
+                flow::State::Logout => {
+                    Response::bad("No commands are allowed in the LOGOUT state.")
+                        .map(|r| (r, flow::Transition::None))
+                        .map_err(Error::msg)
+                }
             };
 
             // Process result

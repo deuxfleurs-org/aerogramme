@@ -20,6 +20,7 @@ use crate::login::ArcLoginProvider;
 
 /// Server is a thin wrapper to register our Services in BàL
 pub struct Server(ImapServer<AddrIncoming, Instance>);
+
 pub async fn new(config: ImapConfig, login: ArcLoginProvider) -> Result<Server> {
     //@FIXME add a configuration parameter
     let incoming = AddrIncoming::new(config.bind_addr).await?;
@@ -28,6 +29,7 @@ pub async fn new(config: ImapConfig, login: ArcLoginProvider) -> Result<Server> 
     let imap = ImapServer::new(incoming).serve(Instance::new(login.clone()));
     Ok(Server(imap))
 }
+
 impl Server {
     pub async fn run(self, mut must_exit: watch::Receiver<bool>) -> Result<()> {
         tracing::info!("IMAP started!");
@@ -47,11 +49,13 @@ impl Server {
 struct Instance {
     login_provider: ArcLoginProvider,
 }
+
 impl Instance {
     pub fn new(login_provider: ArcLoginProvider) -> Self {
         Self { login_provider }
     }
 }
+
 impl<'a> Service<&'a AddrStream> for Instance {
     type Response = Connection;
     type Error = anyhow::Error;
@@ -75,6 +79,7 @@ impl<'a> Service<&'a AddrStream> for Instance {
 struct Connection {
     session: session::Manager,
 }
+
 impl Connection {
     pub fn new(login_provider: ArcLoginProvider) -> Self {
         Self {
@@ -82,6 +87,7 @@ impl Connection {
         }
     }
 }
+
 impl Service<Request> for Connection {
     type Response = Response;
     type Error = BalError;

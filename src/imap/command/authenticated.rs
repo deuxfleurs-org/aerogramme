@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Error, Result};
-use boitalettres::proto::{res::body::Data as Body, Response};
+use boitalettres::proto::{res::body::Data as Body, Request, Response};
 use imap_codec::types::command::CommandBody;
 use imap_codec::types::core::Atom;
 use imap_codec::types::flag::Flag;
@@ -19,13 +19,13 @@ const DEFAULT_FLAGS: [Flag; 5] = [
     Flag::Draft,
 ];
 
-pub async fn dispatch<'a>(
-    inner: InnerContext<'a>,
-    user: &'a flow::User,
-) -> Result<(Response, flow::Transition)> {
-    let ctx = StateContext { user, inner };
+pub struct AuthenticatedContext<'a> {
+    pub req: &'a Request,
+    pub user: &'a flow::User,
+}
 
-    match &ctx.inner.req.command.body {
+pub async fn dispatch<'a>(ctx: AuthenticatedContext<'a>) -> Result<(Response, flow::Transition)> {
+    match &ctx.req.command.body {
         CommandBody::Lsub {
             reference,
             mailbox_wildcard,
@@ -35,32 +35,33 @@ pub async fn dispatch<'a>(
             mailbox_wildcard,
         } => ctx.list(reference, mailbox_wildcard).await,
         CommandBody::Select { mailbox } => ctx.select(mailbox).await,
-        _ => anonymous::dispatch(ctx.inner).await,
+        _ => {
+            let ctx = anonymous::AnonymousContext {
+                req: ctx.req,
+                login_provider: None,
+            };
+            anonymous::dispatch(ctx).await
+        }
     }
 }
 
 // --- PRIVATE ---
 
-struct StateContext<'a> {
-    inner: InnerContext<'a>,
-    user: &'a flow::User,
-}
-
-impl<'a> StateContext<'a> {
+impl<'a> AuthenticatedContext<'a> {
     async fn lsub(
-        &self,
+        self,
         reference: &MailboxCodec,
         mailbox_wildcard: &ListMailbox,
     ) -> Result<(Response, flow::Transition)> {
-        Ok((Response::bad("Not implemented")?, flow::Transition::No))
+        Ok((Response::bad("Not implemented")?, flow::Transition::None))
     }
 
     async fn list(
-        &self,
+        self,
         reference: &MailboxCodec,
         mailbox_wildcard: &ListMailbox,
     ) -> Result<(Response, flow::Transition)> {
-        Ok((Response::bad("Not implemented")?, flow::Transition::No))
+        Ok((Response::bad("Not implemented")?, flow::Transition::None))
     }
 
     /*
@@ -91,7 +92,7 @@ impl<'a> StateContext<'a> {
 
     * TRACE END ---
     */
-    async fn select(&self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
+    async fn select(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
         let name = String::try_from(mailbox.clone())?;
 
         let mut mb = Mailbox::new(&self.user.creds, name.clone())?;
