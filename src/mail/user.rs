@@ -25,7 +25,28 @@ impl User {
         })
     }
 
-    pub fn open_mailbox(&self, name: String) -> Result<Mailbox> {
-        Mailbox::new(&self.creds, name)
+    /// Lists user's available mailboxes
+    pub fn list_mailboxes(&self) -> Result<Vec<String>> {
+        unimplemented!()
+    }
+
+    /// Opens an existing mailbox given its IMAP name.
+    pub fn open_mailbox(&self, name: &str) -> Result<Option<Mailbox>> {
+        Mailbox::new(&self.creds, name).map(Some)
+    }
+
+    /// Creates a new mailbox in the user's IMAP namespace.
+    pub fn create_mailbox(&self, name: &str) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Deletes a mailbox in the user's IMAP namespace.
+    pub fn delete_mailbox(&self, name: &str) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Renames a mailbox in the user's IMAP namespace.
+    pub fn rename_mailbox(&self, old_name: &str, new_name: &str) -> Result<()> {
+        unimplemented!()
     }
 }

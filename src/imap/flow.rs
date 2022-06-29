@@ -4,7 +4,6 @@ use std::fmt;
 use crate::mail::mailbox::Mailbox;
 use crate::mail::user::User;
 
-
 #[derive(Debug)]
 pub enum Error {
     ForbiddenTransition,

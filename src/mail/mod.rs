@@ -1,7 +1,7 @@
 pub mod mail_ident;
-pub mod user;
 pub mod mailbox;
 mod uidindex;
+pub mod user;
 
 use std::convert::TryFrom;
 

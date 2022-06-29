@@ -1,4 +1,4 @@
-use anyhow::{Result};
+use anyhow::Result;
 use boitalettres::proto::Request;
 use boitalettres::proto::Response;
 use imap_codec::types::command::CommandBody;

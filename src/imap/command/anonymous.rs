@@ -1,12 +1,12 @@
 use anyhow::{Error, Result};
 use boitalettres::proto::{res::body::Data as Body, Request, Response};
 use imap_codec::types::command::CommandBody;
-use imap_codec::types::core::{AString};
+use imap_codec::types::core::AString;
 use imap_codec::types::response::{Capability, Data, Status};
 
 use crate::imap::flow;
-use crate::mail::user::User;
 use crate::login::ArcLoginProvider;
+use crate::mail::user::User;
 
 //--- dispatching
 

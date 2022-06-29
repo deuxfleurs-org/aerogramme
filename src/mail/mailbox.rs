@@ -19,6 +19,7 @@ pub struct Summary<'a> {
     pub flags: FlagIter<'a>,
     pub unseen: Option<&'a ImapUid>,
 }
+
 impl std::fmt::Display for Summary<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
@@ -44,14 +45,14 @@ pub struct Mailbox {
 }
 
 impl Mailbox {
-    pub(super) fn new(creds: &Credentials, name: String) -> Result<Self> {
+    pub(super) fn new(creds: &Credentials, name: &str) -> Result<Self> {
         let index_path = format!("index/{}", name);
         let mail_path = format!("mail/{}", name);
         let uid_index = Bayou::<UidIndex>::new(creds, index_path)?;
 
         Ok(Self {
             bucket: creds.bucket().to_string(),
-            name,
+            name: name.to_string(), // TODO: don't use name field if possible, use mail_path instead
             key: creds.keys.master.clone(),
             k2v: creds.k2v_client()?,
             s3: creds.s3_client()?,
@@ -60,7 +61,7 @@ impl Mailbox {
         })
     }
 
-    // Get a summary of the mailbox, useful for the SELECT command for example
+    /// Get a summary of the mailbox, useful for the SELECT command for example
     pub async fn summary(&mut self) -> Result<Summary> {
         self.uid_index.sync().await?;
         let state = self.uid_index.state();
@@ -85,33 +86,35 @@ impl Mailbox {
         });
     }
 
-    // Insert an email in the mailbox
+    /// Insert an email in the mailbox
     pub async fn append(&mut self, _msg: IMF) -> Result<()> {
-        Ok(())
+        unimplemented!()
     }
 
-    // Copy an email from an external to this mailbox
-    // @FIXME is it needed or could we implement it with append?
-    pub async fn copy(&mut self, _mailbox: String, _uid: ImapUid) -> Result<()> {
-        Ok(())
+    /// Copy an email from an other Mailbox to this mailbox
+    /// (use this when possible, as it allows for a certain number of storage optimizations)
+    pub async fn copy(&mut self, _from: &Mailbox, _uid: ImapUid) -> Result<()> {
+        unimplemented!()
     }
 
-    // Delete all emails with the \Delete flag in the mailbox
-    // Can be called by CLOSE and EXPUNGE
-    // @FIXME do we want to implement this feature or a simpler "delete" command
-    // The controller could then "fetch \Delete" and call delete on each email?
+    /// Delete all emails with the \Delete flag in the mailbox
+    /// Can be called by CLOSE and EXPUNGE
+    /// @FIXME do we want to implement this feature or a simpler "delete" command
+    /// The controller could then "fetch \Delete" and call delete on each email?
     pub async fn expunge(&mut self) -> Result<()> {
-        Ok(())
+        unimplemented!()
     }
 
-    // Update flags of a range of emails
+    /// Update flags of a range of emails
     pub async fn store(&mut self) -> Result<()> {
-        Ok(())
+        unimplemented!()
     }
 
     pub async fn fetch(&mut self) -> Result<()> {
-        Ok(())
+        unimplemented!()
     }
+
+    // ----
 
     pub async fn test(&mut self) -> Result<()> {
         self.uid_index.sync().await?;

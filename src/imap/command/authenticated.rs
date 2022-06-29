@@ -96,7 +96,7 @@ impl<'a> AuthenticatedContext<'a> {
     async fn select(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
         let name = String::try_from(mailbox.clone())?;
 
-        let mut mb = self.user.open_mailbox(name.clone())?;
+        let mut mb = self.user.open_mailbox(name)?;
         tracing::info!(username=%self.user.username, mailbox=%name, "mailbox.selected");
 
         let sum = mb.summary().await?;

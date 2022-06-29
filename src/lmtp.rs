@@ -2,14 +2,14 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::{pin::Pin, sync::Arc};
 
-use anyhow::{Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use duplexify::Duplex;
 use futures::{io, AsyncRead, AsyncReadExt, AsyncWrite};
 use futures::{stream, stream::FuturesUnordered, StreamExt};
 use log::*;
 use rusoto_s3::{PutObjectRequest, S3};
-use tokio::net::{TcpListener};
+use tokio::net::TcpListener;
 use tokio::select;
 use tokio::sync::watch;
 use tokio_util::compat::*;
