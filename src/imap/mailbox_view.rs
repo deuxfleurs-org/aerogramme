@@ -1,11 +1,14 @@
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use anyhow::{Error, Result};
+use anyhow::{anyhow, bail, Error, Result};
 use boitalettres::proto::res::body::Data as Body;
-use imap_codec::types::core::Atom;
+use futures::stream::{FuturesOrdered, StreamExt};
+use imap_codec::types::core::{Atom, IString, NString};
+use imap_codec::types::fetch_attributes::{FetchAttribute, MacroOrFetchAttributes};
 use imap_codec::types::flag::Flag;
 use imap_codec::types::response::{Code, Data, MessageAttribute, Status};
+use imap_codec::types::sequence::{self, SequenceSet};
 
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::UidIndex;
@@ -130,6 +133,121 @@ impl MailboxView {
 
         *self = new_view;
         Ok(data)
+    }
+
+    /// Looks up state changes in the mailbox and produces a set of IMAP
+    /// responses describing the new state.
+    pub async fn fetch(
+        &self,
+        sequence_set: &SequenceSet,
+        attributes: &MacroOrFetchAttributes,
+        uid: &bool,
+    ) -> Result<Vec<Body>> {
+        if *uid {
+            bail!("UID FETCH not implemented");
+        }
+
+        let mail_vec = self
+            .known_state
+            .idx_by_uid
+            .iter()
+            .map(|(uid, uuid)| (*uid, *uuid))
+            .collect::<Vec<_>>();
+
+        let mut mails = vec![];
+        let iter_strat = sequence::Strategy::Naive {
+            largest: NonZeroU32::try_from((self.known_state.idx_by_uid.len() + 1) as u32).unwrap(),
+        };
+        for i in sequence_set.iter(iter_strat) {
+            if let Some(mail) = mail_vec.get(i.get() as usize - 1) {
+                mails.push((i, *mail));
+            } else {
+                bail!("No such mail: {}", i);
+            }
+        }
+
+        let mails_uuid = mails
+            .iter()
+            .map(|(_i, (_uid, uuid))| *uuid)
+            .collect::<Vec<_>>();
+        let mails_meta = self.mailbox.fetch_meta(&mails_uuid).await?;
+
+        let fetch_attrs = match attributes {
+            MacroOrFetchAttributes::Macro(m) => m.expand(),
+            MacroOrFetchAttributes::FetchAttributes(a) => a.clone(),
+        };
+        let need_body = fetch_attrs.iter().any(|x| {
+            matches!(
+                x,
+                FetchAttribute::Body
+                    | FetchAttribute::BodyExt { .. }
+                    | FetchAttribute::Rfc822
+                    | FetchAttribute::Rfc822Text
+                    | FetchAttribute::BodyStructure
+            )
+        });
+
+        let mails = if need_body {
+            let mut iter = mails
+                .into_iter()
+                .zip(mails_meta.into_iter())
+                .map(|((i, (uid, uuid)), meta)| async move {
+                    let body = self.mailbox.fetch_full(uuid, &meta.message_key).await?;
+                    Ok::<_, anyhow::Error>((i, uid, uuid, meta, Some(body)))
+                })
+                .collect::<FuturesOrdered<_>>();
+            let mut mails = vec![];
+            while let Some(m) = iter.next().await {
+                mails.push(m?);
+            }
+            mails
+        } else {
+            mails
+                .into_iter()
+                .zip(mails_meta.into_iter())
+                .map(|((i, (uid, uuid)), meta)| (i, uid, uuid, meta, None))
+                .collect::<Vec<_>>()
+        };
+
+        let mut ret = vec![];
+        for (i, uid, uuid, meta, body) in mails {
+            let mut attributes = vec![MessageAttribute::Uid(uid)];
+
+            let (uid2, flags) = self
+                .known_state
+                .table
+                .get(&uuid)
+                .ok_or_else(|| anyhow!("Mail not in uidindex table: {}", uuid))?;
+
+            for attr in fetch_attrs.iter() {
+                match attr {
+                    FetchAttribute::Uid => (),
+                    FetchAttribute::Flags => {
+                        attributes.push(MessageAttribute::Flags(
+                            flags.iter().filter_map(|f| string_to_flag(f)).collect(),
+                        ));
+                    }
+                    FetchAttribute::Rfc822Size => {
+                        attributes.push(MessageAttribute::Rfc822Size(meta.rfc822_size as u32))
+                    }
+                    FetchAttribute::Rfc822Header => {
+                        attributes.push(MessageAttribute::Rfc822Header(NString(Some(
+                            IString::Literal(meta.headers.clone().try_into().unwrap()),
+                        ))))
+                    }
+
+                    // TODO
+                    _ => (),
+                }
+            }
+
+            ret.push(Body::Data(Data::Fetch {
+                seq_or_uid: i,
+                attributes,
+            }));
+        }
+
+        Ok(ret)
     }
 
     // ----

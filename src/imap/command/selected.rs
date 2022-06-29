@@ -42,17 +42,22 @@ pub async fn dispatch<'a>(ctx: SelectedContext<'a>) -> Result<(Response, flow::T
 impl<'a> SelectedContext<'a> {
     pub async fn fetch(
         self,
-        _sequence_set: &SequenceSet,
-        _attributes: &MacroOrFetchAttributes,
-        _uid: &bool,
+        sequence_set: &SequenceSet,
+        attributes: &MacroOrFetchAttributes,
+        uid: &bool,
     ) -> Result<(Response, flow::Transition)> {
-        Ok((Response::bad("Not implemented")?, flow::Transition::None))
+        let resp = self.mailbox.fetch(sequence_set, attributes, uid).await?;
+
+        Ok((
+            Response::ok("FETCH completed")?.with_body(resp),
+            flow::Transition::None,
+        ))
     }
 
     pub async fn noop(self) -> Result<(Response, flow::Transition)> {
         let updates = self.mailbox.update().await?;
         Ok((
-            Response::ok("Noop completed.")?.with_body(updates),
+            Response::ok("NOOP completed.")?.with_body(updates),
             flow::Transition::None,
         ))
     }
