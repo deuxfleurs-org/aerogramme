@@ -1,11 +1,9 @@
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
-use boitalettres::proto::{res::body::Data as Body, Request, Response};
-use imap_codec::types::command::CommandBody;
+use boitalettres::proto::res::body::Data as Body;
 use imap_codec::types::core::Atom;
 use imap_codec::types::flag::Flag;
-use imap_codec::types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
 use imap_codec::types::response::{Code, Data, Status};
 
 use crate::mail::mailbox::Mailbox;

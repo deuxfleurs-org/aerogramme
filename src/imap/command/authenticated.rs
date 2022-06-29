@@ -1,16 +1,13 @@
-use anyhow::{Error, Result};
-use boitalettres::proto::{res::body::Data as Body, Request, Response};
+use anyhow::Result;
+use boitalettres::proto::{Request, Response};
 use imap_codec::types::command::CommandBody;
-use imap_codec::types::core::Atom;
-use imap_codec::types::flag::Flag;
 use imap_codec::types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
-use imap_codec::types::response::{Code, Data, Status};
+use imap_codec::types::response::Code;
 
 use crate::imap::command::anonymous;
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
 
-use crate::mail::mailbox::Mailbox;
 use crate::mail::user::User;
 
 pub struct AuthenticatedContext<'a> {

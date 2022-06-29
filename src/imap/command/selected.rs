@@ -11,7 +11,6 @@ use crate::imap::command::authenticated;
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
 
-use crate::mail::mailbox::Mailbox;
 use crate::mail::user::User;
 
 pub struct SelectedContext<'a> {

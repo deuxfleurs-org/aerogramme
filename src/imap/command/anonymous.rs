@@ -69,8 +69,6 @@ impl<'a> AnonymousContext<'a> {
             Ok(c) => c,
         };
 
-        let s3_client = creds.s3_client();
-        let k2v_client = creds.k2v_client();
         let user = User::new(u.clone(), creds)?;
 
         tracing::info!(username=%u, "connected");

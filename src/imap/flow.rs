@@ -2,7 +2,6 @@ use std::error::Error as StdError;
 use std::fmt;
 
 use crate::imap::mailbox_view::MailboxView;
-use crate::mail::mailbox::Mailbox;
 use crate::mail::user::User;
 
 #[derive(Debug)]

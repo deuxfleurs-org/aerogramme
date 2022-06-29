@@ -1,5 +1,3 @@
-use std::convert::TryFrom;
-
 use anyhow::Result;
 use k2v_client::K2vClient;
 use rusoto_s3::S3Client;

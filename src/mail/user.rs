@@ -65,17 +65,17 @@ impl User {
     }
 
     /// Creates a new mailbox in the user's IMAP namespace.
-    pub fn create_mailbox(&self, name: &str) -> Result<()> {
+    pub fn create_mailbox(&self, _name: &str) -> Result<()> {
         unimplemented!()
     }
 
     /// Deletes a mailbox in the user's IMAP namespace.
-    pub fn delete_mailbox(&self, name: &str) -> Result<()> {
+    pub fn delete_mailbox(&self, _name: &str) -> Result<()> {
         unimplemented!()
     }
 
     /// Renames a mailbox in the user's IMAP namespace.
-    pub fn rename_mailbox(&self, old_name: &str, new_name: &str) -> Result<()> {
+    pub fn rename_mailbox(&self, _old_name: &str, _new_name: &str) -> Result<()> {
         unimplemented!()
     }
 }
