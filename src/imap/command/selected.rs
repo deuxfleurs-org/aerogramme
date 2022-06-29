@@ -46,12 +46,13 @@ impl<'a> SelectedContext<'a> {
         attributes: &MacroOrFetchAttributes,
         uid: &bool,
     ) -> Result<(Response, flow::Transition)> {
-        let resp = self.mailbox.fetch(sequence_set, attributes, uid).await?;
-
-        Ok((
-            Response::ok("FETCH completed")?.with_body(resp),
-            flow::Transition::None,
-        ))
+        match self.mailbox.fetch(sequence_set, attributes, uid).await {
+            Ok(resp) => Ok((
+                Response::ok("FETCH completed")?.with_body(resp),
+                flow::Transition::None,
+            )),
+            Err(e) => Ok((Response::no(&e.to_string())?, flow::Transition::None)),
+        }
     }
 
     pub async fn noop(self) -> Result<(Response, flow::Transition)> {

@@ -118,6 +118,12 @@ async fn main() -> Result<()> {
         std::env::set_var("RUST_LOG", "main=info,mailrage=info,k2v_client=info")
     }
 
+    // Abort on panic (same behavior as in Go)
+    std::panic::set_hook(Box::new(|panic_info| {
+        tracing::error!("{}", panic_info.to_string());
+        std::process::abort();
+    }));
+
     tracing_subscriber::fmt::init();
 
     let args = Args::parse();

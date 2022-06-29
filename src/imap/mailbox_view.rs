@@ -1,10 +1,13 @@
+use std::borrow::Borrow;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Error, Result};
 use boitalettres::proto::res::body::Data as Body;
 use futures::stream::{FuturesOrdered, StreamExt};
+use imap_codec::types::address::Address;
 use imap_codec::types::core::{Atom, IString, NString};
+use imap_codec::types::envelope::Envelope;
 use imap_codec::types::fetch_attributes::{FetchAttribute, MacroOrFetchAttributes};
 use imap_codec::types::flag::Flag;
 use imap_codec::types::response::{Code, Data, MessageAttribute, Status};
@@ -210,7 +213,7 @@ impl MailboxView {
         };
 
         let mut ret = vec![];
-        for (i, uid, uuid, meta, _body) in mails {
+        for (i, uid, uuid, meta, body) in mails {
             let mut attributes = vec![MessageAttribute::Uid(uid)];
 
             let (_uid2, flags) = self
@@ -218,6 +221,14 @@ impl MailboxView {
                 .table
                 .get(&uuid)
                 .ok_or_else(|| anyhow!("Mail not in uidindex table: {}", uuid))?;
+
+            let parsed = match &body {
+                Some(m) => {
+                    mail_parser::Message::parse(m).ok_or_else(|| anyhow!("Invalid mail body"))?
+                }
+                None => mail_parser::Message::parse(&meta.headers)
+                    .ok_or_else(|| anyhow!("Invalid mail headers"))?,
+            };
 
             for attr in fetch_attrs.iter() {
                 match attr {
@@ -235,7 +246,9 @@ impl MailboxView {
                             IString::Literal(meta.headers.clone().try_into().unwrap()),
                         ))))
                     }
-
+                    FetchAttribute::Envelope => {
+                        attributes.push(MessageAttribute::Envelope(message_envelope(&parsed)))
+                    }
                     // TODO
                     _ => (),
                 }
@@ -247,6 +260,7 @@ impl MailboxView {
             }));
         }
 
+        tracing::info!("Fetch result: {:?}", ret);
         Ok(ret)
     }
 
@@ -353,4 +367,71 @@ fn string_to_flag(f: &str) -> Option<Flag> {
         },
         None => None,
     }
+}
+
+fn message_envelope(msg: &mail_parser::Message<'_>) -> Envelope {
+    Envelope {
+        date: NString(
+            msg.get_date()
+                .map(|d| IString::try_from(d.to_iso8601()).unwrap()),
+        ),
+        subject: NString(
+            msg.get_subject()
+                .map(|d| IString::try_from(d.to_string()).unwrap()),
+        ),
+        from: convert_addresses(msg.get_from()),
+        sender: convert_addresses(msg.get_sender()),
+        reply_to: convert_addresses(msg.get_reply_to()),
+        to: convert_addresses(msg.get_to()),
+        cc: convert_addresses(msg.get_cc()),
+        bcc: convert_addresses(msg.get_bcc()),
+        in_reply_to: NString(None), // TODO
+        message_id: NString(
+            msg.get_message_id()
+                .map(|d| IString::try_from(d.to_string()).unwrap()),
+        ),
+    }
+}
+
+fn convert_addresses(a: &mail_parser::HeaderValue<'_>) -> Vec<Address> {
+    match a {
+        mail_parser::HeaderValue::Address(a) => vec![convert_address(a)],
+        mail_parser::HeaderValue::AddressList(a) => {
+            let mut ret = vec![];
+            for aa in a {
+                ret.push(convert_address(aa));
+            }
+            ret
+        }
+        mail_parser::HeaderValue::Empty => vec![],
+        mail_parser::HeaderValue::Collection(c) => {
+            let mut ret = vec![];
+            for cc in c.iter() {
+                ret.extend(convert_addresses(cc).into_iter());
+            }
+            ret
+        }
+        _ => panic!("Invalid address header"),
+    }
+}
+
+fn convert_address(a: &mail_parser::Addr<'_>) -> Address {
+    let (user, host) = match &a.address {
+        None => (None, None),
+        Some(x) => match x.split_once('@') {
+            Some((u, h)) => (Some(u.to_string()), Some(h.to_string())),
+            None => (Some(x.to_string()), None),
+        },
+    };
+
+    Address::new(
+        NString(
+            a.name
+                .as_ref()
+                .map(|x| IString::try_from(x.to_string()).unwrap()),
+        ),
+        NString(None),
+        NString(user.map(|x| IString::try_from(x).unwrap())),
+        NString(host.map(|x| IString::try_from(x).unwrap())),
+    )
 }

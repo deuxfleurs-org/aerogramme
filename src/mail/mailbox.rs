@@ -1,9 +1,7 @@
 use anyhow::{anyhow, bail, Result};
 use k2v_client::K2vClient;
 use k2v_client::{BatchReadOp, Filter, K2vValue};
-use rusoto_s3::{
-    DeleteObjectRequest, GetObjectRequest, PutObjectRequest, S3Client, S3,
-};
+use rusoto_s3::{DeleteObjectRequest, GetObjectRequest, PutObjectRequest, S3Client, S3};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
 use tokio::sync::RwLock;
@@ -44,7 +42,7 @@ impl Mailbox {
 
     /// Sync data with backing store
     pub async fn sync(&self) -> Result<()> {
-        self.mbox.write().await.uid_index.sync().await
+        self.mbox.write().await.sync().await
     }
 
     /// Get a clone of the current UID Index of this mailbox
@@ -60,7 +58,13 @@ impl Mailbox {
 
     /// Copy an email from an other Mailbox to this mailbox
     /// (use this when possible, as it allows for a certain number of storage optimizations)
-    pub async fn copy(&self, _from: &Mailbox, _uid: ImapUid) -> Result<()> {
+    pub async fn copy_from(&self, _from: &Mailbox, _uuid: UniqueIdent) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Move an email from an other Mailbox to this mailbox
+    /// (use this when possible, as it allows for a certain number of storage optimizations)
+    pub async fn move_from(&self, _from: &Mailbox, _uuid: UniqueIdent) -> Result<()> {
         unimplemented!()
     }
 
@@ -98,6 +102,11 @@ struct MailboxInternal {
 }
 
 impl MailboxInternal {
+    async fn sync(&mut self) -> Result<()> {
+        self.uid_index.sync().await?;
+        Ok(())
+    }
+
     async fn fetch_meta(&self, ids: &[UniqueIdent]) -> Result<Vec<MailMeta>> {
         let ids = ids.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         let ops = ids
