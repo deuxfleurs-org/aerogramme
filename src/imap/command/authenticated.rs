@@ -9,7 +9,8 @@ use imap_codec::types::response::{Code, Data, Status};
 use crate::imap::command::anonymous;
 use crate::imap::flow;
 
-use crate::mail::Mailbox;
+use crate::mail::mailbox::Mailbox;
+use crate::mail::user::User;
 
 const DEFAULT_FLAGS: [Flag; 5] = [
     Flag::Seen,
@@ -21,7 +22,7 @@ const DEFAULT_FLAGS: [Flag; 5] = [
 
 pub struct AuthenticatedContext<'a> {
     pub req: &'a Request,
-    pub user: &'a flow::User,
+    pub user: &'a User,
 }
 
 pub async fn dispatch<'a>(ctx: AuthenticatedContext<'a>) -> Result<(Response, flow::Transition)> {
@@ -95,8 +96,8 @@ impl<'a> AuthenticatedContext<'a> {
     async fn select(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
         let name = String::try_from(mailbox.clone())?;
 
-        let mut mb = Mailbox::new(&self.user.creds, name.clone())?;
-        tracing::info!(username=%self.user.name, mailbox=%name, "mailbox.selected");
+        let mut mb = self.user.open_mailbox(name.clone())?;
+        tracing::info!(username=%self.user.username, mailbox=%name, "mailbox.selected");
 
         let sum = mb.summary().await?;
         tracing::trace!(summary=%sum, "mailbox.summary");
@@ -112,7 +113,7 @@ impl<'a> AuthenticatedContext<'a> {
             Some('$') if f == "$unseen" => None,
             Some(_) => match Atom::try_from(f.clone()) {
                 Err(_) => {
-                    tracing::error!(username=%self.user.name, mailbox=%name, flag=%f, "Unable to encode flag as IMAP atom");
+                    tracing::error!(username=%self.user.username, mailbox=%name, flag=%f, "Unable to encode flag as IMAP atom");
                     None
                 },
                 Ok(a) => Some(Flag::Keyword(a)),

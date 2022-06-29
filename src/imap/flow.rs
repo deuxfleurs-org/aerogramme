@@ -1,13 +1,9 @@
 use std::error::Error as StdError;
 use std::fmt;
 
-use crate::login::Credentials;
-use crate::mail::Mailbox;
+use crate::mail::mailbox::Mailbox;
+use crate::mail::user::User;
 
-pub struct User {
-    pub name: String,
-    pub creds: Credentials,
-}
 
 #[derive(Debug)]
 pub enum Error {

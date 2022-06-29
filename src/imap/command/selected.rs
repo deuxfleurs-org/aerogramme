@@ -10,11 +10,12 @@ use imap_codec::types::sequence::SequenceSet;
 use crate::imap::command::authenticated;
 use crate::imap::flow;
 
-use crate::mail::Mailbox;
+use crate::mail::mailbox::Mailbox;
+use crate::mail::user::User;
 
 pub struct SelectedContext<'a> {
     pub req: &'a Request,
-    pub user: &'a flow::User,
+    pub user: &'a User,
     pub mailbox: &'a mut Mailbox,
 }
 

@@ -5,6 +5,7 @@ use imap_codec::types::core::{AString};
 use imap_codec::types::response::{Capability, Data, Status};
 
 use crate::imap::flow;
+use crate::mail::user::User;
 use crate::login::ArcLoginProvider;
 
 //--- dispatching
@@ -68,10 +69,9 @@ impl<'a> AnonymousContext<'a> {
             Ok(c) => c,
         };
 
-        let user = flow::User {
-            creds,
-            name: u.clone(),
-        };
+        let s3_client = creds.s3_client();
+        let k2v_client = creds.k2v_client();
+        let user = User::new(u.clone(), creds)?;
 
         tracing::info!(username=%u, "connected");
         Ok((
