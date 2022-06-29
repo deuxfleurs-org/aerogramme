@@ -88,13 +88,13 @@ impl Mailbox {
     }
 
     // Insert an email in the mailbox
-    pub async fn append(&mut self, msg: IMF) -> Result<()> {
+    pub async fn append(&mut self, _msg: IMF) -> Result<()> {
         Ok(())
     }
 
     // Copy an email from an external to this mailbox
     // @FIXME is it needed or could we implement it with append?
-    pub async fn copy(&mut self, mailbox: String, uid: ImapUid) -> Result<()> {
+    pub async fn copy(&mut self, _mailbox: String, _uid: ImapUid) -> Result<()> {
         Ok(())
     }
 

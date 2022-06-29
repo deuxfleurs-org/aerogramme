@@ -2,20 +2,20 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::{pin::Pin, sync::Arc};
 
-use anyhow::{bail, Result};
+use anyhow::{Result};
 use async_trait::async_trait;
 use duplexify::Duplex;
 use futures::{io, AsyncRead, AsyncReadExt, AsyncWrite};
 use futures::{stream, stream::FuturesUnordered, StreamExt};
 use log::*;
-use rusoto_s3::{PutObjectRequest, S3Client, S3};
-use tokio::net::{TcpListener, TcpStream};
+use rusoto_s3::{PutObjectRequest, S3};
+use tokio::net::{TcpListener};
 use tokio::select;
 use tokio::sync::watch;
 use tokio_util::compat::*;
 
 use smtp_message::{Email, EscapedDataReader, Reply, ReplyCode};
-use smtp_server::{reply, Config, ConnectionMetadata, Decision, MailMetadata, Protocol};
+use smtp_server::{reply, Config, ConnectionMetadata, Decision, MailMetadata};
 
 use crate::config::*;
 use crate::cryptoblob::*;
@@ -120,7 +120,7 @@ impl Config for LmtpServer {
     async fn filter_from(
         &self,
         from: Option<Email>,
-        meta: &mut MailMetadata<Message>,
+        _meta: &mut MailMetadata<Message>,
         _conn_meta: &mut ConnectionMetadata<Conn>,
     ) -> Decision<Option<Email>> {
         Decision::Accept {
@@ -161,7 +161,7 @@ impl Config for LmtpServer {
         &'resp self,
         reader: &mut EscapedDataReader<'_, R>,
         meta: MailMetadata<Message>,
-        conn_meta: &'resp mut ConnectionMetadata<Conn>,
+        _conn_meta: &'resp mut ConnectionMetadata<Conn>,
     ) -> Pin<Box<dyn futures::Stream<Item = Decision<()>> + Send + 'resp>>
     where
         R: Send + Unpin + AsyncRead,

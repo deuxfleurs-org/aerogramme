@@ -134,7 +134,7 @@ async fn main() -> Result<()> {
         Command::Test { config_file } => {
             let config = read_config(config_file)?;
 
-            let server = Server::new(config).await?;
+            let _server = Server::new(config).await?;
             //server.test().await?;
         }
         Command::FirstLogin {

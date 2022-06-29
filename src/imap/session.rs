@@ -3,7 +3,7 @@ use boitalettres::errors::Error as BalError;
 use boitalettres::proto::{Request, Response};
 use futures::future::BoxFuture;
 use futures::future::FutureExt;
-use imap_codec::types::response::{Response as ImapRes, Status};
+
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{mpsc, oneshot};
 
@@ -32,7 +32,7 @@ impl Manager {
     pub fn new(login_provider: ArcLoginProvider) -> Self {
         let (tx, rx) = mpsc::channel(MAX_PIPELINED_COMMANDS);
         tokio::spawn(async move {
-            let mut instance = Instance::new(login_provider, rx);
+            let instance = Instance::new(login_provider, rx);
             instance.start().await;
         });
         Self { tx }

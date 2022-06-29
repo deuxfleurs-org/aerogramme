@@ -1,8 +1,8 @@
 use anyhow::{Error, Result};
 use boitalettres::proto::{res::body::Data as Body, Request, Response};
 use imap_codec::types::command::CommandBody;
-use imap_codec::types::core::{AString, Atom};
-use imap_codec::types::response::{Capability, Code, Data, Response as ImapRes, Status};
+use imap_codec::types::core::{AString};
+use imap_codec::types::response::{Capability, Data, Status};
 
 use crate::imap::flow;
 use crate::login::ArcLoginProvider;

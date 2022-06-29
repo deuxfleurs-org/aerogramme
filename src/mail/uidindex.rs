@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 
-use im::{HashMap, HashSet, OrdMap, OrdSet};
-use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+use im::{HashMap, OrdMap, OrdSet};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::bayou::*;
 use crate::mail::mail_ident::MailIdent;

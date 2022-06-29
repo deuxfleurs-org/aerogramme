@@ -10,7 +10,7 @@ use crate::config::*;
 use crate::imap;
 use crate::lmtp::*;
 use crate::login::ArcLoginProvider;
-use crate::login::{ldap_provider::*, static_provider::*, *};
+use crate::login::{ldap_provider::*, static_provider::*};
 
 pub struct Server {
     lmtp_server: Option<Arc<LmtpServer>>,
@@ -37,7 +37,7 @@ impl Server {
         tracing::info!("Starting Aerogramme...");
 
         let (exit_signal, provoke_exit) = watch_ctrl_c();
-        let exit_on_err = move |err: anyhow::Error| {
+        let _exit_on_err = move |err: anyhow::Error| {
             error!("Error: {}", err);
             let _ = provoke_exit.send(true);
         };

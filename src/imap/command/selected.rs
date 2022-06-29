@@ -1,15 +1,15 @@
-use anyhow::{Error, Result};
+use anyhow::{Result};
 use boitalettres::proto::Request;
 use boitalettres::proto::Response;
 use imap_codec::types::command::CommandBody;
-use imap_codec::types::core::Tag;
+
 use imap_codec::types::fetch_attributes::MacroOrFetchAttributes;
-use imap_codec::types::response::{Response as ImapRes, Status};
+
 use imap_codec::types::sequence::SequenceSet;
 
 use crate::imap::command::authenticated;
 use crate::imap::flow;
-use crate::imap::session::InnerContext;
+
 use crate::mail::Mailbox;
 
 pub struct SelectedContext<'a> {
@@ -40,9 +40,9 @@ pub async fn dispatch<'a>(ctx: SelectedContext<'a>) -> Result<(Response, flow::T
 impl<'a> SelectedContext<'a> {
     pub async fn fetch(
         self,
-        sequence_set: &SequenceSet,
-        attributes: &MacroOrFetchAttributes,
-        uid: &bool,
+        _sequence_set: &SequenceSet,
+        _attributes: &MacroOrFetchAttributes,
+        _uid: &bool,
     ) -> Result<(Response, flow::Transition)> {
         Ok((Response::bad("Not implemented")?, flow::Transition::None))
     }

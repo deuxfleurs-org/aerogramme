@@ -1,14 +1,14 @@
-use anyhow::{anyhow, Error, Result};
+use anyhow::{Error, Result};
 use boitalettres::proto::{res::body::Data as Body, Request, Response};
 use imap_codec::types::command::CommandBody;
 use imap_codec::types::core::Atom;
 use imap_codec::types::flag::Flag;
 use imap_codec::types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
-use imap_codec::types::response::{Code, Data, Response as ImapRes, Status};
+use imap_codec::types::response::{Code, Data, Status};
 
 use crate::imap::command::anonymous;
 use crate::imap::flow;
-use crate::imap::session::InnerContext;
+
 use crate::mail::Mailbox;
 
 const DEFAULT_FLAGS: [Flag; 5] = [
@@ -50,16 +50,16 @@ pub async fn dispatch<'a>(ctx: AuthenticatedContext<'a>) -> Result<(Response, fl
 impl<'a> AuthenticatedContext<'a> {
     async fn lsub(
         self,
-        reference: &MailboxCodec,
-        mailbox_wildcard: &ListMailbox,
+        _reference: &MailboxCodec,
+        _mailbox_wildcard: &ListMailbox,
     ) -> Result<(Response, flow::Transition)> {
         Ok((Response::bad("Not implemented")?, flow::Transition::None))
     }
 
     async fn list(
         self,
-        reference: &MailboxCodec,
-        mailbox_wildcard: &ListMailbox,
+        _reference: &MailboxCodec,
+        _mailbox_wildcard: &ListMailbox,
     ) -> Result<(Response, flow::Transition)> {
         Ok((Response::bad("Not implemented")?, flow::Transition::None))
     }
