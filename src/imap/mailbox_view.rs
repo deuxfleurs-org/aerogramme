@@ -97,7 +97,7 @@ impl MailboxView {
 
             // - notify client of expunged mails
             let mut n_expunge = 0;
-            for (i, (uid, uuid)) in self.known_state.idx_by_uid.iter().enumerate() {
+            for (i, (_uid, uuid)) in self.known_state.idx_by_uid.iter().enumerate() {
                 if !new_view.known_state.table.contains_key(uuid) {
                     data.push(Body::Data(Data::Expunge(
                         NonZeroU32::try_from((i + 1 - n_expunge) as u32).unwrap(),
@@ -112,7 +112,7 @@ impl MailboxView {
             }
 
             // - if flags changed for existing mails, tell client
-            for (i, (uid, uuid)) in new_view.known_state.idx_by_uid.iter().enumerate() {
+            for (i, (_uid, uuid)) in new_view.known_state.idx_by_uid.iter().enumerate() {
                 let old_mail = self.known_state.table.get(uuid);
                 let new_mail = new_view.known_state.table.get(uuid);
                 if old_mail.is_some() && old_mail != new_mail {
@@ -210,10 +210,10 @@ impl MailboxView {
         };
 
         let mut ret = vec![];
-        for (i, uid, uuid, meta, body) in mails {
+        for (i, uid, uuid, meta, _body) in mails {
             let mut attributes = vec![MessageAttribute::Uid(uid)];
 
-            let (uid2, flags) = self
+            let (_uid2, flags) = self
                 .known_state
                 .table
                 .get(&uuid)

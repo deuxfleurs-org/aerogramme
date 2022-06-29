@@ -2,14 +2,14 @@ use anyhow::{anyhow, bail, Result};
 use k2v_client::K2vClient;
 use k2v_client::{BatchReadOp, Filter, K2vValue};
 use rusoto_s3::{
-    DeleteObjectRequest, GetObjectRequest, ListObjectsV2Request, PutObjectRequest, S3Client, S3,
+    DeleteObjectRequest, GetObjectRequest, PutObjectRequest, S3Client, S3,
 };
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
 use tokio::sync::RwLock;
 
 use crate::bayou::Bayou;
-use crate::cryptoblob::{self, gen_key, open_deserialize, seal_serialize, Key};
+use crate::cryptoblob::{self, gen_key, open_deserialize, Key};
 use crate::login::Credentials;
 use crate::mail::uidindex::*;
 use crate::mail::unique_ident::*;
