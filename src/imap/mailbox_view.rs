@@ -8,7 +8,7 @@ use imap_codec::types::flag::Flag;
 use imap_codec::types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
 use imap_codec::types::response::{Code, Data, Status};
 
-use crate::mail::mailbox::{Mailbox, Summary};
+use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::UidIndex;
 
 const DEFAULT_FLAGS: [Flag; 5] = [
@@ -35,6 +35,7 @@ impl MailboxView {
     /// Creates a new IMAP view into a mailbox.
     /// Generates the necessary IMAP messages so that the client
     /// has a satisfactory summary of the current mailbox's state.
+    /// These are the messages that are sent in response to a SELECT command.
     pub async fn new(mailbox: Arc<Mailbox>) -> Result<(Self, Vec<Body>)> {
         let state = mailbox.current_uid_index().await;
 
@@ -140,7 +141,11 @@ impl MailboxView {
             })
             .flatten()
             .collect();
-        flags.extend_from_slice(&DEFAULT_FLAGS);
+        for f in DEFAULT_FLAGS.iter() {
+            if !flags.contains(f) {
+                flags.push(f.clone());
+            }
+        }
         let mut ret = vec![Body::Data(Data::Flags(flags.clone()))];
 
         flags.push(Flag::Permanent);

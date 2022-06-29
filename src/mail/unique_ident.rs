@@ -17,7 +17,7 @@ use crate::time::now_msec;
 /// Their main property is to be unique without having to rely
 /// on synchronization between IMAP processes.
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Debug)]
-pub struct MailIdent(pub [u8; 24]);
+pub struct UniqueIdent(pub [u8; 24]);
 
 struct IdentGenerator {
     pid: u128,
@@ -34,12 +34,12 @@ impl IdentGenerator {
         }
     }
 
-    fn gen(&self) -> MailIdent {
+    fn gen(&self) -> UniqueIdent {
         let sn = self.sn.fetch_add(1, Ordering::Relaxed);
         let mut res = [0u8; 24];
         res[0..16].copy_from_slice(&u128::to_be_bytes(self.pid));
         res[16..24].copy_from_slice(&u64::to_be_bytes(sn));
-        MailIdent(res)
+        UniqueIdent(res)
     }
 }
 
@@ -47,23 +47,23 @@ lazy_static! {
     static ref GENERATOR: IdentGenerator = IdentGenerator::new();
 }
 
-pub fn gen_ident() -> MailIdent {
+pub fn gen_ident() -> UniqueIdent {
     GENERATOR.gen()
 }
 
 // -- serde --
 
-impl<'de> Deserialize<'de> for MailIdent {
+impl<'de> Deserialize<'de> for UniqueIdent {
     fn deserialize<D>(d: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         let v = String::deserialize(d)?;
-        MailIdent::from_str(&v).map_err(D::Error::custom)
+        UniqueIdent::from_str(&v).map_err(D::Error::custom)
     }
 }
 
-impl Serialize for MailIdent {
+impl Serialize for UniqueIdent {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -72,16 +72,16 @@ impl Serialize for MailIdent {
     }
 }
 
-impl ToString for MailIdent {
-    fn to_string(&self) -> String {
-        hex::encode(self.0)
+impl std::fmt::Display for UniqueIdent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", hex::encode(self.0))
     }
 }
 
-impl FromStr for MailIdent {
+impl FromStr for UniqueIdent {
     type Err = &'static str;
 
-    fn from_str(s: &str) -> Result<MailIdent, &'static str> {
+    fn from_str(s: &str) -> Result<UniqueIdent, &'static str> {
         let bytes = hex::decode(s).map_err(|_| "invalid hex")?;
 
         if bytes.len() != 24 {
@@ -90,6 +90,6 @@ impl FromStr for MailIdent {
 
         let mut tmp = [0u8; 24];
         tmp[..].copy_from_slice(&bytes);
-        Ok(MailIdent(tmp))
+        Ok(UniqueIdent(tmp))
     }
 }

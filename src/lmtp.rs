@@ -20,7 +20,7 @@ use smtp_server::{reply, Config, ConnectionMetadata, Decision, MailMetadata};
 use crate::config::*;
 use crate::cryptoblob::*;
 use crate::login::*;
-use crate::mail::mail_ident::*;
+use crate::mail::unique_ident::*;
 
 pub struct LmtpServer {
     bind_addr: SocketAddr,

@@ -9,6 +9,7 @@ use rusoto_s3::S3Client;
 
 use crate::login::{Credentials, StorageCredentials};
 use crate::mail::mailbox::Mailbox;
+use crate::mail::unique_ident::UniqueIdent;
 
 pub struct User {
     pub username: String,
@@ -36,21 +37,29 @@ impl User {
 
     /// Opens an existing mailbox given its IMAP name.
     pub async fn open_mailbox(&self, name: &str) -> Result<Option<Arc<Mailbox>>> {
+        // TODO: handle mailbox names, mappings, renaming, etc
+        let id = match name {
+            "INBOX" => UniqueIdent([0u8; 24]),
+            _ => panic!("Only INBOX exists for now"),
+        };
+
+        let cache_key = (self.creds.storage.clone(), id);
+
         {
             let cache = MAILBOX_CACHE.cache.lock().unwrap();
-            if let Some(mb) = cache.get(&self.creds.storage).and_then(Weak::upgrade) {
+            if let Some(mb) = cache.get(&cache_key).and_then(Weak::upgrade) {
                 return Ok(Some(mb));
             }
         }
 
-        let mb = Arc::new(Mailbox::open(&self.creds, name).await?);
+        let mb = Arc::new(Mailbox::open(&self.creds, id).await?);
 
         let mut cache = MAILBOX_CACHE.cache.lock().unwrap();
-        if let Some(concurrent_mb) = cache.get(&self.creds.storage).and_then(Weak::upgrade) {
-            drop(mb);   // we worked for nothing but at least we didn't starve someone else
+        if let Some(concurrent_mb) = cache.get(&cache_key).and_then(Weak::upgrade) {
+            drop(mb); // we worked for nothing but at least we didn't starve someone else
             Ok(Some(concurrent_mb))
         } else {
-            cache.insert(self.creds.storage.clone(), Arc::downgrade(&mb));
+            cache.insert(cache_key, Arc::downgrade(&mb));
             Ok(Some(mb))
         }
     }
@@ -74,7 +83,7 @@ impl User {
 // ---- Mailbox cache ----
 
 struct MailboxCache {
-    cache: std::sync::Mutex<HashMap<StorageCredentials, Weak<Mailbox>>>,
+    cache: std::sync::Mutex<HashMap<(StorageCredentials, UniqueIdent), Weak<Mailbox>>>,
 }
 
 impl MailboxCache {

@@ -8,53 +8,40 @@ use tokio::sync::RwLock;
 use crate::bayou::Bayou;
 use crate::cryptoblob::Key;
 use crate::login::Credentials;
-use crate::mail::mail_ident::*;
 use crate::mail::uidindex::*;
+use crate::mail::unique_ident::*;
 use crate::mail::IMF;
 
-pub struct Summary {
-    pub validity: ImapUidvalidity,
-    pub next: ImapUid,
-    pub exists: u32,
-    pub recent: u32,
-    pub flags: Vec<String>,
-    pub unseen: Option<ImapUid>,
+pub struct Mailbox {
+    id: UniqueIdent,
+    mbox: RwLock<MailboxInternal>,
 }
-
-impl std::fmt::Display for Summary {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "uidvalidity: {}, uidnext: {}, exists: {}",
-            self.validity, self.next, self.exists
-        )
-    }
-}
-
-pub struct Mailbox(RwLock<MailboxInternal>);
 
 impl Mailbox {
-    pub(super) async fn open(creds: &Credentials, name: &str) -> Result<Self> {
-        let index_path = format!("index/{}", name);
-        let mail_path = format!("mail/{}", name);
+    pub(super) async fn open(creds: &Credentials, id: UniqueIdent) -> Result<Self> {
+        let index_path = format!("index/{}", id);
+        let mail_path = format!("mail/{}", id);
 
         let mut uid_index = Bayou::<UidIndex>::new(creds, index_path)?;
         uid_index.sync().await?;
 
-        Ok(Self(RwLock::new(MailboxInternal {
+        let mbox = RwLock::new(MailboxInternal {
+            id,
             bucket: creds.bucket().to_string(),
-            key: creds.keys.master.clone(),
+            encryption_key: creds.keys.master.clone(),
             k2v: creds.k2v_client()?,
             s3: creds.s3_client()?,
             uid_index,
             mail_path,
-        })))
+        });
+
+        Ok(Self { id, mbox })
     }
 
     /// Get a clone of the current UID Index of this mailbox
     /// (cloning is cheap so don't hesitate to use this)
     pub async fn current_uid_index(&self) -> UidIndex {
-        self.0.read().await.uid_index.state().clone()
+        self.mbox.read().await.uid_index.state().clone()
     }
 
     /// Insert an email in the mailbox
@@ -91,14 +78,15 @@ impl Mailbox {
 // Non standard but common flags:
 // https://www.iana.org/assignments/imap-jmap-keywords/imap-jmap-keywords.xhtml
 struct MailboxInternal {
+    id: UniqueIdent,
     bucket: String,
-    key: Key,
+    mail_path: String,
+    encryption_key: Key,
 
     k2v: K2vClient,
     s3: S3Client,
 
     uid_index: Bayou<UidIndex>,
-    mail_path: String,
 }
 
 impl MailboxInternal {

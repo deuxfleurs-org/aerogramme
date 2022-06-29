@@ -4,7 +4,7 @@ use im::{HashMap, OrdMap, OrdSet};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::bayou::*;
-use crate::mail::mail_ident::MailIdent;
+use crate::mail::unique_ident::UniqueIdent;
 
 pub type ImapUid = NonZeroU32;
 pub type ImapUidvalidity = NonZeroU32;
@@ -18,10 +18,10 @@ pub type Flag = String;
 #[derive(Clone)]
 pub struct UidIndex {
     // Source of trust
-    pub table: OrdMap<MailIdent, (ImapUid, Vec<Flag>)>,
+    pub table: OrdMap<UniqueIdent, (ImapUid, Vec<Flag>)>,
 
     // Indexes optimized for queries
-    pub idx_by_uid: OrdMap<ImapUid, MailIdent>,
+    pub idx_by_uid: OrdMap<ImapUid, UniqueIdent>,
     pub idx_by_flag: FlagIndex,
 
     // Counters
@@ -32,36 +32,36 @@ pub struct UidIndex {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum UidIndexOp {
-    MailAdd(MailIdent, ImapUid, Vec<Flag>),
-    MailDel(MailIdent),
-    FlagAdd(MailIdent, Vec<Flag>),
-    FlagDel(MailIdent, Vec<Flag>),
+    MailAdd(UniqueIdent, ImapUid, Vec<Flag>),
+    MailDel(UniqueIdent),
+    FlagAdd(UniqueIdent, Vec<Flag>),
+    FlagDel(UniqueIdent, Vec<Flag>),
 }
 
 impl UidIndex {
     #[must_use]
-    pub fn op_mail_add(&self, ident: MailIdent, flags: Vec<Flag>) -> UidIndexOp {
+    pub fn op_mail_add(&self, ident: UniqueIdent, flags: Vec<Flag>) -> UidIndexOp {
         UidIndexOp::MailAdd(ident, self.internalseq, flags)
     }
 
     #[must_use]
-    pub fn op_mail_del(&self, ident: MailIdent) -> UidIndexOp {
+    pub fn op_mail_del(&self, ident: UniqueIdent) -> UidIndexOp {
         UidIndexOp::MailDel(ident)
     }
 
     #[must_use]
-    pub fn op_flag_add(&self, ident: MailIdent, flags: Vec<Flag>) -> UidIndexOp {
+    pub fn op_flag_add(&self, ident: UniqueIdent, flags: Vec<Flag>) -> UidIndexOp {
         UidIndexOp::FlagAdd(ident, flags)
     }
 
     #[must_use]
-    pub fn op_flag_del(&self, ident: MailIdent, flags: Vec<Flag>) -> UidIndexOp {
+    pub fn op_flag_del(&self, ident: UniqueIdent, flags: Vec<Flag>) -> UidIndexOp {
         UidIndexOp::FlagDel(ident, flags)
     }
 
     // INTERNAL functions to keep state consistent
 
-    fn reg_email(&mut self, ident: MailIdent, uid: ImapUid, flags: &Vec<Flag>) {
+    fn reg_email(&mut self, ident: UniqueIdent, uid: ImapUid, flags: &Vec<Flag>) {
         // Insert the email in our table
         self.table.insert(ident, (uid, flags.clone()));
 
@@ -70,7 +70,7 @@ impl UidIndex {
         self.idx_by_flag.insert(uid, flags);
     }
 
-    fn unreg_email(&mut self, ident: &MailIdent) {
+    fn unreg_email(&mut self, ident: &UniqueIdent) {
         // We do nothing if the mail does not exist
         let (uid, flags) = match self.table.get(ident) {
             Some(v) => v,
@@ -198,7 +198,7 @@ impl FlagIndex {
 
 #[derive(Serialize, Deserialize)]
 struct UidIndexSerializedRepr {
-    mails: Vec<(ImapUid, MailIdent, Vec<Flag>)>,
+    mails: Vec<(ImapUid, UniqueIdent, Vec<Flag>)>,
     uidvalidity: ImapUidvalidity,
     uidnext: ImapUid,
     internalseq: ImapUid,
@@ -261,7 +261,7 @@ mod tests {
 
         // Add message 1
         {
-            let m = MailIdent([0x01; 24]);
+            let m = UniqueIdent([0x01; 24]);
             let f = vec!["\\Recent".to_string(), "\\Archive".to_string()];
             let ev = state.op_mail_add(m, f);
             state = state.apply(&ev);
@@ -282,7 +282,7 @@ mod tests {
 
         // Add message 2
         {
-            let m = MailIdent([0x02; 24]);
+            let m = UniqueIdent([0x02; 24]);
             let f = vec!["\\Seen".to_string(), "\\Archive".to_string()];
             let ev = state.op_mail_add(m, f);
             state = state.apply(&ev);
@@ -293,7 +293,7 @@ mod tests {
 
         // Add flags to message 1
         {
-            let m = MailIdent([0x01; 24]);
+            let m = UniqueIdent([0x01; 24]);
             let f = vec!["Important".to_string(), "$cl_1".to_string()];
             let ev = state.op_flag_add(m, f);
             state = state.apply(&ev);
@@ -301,7 +301,7 @@ mod tests {
 
         // Delete flags from message 1
         {
-            let m = MailIdent([0x01; 24]);
+            let m = UniqueIdent([0x01; 24]);
             let f = vec!["\\Recent".to_string()];
             let ev = state.op_flag_del(m, f);
             state = state.apply(&ev);
@@ -312,7 +312,7 @@ mod tests {
 
         // Delete message 2
         {
-            let m = MailIdent([0x02; 24]);
+            let m = UniqueIdent([0x02; 24]);
             let ev = state.op_mail_del(m);
             state = state.apply(&ev);
 
@@ -322,7 +322,7 @@ mod tests {
 
         // Add a message 3 concurrent to message 1 (trigger a uid validity change)
         {
-            let m = MailIdent([0x03; 24]);
+            let m = UniqueIdent([0x03; 24]);
             let f = vec!["\\Archive".to_string(), "\\Recent".to_string()];
             let ev = UidIndexOp::MailAdd(m, 1, f);
             state = state.apply(&ev);
@@ -334,7 +334,7 @@ mod tests {
             assert!(state.uidvalidity > 1);
 
             let (last_uid, ident) = state.idx_by_uid.get_max().unwrap();
-            assert_eq!(ident, &MailIdent([0x03; 24]));
+            assert_eq!(ident, &UniqueIdent([0x03; 24]));
 
             let archive = state.idx_by_flag.0.get("\\Archive").unwrap();
             assert_eq!(archive.len(), 2);
