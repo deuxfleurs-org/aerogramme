@@ -45,15 +45,45 @@ impl Mailbox {
         self.mbox.write().await.sync().await
     }
 
+    // ---- Functions for reading the mailbox ----
+
     /// Get a clone of the current UID Index of this mailbox
     /// (cloning is cheap so don't hesitate to use this)
     pub async fn current_uid_index(&self) -> UidIndex {
         self.mbox.read().await.uid_index.state().clone()
     }
 
-    /// Insert an email in the mailbox
-    pub async fn append<'a>(&self, msg: IMF<'a>) -> Result<()> {
-        self.mbox.write().await.append(msg, None).await
+    /// Fetch the metadata (headers + some more info) of the specified
+    /// mail IDs
+    pub async fn fetch_meta(&self, ids: &[UniqueIdent]) -> Result<Vec<MailMeta>> {
+        self.mbox.read().await.fetch_meta(ids).await
+    }
+
+    /// Fetch an entire e-mail
+    pub async fn fetch_full(&self, id: UniqueIdent, message_key: &Key) -> Result<Vec<u8>> {
+        self.mbox.read().await.fetch_full(id, message_key).await
+    }
+
+    // ---- Functions for changing the mailbox ----
+
+    /// Add flags to message
+    pub async fn add_flags<'a>(&self, id: UniqueIdent, flags: &[Flag]) -> Result<()> {
+        self.mbox.write().await.add_flags(id, flags).await
+    }
+
+    /// Delete flags from message
+    pub async fn del_flags<'a>(&self, id: UniqueIdent, flags: &[Flag]) -> Result<()> {
+        self.mbox.write().await.del_flags(id, flags).await
+    }
+
+    /// Insert an email into the mailbox
+    pub async fn append<'a>(&self, msg: IMF<'a>, ident: Option<UniqueIdent>) -> Result<()> {
+        self.mbox.write().await.append(msg, ident).await
+    }
+
+    /// Delete a message definitively from the mailbox
+    pub async fn delete<'a>(&self, id: UniqueIdent) -> Result<()> {
+        self.mbox.write().await.delete(id).await
     }
 
     /// Copy an email from an other Mailbox to this mailbox
@@ -68,16 +98,7 @@ impl Mailbox {
         unimplemented!()
     }
 
-    /// Fetch the metadata (headers + some more info) of the specified
-    /// mail IDs
-    pub async fn fetch_meta(&self, ids: &[UniqueIdent]) -> Result<Vec<MailMeta>> {
-        self.mbox.read().await.fetch_meta(ids).await
-    }
-
-    /// Fetch an entire e-mail
-    pub async fn fetch_full(&self, id: UniqueIdent, message_key: &Key) -> Result<Vec<u8>> {
-        self.mbox.read().await.fetch_full(id, message_key).await
-    }
+    // ----
 
     /// Test procedure TODO WILL REMOVE THIS
     pub async fn test(&self) -> Result<()> {
@@ -106,6 +127,8 @@ impl MailboxInternal {
         self.uid_index.sync().await?;
         Ok(())
     }
+
+    // ---- Functions for reading the mailbox ----
 
     async fn fetch_meta(&self, ids: &[UniqueIdent]) -> Result<Vec<MailMeta>> {
         let ids = ids.iter().map(|x| x.to_string()).collect::<Vec<_>>();
@@ -160,6 +183,18 @@ impl MailboxInternal {
         obj_body.into_async_read().read_to_end(&mut buf).await?;
 
         Ok(cryptoblob::open(&buf, &message_key)?)
+    }
+
+    // ---- Functions for changing the mailbox ----
+
+    async fn add_flags(&mut self, ident: UniqueIdent, flags: &[Flag]) -> Result<()> {
+        let add_flag_op = self.uid_index.state().op_flag_add(ident, flags.to_vec());
+        self.uid_index.push(add_flag_op).await
+    }
+
+    async fn del_flags(&mut self, ident: UniqueIdent, flags: &[Flag]) -> Result<()> {
+        let del_flag_op = self.uid_index.state().op_flag_del(ident, flags.to_vec());
+        self.uid_index.push(del_flag_op).await
     }
 
     async fn append(&mut self, mail: IMF<'_>, ident: Option<UniqueIdent>) -> Result<()> {
