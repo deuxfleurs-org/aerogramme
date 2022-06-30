@@ -22,7 +22,7 @@ aws_access_key_id = "GK..."
 aws_secret_access_key = "c0ffee..."
 ```
 
-Next create the config file `mailrage.toml`:
+Next create the config file `aerogramme.toml`:
 
 ```
 s3_endpoint = "http://127.0.0.1:3900"

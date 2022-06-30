@@ -1,6 +1,6 @@
 /target
 .vimrc
 env.sh
-mailrage.toml
+aerogramme.toml
 *.swo
 *.swp

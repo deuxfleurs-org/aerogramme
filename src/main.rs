@@ -30,12 +30,12 @@ struct Args {
 enum Command {
     /// Runs the IMAP+LMTP server daemon
     Server {
-        #[clap(short, long, env = "CONFIG_FILE", default_value = "mailrage.toml")]
+        #[clap(short, long, env = "CONFIG_FILE", default_value = "aerogramme.toml")]
         config_file: PathBuf,
     },
     /// TEST TEST TEST
     Test {
-        #[clap(short, long, env = "CONFIG_FILE", default_value = "mailrage.toml")]
+        #[clap(short, long, env = "CONFIG_FILE", default_value = "aerogramme.toml")]
         config_file: PathBuf,
     },
     /// Initializes key pairs for a user and adds a key decryption password
@@ -115,7 +115,7 @@ struct UserSecretsArgs {
 #[tokio::main]
 async fn main() -> Result<()> {
     if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "main=info,mailrage=info,k2v_client=info")
+        std::env::set_var("RUST_LOG", "main=info,aerogramme=info,k2v_client=info")
     }
 
     // Abort on panic (same behavior as in Go)

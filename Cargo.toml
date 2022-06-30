@@ -1,5 +1,5 @@
 [package]
-name = "mailrage"
+name = "aerogramme"
 version = "0.0.1"
 authors = ["Alex Auvolat <alex@adnab.me>"]
 edition = "2021"
