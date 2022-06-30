@@ -36,6 +36,7 @@ pub enum UidIndexOp {
     MailDel(UniqueIdent),
     FlagAdd(UniqueIdent, Vec<Flag>),
     FlagDel(UniqueIdent, Vec<Flag>),
+    BumpUidvalidity(u32),
 }
 
 impl UidIndex {
@@ -57,6 +58,11 @@ impl UidIndex {
     #[must_use]
     pub fn op_flag_del(&self, ident: UniqueIdent, flags: Vec<Flag>) -> UidIndexOp {
         UidIndexOp::FlagDel(ident, flags)
+    }
+
+    #[must_use]
+    pub fn op_bump_uidvalidity(&self, count: u32) -> UidIndexOp {
+        UidIndexOp::BumpUidvalidity(count)
     }
 
     // INTERNAL functions to keep state consistent
@@ -155,6 +161,9 @@ impl BayouState for UidIndex {
                     existing_flags.retain(|x| !rm_flags.contains(x));
                     new.idx_by_flag.remove(*uid, rm_flags);
                 }
+            }
+            UidIndexOp::BumpUidvalidity(count) => {
+                new.uidvalidity = ImapUidvalidity::new(new.uidvalidity.get() + *count).unwrap_or(ImapUidvalidity::new(u32::MAX).unwrap());
             }
         }
         new
