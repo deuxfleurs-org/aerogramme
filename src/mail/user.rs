@@ -69,12 +69,22 @@ impl User {
 
     /// Opens an existing mailbox given its IMAP name.
     pub async fn open_mailbox(&self, name: &str) -> Result<Option<Arc<Mailbox>>> {
-        let (list, _ct) = self.load_mailbox_list().await?;
-        match list.get(name) {
+        let (mut list, ct) = self.load_mailbox_list().await?;
+        match list.get_mut(name) {
             Some(MailboxListEntry {
                 id_lww: (_, Some(mbid)),
                 uidvalidity,
-            }) => self.open_mailbox_by_id(*mbid, *uidvalidity).await,
+            }) => {
+                let mb_opt = self.open_mailbox_by_id(*mbid, *uidvalidity).await?;
+                if let Some(mb) = &mb_opt {
+                    let mb_uidvalidity = mb.current_uid_index().await.uidvalidity;
+                    if mb_uidvalidity > *uidvalidity {
+                        *uidvalidity = mb_uidvalidity;
+                        self.save_mailbox_list(&list, ct).await?;
+                    }
+                }
+                Ok(mb_opt)
+            }
             _ => bail!("Mailbox does not exist: {}", name),
         }
     }
