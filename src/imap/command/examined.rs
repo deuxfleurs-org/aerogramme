@@ -48,9 +48,7 @@ pub async fn dispatch<'a>(ctx: ExaminedContext<'a>) -> Result<(Response, flow::T
 // --- PRIVATE ---
 
 impl<'a> ExaminedContext<'a> {
-    async fn close(
-        self,
-    ) -> Result<(Response, flow::Transition)> {
+    async fn close(self) -> Result<(Response, flow::Transition)> {
         Ok((Response::ok("CLOSE completed")?, flow::Transition::Unselect))
     }
 

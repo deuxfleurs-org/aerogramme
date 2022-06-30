@@ -7,7 +7,7 @@ use futures::future::FutureExt;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::imap::command::{anonymous, authenticated, selected, examined};
+use crate::imap::command::{anonymous, authenticated, examined, selected};
 use crate::imap::flow;
 use crate::login::ArcLoginProvider;
 

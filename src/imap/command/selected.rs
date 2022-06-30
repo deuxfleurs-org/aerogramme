@@ -2,9 +2,9 @@ use anyhow::Result;
 use boitalettres::proto::Request;
 use boitalettres::proto::Response;
 use imap_codec::types::command::CommandBody;
-use imap_codec::types::mailbox::{Mailbox as MailboxCodec};
-use imap_codec::types::flag::{Flag, StoreType, StoreResponse};
 use imap_codec::types::fetch_attributes::MacroOrFetchAttributes;
+use imap_codec::types::flag::{Flag, StoreResponse, StoreType};
+use imap_codec::types::mailbox::Mailbox as MailboxCodec;
 
 use imap_codec::types::sequence::SequenceSet;
 
@@ -27,11 +27,11 @@ pub async fn dispatch<'a>(ctx: SelectedContext<'a>) -> Result<(Response, flow::T
         CommandBody::Close => ctx.close().await,
         CommandBody::Expunge => ctx.expunge().await,
         CommandBody::Store {
-                sequence_set,
-                kind,
-                response,
-                flags,
-                uid
+            sequence_set,
+            kind,
+            response,
+            flags,
+            uid,
         } => ctx.store(sequence_set, kind, response, flags, uid).await,
         CommandBody::Copy {
             sequence_set,
@@ -52,18 +52,14 @@ pub async fn dispatch<'a>(ctx: SelectedContext<'a>) -> Result<(Response, flow::T
 // --- PRIVATE ---
 
 impl<'a> SelectedContext<'a> {
-    async fn close(
-        self,
-    ) -> Result<(Response, flow::Transition)> {
+    async fn close(self) -> Result<(Response, flow::Transition)> {
         // We expunge messages,
         // but we don't send the untagged EXPUNGE responses
         self.expunge().await?;
         Ok((Response::ok("CLOSE completed")?, flow::Transition::Unselect))
     }
 
-    async fn expunge(
-        self,
-    ) -> Result<(Response, flow::Transition)> {
+    async fn expunge(self) -> Result<(Response, flow::Transition)> {
         Ok((Response::bad("Not implemented")?, flow::Transition::None))
     }
 

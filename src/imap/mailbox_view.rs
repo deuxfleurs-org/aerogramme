@@ -6,7 +6,7 @@ use anyhow::{anyhow, bail, Error, Result};
 use boitalettres::proto::res::body::Data as Body;
 use futures::stream::{FuturesOrdered, StreamExt};
 use imap_codec::types::address::Address;
-use imap_codec::types::core::{Atom, IString, NString};
+use imap_codec::types::core::{Atom, IString, NString, NonZeroBytes};
 use imap_codec::types::envelope::Envelope;
 use imap_codec::types::fetch_attributes::{FetchAttribute, MacroOrFetchAttributes};
 use imap_codec::types::flag::Flag;
@@ -247,21 +247,49 @@ impl MailboxView {
                     FetchAttribute::Rfc822Size => {
                         attributes.push(MessageAttribute::Rfc822Size(meta.rfc822_size as u32))
                     }
-                    FetchAttribute::Rfc822Header => {
-                        attributes.push(MessageAttribute::Rfc822Header(NString(Some(
-                            IString::Literal(meta.headers.clone().try_into().unwrap()),
+                    FetchAttribute::Rfc822Header => attributes.push(
+                        MessageAttribute::Rfc822Header(NString(Some(IString::Literal(
+                            meta.headers
+                                .clone()
+                                .try_into()
+                                .or(Err(Error::msg("IString conversion error")))?,
+                        )))),
+                    ),
+                    FetchAttribute::Rfc822Text => {
+                        let r = parsed
+                            .raw_message.get(parsed.offset_body..parsed.offset_end)
+                            .ok_or(Error::msg("Unable to extract email body, cursors out of bound. This is a bug."))?
+                            .try_into()
+                            .or(Err(Error::msg("IString conversion error")))?;
+
+                        attributes.push(MessageAttribute::Rfc822Text(NString(Some(
+                            IString::Literal(r),
                         ))))
                     }
                     FetchAttribute::Rfc822 => {
-                        attributes.push(MessageAttribute::Rfc822(NString(Some(
-                            IString::Literal(body.as_ref().unwrap().clone().try_into().unwrap()),
-                        ))))
+                        attributes.push(MessageAttribute::Rfc822(NString(Some(IString::Literal(
+                            body.as_ref().unwrap().clone().try_into().unwrap(),
+                        )))))
                     }
                     FetchAttribute::Envelope => {
                         attributes.push(MessageAttribute::Envelope(message_envelope(&parsed)))
                     }
-                    // TODO
-                    _ => (),
+                    FetchAttribute::Body => {
+                        todo!()
+                    }
+                    FetchAttribute::BodyExt {
+                        section,
+                        partial,
+                        peek,
+                    } => {
+                        todo!()
+                    }
+                    FetchAttribute::BodyStructure => {
+                        todo!()
+                    }
+                    FetchAttribute::InternalDate => {
+                        todo!()
+                    }
                 }
             }
 

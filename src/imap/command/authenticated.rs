@@ -19,7 +19,10 @@ pub async fn dispatch<'a>(ctx: AuthenticatedContext<'a>) -> Result<(Response, fl
     match &ctx.req.command.body {
         CommandBody::Create { mailbox } => ctx.create(mailbox).await,
         CommandBody::Delete { mailbox } => ctx.delete(mailbox).await,
-        CommandBody::Rename { mailbox, new_mailbox } => ctx.rename(mailbox, new_mailbox).await,
+        CommandBody::Rename {
+            mailbox,
+            new_mailbox,
+        } => ctx.rename(mailbox, new_mailbox).await,
         CommandBody::Lsub {
             reference,
             mailbox_wildcard,
@@ -28,8 +31,10 @@ pub async fn dispatch<'a>(ctx: AuthenticatedContext<'a>) -> Result<(Response, fl
             reference,
             mailbox_wildcard,
         } => ctx.list(reference, mailbox_wildcard).await,
-        CommandBody::Status { mailbox, attributes } =>
-            ctx.status(mailbox, attributes).await,
+        CommandBody::Status {
+            mailbox,
+            attributes,
+        } => ctx.status(mailbox, attributes).await,
         CommandBody::Select { mailbox } => ctx.select(mailbox).await,
         CommandBody::Examine { mailbox } => ctx.examine(mailbox).await,
         _ => {
@@ -53,7 +58,11 @@ impl<'a> AuthenticatedContext<'a> {
         Ok((Response::bad("Not implemented")?, flow::Transition::None))
     }
 
-    async fn rename(self, mailbox: &MailboxCodec, new_mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
+    async fn rename(
+        self,
+        mailbox: &MailboxCodec,
+        new_mailbox: &MailboxCodec,
+    ) -> Result<(Response, flow::Transition)> {
         Ok((Response::bad("Not implemented")?, flow::Transition::None))
     }
 
