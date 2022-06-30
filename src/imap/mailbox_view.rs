@@ -66,12 +66,18 @@ impl MailboxView {
     }
 
     /// Looks up state changes in the mailbox and produces a set of IMAP
-    /// responses describing the new state.
-    pub async fn update(&mut self) -> Result<Vec<Body>> {
+    /// responses describing the changes.
+    pub async fn sync_update(&mut self) -> Result<Vec<Body>> {
         self.mailbox.sync().await?;
         // TODO THIS IS JUST A TEST REMOVE LATER
         self.mailbox.test().await?;
 
+        self.update().await
+    }
+
+    /// Produces a set of IMAP responses describing the change between
+    /// what the client knows and what is actually in the mailbox.
+    pub async fn update(&mut self) -> Result<Vec<Body>> {
         let new_view = MailboxView {
             mailbox: self.mailbox.clone(),
             known_state: self.mailbox.current_uid_index().await,

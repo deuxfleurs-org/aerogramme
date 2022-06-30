@@ -7,7 +7,7 @@ use futures::future::FutureExt;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::imap::command::{anonymous, authenticated, selected};
+use crate::imap::command::{anonymous, authenticated, selected, examined};
 use crate::imap::flow;
 use crate::login::ArcLoginProvider;
 
@@ -126,6 +126,14 @@ impl Instance {
                         mailbox,
                     };
                     selected::dispatch(ctx).await
+                }
+                flow::State::Examined(ref user, ref mut mailbox) => {
+                    let ctx = examined::ExaminedContext {
+                        req: &msg.req,
+                        user,
+                        mailbox,
+                    };
+                    examined::dispatch(ctx).await
                 }
                 flow::State::Logout => {
                     Response::bad("No commands are allowed in the LOGOUT state.")

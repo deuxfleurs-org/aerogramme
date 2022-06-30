@@ -19,12 +19,15 @@ pub enum State {
     NotAuthenticated,
     Authenticated(User),
     Selected(User, MailboxView),
+    // Examined is like Selected, but indicates that the mailbox is read-only
+    Examined(User, MailboxView),
     Logout,
 }
 
 pub enum Transition {
     None,
     Authenticate(User),
+    Examine(MailboxView),
     Select(MailboxView),
     Unselect,
     Logout,
@@ -38,7 +41,9 @@ impl State {
             (s, Transition::None) => Ok(s),
             (State::NotAuthenticated, Transition::Authenticate(u)) => Ok(State::Authenticated(u)),
             (State::Authenticated(u), Transition::Select(m)) => Ok(State::Selected(u, m)),
+            (State::Authenticated(u), Transition::Examine(m)) => Ok(State::Examined(u, m)),
             (State::Selected(u, _), Transition::Unselect) => Ok(State::Authenticated(u)),
+            (State::Examined(u, _), Transition::Unselect) => Ok(State::Authenticated(u)),
             (_, Transition::Logout) => Ok(State::Logout),
             _ => Err(Error::ForbiddenTransition),
         }

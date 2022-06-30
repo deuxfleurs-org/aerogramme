@@ -2,12 +2,13 @@ use anyhow::Result;
 use boitalettres::proto::Request;
 use boitalettres::proto::Response;
 use imap_codec::types::command::CommandBody;
-
+use imap_codec::types::mailbox::{Mailbox as MailboxCodec};
+use imap_codec::types::flag::{Flag, StoreType, StoreResponse};
 use imap_codec::types::fetch_attributes::MacroOrFetchAttributes;
 
 use imap_codec::types::sequence::SequenceSet;
 
-use crate::imap::command::authenticated;
+use crate::imap::command::examined;
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
 
@@ -21,18 +22,29 @@ pub struct SelectedContext<'a> {
 
 pub async fn dispatch<'a>(ctx: SelectedContext<'a>) -> Result<(Response, flow::Transition)> {
     match &ctx.req.command.body {
-        CommandBody::Noop => ctx.noop().await,
-        CommandBody::Fetch {
+        // Only write commands here, read commands are handled in
+        // `examined.rs`
+        CommandBody::Close => ctx.close().await,
+        CommandBody::Expunge => ctx.expunge().await,
+        CommandBody::Store {
+                sequence_set,
+                kind,
+                response,
+                flags,
+                uid
+        } => ctx.store(sequence_set, kind, response, flags, uid).await,
+        CommandBody::Copy {
             sequence_set,
-            attributes,
+            mailbox,
             uid,
-        } => ctx.fetch(sequence_set, attributes, uid).await,
+        } => ctx.copy(sequence_set, mailbox, uid).await,
         _ => {
-            let ctx = authenticated::AuthenticatedContext {
+            let ctx = examined::ExaminedContext {
                 req: ctx.req,
                 user: ctx.user,
+                mailbox: ctx.mailbox,
             };
-            authenticated::dispatch(ctx).await
+            examined::dispatch(ctx).await
         }
     }
 }
@@ -40,26 +52,38 @@ pub async fn dispatch<'a>(ctx: SelectedContext<'a>) -> Result<(Response, flow::T
 // --- PRIVATE ---
 
 impl<'a> SelectedContext<'a> {
-    pub async fn fetch(
+    async fn close(
         self,
-        sequence_set: &SequenceSet,
-        attributes: &MacroOrFetchAttributes,
-        uid: &bool,
     ) -> Result<(Response, flow::Transition)> {
-        match self.mailbox.fetch(sequence_set, attributes, uid).await {
-            Ok(resp) => Ok((
-                Response::ok("FETCH completed")?.with_body(resp),
-                flow::Transition::None,
-            )),
-            Err(e) => Ok((Response::no(&e.to_string())?, flow::Transition::None)),
-        }
+        // We expunge messages,
+        // but we don't send the untagged EXPUNGE responses
+        self.expunge().await?;
+        Ok((Response::ok("CLOSE completed")?, flow::Transition::Unselect))
     }
 
-    pub async fn noop(self) -> Result<(Response, flow::Transition)> {
-        let updates = self.mailbox.update().await?;
-        Ok((
-            Response::ok("NOOP completed.")?.with_body(updates),
-            flow::Transition::None,
-        ))
+    async fn expunge(
+        self,
+    ) -> Result<(Response, flow::Transition)> {
+        Ok((Response::bad("Not implemented")?, flow::Transition::None))
+    }
+
+    async fn store(
+        self,
+        sequence_set: &SequenceSet,
+        kind: &StoreType,
+        response: &StoreResponse,
+        flags: &[Flag],
+        uid: &bool,
+    ) -> Result<(Response, flow::Transition)> {
+        Ok((Response::bad("Not implemented")?, flow::Transition::None))
+    }
+
+    async fn copy(
+        self,
+        sequence_set: &SequenceSet,
+        mailbox: &MailboxCodec,
+        uid: &bool,
+    ) -> Result<(Response, flow::Transition)> {
+        Ok((Response::bad("Not implemented")?, flow::Transition::None))
     }
 }

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use boitalettres::proto::{Request, Response};
-use imap_codec::types::command::CommandBody;
+use imap_codec::types::command::{CommandBody, StatusAttribute};
 use imap_codec::types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
 use imap_codec::types::response::Code;
 
@@ -17,6 +17,9 @@ pub struct AuthenticatedContext<'a> {
 
 pub async fn dispatch<'a>(ctx: AuthenticatedContext<'a>) -> Result<(Response, flow::Transition)> {
     match &ctx.req.command.body {
+        CommandBody::Create { mailbox } => ctx.create(mailbox).await,
+        CommandBody::Delete { mailbox } => ctx.delete(mailbox).await,
+        CommandBody::Rename { mailbox, new_mailbox } => ctx.rename(mailbox, new_mailbox).await,
         CommandBody::Lsub {
             reference,
             mailbox_wildcard,
@@ -25,7 +28,10 @@ pub async fn dispatch<'a>(ctx: AuthenticatedContext<'a>) -> Result<(Response, fl
             reference,
             mailbox_wildcard,
         } => ctx.list(reference, mailbox_wildcard).await,
+        CommandBody::Status { mailbox, attributes } =>
+            ctx.status(mailbox, attributes).await,
         CommandBody::Select { mailbox } => ctx.select(mailbox).await,
+        CommandBody::Examine { mailbox } => ctx.examine(mailbox).await,
         _ => {
             let ctx = anonymous::AnonymousContext {
                 req: ctx.req,
@@ -39,6 +45,18 @@ pub async fn dispatch<'a>(ctx: AuthenticatedContext<'a>) -> Result<(Response, fl
 // --- PRIVATE ---
 
 impl<'a> AuthenticatedContext<'a> {
+    async fn create(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
+        Ok((Response::bad("Not implemented")?, flow::Transition::None))
+    }
+
+    async fn delete(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
+        Ok((Response::bad("Not implemented")?, flow::Transition::None))
+    }
+
+    async fn rename(self, mailbox: &MailboxCodec, new_mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
+        Ok((Response::bad("Not implemented")?, flow::Transition::None))
+    }
+
     async fn lsub(
         self,
         _reference: &MailboxCodec,
@@ -51,6 +69,14 @@ impl<'a> AuthenticatedContext<'a> {
         self,
         _reference: &MailboxCodec,
         _mailbox_wildcard: &ListMailbox,
+    ) -> Result<(Response, flow::Transition)> {
+        Ok((Response::bad("Not implemented")?, flow::Transition::None))
+    }
+
+    async fn status(
+        self,
+        mailbox: &MailboxCodec,
+        attributes: &[StatusAttribute],
     ) -> Result<(Response, flow::Transition)> {
         Ok((Response::bad("Not implemented")?, flow::Transition::None))
     }
@@ -105,6 +131,31 @@ impl<'a> AuthenticatedContext<'a> {
                 .with_extra_code(Code::ReadWrite)
                 .with_body(data),
             flow::Transition::Select(mb),
+        ))
+    }
+
+    async fn examine(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
+        let name = String::try_from(mailbox.clone())?;
+
+        let mb_opt = self.user.open_mailbox(&name).await?;
+        let mb = match mb_opt {
+            Some(mb) => mb,
+            None => {
+                return Ok((
+                    Response::no("Mailbox does not exist")?,
+                    flow::Transition::None,
+                ))
+            }
+        };
+        tracing::info!(username=%self.user.username, mailbox=%name, "mailbox.examined");
+
+        let (mb, data) = MailboxView::new(mb).await?;
+
+        Ok((
+            Response::ok("Examine completed")?
+                .with_extra_code(Code::ReadOnly)
+                .with_body(data),
+            flow::Transition::Examine(mb),
         ))
     }
 }
