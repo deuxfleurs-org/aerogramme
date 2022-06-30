@@ -1,7 +1,9 @@
 use anyhow::{anyhow, bail, Result};
 use k2v_client::K2vClient;
 use k2v_client::{BatchReadOp, Filter, K2vValue};
-use rusoto_s3::{CopyObjectRequest, DeleteObjectRequest, GetObjectRequest, PutObjectRequest, S3Client, S3};
+use rusoto_s3::{
+    CopyObjectRequest, DeleteObjectRequest, GetObjectRequest, PutObjectRequest, S3Client, S3,
+};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
 use tokio::sync::RwLock;
@@ -303,9 +305,24 @@ impl MailboxInternal {
         Ok(())
     }
 
-    async fn copy_internal(&mut self, from: &MailboxInternal, source_id: UniqueIdent, new_id: UniqueIdent) -> Result<()> {
-        let flags = from.uid_index.state()
-            .table.get(&source_id).ok_or(anyhow!("Source mail not found"))?.1.clone();
+    async fn copy_internal(
+        &mut self,
+        from: &MailboxInternal,
+        source_id: UniqueIdent,
+        new_id: UniqueIdent,
+    ) -> Result<()> {
+        if self.bucket != from.bucket || self.encryption_key != from.encryption_key {
+            bail!("Message to be copied/moved does not belong to same account.");
+        }
+
+        let flags = from
+            .uid_index
+            .state()
+            .table
+            .get(&source_id)
+            .ok_or(anyhow!("Source mail not found"))?
+            .1
+            .clone();
 
         futures::try_join!(
             async {
@@ -329,10 +346,7 @@ impl MailboxInternal {
         )?;
 
         // Add mail to Bayou mail index
-        let add_mail_op = self
-            .uid_index
-            .state()
-            .op_mail_add(new_id, flags);
+        let add_mail_op = self.uid_index.state().op_mail_add(new_id, flags);
         self.uid_index.push(add_mail_op).await?;
 
         Ok(())
