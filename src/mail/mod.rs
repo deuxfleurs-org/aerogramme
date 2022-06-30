@@ -4,6 +4,7 @@ pub mod mailbox;
 pub mod uidindex;
 pub mod unique_ident;
 pub mod user;
+pub mod incoming;
 
 // Internet Message Format
 // aka RFC 822 - RFC 2822 - RFC 5322
