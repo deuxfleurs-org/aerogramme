@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use boitalettres::proto::{Request, Response};
 use imap_codec::types::command::{CommandBody, StatusAttribute};
@@ -12,7 +14,7 @@ use crate::mail::user::User;
 
 pub struct AuthenticatedContext<'a> {
     pub req: &'a Request,
-    pub user: &'a User,
+    pub user: &'a Arc<User>,
 }
 
 pub async fn dispatch<'a>(ctx: AuthenticatedContext<'a>) -> Result<(Response, flow::Transition)> {

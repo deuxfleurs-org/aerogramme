@@ -66,7 +66,7 @@ impl<'a> AnonymousContext<'a> {
             Ok(c) => c,
         };
 
-        let user = User::new(u.clone(), creds)?;
+        let user = User::new(u.clone(), creds).await?;
 
         tracing::info!(username=%u, "connected");
         Ok((

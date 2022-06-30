@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use boitalettres::proto::Request;
 use boitalettres::proto::Response;
@@ -16,7 +18,7 @@ use crate::mail::user::User;
 
 pub struct SelectedContext<'a> {
     pub req: &'a Request,
-    pub user: &'a User,
+    pub user: &'a Arc<User>,
     pub mailbox: &'a mut MailboxView,
 }
 

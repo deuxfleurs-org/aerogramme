@@ -1,5 +1,6 @@
 use std::error::Error as StdError;
 use std::fmt;
+use std::sync::Arc;
 
 use crate::imap::mailbox_view::MailboxView;
 use crate::mail::user::User;
@@ -17,16 +18,16 @@ impl StdError for Error {}
 
 pub enum State {
     NotAuthenticated,
-    Authenticated(User),
-    Selected(User, MailboxView),
+    Authenticated(Arc<User>),
+    Selected(Arc<User>, MailboxView),
     // Examined is like Selected, but indicates that the mailbox is read-only
-    Examined(User, MailboxView),
+    Examined(Arc<User>, MailboxView),
     Logout,
 }
 
 pub enum Transition {
     None,
-    Authenticate(User),
+    Authenticate(Arc<User>),
     Examine(MailboxView),
     Select(MailboxView),
     Unselect,
