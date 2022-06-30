@@ -4,8 +4,10 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Error, Result};
 use boitalettres::proto::res::body::Data as Body;
+use chrono::{Offset, Utc, TimeZone};
 use futures::stream::{FuturesOrdered, StreamExt};
 use imap_codec::types::address::Address;
+use imap_codec::types::datetime::MyDateTime;
 use imap_codec::types::core::{Atom, IString, NString, NonZeroBytes};
 use imap_codec::types::envelope::Envelope;
 use imap_codec::types::fetch_attributes::{FetchAttribute, MacroOrFetchAttributes};
@@ -288,7 +290,9 @@ impl MailboxView {
                         todo!()
                     }
                     FetchAttribute::InternalDate => {
-                        todo!()
+                        attributes.push(MessageAttribute::InternalDate(
+                            MyDateTime(Utc.fix().timestamp(i64::try_from(meta.internaldate / 1000)?, 0))
+                        ));
                     }
                 }
             }

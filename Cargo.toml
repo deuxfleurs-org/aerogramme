@@ -39,10 +39,12 @@ zstd = { version = "0.9", default-features = false }
 tracing-subscriber = "0.3"
 tracing = "0.1"
 tower = "0.4"
-imap-codec = "0.5"
+
+imap-codec = { git = "https://github.com/superboum/imap-codec.git", branch = "v0.5.x" }
+chrono = { version = "0.4", default-features = false, features = ["alloc"] }
 
 k2v-client = { git = "https://git.deuxfleurs.fr/Deuxfleurs/garage.git", branch = "main" }
-boitalettres = { git = "https://git.deuxfleurs.fr/KokaKiwi/boitalettres.git", branch = "main" }
+boitalettres = { git = "https://git.deuxfleurs.fr/quentin/boitalettres.git", branch = "expose-mydatetime" }
 smtp-message = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 
