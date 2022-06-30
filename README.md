@@ -1,4 +1,4 @@
-# Mailrage - Encrypted e-mail storage over Garage
+# Aerogramme - Encrypted e-mail storage over Garage
 
 ## Usage
 

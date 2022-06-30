@@ -13,7 +13,7 @@ use crate::time::now_msec;
 ///   - a 64-bit random number
 /// - a sequence number, 64 bits
 /// They are not part of the protocol but an internal representation
-/// required by Mailrage/Aerogramme.
+/// required by Aerogramme.
 /// Their main property is to be unique without having to rely
 /// on synchronization between IMAP processes.
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Debug)]
