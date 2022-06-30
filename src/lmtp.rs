@@ -21,6 +21,7 @@ use crate::config::*;
 use crate::cryptoblob::*;
 use crate::login::*;
 use crate::mail::unique_ident::*;
+use crate::mail::incoming::EncryptedMessage;
 
 pub struct LmtpServer {
     bind_addr: SocketAddr,
@@ -210,41 +211,3 @@ impl Config for LmtpServer {
     }
 }
 
-// ----
-
-struct EncryptedMessage {
-    key: Key,
-    encrypted_body: Vec<u8>,
-}
-
-impl EncryptedMessage {
-    fn new(body: Vec<u8>) -> Result<Self> {
-        let key = gen_key();
-        let encrypted_body = seal(&body, &key)?;
-        Ok(Self {
-            key,
-            encrypted_body,
-        })
-    }
-
-    async fn deliver_to(self: Arc<Self>, creds: PublicCredentials) -> Result<()> {
-        let s3_client = creds.storage.s3_client()?;
-
-        let encrypted_key =
-            sodiumoxide::crypto::sealedbox::seal(self.key.as_ref(), &creds.public_key);
-        let key_header = base64::encode(&encrypted_key);
-
-        let mut por = PutObjectRequest::default();
-        por.bucket = creds.storage.bucket.clone();
-        por.key = format!("incoming/{}", gen_ident().to_string());
-        por.metadata = Some(
-            [("Message-Key".to_string(), key_header)]
-                .into_iter()
-                .collect::<HashMap<_, _>>(),
-        );
-        por.body = Some(self.encrypted_body.clone().into());
-        s3_client.put_object(por).await?;
-
-        Ok(())
-    }
-}

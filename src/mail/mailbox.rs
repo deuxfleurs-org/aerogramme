@@ -17,7 +17,7 @@ use crate::mail::IMF;
 use crate::time::now_msec;
 
 pub struct Mailbox {
-    id: UniqueIdent,
+    pub(super) id: UniqueIdent,
     mbox: RwLock<MailboxInternal>,
 }
 

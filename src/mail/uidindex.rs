@@ -163,7 +163,8 @@ impl BayouState for UidIndex {
                 }
             }
             UidIndexOp::BumpUidvalidity(count) => {
-                new.uidvalidity = ImapUidvalidity::new(new.uidvalidity.get() + *count).unwrap_or(ImapUidvalidity::new(u32::MAX).unwrap());
+                new.uidvalidity = ImapUidvalidity::new(new.uidvalidity.get() + *count)
+                    .unwrap_or(ImapUidvalidity::new(u32::MAX).unwrap());
             }
         }
         new

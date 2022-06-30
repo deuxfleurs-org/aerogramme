@@ -9,10 +9,10 @@ use tokio::sync::watch;
 
 use crate::cryptoblob::{open_deserialize, seal_serialize};
 use crate::login::{Credentials, StorageCredentials};
+use crate::mail::incoming::incoming_mail_watch_process;
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::ImapUidvalidity;
 use crate::mail::unique_ident::{gen_ident, UniqueIdent};
-use crate::mail::incoming::incoming_mail_watch_process;
 use crate::time::now_msec;
 
 const MAILBOX_HIERARCHY_DELIMITER: &str = "/";
@@ -119,7 +119,7 @@ impl User {
 
         let user = Arc::new(Self {
             username,
-            creds,
+            creds: creds.clone(),
             k2v,
             tx_inbox_id,
             mailboxes: std::sync::Mutex::new(HashMap::new()),
@@ -128,12 +128,16 @@ impl User {
         // Ensure INBOX exists (done inside load_mailbox_list)
         user.load_mailbox_list().await?;
 
-        tokio::spawn(incoming_mail_watch_process(Arc::downgrade(&user), rx_inbox_id));
+        tokio::spawn(incoming_mail_watch_process(
+            Arc::downgrade(&user),
+            user.creds.clone(),
+            rx_inbox_id,
+        ));
 
         Ok(user)
     }
 
-    async fn open_mailbox_by_id(
+    pub(super) async fn open_mailbox_by_id(
         &self,
         id: UniqueIdent,
         min_uidvalidity: ImapUidvalidity,
@@ -167,14 +171,14 @@ impl User {
                 let mut list = BTreeMap::new();
                 for v in cv.value {
                     if let K2vValue::Value(vbytes) = v {
-                        let list2 = open_deserialize::<MailboxList>(&vbytes, &self.creds.keys.master)?;
+                        let list2 =
+                            open_deserialize::<MailboxList>(&vbytes, &self.creds.keys.master)?;
                         list = merge_mailbox_lists(list, list2);
                     }
                 }
                 (list, Some(cv.causality))
-            },
+            }
         };
-
 
         // If INBOX doesn't exist, create a new mailbox with that name
         // and save new mailbox list.
