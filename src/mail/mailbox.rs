@@ -98,6 +98,21 @@ impl Mailbox {
         self.mbox.write().await.append(msg, ident).await
     }
 
+    /// Insert an email into the mailbox, copying it from an existing S3 object
+    pub async fn append_from_s3<'a>(
+        &self,
+        msg: IMF<'a>,
+        ident: UniqueIdent,
+        s3_key: &str,
+        message_key: Key,
+    ) -> Result<()> {
+        self.mbox
+            .write()
+            .await
+            .append_from_s3(msg, ident, s3_key, message_key)
+            .await
+    }
+
     /// Delete a message definitively from the mailbox
     pub async fn delete<'a>(&self, id: UniqueIdent) -> Result<()> {
         self.mbox.write().await.delete(id).await
@@ -251,6 +266,50 @@ impl MailboxInternal {
                 por.key = format!("{}/{}", self.mail_path, ident);
                 por.body = Some(message_blob.into());
                 self.s3.put_object(por).await?;
+                Ok::<_, anyhow::Error>(())
+            },
+            async {
+                // Save mail meta
+                let meta = MailMeta {
+                    internaldate: now_msec(),
+                    headers: mail.raw[..mail.parsed.offset_body].to_vec(),
+                    message_key: message_key.clone(),
+                    rfc822_size: mail.raw.len(),
+                };
+                let meta_blob = seal_serialize(&meta, &self.encryption_key)?;
+                self.k2v
+                    .insert_item(&self.mail_path, &ident.to_string(), meta_blob, None)
+                    .await?;
+                Ok::<_, anyhow::Error>(())
+            }
+        )?;
+
+        // Add mail to Bayou mail index
+        let add_mail_op = self
+            .uid_index
+            .state()
+            .op_mail_add(ident, vec!["\\Unseen".into()]);
+        self.uid_index.push(add_mail_op).await?;
+
+        Ok(())
+    }
+
+    async fn append_from_s3<'a>(
+        &mut self,
+        mail: IMF<'a>,
+        ident: UniqueIdent,
+        s3_key: &str,
+        message_key: Key,
+    ) -> Result<()> {
+        futures::try_join!(
+            async {
+                // Copy mail body from previous location
+                let mut cor = CopyObjectRequest::default();
+                cor.bucket = self.bucket.clone();
+                cor.key = format!("{}/{}", self.mail_path, ident);
+                cor.copy_source = format!("{}/{}", self.bucket, s3_key);
+                cor.metadata_directive = Some("REPLACE".into());
+                self.s3.copy_object(cor).await?;
                 Ok::<_, anyhow::Error>(())
             },
             async {
