@@ -129,6 +129,8 @@ async fn handle_incoming_mail(user: &Arc<User>, s3: &S3Client, inbox: &Arc<Mailb
     unimplemented!()
 }
 
+// ---- UTIL: K2V locking loop, use this to try to grab a lock using a K2V entry as a signal ----
+
 fn k2v_lock_loop(k2v: K2vClient, pk: &'static str, sk: &'static str) -> watch::Receiver<bool> {
     let (held_tx, held_rx) = watch::channel(false);
 
@@ -286,6 +288,8 @@ async fn k2v_lock_loop_internal(
     info!("lock loop exited: {:?}", res);
 }
 
+// ---- UTIL: function to wait for a value to have changed in K2V ----
+
 async fn k2v_wait_value_changed<'a>(
     k2v: &'a K2vClient,
     pk: &'static str,
@@ -310,7 +314,7 @@ async fn k2v_wait_value_changed<'a>(
     }
 }
 
-// ----
+// ---- LMTP SIDE: storing messages encrypted with user's pubkey ----
 
 pub struct EncryptedMessage {
     key: cryptoblob::Key,
