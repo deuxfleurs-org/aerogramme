@@ -28,6 +28,9 @@ const INCOMING_WATCH_SK: &str = "watch";
 // lost the lock.
 const LOCK_DURATION: Duration = Duration::from_secs(300);
 
+// In addition to checking when notified, also check for new mail every 10 minutes
+const MAIL_CHECK_INTERVAL: Duration = Duration::from_secs(600);
+
 pub async fn incoming_mail_watch_process(
     user: Weak<User>,
     creds: Credentials,
@@ -71,7 +74,7 @@ async fn incoming_mail_watch_process_internal(
 
             tokio::select! {
                 cv = wait_new_mail => Some(cv.causality),
-                _ = tokio::time::sleep(Duration::from_secs(300)) => prev_ct.take(),
+                _ = tokio::time::sleep(MAIL_CHECK_INTERVAL) => prev_ct.clone(),
                 _ = lock_held.changed() => None,
                 _ = rx_inbox_id.changed() => None,
             }
@@ -83,42 +86,45 @@ async fn incoming_mail_watch_process_internal(
             }
         };
 
-        if let Some(user) = Weak::upgrade(&user) {
-            info!("User still available");
-
-            // If INBOX no longer is same mailbox, open new mailbox
-            let inbox_id = rx_inbox_id.borrow().clone();
-            if let Some((id, uidvalidity)) = inbox_id {
-                if Some(id) != inbox.as_ref().map(|b| b.id) {
-                    match user.open_mailbox_by_id(id, uidvalidity).await {
-                        Ok(mb) => {
-                            inbox = mb;
-                        }
-                        Err(e) => {
-                            inbox = None;
-                            error!("Error when opening inbox ({}): {}", id, e);
-                            tokio::time::sleep(Duration::from_secs(30)).await;
-                        }
-                    }
-                }
+        let user = match Weak::upgrade(&user) {
+            Some(user) => user,
+            None => {
+                info!("User no longer available, exiting incoming loop.");
+                break;
             }
+        };
+        info!("User still available");
 
-            // If we were able to open INBOX, and we have mail (implies lock is held),
-            // fetch new mail
-            if let (Some(inbox), Some(new_ct)) = (&inbox, new_mail) {
-                match handle_incoming_mail(&user, &s3, inbox).await {
-                    Ok(()) => {
-                        prev_ct = Some(new_ct);
+        // If INBOX no longer is same mailbox, open new mailbox
+        let inbox_id = rx_inbox_id.borrow().clone();
+        if let Some((id, uidvalidity)) = inbox_id {
+            if Some(id) != inbox.as_ref().map(|b| b.id) {
+                match user.open_mailbox_by_id(id, uidvalidity).await {
+                    Ok(mb) => {
+                        inbox = mb;
                     }
                     Err(e) => {
-                        error!("Could not fetch incoming mail: {}", e);
+                        inbox = None;
+                        error!("Error when opening inbox ({}): {}", id, e);
                         tokio::time::sleep(Duration::from_secs(30)).await;
+                        continue;
                     }
                 }
             }
-        } else {
-            info!("User no longer available, exiting incoming loop.");
-            break;
+        }
+
+        // If we were able to open INBOX, and we have mail (implies lock is held),
+        // fetch new mail
+        if let (Some(inbox), Some(new_ct)) = (&inbox, new_mail) {
+            match handle_incoming_mail(&user, &s3, inbox).await {
+                Ok(()) => {
+                    prev_ct = Some(new_ct);
+                }
+                Err(e) => {
+                    error!("Could not fetch incoming mail: {}", e);
+                    tokio::time::sleep(Duration::from_secs(30)).await;
+                }
+            }
         }
     }
     drop(rx_inbox_id);
