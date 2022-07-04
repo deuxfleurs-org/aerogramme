@@ -207,20 +207,32 @@ impl MailboxInternal {
         let res_vec = self.k2v.read_batch(&ops).await?;
 
         let mut meta_vec = vec![];
-        for res in res_vec {
+        for (op, res) in ops.iter().zip(res_vec.into_iter()) {
             if res.items.len() != 1 {
                 bail!("Expected 1 item, got {}", res.items.len());
             }
             let (_, cv) = res.items.iter().next().unwrap();
-            if cv.value.len() != 1 {
-                bail!("Expected 1 value, got {}", cv.value.len());
-            }
-            match &cv.value[0] {
-                K2vValue::Tombstone => bail!("Expected value, got tombstone"),
-                K2vValue::Value(v) => {
-                    let meta = open_deserialize::<MailMeta>(v, &self.encryption_key)?;
-                    meta_vec.push(meta);
+            let mut meta_opt = None;
+            for v in cv.value.iter() {
+                match v {
+                    K2vValue::Tombstone => (),
+                    K2vValue::Value(v) => {
+                        let meta = open_deserialize::<MailMeta>(v, &self.encryption_key)?;
+                        match meta_opt.as_mut() {
+                            None => {
+                                meta_opt = Some(meta);
+                            }
+                            Some(prevmeta) => {
+                                prevmeta.try_merge(meta)?;
+                            }
+                        }
+                    }
                 }
+            }
+            if let Some(meta) = meta_opt {
+                meta_vec.push(meta);
+            } else {
+                bail!("No valid meta value in k2v for {:?}", op.filter.start);
             }
         }
 
@@ -429,38 +441,42 @@ impl MailboxInternal {
     // ----
 
     async fn test(&mut self) -> Result<()> {
-        self.uid_index.sync().await?;
+        Ok(())
 
-        dump(&self.uid_index);
-
-        let mail = br#"From: Garage team <garagehq@deuxfleurs.fr>
-Subject: Welcome to Aerogramme!!
-
-This is just a test email, feel free to ignore.
-"#;
-        let mail = IMF::try_from(&mail[..]).unwrap();
-        self.append(mail, None).await?;
-
-        dump(&self.uid_index);
-
-        if self.uid_index.state().idx_by_uid.len() > 6 {
-            for i in 0..2 {
-                let (_, ident) = self
-                    .uid_index
-                    .state()
-                    .idx_by_uid
-                    .iter()
-                    .skip(3 + i)
-                    .next()
-                    .unwrap();
-
-                self.delete(*ident).await?;
+        /*
+                self.uid_index.sync().await?;
 
                 dump(&self.uid_index);
-            }
-        }
 
-        Ok(())
+                let mail = br#"From: Garage team <garagehq@deuxfleurs.fr>
+        Subject: Welcome to Aerogramme!!
+
+        This is just a test email, feel free to ignore.
+        "#;
+                let mail = IMF::try_from(&mail[..]).unwrap();
+                self.append(mail, None).await?;
+
+                dump(&self.uid_index);
+
+                if self.uid_index.state().idx_by_uid.len() > 6 {
+                    for i in 0..2 {
+                        let (_, ident) = self
+                            .uid_index
+                            .state()
+                            .idx_by_uid
+                            .iter()
+                            .skip(3 + i)
+                            .next()
+                            .unwrap();
+
+                        self.delete(*ident).await?;
+
+                        dump(&self.uid_index);
+                    }
+                }
+
+                Ok(())
+                */
     }
 }
 
@@ -495,4 +511,17 @@ pub struct MailMeta {
     pub message_key: Key,
     /// RFC822 size
     pub rfc822_size: usize,
+}
+
+impl MailMeta {
+    fn try_merge(&mut self, other: Self) -> Result<()> {
+        if self.headers != other.headers
+            || self.message_key != other.message_key
+            || self.rfc822_size != other.rfc822_size
+        {
+            bail!("Conflicting MailMeta values.");
+        }
+        self.internaldate = std::cmp::max(self.internaldate, other.internaldate);
+        Ok(())
+    }
 }
