@@ -279,15 +279,15 @@ mod tests {
             // Early checks
             assert_eq!(state.table.len(), 1);
             let (uid, flags) = state.table.get(&m).unwrap();
-            assert_eq!(*uid, 1);
+            assert_eq!(*uid, NonZeroU32::new(1).unwrap());
             assert_eq!(flags.len(), 2);
-            let ident = state.idx_by_uid.get(&1).unwrap();
+            let ident = state.idx_by_uid.get(&NonZeroU32::new(1).unwrap()).unwrap();
             assert_eq!(&m, ident);
             let recent = state.idx_by_flag.0.get("\\Recent").unwrap();
             assert_eq!(recent.len(), 1);
-            assert_eq!(recent.iter().next().unwrap(), &1);
-            assert_eq!(state.uidnext, 2);
-            assert_eq!(state.uidvalidity, 1);
+            assert_eq!(recent.iter().next().unwrap(), &NonZeroU32::new(1).unwrap());
+            assert_eq!(state.uidnext, NonZeroU32::new(2).unwrap());
+            assert_eq!(state.uidvalidity, NonZeroU32::new(1).unwrap());
         }
 
         // Add message 2
@@ -334,14 +334,14 @@ mod tests {
         {
             let m = UniqueIdent([0x03; 24]);
             let f = vec!["\\Archive".to_string(), "\\Recent".to_string()];
-            let ev = UidIndexOp::MailAdd(m, 1, f);
+            let ev = UidIndexOp::MailAdd(m, NonZeroU32::new(1).unwrap(), f);
             state = state.apply(&ev);
         }
 
         // Checks
         {
             assert_eq!(state.table.len(), 2);
-            assert!(state.uidvalidity > 1);
+            assert!(state.uidvalidity > NonZeroU32::new(1).unwrap());
 
             let (last_uid, ident) = state.idx_by_uid.get_max().unwrap();
             assert_eq!(ident, &UniqueIdent([0x03; 24]));
@@ -349,7 +349,7 @@ mod tests {
             let archive = state.idx_by_flag.0.get("\\Archive").unwrap();
             assert_eq!(archive.len(), 2);
             let mut iter = archive.iter();
-            assert_eq!(iter.next().unwrap(), &1);
+            assert_eq!(iter.next().unwrap(), &NonZeroU32::new(1).unwrap());
             assert_eq!(iter.next().unwrap(), last_uid);
         }
     }

@@ -4,16 +4,18 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Error, Result};
 use boitalettres::proto::res::body::Data as Body;
-use chrono::{Offset, Utc, TimeZone};
+use chrono::{Offset, TimeZone, Utc};
 use futures::stream::{FuturesOrdered, StreamExt};
 use imap_codec::types::address::Address;
-use imap_codec::types::datetime::MyDateTime;
+use imap_codec::types::body::{BasicFields, Body as FetchBody, BodyStructure, SpecificFields};
 use imap_codec::types::core::{Atom, IString, NString, NonZeroBytes};
+use imap_codec::types::datetime::MyDateTime;
 use imap_codec::types::envelope::Envelope;
 use imap_codec::types::fetch_attributes::{FetchAttribute, MacroOrFetchAttributes};
 use imap_codec::types::flag::Flag;
 use imap_codec::types::response::{Code, Data, MessageAttribute, Status};
 use imap_codec::types::sequence::{self, SequenceSet};
+use mail_parser::*;
 
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::UidIndex;
@@ -277,22 +279,106 @@ impl MailboxView {
                         attributes.push(MessageAttribute::Envelope(message_envelope(&parsed)))
                     }
                     FetchAttribute::Body => {
-                        todo!()
+                        /*
+                                                 * CAPTURE:
+                        b fetch 29878:29879 (BODY)
+                        * 29878 FETCH (BODY (("text" "plain" ("charset" "utf-8") NIL NIL "quoted-printable" 3264 82)("text" "html" ("charset" "utf-8") NIL NIL "quoted-printable" 31834 643) "alternative"))
+                        * 29879 FETCH (BODY ("text" "html" ("charset" "us-ascii") NIL NIL "7bit" 4107 131))
+                                                           ^^^^^^^^^^^^^^^^^^^^^^ ^^^ ^^^ ^^^^^^ ^^^^ ^^^
+                                                           |                      |   |   |      |    | number of lines
+                                                           |                      |   |   |      | size
+                                                           |                      |   |   | content transfer encoding
+                                                           |                      |   | description
+                                                           |                      | id
+                                                           | parameter list
+                        b OK Fetch completed (0.001 + 0.000 secs).
+                                                *
+                                                */
+
+                        /*match parsed.structure {
+                            Part(part_id) => {
+                                match parsed.parts.get(part_id)? {
+                                    Text(
+                                    let fb = FetchBody {
+                                        parameter_list: vec![],
+                                        id: NString(None),
+                                        descritpion: NString(None),
+                                        // Default value is 7bit"
+                                        // https://datatracker.ietf.org/doc/html/rfc2045#section-6.1
+                                        content_transfer_encoding: IString::try_from("7bit").unwrap(),
+                                    };
+                                }
+                            }
+                            List(part_list) => todo!(),
+                            MultiPart((first, rest)) => todo!(),
+                        }*/
+
+                        // @TODO This is a stub
+                        let is = IString::try_from("test").unwrap();
+                        let b = BodyStructure::Single {
+                            body: FetchBody {
+                                basic: BasicFields {
+                                    parameter_list: vec![],
+                                    id: NString(Some(is.clone())),
+                                    description: NString(Some(is.clone())),
+                                    content_transfer_encoding: is.clone(),
+                                    size: 1,
+                                },
+                                specific: SpecificFields::Text {
+                                    // @FIXME I do not understand yet how this part works
+                                    subtype: is,
+                                    number_of_lines: 1,
+                                },
+                            },
+                            // Always None for Body, can be populated for BodyStructure
+                            extension: None,
+                        };
+
+                        attributes.push(MessageAttribute::Body(b));
                     }
                     FetchAttribute::BodyExt {
                         section,
                         partial,
                         peek,
                     } => {
-                        todo!()
+                        // @TODO This is a stub
+                        let is = IString::try_from("test").unwrap();
+
+                        attributes.push(MessageAttribute::BodyExt {
+                            section: None,
+                            origin: None,
+                            data: NString(Some(is)),
+                        })
                     }
                     FetchAttribute::BodyStructure => {
-                        todo!()
+                        // @TODO This is a stub
+                        let is = IString::try_from("test").unwrap();
+                        let b = BodyStructure::Single {
+                            body: FetchBody {
+                                basic: BasicFields {
+                                    parameter_list: vec![],
+                                    id: NString(Some(is.clone())),
+                                    description: NString(Some(is.clone())),
+                                    content_transfer_encoding: is.clone(),
+                                    size: 1,
+                                },
+                                specific: SpecificFields::Text {
+                                    // @FIXME I do not understand yet how this part works
+                                    subtype: is,
+                                    number_of_lines: 1,
+                                },
+                            },
+                            // Always None for Body, can be populated for BodyStructure
+                            extension: None,
+                        };
+
+                        attributes.push(MessageAttribute::BodyStructure(b));
                     }
                     FetchAttribute::InternalDate => {
-                        attributes.push(MessageAttribute::InternalDate(
-                            MyDateTime(Utc.fix().timestamp(i64::try_from(meta.internaldate / 1000)?, 0))
-                        ));
+                        attributes.push(MessageAttribute::InternalDate(MyDateTime(
+                            Utc.fix()
+                                .timestamp(i64::try_from(meta.internaldate / 1000)?, 0),
+                        )));
                     }
                 }
             }
@@ -476,4 +562,115 @@ fn convert_address(a: &mail_parser::Addr<'_>) -> Address {
         NString(user.map(|x| IString::try_from(x).unwrap())),
         NString(host.map(|x| IString::try_from(x).unwrap())),
     )
+}
+
+fn build_imap_email_struct<'a>(
+    msg: &Message<'a>,
+    node: &MessageStructure,
+) -> Result<BodyStructure> {
+    match node {
+        MessageStructure::Part(id) => {
+            let part = msg.parts.get(*id).ok_or(anyhow!(
+                "Email part referenced in email structure is missing"
+            ))?;
+            match part {
+                MessagePart::Text(bp) => Ok(BodyStructure::Single {
+                    body: FetchBody {
+                        basic: BasicFields {
+                            parameter_list: vec![], //@TODO
+                            id: match bp.headers_rfc.get(&RfcHeader::ContentId) {
+                                Some(HeaderValue::Text(v)) => {
+                                    NString(IString::try_from(v.clone().into_owned()).ok())
+                                }
+                                _ => NString(None),
+                            },
+                            description: NString(None), //@TODO
+                            content_transfer_encoding: match bp
+                                .headers_rfc
+                                .get(&RfcHeader::ContentTransferEncoding)
+                            {
+                                Some(HeaderValue::Text(v)) => {
+                                    IString::try_from(v.clone().into_owned())
+                                        .unwrap_or(unchecked_istring("7bit"))
+                                }
+                                _ => unchecked_istring("7bit"),
+                            },
+                            size: u32::try_from(bp.len())?,
+                        },
+                        specific: SpecificFields::Text {
+                            subtype: match bp.headers_rfc.get(&RfcHeader::ContentType) {
+                                Some(HeaderValue::ContentType(ContentType {
+                                    c_subtype: Some(st),
+                                    ..
+                                })) => IString::try_from(st.clone().into_owned())
+                                    .unwrap_or(unchecked_istring("plain")),
+                                _ => unchecked_istring("plain"),
+                            },
+                            number_of_lines: u32::try_from(bp.get_text_contents().lines().count())?,
+                        },
+                    },
+                    extension: None,
+                }),
+                MessagePart::Multipart(_) => {
+                    unreachable!("A multipart entry can not be found here.")
+                }
+                _ => todo!(),
+            }
+        }
+        MessageStructure::List(l) => todo!(),
+        /*BodyStructure::Multi {
+            bodies: l.map(|inner_node| build_email_struct(msg, inner_node)),
+            subtype: "",
+            extension_data: None,
+        },*/
+        MessageStructure::MultiPart((id, l)) => {
+            todo!()
+            /*let part = msg.parts.get(id)?;
+            let mp = match part {
+                MessagePart::Multipart(mp) => mp,
+                _ => unreachable!("Only a MessagePart part entry is allowed here.");
+            }
+
+
+            BodyStructure::Multi {
+                bodies: l.map(|inner_node| build_email_struct(msg, inner_node)),
+                subtype: "",
+                extension_data: Some(MultipartExtensionData {
+                    parameter_list: vec![],
+                    disposition: None,
+                    language: None,
+                    location: None,
+                    extension: vec![],
+                })
+            }
+            */
+        }
+    }
+}
+
+/// s is set to static to ensure that only compile time values
+/// checked by the developpers are passed.
+fn unchecked_istring(s: &'static str) -> IString {
+    IString::try_from(s).expect("this value is expected to be a valid imap-codec::IString")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rfc_to_imap() -> Result<()> {
+        let txt = br#"From: Garage team <garagehq@deuxfleurs.fr>
+Subject: Welcome to Aerogramme!!
+
+This is just a test email, feel free to ignore.
+"#;
+        let message = Message::parse(txt).unwrap();
+
+        let bs = build_imap_email_struct(&message, &message.structure)?;
+
+        print!("{:?}", bs);
+
+        Ok(())
+    }
 }
