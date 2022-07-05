@@ -3,6 +3,17 @@ from os import listdir
 from os.path import isfile, join
 import sys
 
+def rebuild_body_res(b):
+    bb = b''
+    for e in b:
+        if type(e) is tuple:
+            bb += b'\r\n'.join([p for p in e])
+        else:
+            bb += e
+
+    f = bb[bb.find(b'('):]
+    return f
+
 path = sys.argv[1]
 onlyfiles = [join(path, f) for f in listdir(path) if isfile(join(path, f)) and len(f) > 4 and f[-4:] == ".eml"]
 
@@ -20,24 +31,15 @@ with IMAP4_SSL(host="localhost") as M:
             seq = (f"{idx+1}:{idx+1}").encode()
             (r, b) = M.fetch(seq, "(BODY)")
             assert r == 'OK'
-            if type(b[0]) is tuple:
-                bb = b'\r\n'.join([p for p in b[0]])
-            else:
-                bb = b[0]
-            f = bb[bb.find(b'('):]
+            
+
             with open(f_noext + ".body", 'w+b') as w:
-                w.write(f)
+                w.write(rebuild_body_res(b))
 
             (r, b) = M.fetch(seq, "(BODYSTRUCTURE)")
             assert r == 'OK'
-            if type(b[0]) is tuple:
-                bb = b'\r\n'.join([p for p in b[0]])
-            else:
-                bb = b[0]
-
-            f = bb[bb.find(b'('):]
             with open(f_noext + ".bodystructure", 'w+b') as w:
-                w.write(f)
+                w.write(rebuild_body_res(b))
 
     M.close()
     M.logout()
