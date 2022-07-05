@@ -1,0 +1,1 @@
+(BODY (("text" "plain" ("charset" "us-ascii") NIL NIL "7bit" 49 1)("text" "enriched" ("charset" "us-ascii") NIL NIL "7bit" 71 2)("application" "x-whatever" NIL NIL NIL "7bit" 52) "alternative"))

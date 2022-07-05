@@ -1,0 +1,17 @@
+From: Garage team <garagehq@deuxfleurs.fr>
+Content-Type: multipart/mixed; boundary="parent";
+Subject: Welcome to Aerogramme!!
+
+--parent
+Content-Type: multipart/mixed; boundary="child";
+
+--child
+Content-Type: text/plain; charset="us-ascii"
+
+Hello 1
+--child
+Content-Type: text/plain; charset="us-ascii"
+
+Hello 2
+--child--
+--parent--
