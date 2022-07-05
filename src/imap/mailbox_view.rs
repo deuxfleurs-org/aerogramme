@@ -646,19 +646,30 @@ fn unchecked_istring(s: &'static str) -> IString {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use imap_codec::codec::Encode;
+    use std::fs;
 
+    /// Future automated test. We use lossy utf8 conversion + lowercasing everything,
+    /// so this test might allow invalid results. But at least it allows us to quickly test a
+    /// large variety of emails.
+    /// Keep in mind that special cases must still be tested manually!
     #[test]
-    fn rfc_to_imap() -> Result<()> {
-        let txt = br#"From: Garage team <garagehq@deuxfleurs.fr>
-Subject: Welcome to Aerogramme!!
+    fn fetch_body() -> Result<()> {
+        let txt = fs::read("tests/emails/dxflrs/0001_simple.eml")?;
+        let exp = fs::read("tests/emails/dxflrs/0001_simple.body")?;
+        let message = Message::parse(&txt).unwrap();
 
-This is just a test email, feel free to ignore.
-"#;
-        let message = Message::parse(txt).unwrap();
+        let mut resp = Vec::new();
+        MessageAttribute::Body(build_imap_email_struct(&message, &message.structure)?)
+            .encode(&mut resp);
 
-        let bs = build_imap_email_struct(&message, &message.structure)?;
+        let resp_str = String::from_utf8_lossy(&resp).to_lowercase();
 
-        print!("{:?}", bs);
+        let exp_no_parenthesis = &exp[1..exp.len() - 1];
+        let exp_str = String::from_utf8_lossy(exp_no_parenthesis).to_lowercase();
+
+        println!("mine:     {}\nexpected: {}", resp_str, exp_str);
+        assert_eq!(resp_str, exp_str);
 
         Ok(())
     }
