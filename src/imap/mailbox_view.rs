@@ -561,12 +561,29 @@ fn build_imap_email_struct<'a>(
                 MessagePart::Message(_) => todo!(),
             }
         }
-        MessageStructure::List(l) => todo!(),
-        /*BodyStructure::Multi {
-            bodies: l.map(|inner_node| build_email_struct(msg, inner_node)),
-            subtype: "",
-            extension_data: None,
-        },*/
+        MessageStructure::List(lp) => {
+            let subtype = IString::try_from(
+                msg.get_content_type()
+                    .ok_or(anyhow!("Content-Type is missing but required here."))?
+                    .c_subtype
+                    .as_ref()
+                    .ok_or(anyhow!("Content-Type invalid, missing subtype"))?
+                    .to_string(),
+            )
+            .map_err(|_| {
+                anyhow!("Unable to build IString from given Content-Type subtype given")
+            })?;
+
+            // @NOTE we should use try_collect() but it is unstable as of 2022-07-05
+            Ok(BodyStructure::Multi {
+                bodies: lp
+                    .iter()
+                    .map(|inner_node| build_imap_email_struct(msg, inner_node))
+                    .fold(Ok(vec![]), try_collect_shime)?,
+                subtype,
+                extension_data: None,
+            })
+        }
         MessageStructure::MultiPart((id, l)) => {
             todo!()
             /*let part = msg.parts.get(id)?;
@@ -592,6 +609,16 @@ fn build_imap_email_struct<'a>(
     }
 }
 
+fn try_collect_shime<T>(acc: Result<Vec<T>>, elem: Result<T>) -> Result<Vec<T>> {
+    match (acc, elem) {
+        (Err(e), _) | (_, Err(e)) => Err(e),
+        (Ok(mut ac), Ok(el)) => {
+            ac.push(el);
+            Ok(ac)
+        }
+    }
+}
+
 /// s is set to static to ensure that only compile time values
 /// checked by developpers are passed.
 fn unchecked_istring(s: &'static str) -> IString {
@@ -608,12 +635,15 @@ struct SpecialAttrs<'a> {
 /// identify some specific attributes (charset and boundary).
 fn attrs_to_params<'a>(bp: &impl MimeHeaders<'a>) -> (SpecialAttrs, Vec<(IString, IString)>) {
     // Try to extract Content-Type attributes from headers
-    let attrs = match bp.get_content_type().map(|c| c.attributes.as_ref()).flatten() {
+    let attrs = match bp
+        .get_content_type()
+        .map(|c| c.attributes.as_ref())
+        .flatten()
+    {
         Some(v) => v,
-        _ => return (SpecialAttrs::default(), vec![])
+        _ => return (SpecialAttrs::default(), vec![]),
     };
 
-        
     // Transform the Content-Type attributes into IMAP's parameter list
     // Also collect some special attributes that might be used elsewhere
     attrs.iter().fold(
@@ -691,21 +721,29 @@ mod tests {
     /// Keep in mind that special cases must still be tested manually!
     #[test]
     fn fetch_body() -> Result<()> {
-        let txt = fs::read("tests/emails/dxflrs/0001_simple.eml")?;
-        let exp = fs::read("tests/emails/dxflrs/0001_simple.body")?;
-        let message = Message::parse(&txt).unwrap();
+        let prefixes = [
+            "tests/emails/dxflrs/0001_simple",
+            "tests/emails/dxflrs/0002_mime",
+        ];
 
-        let mut resp = Vec::new();
-        MessageAttribute::Body(build_imap_email_struct(&message, &message.structure)?)
-            .encode(&mut resp);
+        for pref in prefixes.iter() {
+            println!("{}", pref);
+            let txt = fs::read(format!("{}.eml", pref))?;
+            let exp = fs::read(format!("{}.body", pref))?;
+            let message = Message::parse(&txt).unwrap();
 
-        let resp_str = String::from_utf8_lossy(&resp).to_lowercase();
+            let mut resp = Vec::new();
+            MessageAttribute::Body(build_imap_email_struct(&message, &message.structure)?)
+                .encode(&mut resp);
 
-        let exp_no_parenthesis = &exp[1..exp.len() - 1];
-        let exp_str = String::from_utf8_lossy(exp_no_parenthesis).to_lowercase();
+            let resp_str = String::from_utf8_lossy(&resp).to_lowercase();
 
-        println!("mine:     {}\nexpected: {}", resp_str, exp_str);
-        assert_eq!(resp_str, exp_str);
+            let exp_no_parenthesis = &exp[1..exp.len() - 1];
+            let exp_str = String::from_utf8_lossy(exp_no_parenthesis).to_lowercase();
+
+            println!("aerogramme: {}\ndovecot:    {}", resp_str, exp_str);
+            assert_eq!(resp_str, exp_str);
+        }
 
         Ok(())
     }
