@@ -1,4 +1,4 @@
-use std::borrow::Borrow;
+use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -516,78 +516,30 @@ fn build_imap_email_struct<'a>(
                 MessagePart::Multipart(_) => {
                     unreachable!("A multipart entry can not be found here.")
                 }
-                MessagePart::Text(bp) => {
-                    // Extract subtype+attributes from Content-Type header
-                    let (st, ct_attrs) = match bp.headers_rfc.get(&RfcHeader::ContentType) {
-                        Some(HeaderValue::ContentType(c)) => {
-                            (c.c_subtype.as_ref(), c.attributes.as_ref())
-                        }
-                        _ => (None, None),
-                    };
-
-                    // Transform the Content-Type attributes into IMAP's parameter list
-                    // Also check if there is a charset defined.
-                    let (charset_found, mut parameter_list) = ct_attrs
-                        .map(|attr| {
-                            attr.iter().fold(
-                                (false, vec![]),
-                                |(charset_found, mut param_list), (k, v)| {
-                                    let nk = k.to_lowercase();
-                                    match (
-                                        IString::try_from(k.as_ref()),
-                                        IString::try_from(v.as_ref()),
-                                    ) {
-                                        (Ok(ik), Ok(iv)) => param_list.push((ik, iv)),
-                                        _ => (),
-                                    };
-
-                                    (charset_found || nk == "charset", param_list)
-                                },
-                            )
-                        })
-                        .unwrap_or((false, vec![]));
+                MessagePart::Text(bp) | MessagePart::Html(bp) => {
+                    let (attrs, mut basic) = headers_to_basic_fields(bp)?;
 
                     // If the charset is not defined, set it to "us-ascii"
-                    if !charset_found {
-                        parameter_list
+                    if attrs.charset.is_none() {
+                        basic
+                            .parameter_list
                             .push((unchecked_istring("charset"), unchecked_istring("us-ascii")));
                     }
 
-                    // If the subtype is not defined, set it to "plain"
-                    let subtype = st
-                        .map(|st| IString::try_from(st.clone().into_owned()).ok())
+                    // If the subtype is not defined, set it to "plain". MIME (RFC2045) says that subtype
+                    // MUST be defined and hence has no default. But mail-parser does not make any
+                    // difference between MIME and raw emails, hence raw emails have no subtypes.
+                    let subtype = bp
+                        .get_content_type()
+                        .map(|h| h.c_subtype.as_ref())
+                        .flatten()
+                        .map(|st| IString::try_from(st.to_string()).ok())
                         .flatten()
                         .unwrap_or(unchecked_istring("plain"));
 
                     Ok(BodyStructure::Single {
                         body: FetchBody {
-                            basic: BasicFields {
-                                parameter_list,
-                                id: match bp.headers_rfc.get(&RfcHeader::ContentId) {
-                                    Some(HeaderValue::Text(v)) => {
-                                        NString(IString::try_from(v.to_string()).ok())
-                                    }
-                                    _ => NString(None),
-                                },
-                                description: match bp
-                                    .headers_rfc
-                                    .get(&RfcHeader::ContentDescription)
-                                {
-                                    Some(HeaderValue::Text(v)) => {
-                                        NString(IString::try_from(v.to_string()).ok())
-                                    }
-                                    _ => NString(None),
-                                },
-                                content_transfer_encoding: match bp
-                                    .headers_rfc
-                                    .get(&RfcHeader::ContentTransferEncoding)
-                                {
-                                    Some(HeaderValue::Text(v)) => IString::try_from(v.to_string())
-                                        .unwrap_or(unchecked_istring("7bit")),
-                                    _ => unchecked_istring("7bit"),
-                                },
-                                size: u32::try_from(bp.len())?,
-                            },
+                            basic,
                             specific: SpecificFields::Text {
                                 subtype,
                                 number_of_lines: u32::try_from(
@@ -598,11 +550,14 @@ fn build_imap_email_struct<'a>(
                         extension: None,
                     })
                 }
-                MessagePart::Html(bp) => {
+                MessagePart::Binary(_) | MessagePart::InlineBinary(_) => {
+                    /*
+                     * Note also that a subtype specification is MANDATORY -- it may not be
+                     * omitted from a Content-Type header field.  As such, there are no
+                     * default subtypes.
+                     */
                     todo!()
                 }
-                MessagePart::Binary(_) => todo!(),
-                MessagePart::InlineBinary(_) => todo!(),
                 MessagePart::Message(_) => todo!(),
             }
         }
@@ -638,9 +593,90 @@ fn build_imap_email_struct<'a>(
 }
 
 /// s is set to static to ensure that only compile time values
-/// checked by the developpers are passed.
+/// checked by developpers are passed.
 fn unchecked_istring(s: &'static str) -> IString {
     IString::try_from(s).expect("this value is expected to be a valid imap-codec::IString")
+}
+
+#[derive(Default)]
+struct SpecialAttrs<'a> {
+    charset: Option<&'a Cow<'a, str>>,
+    boundary: Option<&'a Cow<'a, str>>,
+}
+
+/// Takes mail-parser Content-Type attributes, build imap-codec BasicFields.parameter_list and
+/// identify some specific attributes (charset and boundary).
+fn attrs_to_params<'a>(bp: &impl MimeHeaders<'a>) -> (SpecialAttrs, Vec<(IString, IString)>) {
+    // Try to extract Content-Type attributes from headers
+    let attrs = match bp.get_content_type().map(|c| c.attributes.as_ref()).flatten() {
+        Some(v) => v,
+        _ => return (SpecialAttrs::default(), vec![])
+    };
+
+        
+    // Transform the Content-Type attributes into IMAP's parameter list
+    // Also collect some special attributes that might be used elsewhere
+    attrs.iter().fold(
+        (SpecialAttrs::default(), vec![]),
+        |(mut sa, mut param_list), (k, v)| {
+            let nk = k.to_lowercase();
+            match (IString::try_from(k.as_ref()), IString::try_from(v.as_ref())) {
+                (Ok(ik), Ok(iv)) => param_list.push((ik, iv)),
+                _ => return (sa, param_list),
+            };
+
+            match nk.as_str() {
+                "charset" => {
+                    sa.charset = Some(v);
+                }
+                "boundary" => {
+                    sa.boundary = Some(v);
+                }
+                _ => (),
+            };
+
+            (sa, param_list)
+        },
+    )
+}
+
+/// Takes mail-parser headers and build imap-codec BasicFields
+/// Return some special informations too
+fn headers_to_basic_fields<'a>(
+    bp: &(impl BodyPart<'a> + MimeHeaders<'a>),
+) -> Result<(SpecialAttrs, BasicFields)> {
+    let (attrs, parameter_list) = attrs_to_params(bp);
+
+    let bf = BasicFields {
+        parameter_list,
+
+        id: NString(
+            bp.get_content_id()
+                .map(|ci| IString::try_from(ci.to_string()).ok())
+                .flatten(),
+        ),
+
+        description: NString(
+            bp.get_content_description()
+                .map(|cd| IString::try_from(cd.to_string()).ok())
+                .flatten(),
+        ),
+
+        /*
+         * RFC2045 - section 6.1
+         * "Content-Transfer-Encoding: 7BIT" is assumed if the
+         * Content-Transfer-Encoding header field is not present.
+         */
+        content_transfer_encoding: bp
+            .get_content_transfer_encoding()
+            .map(|h| IString::try_from(h.to_string()).ok())
+            .flatten()
+            .unwrap_or(unchecked_istring("7bit")),
+
+        size: u32::try_from(bp.len())?,
+    };
+
+    Ok((attrs, bf))
 }
 
 #[cfg(test)]
