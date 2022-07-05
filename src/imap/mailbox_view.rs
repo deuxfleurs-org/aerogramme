@@ -565,19 +565,25 @@ fn build_imap_email_struct<'a>(
                                 parameter_list,
                                 id: match bp.headers_rfc.get(&RfcHeader::ContentId) {
                                     Some(HeaderValue::Text(v)) => {
-                                        NString(IString::try_from(v.clone().into_owned()).ok())
+                                        NString(IString::try_from(v.to_string()).ok())
                                     }
                                     _ => NString(None),
                                 },
-                                description: NString(None), //@TODO
+                                description: match bp
+                                    .headers_rfc
+                                    .get(&RfcHeader::ContentDescription)
+                                {
+                                    Some(HeaderValue::Text(v)) => {
+                                        NString(IString::try_from(v.to_string()).ok())
+                                    }
+                                    _ => NString(None),
+                                },
                                 content_transfer_encoding: match bp
                                     .headers_rfc
                                     .get(&RfcHeader::ContentTransferEncoding)
                                 {
-                                    Some(HeaderValue::Text(v)) => {
-                                        IString::try_from(v.clone().into_owned())
-                                            .unwrap_or(unchecked_istring("7bit"))
-                                    }
+                                    Some(HeaderValue::Text(v)) => IString::try_from(v.to_string())
+                                        .unwrap_or(unchecked_istring("7bit")),
                                     _ => unchecked_istring("7bit"),
                                 },
                                 size: u32::try_from(bp.len())?,
@@ -591,8 +597,10 @@ fn build_imap_email_struct<'a>(
                         },
                         extension: None,
                     })
-                },
-                MessagePart::Html(_) => todo!(),
+                }
+                MessagePart::Html(bp) => {
+                    todo!()
+                }
                 MessagePart::Binary(_) => todo!(),
                 MessagePart::InlineBinary(_) => todo!(),
                 MessagePart::Message(_) => todo!(),
