@@ -1,1 +1,1 @@
-(BODY ((("text" "plain" ("charset" "us-ascii") NIL NIL "7bit" 7 0)("text" "plain" ("charset" "us-ascii") NIL NIL "7bit" 7 0) "mixed") "mixed"))
+(BODY ((("text" "plain" ("charset" "us-ascii") NIL NIL "7bit" 9 1)("text" "plain" ("charset" "us-ascii") NIL NIL "7bit" 9 1) "mixed")("text" "plain" ("charset" "us-ascii") NIL NIL "7bit" 9 1) "mixed"))

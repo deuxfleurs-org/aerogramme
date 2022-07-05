@@ -584,27 +584,48 @@ fn build_imap_email_struct<'a>(
                 extension_data: None,
             })
         }
-        MessageStructure::MultiPart((id, l)) => {
-            todo!()
-            /*let part = msg.parts.get(id)?;
-            let mp = match part {
-                MessagePart::Multipart(mp) => mp,
-                _ => unreachable!("Only a MessagePart part entry is allowed here.");
-            }
+        MessageStructure::MultiPart((id, lp)) => {
+            let part = msg
+                .parts
+                .get(*id)
+                .map(|p| match p {
+                    MessagePart::Multipart(mp) => Some(mp),
+                    _ => None,
+                })
+                .flatten()
+                .ok_or(anyhow!(
+                    "Email part referenced in email structure is missing"
+                ))?;
 
+            let subtype = IString::try_from(
+                part.headers_rfc
+                    .get(&RfcHeader::ContentType)
+                    .ok_or(anyhow!("Content-Type is missing but required here."))?
+                    .get_content_type()
+                    .c_subtype
+                    .as_ref()
+                    .ok_or(anyhow!("Content-Type invalid, missing subtype"))?
+                    .to_string(),
+            )
+            .map_err(|_| {
+                anyhow!("Unable to build IString from given Content-Type subtype given")
+            })?;
 
-            BodyStructure::Multi {
-                bodies: l.map(|inner_node| build_email_struct(msg, inner_node)),
-                subtype: "",
-                extension_data: Some(MultipartExtensionData {
+            Ok(BodyStructure::Multi {
+                bodies: lp
+                    .iter()
+                    .map(|inner_node| build_imap_email_struct(msg, inner_node))
+                    .fold(Ok(vec![]), try_collect_shime)?,
+                subtype,
+                extension_data: None,
+                /*Some(MultipartExtensionData {
                     parameter_list: vec![],
                     disposition: None,
                     language: None,
                     location: None,
                     extension: vec![],
-                })
-            }
-            */
+                })*/
+            })
         }
     }
 }
@@ -715,7 +736,7 @@ mod tests {
     use imap_codec::codec::Encode;
     use std::fs;
 
-    /// Future automated test. We use lossy utf8 conversion + lowercasing everything,
+    /// Future automated test. We use lossy utf8 conversion + lowercase everything,
     /// so this test might allow invalid results. But at least it allows us to quickly test a
     /// large variety of emails.
     /// Keep in mind that special cases must still be tested manually!
@@ -724,6 +745,7 @@ mod tests {
         let prefixes = [
             "tests/emails/dxflrs/0001_simple",
             "tests/emails/dxflrs/0002_mime",
+            "tests/emails/dxflrs/0003_mime-in-mime",
         ];
 
         for pref in prefixes.iter() {

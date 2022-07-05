@@ -9,9 +9,16 @@ Content-Type: multipart/mixed; boundary="child";
 Content-Type: text/plain; charset="us-ascii"
 
 Hello 1
+
 --child
 Content-Type: text/plain; charset="us-ascii"
 
 Hello 2
+
 --child--
+--parent
+Content-Type: text/plain; charset="us-ascii"
+
+Hello 3
+
 --parent--
