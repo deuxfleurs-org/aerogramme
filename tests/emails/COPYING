@@ -1,0 +1,6 @@
+Emails from the rfc/ legacy/ malformed/ and thirdparty/ folders were imported from this repository:
+https://github.com/stalwartlabs/mail-parser
+Specific COPYING files are available in each folder to trace their authors.
+If nothing is stated in these folders, the following copyright applies: Copyright (C) 2020-2022, Stalwart Labs Ltd.
+And the distribution license is either BSD-2, MIT or Apache 2.
+
