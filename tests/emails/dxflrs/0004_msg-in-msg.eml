@@ -3,6 +3,11 @@ Content-Type: multipart/mixed; boundary="delim";
 Subject: Welcome to Aerogramme!!
 
 --delim
+Content-Type: text/plain; charset="us-ascii"
+
+Hello 1
+
+--delim
 Content-Type: message/rfc822
 
 From: Garage team <garagehq@deuxfleurs.fr>

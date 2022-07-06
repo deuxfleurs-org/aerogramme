@@ -1,5 +1,6 @@
 use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
+use std::io::{BufRead, Cursor};
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
@@ -422,7 +423,30 @@ fn string_to_flag(f: &str) -> Option<Flag> {
     }
 }
 
+/// Envelope rules are defined in RFC 3501, section 7.4.2
+/// https://datatracker.ietf.org/doc/html/rfc3501#section-7.4.2
+///
+/// Some important notes:
+///
+/// If the Sender or Reply-To lines are absent in the [RFC-2822]
+/// header, or are present but empty, the server sets the
+/// corresponding member of the envelope to be the same value as
+/// the from member (the client is not expected to know to do
+/// this). Note: [RFC-2822] requires that all messages have a valid
+/// From header.  Therefore, the from, sender, and reply-to
+/// members in the envelope can not be NIL.
+///
+/// If the Date, Subject, In-Reply-To, and Message-ID header lines
+/// are absent in the [RFC-2822] header, the corresponding member
+/// of the envelope is NIL; if these header lines are present but
+/// empty the corresponding member of the envelope is the empty
+/// string.
+
+//@FIXME return an error if the envelope is invalid instead of panicking
+//@FIXME some fields must be defaulted if there are not set.
 fn message_envelope(msg: &mail_parser::Message<'_>) -> Envelope {
+    let from = convert_addresses(msg.get_from()).unwrap_or(vec![]);
+
     Envelope {
         date: NString(
             msg.get_date()
@@ -432,13 +456,13 @@ fn message_envelope(msg: &mail_parser::Message<'_>) -> Envelope {
             msg.get_subject()
                 .map(|d| IString::try_from(d.to_string()).unwrap()),
         ),
-        from: convert_addresses(msg.get_from()),
-        sender: convert_addresses(msg.get_sender()),
-        reply_to: convert_addresses(msg.get_reply_to()),
-        to: convert_addresses(msg.get_to()),
-        cc: convert_addresses(msg.get_cc()),
-        bcc: convert_addresses(msg.get_bcc()),
-        in_reply_to: NString(None), // TODO
+        from: from.clone(),
+        sender: convert_addresses(msg.get_sender()).unwrap_or(from.clone()),
+        reply_to: convert_addresses(msg.get_reply_to()).unwrap_or(from.clone()),
+        to: convert_addresses(msg.get_to()).unwrap_or(vec![]),
+        cc: convert_addresses(msg.get_cc()).unwrap_or(vec![]),
+        bcc: convert_addresses(msg.get_bcc()).unwrap_or(vec![]),
+        in_reply_to: NString(None), // @TODO
         message_id: NString(
             msg.get_message_id()
                 .map(|d| IString::try_from(d.to_string()).unwrap()),
@@ -446,28 +470,27 @@ fn message_envelope(msg: &mail_parser::Message<'_>) -> Envelope {
     }
 }
 
-fn convert_addresses(a: &mail_parser::HeaderValue<'_>) -> Vec<Address> {
+fn convert_addresses(a: &mail_parser::HeaderValue<'_>) -> Option<Vec<Address>> {
     match a {
-        mail_parser::HeaderValue::Address(a) => vec![convert_address(a)],
-        mail_parser::HeaderValue::AddressList(a) => {
-            let mut ret = vec![];
-            for aa in a {
-                ret.push(convert_address(aa));
-            }
-            ret
+        mail_parser::HeaderValue::Address(a) => Some(vec![convert_address(a)]),
+        mail_parser::HeaderValue::AddressList(l) => {
+            Some(l.iter().map(|a| convert_address(a)).collect())
         }
-        mail_parser::HeaderValue::Empty => vec![],
-        mail_parser::HeaderValue::Collection(c) => {
-            let mut ret = vec![];
-            for cc in c.iter() {
-                ret.extend(convert_addresses(cc).into_iter());
-            }
-            ret
+        mail_parser::HeaderValue::Empty => None,
+        mail_parser::HeaderValue::Collection(c) => Some(
+            c.iter()
+                .map(|l| convert_addresses(l).unwrap_or(vec![]))
+                .flatten()
+                .collect(),
+        ),
+        _ => {
+            tracing::warn!("Invalid address header");
+            None
         }
-        _ => panic!("Invalid address header"),
     }
 }
 
+//@FIXME Remove unwrap
 fn convert_address(a: &mail_parser::Addr<'_>) -> Address {
     let (user, host) = match &a.address {
         None => (None, None),
@@ -483,6 +506,8 @@ fn convert_address(a: &mail_parser::Addr<'_>) -> Address {
                 .as_ref()
                 .map(|x| IString::try_from(x.to_string()).unwrap()),
         ),
+        // SMTP at-domain-list (source route) seems obsolete since at least 1991
+        // https://www.mhonarc.org/archive/html/ietf-822/1991-06/msg00060.html
         NString(None),
         NString(user.map(|x| IString::try_from(x).unwrap())),
         NString(host.map(|x| IString::try_from(x).unwrap())),
@@ -550,15 +575,82 @@ fn build_imap_email_struct<'a>(
                         extension: None,
                     })
                 }
-                MessagePart::Binary(_) | MessagePart::InlineBinary(_) => {
-                    /*
-                     * Note also that a subtype specification is MANDATORY -- it may not be
-                     * omitted from a Content-Type header field.  As such, there are no
-                     * default subtypes.
-                     */
-                    todo!()
+                MessagePart::Binary(bp) | MessagePart::InlineBinary(bp) => {
+                    let (_, mut basic) = headers_to_basic_fields(bp)?;
+
+                    let ct = msg
+                        .get_content_type()
+                        .ok_or(anyhow!("Content-Type is missing but required here."))?;
+
+                    let type_ =
+                        IString::try_from(ct.c_type.as_ref().to_string()).map_err(|_| {
+                            anyhow!("Unable to build IString from given Content-Type type given")
+                        })?;
+
+                    let subtype = IString::try_from(
+                        ct.c_subtype
+                            .as_ref()
+                            .ok_or(anyhow!("Content-Type invalid, missing subtype"))?
+                            .to_string(),
+                    )
+                    .map_err(|_| {
+                        anyhow!("Unable to build IString from given Content-Type subtype given")
+                    })?;
+
+                    Ok(BodyStructure::Single {
+                        body: FetchBody {
+                            basic,
+                            specific: SpecificFields::Basic { type_, subtype },
+                        },
+                        extension: None,
+                    })
                 }
-                MessagePart::Message(_) => todo!(),
+                MessagePart::Message(bp) => {
+                    let (_, mut basic) = headers_to_basic_fields(bp)?;
+
+                    // @NOTE in some cases mail-parser does not parse the MessageAttachment but
+                    // provide it as raw body. Using `as_ref()` masks this fact: if the message is
+                    // parsed, as_ref() will return None. But by looking quickly at the code, it
+                    // seems that the attachment is not parsed when mail-parser encounters some
+                    // encoding problems, so it might be better to trust mail-parser.
+                    let inner = bp
+                        .get_body()
+                        .as_ref()
+                        .ok_or(anyhow!("Unable to parse inner message."))?;
+
+                    // @NOTE mail-parser does not provide enough information to compute the end of the
+                    // message. The offset_end value wrongly includes the multipart delimiter,
+                    // which lead to incorrect line count and body size.
+                    // I have patched the lib to add a new offset type named last_part that take
+                    // into account this fact. After that, we need to do some maths...
+                    let len = inner.offset_last_part - inner.offset_header;
+                    let raw_msg = &inner.raw_message[..len];
+                    basic.size = u32::try_from(len)?;
+
+                    Ok(BodyStructure::Single {
+                        body: FetchBody {
+                            basic,
+                            specific: SpecificFields::Message {
+                                envelope: message_envelope(inner),
+                                body_structure: Box::new(build_imap_email_struct(
+                                    inner,
+                                    &inner.structure,
+                                )?),
+
+                                // @FIXME This solution is bad for 2 reasons:
+                                // - RFC2045 says line endings are CRLF but we accept LF alone with
+                                // this method. It could be a feature (be liberal in what you
+                                // accept) but we must be sure that we don't break things.
+                                // - It should be done during parsing, we are iterating twice on
+                                // the same data which results in some wastes.
+                                number_of_lines: u32::try_from(
+                                    Cursor::new(raw_msg.as_ref()).lines().count(),
+                                )?,
+                            },
+                        },
+                        extension: None,
+                    })
+                }
             }
         }
         MessageStructure::List(lp) => {
@@ -746,6 +838,8 @@ mod tests {
             "tests/emails/dxflrs/0001_simple",
             "tests/emails/dxflrs/0002_mime",
             "tests/emails/dxflrs/0003_mime-in-mime",
+            "tests/emails/dxflrs/0004_msg-in-msg", // broken
+            //"tests/emails/dxflrs/0005_mail-parser-readme", // broken
         ];
 
         for pref in prefixes.iter() {
