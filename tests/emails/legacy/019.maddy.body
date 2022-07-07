@@ -1,0 +1,1 @@
+(BODY ((("text" "plain" ("charset" "iso-8859-1") NIL NIL "quoted-printable" 801 16) ("text" "html" ("charset" "iso-8859-1") NIL NIL "quoted-printable" 1190 27) "alternative") ("image" "png" ("name" "greenball.png") NIL NIL "base64" 1778) ("image" "png" ("name" "redball.png") NIL NIL "base64" 1992) "mixed"))

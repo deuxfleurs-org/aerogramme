@@ -1,0 +1,1 @@
+(BODYSTRUCTURE (("text" "plain" ("charset" "utf-8") NIL NIL "quoted-printable" 23 1 NIL NIL NIL NIL) ("text" "plain" ("charset" "utf-8") NIL NIL "base64" 28 1 NIL NIL NIL NIL) ("text" "plain" ("charset" "utf-8") NIL NIL "base64" 8 1 NIL NIL NIL NIL) "mixed" ("boundary" "foo") NIL NIL NIL))

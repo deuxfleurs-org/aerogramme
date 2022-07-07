@@ -1,7 +1,34 @@
-from imaplib import IMAP4_SSL
+from imaplib import IMAP4_SSL, IMAP4
 from os import listdir
 from os.path import isfile, join
 import sys
+
+# COMMAND USAGE
+#
+# start a test IMAP server locally (see comment below)
+# then call this script. eg:
+# ./send-to-imap.py dovecot ./emails/dxflrs/
+
+# DOCKER CONTAINERS TO QUICKLY SPAWN A REFERENCE SERVER
+#
+# -- Dovecot --
+# cmd: docker run --rm -it -p 993:993 -p 143:143 dovecot/dovecot
+# user: test (any)
+# pw: pass
+#
+# -- Maddy --
+# cmds:
+#   docker volume create maddydata
+#   openssl req  -nodes -new -x509  -keyout privkey.pem -out fullchain.pem
+#   docker run --rm -it --name maddy -e MADDY_DOMAIN=example.com -e MADDY_HOSTNAME=mx.example.com -v maddydata:/data -p 143:143 -p 993:993 --entrypoint /bin/sh foxcpp/maddy
+#       mkdir /data/tls
+#   docker cp ./fullchain.pem maddy:/data/tls/
+#   docker cp ./privkey.pem maddy:/data/tls/
+#       maddyctl creds create test@example.com
+#       maddyctl imap-acct create test@example.com
+#       maddy -config /data/maddy.conf run --debug
+#   
+#   docker run --rm -it  -v maddydata:/data-p 143:143 -p 993:993 foxcpp/maddy
 
 def rebuild_body_res(b):
     bb = b''
@@ -14,40 +41,59 @@ def rebuild_body_res(b):
     f = bb[bb.find(b'('):]
     return f
 
-path = sys.argv[1]
+target = sys.argv[1]
+path = sys.argv[2]
+
+parameters = {
+  "dovecot": {
+    "con": IMAP4_SSL,
+    "user": "test",
+    "pw": "pass",
+    "ext": "",
+  },
+  "maddy": {
+    "con": IMAP4_SSL,
+    "user": "test@example.com",
+    "pw": "pass",
+    "ext": ".maddy",
+  },
+}
+conf = parameters[target]
+
 onlyfiles = [join(path, f) for f in listdir(path) if isfile(join(path, f)) and len(f) > 4 and f[-4:] == ".eml"]
 
-# docker run --rm -it -p 993:993 -p 143:143 dovecot/dovecot
 test_mb = "kzUXL7HyS5OjLcU8"
-with IMAP4_SSL(host="localhost") as M:
-    M.login("test", "pass")
-    M.delete(test_mb)
-    M.create(test_mb)
-    M.select(test_mb)
+with conf['con'](host="localhost") as M:
+    print(M.login(conf['user'], conf['pw']))
+    print(M.delete(test_mb))
+    print(M.create(test_mb))
+
+
+    print(M.list())
+    print(M.select(test_mb))
+    failed = 0
     for (idx, f) in enumerate(onlyfiles):
         f_noext = f[:-4]
-        with open(f, 'r+b') as mail:
-            M.append(test_mb, [], None, mail.read())
-            seq = (f"{idx+1}:{idx+1}").encode()
-            (r, b) = M.fetch(seq, "(BODY)")
-            assert r == 'OK'
+        try:
+            with open(f, 'r+b') as mail:
+                print(M.append(test_mb, [], None, mail.read()))
+                seq = (f"{idx+1-failed}:{idx+1-failed}").encode()
+                (r, b) = M.fetch(seq, "(BODY)")
+                print((r, b))
+                assert r == 'OK'
             
 
-            with open(f_noext + ".body", 'w+b') as w:
-                w.write(rebuild_body_res(b))
+                with open(f_noext + conf['ext'] + ".body", 'w+b') as w:
+                    w.write(rebuild_body_res(b))
 
-            (r, b) = M.fetch(seq, "(BODYSTRUCTURE)")
-            assert r == 'OK'
-            with open(f_noext + ".bodystructure", 'w+b') as w:
-                w.write(rebuild_body_res(b))
+                (r, b) = M.fetch(seq, "(BODYSTRUCTURE)")
+                print((r, b))
+                assert r == 'OK'
+                with open(f_noext + conf['ext'] + ".bodystructure", 'w+b') as w:
+                    w.write(rebuild_body_res(b))
+        except:
+            failed += 1
+            print(f"failed {f}")
 
     M.close()
     M.logout()
-
-# old :
-    #(res, v) = M.select(test_mb)
-    #assert res == 'OK'
-    #exists = v[0]
-    #print(M.fetch(b"1:"+exists, ))
-    #print(M.fetch(b"1:"+exists, "(BODYSTRUCTURE)"))
-
