@@ -20,7 +20,7 @@ itertools = "0.10"
 lazy_static = "1.4"
 ldap3 = { version = "0.10", default-features = false, features = ["tls"] }
 log = "0.4"
-mail-parser = { git = "https://github.com/superboum/mail-parser", branch = "feature/last_part_offset" }
+mail-parser = { git = "https://github.com/superboum/mail-parser", branch = "feature/no_decode" }
 pretty_env_logger = "0.4"
 rusoto_core = "0.48.0"
 rusoto_credential = "0.48.0"

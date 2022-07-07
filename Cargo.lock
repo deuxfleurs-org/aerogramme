@@ -1335,7 +1335,7 @@ dependencies = [
 [[package]]
 name = "mail-parser"
 version = "0.4.8"
-source = "git+https://github.com/superboum/mail-parser?branch=feature/last_part_offset#c227527d2613d33ea1342f85c635134134222736"
+source = "git+https://github.com/superboum/mail-parser?branch=feature/no_decode#0fe5fe071f25016d9c1232eb452c0c4bbfa8a445"
 dependencies = [
  "encoding_rs",
  "serde",
