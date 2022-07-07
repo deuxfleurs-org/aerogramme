@@ -1,0 +1,1 @@
+(BODY (("TEXT" "PLAIN" ("CHARSET" "us-ascii") NIL NIL "7BIT" 9 1)("MESSAGE" "RFC822" NIL NIL NIL "7BIT" 129 (NIL "Welcome to Aerogramme!!" (("Garage team" NIL "garagehq" "deuxfleurs.fr")) (("Garage team" NIL "garagehq" "deuxfleurs.fr")) (("Garage team" NIL "garagehq" "deuxfleurs.fr")) NIL NIL NIL NIL NIL) ("TEXT" "PLAIN" ("CHARSET" "us-ascii") NIL NIL "7BIT" 49 1) 4) "MIXED"))

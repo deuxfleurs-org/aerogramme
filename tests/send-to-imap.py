@@ -29,6 +29,32 @@ import sys
 #       maddy -config /data/maddy.conf run --debug
 #   
 #   docker run --rm -it  -v maddydata:/data-p 143:143 -p 993:993 foxcpp/maddy
+#
+# -- Cyrus --
+#  docker run --rm -it --name cyrus -v /dev/log:/dev/log -p 143:143 -p 993:993 debian:buster
+#      apt update; apt install -y cyrus-imapd cyrus-pop3d cyrus-nntpd cyrus-caldav cyrus-admin sasl2-bin vim
+#      # ( 1. No Configuration / 8. Europe / 37. Paris / yes)
+#      vim  /etc/imapd.conf
+#      # (uncomment 'admins: cyrus')
+#      touch /var/lib/cyrus/tls_sessions.db
+#      chown cyrus:mail /var/lib/cyrus/tls_sessions.db
+#      mkdir /run/cyrus
+#      chown -R cyrus:mail /run/cyrus 
+#      cyrmaster -D -l 32 -C /etc/imapd.conf -M /etc/cyrus.conf 
+#  docker exec -ti --name cyrus /bin/bash
+#      saslpasswd2 cyrus
+#      # (put "cyrus" as password)
+#      saslpasswd2 test
+#      # (put "pass" as password)
+#      cyradm -u cyrus localhost
+#      cm kzUXL7HyS5OjLcU8
+#      setaclmailbox kzUXL7HyS5OjLcU8 test ktelrswip
+#
+#  -> note, must be run between 2 send-imap commands in cyradm
+# localhost> setaclmailbox kzUXL7HyS5OjLcU8 cyrus x
+# localhost> dm kzUXL7HyS5OjLcU8
+# localhost> cm kzUXL7HyS5OjLcU8
+# localhost> setaclmailbox kzUXL7HyS5OjLcU8 test ktelrswip
 
 def rebuild_body_res(b):
     bb = b''
@@ -49,7 +75,7 @@ parameters = {
     "con": IMAP4_SSL,
     "user": "test",
     "pw": "pass",
-    "ext": "",
+    "ext": ".dovecot",
   },
   "maddy": {
     "con": IMAP4_SSL,
@@ -57,6 +83,12 @@ parameters = {
     "pw": "pass",
     "ext": ".maddy",
   },
+  "cyrus": {
+    "con": IMAP4,
+    "user": "test",
+    "pw": "pass",
+    "ext": ".cyrus",
+  }
 }
 conf = parameters[target]
 
