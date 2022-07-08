@@ -851,7 +851,7 @@ mod tests {
         for pref in prefixes.iter() {
             println!("{}", pref);
             let txt = fs::read(format!("{}.eml", pref))?;
-            let exp = fs::read(format!("{}.body", pref))?;
+            let exp = fs::read(format!("{}.dovecot.body", pref))?;
             let message = Message::parse(&txt).unwrap();
 
             let mut resp = Vec::new();
@@ -864,6 +864,7 @@ mod tests {
             let exp_str = String::from_utf8_lossy(exp_no_parenthesis).to_lowercase();
 
             println!("aerogramme: {}\ndovecot:    {}", resp_str, exp_str);
+            //println!("\n\n {} \n\n", String::from_utf8_lossy(&resp));
             assert_eq!(resp_str, exp_str);
         }
 
