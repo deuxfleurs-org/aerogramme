@@ -1,0 +1,22 @@
+version: '3.4'
+services:
+  dovecot:
+    image: dovecot/dovecot:2.3.19.1
+    ports:
+      - "993:993/tcp"
+
+  maddy:
+    build:
+      context: ./docker/maddy/
+    image: maddy
+    ports:
+      - "994:993/tcp"
+
+  cyrus:
+    build:
+      context: ./docker/cyrus/
+    image: cyrus
+    volumes:
+      - "/dev/log:/dev/log"
+    ports:
+      - "143:143/tcp"

@@ -1,0 +1,1 @@
+(BODYSTRUCTURE (("message" "rfc822" () NIL NIL NIL 127 (NIL "Welcome to Aerogramme!!" (("Garage team" NIL "garagehq" "deuxfleurs.fr")) (("Garage team" NIL "garagehq" "deuxfleurs.fr")) (("Garage team" NIL "garagehq" "deuxfleurs.fr")) NIL NIL NIL NIL NIL) ("text" "plain" () NIL NIL NIL 47 1 NIL NIL NIL NIL) 5 NIL NIL NIL NIL) "mixed" ("boundary" "delim") NIL NIL NIL))

@@ -14,11 +14,9 @@ Hello 1
 Content-Type: text/plain; charset="us-ascii"
 
 Hello 2
-
 --child--
 --parent
 Content-Type: text/plain; charset="us-ascii"
 
 Hello 3
-
 --parent--

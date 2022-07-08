@@ -2,7 +2,7 @@ From: Art Vandelay <art@vandelay.com> (Vandelay Industries)
 To: "Colleagues": "James Smythe" <james@vandelay.com>; Friends:
     jane@example.com, =?UTF-8?Q?John_Sm=C3=AEth?= <john@example.com>;
 Date: Sat, 20 Nov 2021 14:22:01 -0800
-Subject: Why not both importing AND exporting? =?utf-8?b?4pi6?=
+Subject: Why not both importing AND exporting?
 Content-Type: multipart/mixed; boundary="festivus";
 
 --festivus
@@ -30,7 +30,7 @@ Content-Transfer-Encoding: quoted-printable
 =DD5=D8=1E=DD5=D80=DD5=D8"=DD!=00
 --giddyup
 Content-Type: image/gif; name*1="about "; name*0="Book ";
-              name*2*=utf-8''%e2%98%95 tables.gif
+              name*2="coffe tables.gif"
 Content-Transfer-Encoding: Base64
 Content-Disposition: attachment
 
