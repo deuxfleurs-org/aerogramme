@@ -854,14 +854,17 @@ mod tests {
             "tests/emails/dxflrs/0003_mime-in-mime",
             "tests/emails/dxflrs/0004_msg-in-msg",
             "tests/emails/dxflrs/0005_mail-parser-readme",
-            /*"tests/emails/rfc/000", // broken
-              "tests/emails/rfc/001", // broken
-              "tests/emails/rfc/002", // broken: dovecot adds \r when it is missing and count is as
-               // a character. Difference on how lines are counted too.
-              "tests/emails/rfc/003", // broken for the same reason
-              "tests/emails/thirdparty/000",
-              "tests/emails/thirdparty/001",
-              "tests/emails/thirdparty/002",
+            //"tests/emails/dxflrs/0006_single-mime",
+            //"tests/emails/dxflrs/0007_raw_msg_in_rfc822",
+
+            //"tests/emails/rfc/000", // broken
+            //  "tests/emails/rfc/001", // broken
+            //  "tests/emails/rfc/002", // broken: dovecot adds \r when it is missing and count is as
+            // a character. Difference on how lines are counted too.
+            /*"tests/emails/rfc/003", // broken for the same reason
+               "tests/emails/thirdparty/000",
+               "tests/emails/thirdparty/001",
+               "tests/emails/thirdparty/002",
             */
         ];
 
