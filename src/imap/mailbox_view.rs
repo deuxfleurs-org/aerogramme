@@ -581,7 +581,7 @@ fn build_imap_email_struct<'a>(
                 MessagePart::Binary(bp) | MessagePart::InlineBinary(bp) => {
                     let (_, mut basic) = headers_to_basic_fields(bp)?;
 
-                    let ct = msg
+                    let ct = bp
                         .get_content_type()
                         .ok_or(anyhow!("Content-Type is missing but required here."))?;
 
@@ -621,14 +621,29 @@ fn build_imap_email_struct<'a>(
                         .as_ref()
                         .ok_or(anyhow!("Unable to parse inner message."))?;
 
-                    // @NOTE mail-parser does not provide enough information to compute the end of the
-                    // message. The offset_end value wrongly includes the multipart delimiter,
-                    // which lead to incorrect line count and body size.
-                    // I have patched the lib to add a new offset type named last_part that take
-                    // into account this fact. After that, we need to do some maths...
-                    let len = inner.offset_last_part - inner.offset_header;
-                    let raw_msg = &inner.raw_message[..len];
-                    basic.size = u32::try_from(len)?;
+                    // @FIXME mail-parser does not handle ways when a MIME message contains
+                    // a raw email and wrongly take its delimiter. We thus test the headers to
+                    // learn if it is a RFC822 email (raw) or RFC5322 (MIME) message.
+                    // The correct way would be to patch mail-parser.
+                    let raw_msg = match part.unwrap_message().get_content_type() {
+                        Some(ContentType {
+                            attributes: Some(_),
+                            ..
+                        }) => {
+                            //println!("has a content type {:?}", bp);
+                            &inner.raw_message[..]
+                        }
+                        _ => {
+                            //println!("has no content type {:?}", bp);
+                            &inner.raw_message[..(inner.offset_last_part - inner.offset_header)]
+                        }
+                    };
+                    basic.size = u32::try_from(raw_msg.len())?;
+
+                    // We do not count the number of lines but the number of line
+                    // feeds to have the same behavior as Dovecot and Cyrus.
+                    // 2 lines = 1 line feed.
+                    let nol = raw_msg.iter().filter(|&c| c == &b'\n').count();
 
                     Ok(BodyStructure::Single {
                         body: FetchBody {
@@ -646,9 +661,7 @@ fn build_imap_email_struct<'a>(
                                 // accept) but we must be sure that we don't break things.
                                 // - It should be done during parsing, we are iterating twice on
                                 // the same data which results in some wastes.
-                                number_of_lines: u32::try_from(
-                                    Cursor::new(raw_msg.as_ref()).lines().count(),
-                                )?,
+                                number_of_lines: u32::try_from(nol)?,
                             },
                         },
                         extension: None,
@@ -840,15 +853,16 @@ mod tests {
             "tests/emails/dxflrs/0002_mime",
             "tests/emails/dxflrs/0003_mime-in-mime",
             "tests/emails/dxflrs/0004_msg-in-msg",
-            //"tests/emails/dxflrs/0005_mail-parser-readme", // no consensus on how to parse
-            //"tests/emails/rfc/000", // broken
-            //"tests/emails/rfc/001", // broken
-            //"tests/emails/rfc/002", // broken: dovecot adds \r when it is missing and count is as
-            // a character. Difference on how lines are counted too.
-            //"tests/emails/rfc/003", // broken for the same reason
-            //"tests/emails/thirdparty/000",
-            //"tests/emails/thirdparty/001",
-            //"tests/emails/thirdparty/002",
+            "tests/emails/dxflrs/0005_mail-parser-readme",
+            /*"tests/emails/rfc/000", // broken
+              "tests/emails/rfc/001", // broken
+              "tests/emails/rfc/002", // broken: dovecot adds \r when it is missing and count is as
+               // a character. Difference on how lines are counted too.
+              "tests/emails/rfc/003", // broken for the same reason
+              "tests/emails/thirdparty/000",
+              "tests/emails/thirdparty/001",
+              "tests/emails/thirdparty/002",
+            */
         ];
 
         for pref in prefixes.iter() {
