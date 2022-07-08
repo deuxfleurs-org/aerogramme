@@ -568,7 +568,10 @@ fn build_imap_email_struct<'a>(
                             specific: SpecificFields::Text {
                                 subtype,
                                 number_of_lines: u32::try_from(
-                                    Cursor::new(bp.body_raw.as_ref()).lines().count(),
+                                    // We do not count the number of lines but the number of line
+                                    // feeds to have the same behavior as Dovecot and Cyrus.
+                                    // 2 lines = 1 line feed.
+                                    bp.body_raw.as_ref().iter().filter(|&c| c == &b'\n').count(),
                                 )?,
                             },
                         },
