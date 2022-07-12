@@ -5,14 +5,19 @@ use boitalettres::proto::Request;
 use boitalettres::proto::Response;
 use imap_codec::types::command::{CommandBody, SearchKey};
 use imap_codec::types::core::Charset;
+use imap_codec::types::core::NonZeroBytes;
+use imap_codec::types::datetime::MyDateTime;
 use imap_codec::types::fetch_attributes::MacroOrFetchAttributes;
-
+use imap_codec::types::flag::{Flag, FlagNameAttribute};
+use imap_codec::types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
+use imap_codec::types::response::{Code, Data, StatusAttributeValue};
 use imap_codec::types::sequence::SequenceSet;
 
 use crate::imap::command::authenticated;
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
 
+use crate::mail::uidindex::*;
 use crate::mail::user::User;
 
 pub struct ExaminedContext<'a> {
@@ -37,6 +42,12 @@ pub async fn dispatch<'a>(ctx: ExaminedContext<'a>) -> Result<(Response, flow::T
             uid,
         } => ctx.search(charset, criteria, uid).await,
         CommandBody::Noop => ctx.noop().await,
+        CommandBody::Append {
+            mailbox,
+            flags,
+            date,
+            message,
+        } => ctx.append(mailbox, flags, date, message).await,
         _ => {
             let ctx = authenticated::AuthenticatedContext {
                 req: ctx.req,
@@ -84,5 +95,35 @@ impl<'a> ExaminedContext<'a> {
             Response::ok("NOOP completed.")?.with_body(updates),
             flow::Transition::None,
         ))
+    }
+
+    async fn append(
+        self,
+        mailbox: &MailboxCodec,
+        flags: &[Flag],
+        date: &Option<MyDateTime>,
+        message: &NonZeroBytes,
+    ) -> Result<(Response, flow::Transition)> {
+        let ctx2 = authenticated::AuthenticatedContext {
+            req: self.req,
+            user: self.user,
+        };
+
+        match ctx2.append_internal(mailbox, flags, date, message).await {
+            Ok((mb, uidvalidity, uid)) => {
+                let resp = Response::ok("APPEND completed")?.with_extra_code(Code::Other(
+                    "APPENDUID".try_into().unwrap(),
+                    Some(format!("{} {}", uidvalidity, uid)),
+                ));
+
+                if Arc::ptr_eq(&mb, &self.mailbox.mailbox) {
+                    let data = self.mailbox.update().await?;
+                    Ok((resp.with_body(data), flow::Transition::None))
+                } else {
+                    Ok((resp, flow::Transition::None))
+                }
+            }
+            Err(e) => Ok((Response::no(&e.to_string())?, flow::Transition::None)),
+        }
     }
 }

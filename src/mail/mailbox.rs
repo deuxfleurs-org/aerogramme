@@ -96,8 +96,13 @@ impl Mailbox {
     }
 
     /// Insert an email into the mailbox
-    pub async fn append<'a>(&self, msg: IMF<'a>, ident: Option<UniqueIdent>) -> Result<()> {
-        self.mbox.write().await.append(msg, ident).await
+    pub async fn append<'a>(
+        &self,
+        msg: IMF<'a>,
+        ident: Option<UniqueIdent>,
+        flags: &[Flag],
+    ) -> Result<(ImapUidvalidity, ImapUid)> {
+        self.mbox.write().await.append(msg, ident, flags).await
     }
 
     /// Insert an email into the mailbox, copying it from an existing S3 object
@@ -260,7 +265,12 @@ impl MailboxInternal {
         self.uid_index.push(del_flag_op).await
     }
 
-    async fn append(&mut self, mail: IMF<'_>, ident: Option<UniqueIdent>) -> Result<()> {
+    async fn append(
+        &mut self,
+        mail: IMF<'_>,
+        ident: Option<UniqueIdent>,
+        flags: &[Flag],
+    ) -> Result<(ImapUidvalidity, ImapUid)> {
         let ident = ident.unwrap_or_else(|| gen_ident());
         let message_key = gen_key();
 
@@ -292,13 +302,18 @@ impl MailboxInternal {
         )?;
 
         // Add mail to Bayou mail index
-        let add_mail_op = self
-            .uid_index
-            .state()
-            .op_mail_add(ident, vec!["\\Unseen".into()]);
+        let uid_state = self.uid_index.state();
+        let add_mail_op = uid_state.op_mail_add(ident, flags.to_vec());
+
+        let uidvalidity = uid_state.uidvalidity;
+        let uid = match add_mail_op {
+            UidIndexOp::MailAdd(_, uid, _) => uid,
+            _ => unreachable!(),
+        };
+
         self.uid_index.push(add_mail_op).await?;
 
-        Ok(())
+        Ok((uidvalidity, uid))
     }
 
     async fn append_from_s3<'a>(

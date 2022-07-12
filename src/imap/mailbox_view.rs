@@ -37,7 +37,7 @@ const DEFAULT_FLAGS: [Flag; 5] = [
 /// what the client knows, and produces IMAP messages to be sent to the
 /// client that go along updates to `known_state`.
 pub struct MailboxView {
-    mailbox: Arc<Mailbox>,
+    pub(crate) mailbox: Arc<Mailbox>,
     known_state: UidIndex,
 }
 

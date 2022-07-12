@@ -1,11 +1,13 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use boitalettres::proto::res::body::Data as Body;
 use boitalettres::proto::{Request, Response};
 use imap_codec::types::command::{CommandBody, StatusAttribute};
-use imap_codec::types::flag::FlagNameAttribute;
+use imap_codec::types::core::NonZeroBytes;
+use imap_codec::types::datetime::MyDateTime;
+use imap_codec::types::flag::{Flag, FlagNameAttribute};
 use imap_codec::types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
 use imap_codec::types::response::{Code, Data, StatusAttributeValue};
 
@@ -13,7 +15,10 @@ use crate::imap::command::anonymous;
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
 
+use crate::mail::mailbox::Mailbox;
+use crate::mail::uidindex::*;
 use crate::mail::user::{User, INBOX, MAILBOX_HIERARCHY_DELIMITER};
+use crate::mail::IMF;
 
 pub struct AuthenticatedContext<'a> {
     pub req: &'a Request,
@@ -44,6 +49,12 @@ pub async fn dispatch<'a>(ctx: AuthenticatedContext<'a>) -> Result<(Response, fl
         CommandBody::Unsubscribe { mailbox } => ctx.unsubscribe(mailbox).await,
         CommandBody::Select { mailbox } => ctx.select(mailbox).await,
         CommandBody::Examine { mailbox } => ctx.examine(mailbox).await,
+        CommandBody::Append {
+            mailbox,
+            flags,
+            date,
+            message,
+        } => ctx.append(mailbox, flags, date, message).await,
         _ => {
             let ctx = anonymous::AnonymousContext {
                 req: ctx.req,
@@ -315,5 +326,53 @@ impl<'a> AuthenticatedContext<'a> {
                 .with_body(data),
             flow::Transition::Examine(mb),
         ))
+    }
+
+    async fn append(
+        self,
+        mailbox: &MailboxCodec,
+        flags: &[Flag],
+        date: &Option<MyDateTime>,
+        message: &NonZeroBytes,
+    ) -> Result<(Response, flow::Transition)> {
+        match self.append_internal(mailbox, flags, date, message).await {
+            Ok((_mb, uidvalidity, uid)) => Ok((
+                Response::ok("APPEND completed")?.with_extra_code(Code::Other(
+                    "APPENDUID".try_into().unwrap(),
+                    Some(format!("{} {}", uidvalidity, uid)),
+                )),
+                flow::Transition::None,
+            )),
+            Err(e) => Ok((Response::no(&e.to_string())?, flow::Transition::None)),
+        }
+    }
+
+    pub(crate) async fn append_internal(
+        self,
+        mailbox: &MailboxCodec,
+        flags: &[Flag],
+        date: &Option<MyDateTime>,
+        message: &NonZeroBytes,
+    ) -> Result<(Arc<Mailbox>, ImapUidvalidity, ImapUidvalidity)> {
+        let name = String::try_from(mailbox.clone())?;
+
+        let mb_opt = self.user.open_mailbox(&name).await?;
+        let mb = match mb_opt {
+            Some(mb) => mb,
+            None => bail!("Mailbox does not exist"),
+        };
+
+        if date.is_some() {
+            bail!("Cannot set date when appending message");
+        }
+
+        let msg = IMF::try_from(message.as_slice())
+            .map_err(|_| anyhow!("Could not parse e-mail message"))?;
+        let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        // TODO: filter allowed flags? ping @Quentin
+
+        let (uidvalidity, uid) = mb.append(msg, None, &flags[..]).await?;
+
+        Ok((mb, uidvalidity, uid))
     }
 }
