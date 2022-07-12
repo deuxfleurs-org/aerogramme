@@ -65,53 +65,102 @@ impl User {
     /// Lists user's available mailboxes
     pub async fn list_mailboxes(&self) -> Result<Vec<String>> {
         let (list, _ct) = self.load_mailbox_list().await?;
-        Ok(list.into_iter().map(|(k, _)| k).collect())
+        Ok(list.existing_mailbox_names())
     }
 
     /// Opens an existing mailbox given its IMAP name.
     pub async fn open_mailbox(&self, name: &str) -> Result<Option<Arc<Mailbox>>> {
         let (mut list, ct) = self.load_mailbox_list().await?;
-        eprintln!("List of mailboxes: {:?}", list);
-        match list.get_mut(name) {
-            Some(MailboxListEntry {
-                id_lww: (_, Some(mbid)),
-                uidvalidity,
-            }) => {
-                let mb_opt = self.open_mailbox_by_id(*mbid, *uidvalidity).await?;
-                if let Some(mb) = &mb_opt {
-                    let mb_uidvalidity = mb.current_uid_index().await.uidvalidity;
-                    if mb_uidvalidity > *uidvalidity {
-                        *uidvalidity = mb_uidvalidity;
-                        self.save_mailbox_list(&list, ct).await?;
-                    }
+        eprintln!("List of mailboxes: {:?}", &list.0);
+
+        if let Some((uidvalidity, Some(mbid))) = list.get_mailbox(name) {
+            let mb_opt = self.open_mailbox_by_id(mbid, uidvalidity).await?;
+            if let Some(mb) = &mb_opt {
+                let mb_uidvalidity = mb.current_uid_index().await.uidvalidity;
+                if mb_uidvalidity > uidvalidity {
+                    list.update_uidvalidity(name, mb_uidvalidity);
+                    self.save_mailbox_list(&list, ct).await?;
                 }
-                Ok(mb_opt)
             }
-            _ => bail!("Mailbox does not exist: {}", name),
+            Ok(mb_opt)
+        } else {
+            bail!("Mailbox does not exist: {}", name);
         }
     }
 
     /// Creates a new mailbox in the user's IMAP namespace.
     pub async fn create_mailbox(&self, name: &str) -> Result<()> {
+        if name.ends_with(MAILBOX_HIERARCHY_DELIMITER) {
+            bail!("Invalid mailbox name: {}", name);
+        }
+
         let (mut list, ct) = self.load_mailbox_list().await?;
-        match self.mblist_create_mailbox(&mut list, ct, name).await? {
-            CreatedMailbox::Created(_, _) => Ok(()),
+        match list.create_mailbox(name) {
+            CreatedMailbox::Created(_, _) => {
+                self.save_mailbox_list(&list, ct).await?;
+                Ok(())
+            }
             CreatedMailbox::Existed(_, _) => Err(anyhow!("Mailbox {} already exists", name)),
         }
     }
 
     /// Deletes a mailbox in the user's IMAP namespace.
-    pub async fn delete_mailbox(&self, _name: &str) -> Result<()> {
-        bail!("Deleting mailboxes not implemented yet")
+    pub async fn delete_mailbox(&self, name: &str) -> Result<()> {
+        if name == INBOX {
+            bail!("Cannot delete INBOX");
+        }
+
+        let (mut list, ct) = self.load_mailbox_list().await?;
+        if list.has_mailbox(name) {
+            // TODO: actually delete mailbox contents
+            list.set_mailbox(name, None);
+            self.save_mailbox_list(&list, ct).await?;
+            Ok(())
+        } else {
+            bail!("Mailbox {} does not exist", name);
+        }
     }
 
     /// Renames a mailbox in the user's IMAP namespace.
     pub async fn rename_mailbox(&self, old_name: &str, new_name: &str) -> Result<()> {
-        if old_name == INBOX {
-            bail!("Renaming INBOX not implemented yet")
-        } else {
-            bail!("Renaming not implemented yet")
+        let (mut list, ct) = self.load_mailbox_list().await?;
+
+        if old_name.ends_with(MAILBOX_HIERARCHY_DELIMITER) {
+            bail!("Invalid mailbox name: {}", old_name);
         }
+        if new_name.ends_with(MAILBOX_HIERARCHY_DELIMITER) {
+            bail!("Invalid mailbox name: {}", new_name);
+        }
+
+        if old_name == INBOX {
+            list.rename_mailbox(old_name, new_name)?;
+            if !self.ensure_inbox_exists(&mut list, &ct).await? {
+                self.save_mailbox_list(&list, ct).await?;
+            }
+        } else {
+            let names = list.existing_mailbox_names();
+
+            let old_name_w_delim = format!("{}{}", old_name, MAILBOX_HIERARCHY_DELIMITER);
+            let new_name_w_delim = format!("{}{}", new_name, MAILBOX_HIERARCHY_DELIMITER);
+
+            if names
+                .iter()
+                .any(|x| x == new_name || x.starts_with(&new_name_w_delim))
+            {
+                bail!("Mailbox {} already exists", new_name);
+            }
+
+            for name in names.iter() {
+                if name == old_name {
+                    list.rename_mailbox(name, new_name)?;
+                } else if let Some(tail) = name.strip_prefix(&old_name_w_delim) {
+                    let nnew = format!("{}{}", new_name_w_delim, tail);
+                    list.rename_mailbox(name, &nnew)?;
+                }
+            }
+            self.save_mailbox_list(&list, ct).await?;
+        }
+        Ok(())
     }
 
     // ---- Internal user & mailbox management ----
@@ -169,15 +218,15 @@ impl User {
 
     async fn load_mailbox_list(&self) -> Result<(MailboxList, Option<CausalityToken>)> {
         let (mut list, ct) = match self.k2v.read_item(MAILBOX_LIST_PK, MAILBOX_LIST_SK).await {
-            Err(k2v_client::Error::NotFound) => (BTreeMap::new(), None),
+            Err(k2v_client::Error::NotFound) => (MailboxList::new(), None),
             Err(e) => return Err(e.into()),
             Ok(cv) => {
-                let mut list = BTreeMap::new();
+                let mut list = MailboxList::new();
                 for v in cv.value {
                     if let K2vValue::Value(vbytes) = v {
                         let list2 =
                             open_deserialize::<MailboxList>(&vbytes, &self.creds.keys.master)?;
-                        list = merge_mailbox_lists(list, list2);
+                        list.merge(list2);
                     }
                 }
                 (list, Some(cv.causality))
@@ -193,22 +242,29 @@ impl User {
         &self,
         list: &mut MailboxList,
         ct: &Option<CausalityToken>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         // If INBOX doesn't exist, create a new mailbox with that name
         // and save new mailbox list.
         // Also, ensure that the mpsc::watch that keeps track of the
         // inbox id is up-to-date.
-        let (inbox_id, inbox_uidvalidity) =
-            match self.mblist_create_mailbox(list, ct.clone(), INBOX).await? {
-                CreatedMailbox::Created(i, v) => (i, v),
-                CreatedMailbox::Existed(i, v) => (i, v),
-            };
+        let saved;
+        let (inbox_id, inbox_uidvalidity) = match list.create_mailbox(INBOX) {
+            CreatedMailbox::Created(i, v) => {
+                self.save_mailbox_list(&list, ct.clone()).await?;
+                saved = true;
+                (i, v)
+            }
+            CreatedMailbox::Existed(i, v) => {
+                saved = false;
+                (i, v)
+            }
+        };
         let inbox_id = Some((inbox_id, inbox_uidvalidity));
         if *self.tx_inbox_id.borrow() != inbox_id {
             self.tx_inbox_id.send(inbox_id).unwrap();
         }
 
-        Ok(())
+        Ok(saved)
     }
 
     async fn save_mailbox_list(
@@ -222,49 +278,12 @@ impl User {
             .await?;
         Ok(())
     }
-
-    async fn mblist_create_mailbox(
-        &self,
-        list: &mut MailboxList,
-        ct: Option<CausalityToken>,
-        name: &str,
-    ) -> Result<CreatedMailbox> {
-        match list.get_mut(name) {
-            None => {
-                let (id, uidvalidity) = (gen_ident(), ImapUidvalidity::new(1).unwrap());
-                list.insert(
-                    name.into(),
-                    MailboxListEntry {
-                        id_lww: (now_msec(), Some(id)),
-                        uidvalidity,
-                    },
-                );
-                self.save_mailbox_list(&list, ct).await?;
-                Ok(CreatedMailbox::Created(id, uidvalidity))
-            }
-            Some(MailboxListEntry {
-                id_lww: id_lww @ (_, None),
-                uidvalidity,
-            }) => {
-                let id = gen_ident();
-                id_lww.0 = std::cmp::max(id_lww.0 + 1, now_msec());
-                id_lww.1 = Some(id);
-                *uidvalidity = ImapUidvalidity::new(uidvalidity.get() + 1).unwrap();
-                let uidvalidity = *uidvalidity;
-                self.save_mailbox_list(list, ct).await?;
-                Ok(CreatedMailbox::Created(id, uidvalidity))
-            }
-            Some(MailboxListEntry {
-                id_lww: (_, Some(id)),
-                uidvalidity,
-            }) => Ok(CreatedMailbox::Existed(*id, *uidvalidity)),
-        }
-    }
 }
 
 // ---- User's mailbox list (serialized in K2V) ----
 
-type MailboxList = BTreeMap<String, MailboxListEntry>;
+#[derive(Serialize, Deserialize)]
+struct MailboxList(BTreeMap<String, MailboxListEntry>);
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 struct MailboxListEntry {
@@ -284,15 +303,142 @@ impl MailboxListEntry {
     }
 }
 
-fn merge_mailbox_lists(mut list1: MailboxList, list2: MailboxList) -> MailboxList {
-    for (k, v) in list2.into_iter() {
-        if let Some(e) = list1.get_mut(&k) {
-            e.merge(&v);
-        } else {
-            list1.insert(k, v);
+impl MailboxList {
+    fn new() -> Self {
+        Self(BTreeMap::new())
+    }
+
+    fn merge(&mut self, list2: Self) {
+        for (k, v) in list2.0.into_iter() {
+            if let Some(e) = self.0.get_mut(&k) {
+                e.merge(&v);
+            } else {
+                self.0.insert(k, v);
+            }
         }
     }
-    list1
+
+    fn existing_mailbox_names(&self) -> Vec<String> {
+        self.0
+            .iter()
+            .filter(|(_, v)| v.id_lww.1.is_some())
+            .map(|(k, _)| k.to_string())
+            .collect()
+    }
+
+    fn has_mailbox(&self, name: &str) -> bool {
+        match self.0.get(name) {
+            Some(MailboxListEntry {
+                id_lww: (_, Some(_)),
+                ..
+            }) => true,
+            _ => false,
+        }
+    }
+
+    fn get_mailbox(&self, name: &str) -> Option<(ImapUidvalidity, Option<UniqueIdent>)> {
+        match self.0.get(name) {
+            None => None,
+            Some(MailboxListEntry {
+                id_lww: (_, mailbox_id),
+                uidvalidity,
+            }) => Some((*uidvalidity, *mailbox_id)),
+        }
+    }
+
+    /// Ensures mailbox `name` maps to id `id`.
+    /// If it already mapped to that, returns None.
+    /// If a change had to be done, returns Some(new uidvalidity in mailbox).
+    fn set_mailbox(&mut self, name: &str, id: Option<UniqueIdent>) -> Option<ImapUidvalidity> {
+        let (ts, id, uidvalidity) = match self.0.get_mut(name) {
+            None => {
+                if id.is_none() {
+                    return None;
+                } else {
+                    (now_msec(), id, ImapUidvalidity::new(1).unwrap())
+                }
+            }
+            Some(MailboxListEntry {
+                id_lww,
+                uidvalidity,
+            }) => {
+                if id_lww.1 == id {
+                    return None;
+                } else {
+                    (
+                        std::cmp::max(id_lww.0 + 1, now_msec()),
+                        id,
+                        ImapUidvalidity::new(uidvalidity.get() + 1).unwrap(),
+                    )
+                }
+            }
+        };
+
+        self.0.insert(
+            name.into(),
+            MailboxListEntry {
+                id_lww: (ts, id),
+                uidvalidity,
+            },
+        );
+        Some(uidvalidity)
+    }
+
+    fn update_uidvalidity(&mut self, name: &str, new_uidvalidity: ImapUidvalidity) {
+        match self.0.get_mut(name) {
+            None => {
+                self.0.insert(
+                    name.into(),
+                    MailboxListEntry {
+                        id_lww: (now_msec(), None),
+                        uidvalidity: new_uidvalidity,
+                    },
+                );
+            }
+            Some(MailboxListEntry { uidvalidity, .. }) => {
+                *uidvalidity = std::cmp::max(*uidvalidity, new_uidvalidity);
+            }
+        }
+    }
+
+    fn create_mailbox(&mut self, name: &str) -> CreatedMailbox {
+        if let Some(MailboxListEntry {
+            id_lww: (_, Some(id)),
+            uidvalidity,
+        }) = self.0.get(name)
+        {
+            return CreatedMailbox::Existed(*id, *uidvalidity);
+        }
+
+        let id = gen_ident();
+        let uidvalidity = self.set_mailbox(name, Some(id)).unwrap();
+        CreatedMailbox::Created(id, uidvalidity)
+    }
+
+    fn rename_mailbox(&mut self, old_name: &str, new_name: &str) -> Result<()> {
+        if let Some((uidvalidity, Some(mbid))) = self.get_mailbox(old_name) {
+            if self.has_mailbox(new_name) {
+                bail!(
+                    "Cannot rename {} into {}: {} already exists",
+                    old_name,
+                    new_name,
+                    new_name
+                );
+            }
+
+            self.set_mailbox(old_name, None);
+            self.set_mailbox(new_name, Some(mbid));
+            self.update_uidvalidity(new_name, uidvalidity);
+            Ok(())
+        } else {
+            bail!(
+                "Cannot rename {} into {}: {} doesn't exist",
+                old_name,
+                new_name,
+                old_name
+            );
+        }
+    }
 }
 
 enum CreatedMailbox {
