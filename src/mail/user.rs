@@ -71,7 +71,10 @@ impl User {
     /// Opens an existing mailbox given its IMAP name.
     pub async fn open_mailbox(&self, name: &str) -> Result<Option<Arc<Mailbox>>> {
         let (mut list, ct) = self.load_mailbox_list().await?;
-        eprintln!("List of mailboxes: {:?}", &list.0);
+        eprintln!("List of mailboxes:");
+        for ent in list.0.iter() {
+            eprintln!(" - {:?}", ent);
+        }
 
         if let Some((uidvalidity, Some(mbid))) = list.get_mailbox(name) {
             let mb_opt = self.open_mailbox_by_id(mbid, uidvalidity).await?;
@@ -86,6 +89,12 @@ impl User {
         } else {
             bail!("Mailbox does not exist: {}", name);
         }
+    }
+
+    /// Check whether mailbox exists
+    pub async fn has_mailbox(&self, name: &str) -> Result<bool> {
+        let (list, _ct) = self.load_mailbox_list().await?;
+        Ok(list.has_mailbox(name))
     }
 
     /// Creates a new mailbox in the user's IMAP namespace.

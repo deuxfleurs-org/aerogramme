@@ -19,7 +19,7 @@ use imap_codec::types::sequence::{self, SequenceSet};
 use mail_parser::*;
 
 use crate::mail::mailbox::Mailbox;
-use crate::mail::uidindex::UidIndex;
+use crate::mail::uidindex::{ImapUid, ImapUidvalidity, UidIndex};
 
 const DEFAULT_FLAGS: [Flag; 5] = [
     Flag::Seen,
@@ -55,12 +55,12 @@ impl MailboxView {
         };
 
         let mut data = Vec::<Body>::new();
-        data.push(new_view.exists()?);
-        data.push(new_view.recent()?);
-        data.extend(new_view.flags()?.into_iter());
-        data.push(new_view.uidvalidity()?);
-        data.push(new_view.uidnext()?);
-        if let Some(unseen) = new_view.unseen()? {
+        data.push(new_view.exists_status()?);
+        data.push(new_view.recent_status()?);
+        data.extend(new_view.flags_status()?.into_iter());
+        data.push(new_view.uidvalidity_status()?);
+        data.push(new_view.uidnext_status()?);
+        if let Some(unseen) = new_view.unseen_status()? {
             data.push(unseen);
         }
 
@@ -87,9 +87,9 @@ impl MailboxView {
 
         if new_view.known_state.uidvalidity != self.known_state.uidvalidity {
             // TODO: do we want to push less/more info than this?
-            data.push(new_view.uidvalidity()?);
-            data.push(new_view.exists()?);
-            data.push(new_view.uidnext()?);
+            data.push(new_view.uidvalidity_status()?);
+            data.push(new_view.exists_status()?);
+            data.push(new_view.uidnext_status()?);
         } else {
             // Calculate diff between two mailbox states
             // See example in IMAP RFC in section on NOOP command:
@@ -117,7 +117,7 @@ impl MailboxView {
 
             // - if new mails arrived, notify client of number of existing mails
             if new_view.known_state.table.len() != self.known_state.table.len() - n_expunge {
-                data.push(new_view.exists()?);
+                data.push(new_view.exists_status()?);
             }
 
             // - if flags changed for existing mails, tell client
@@ -315,37 +315,39 @@ impl MailboxView {
     // ----
 
     /// Produce an OK [UIDVALIDITY _] message corresponding to `known_state`
-    fn uidvalidity(&self) -> Result<Body> {
+    fn uidvalidity_status(&self) -> Result<Body> {
         let uid_validity = Status::ok(
             None,
-            Some(Code::UidValidity(self.known_state.uidvalidity)),
+            Some(Code::UidValidity(self.uidvalidity())),
             "UIDs valid",
         )
         .map_err(Error::msg)?;
         Ok(Body::Status(uid_validity))
     }
 
+    pub(crate) fn uidvalidity(&self) -> ImapUidvalidity {
+        self.known_state.uidvalidity
+    }
+
     /// Produce an OK [UIDNEXT _] message corresponding to `known_state`
-    fn uidnext(&self) -> Result<Body> {
+    fn uidnext_status(&self) -> Result<Body> {
         let next_uid = Status::ok(
             None,
-            Some(Code::UidNext(self.known_state.uidnext)),
+            Some(Code::UidNext(self.uidnext())),
             "Predict next UID",
         )
         .map_err(Error::msg)?;
         Ok(Body::Status(next_uid))
     }
 
+    pub(crate) fn uidnext(&self) -> ImapUid {
+        self.known_state.uidnext
+    }
+
     /// Produces an UNSEEN message (if relevant) corresponding to the
     /// first unseen message id in `known_state`
-    fn unseen(&self) -> Result<Option<Body>> {
-        let unseen = self
-            .known_state
-            .idx_by_flag
-            .get(&"$unseen".to_string())
-            .and_then(|os| os.get_min())
-            .cloned();
-        if let Some(unseen) = unseen {
+    fn unseen_status(&self) -> Result<Option<Body>> {
+        if let Some(unseen) = self.unseen() {
             let status_unseen =
                 Status::ok(None, Some(Code::Unseen(unseen.clone())), "First unseen UID")
                     .map_err(Error::msg)?;
@@ -355,29 +357,43 @@ impl MailboxView {
         }
     }
 
+    pub(crate) fn unseen(&self) -> Option<ImapUid> {
+        self.known_state
+            .idx_by_flag
+            .get(&"$unseen".to_string())
+            .and_then(|os| os.get_min())
+            .cloned()
+    }
+
     /// Produce an EXISTS message corresponding to the number of mails
     /// in `known_state`
-    fn exists(&self) -> Result<Body> {
-        let exists = u32::try_from(self.known_state.idx_by_uid.len())?;
-        Ok(Body::Data(Data::Exists(exists)))
+    fn exists_status(&self) -> Result<Body> {
+        Ok(Body::Data(Data::Exists(self.exists()?)))
+    }
+
+    pub(crate) fn exists(&self) -> Result<u32> {
+        Ok(u32::try_from(self.known_state.idx_by_uid.len())?)
     }
 
     /// Produce a RECENT message corresponding to the number of
     /// recent mails in `known_state`
-    fn recent(&self) -> Result<Body> {
+    fn recent_status(&self) -> Result<Body> {
+        Ok(Body::Data(Data::Recent(self.recent()?)))
+    }
+
+    pub(crate) fn recent(&self) -> Result<u32> {
         let recent = self
             .known_state
             .idx_by_flag
             .get(&"\\Recent".to_string())
             .map(|os| os.len())
             .unwrap_or(0);
-        let recent = u32::try_from(recent)?;
-        Ok(Body::Data(Data::Recent(recent)))
+        Ok(u32::try_from(recent)?)
     }
 
     /// Produce a FLAGS and a PERMANENTFLAGS message that indicates
     /// the flags that are in `known_state` + default flags
-    fn flags(&self) -> Result<Vec<Body>> {
+    fn flags_status(&self) -> Result<Vec<Body>> {
         let mut flags: Vec<Flag> = self
             .known_state
             .idx_by_flag

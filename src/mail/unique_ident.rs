@@ -16,7 +16,7 @@ use crate::time::now_msec;
 /// required by Aerogramme.
 /// Their main property is to be unique without having to rely
 /// on synchronization between IMAP processes.
-#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct UniqueIdent(pub [u8; 24]);
 
 struct IdentGenerator {
@@ -73,6 +73,12 @@ impl Serialize for UniqueIdent {
 }
 
 impl std::fmt::Display for UniqueIdent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", hex::encode(self.0))
+    }
+}
+
+impl std::fmt::Debug for UniqueIdent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", hex::encode(self.0))
     }

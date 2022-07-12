@@ -2,11 +2,12 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
+use boitalettres::proto::res::body::Data as Body;
 use boitalettres::proto::{Request, Response};
 use imap_codec::types::command::{CommandBody, StatusAttribute};
 use imap_codec::types::flag::FlagNameAttribute;
 use imap_codec::types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
-use imap_codec::types::response::{Code, Data};
+use imap_codec::types::response::{Code, Data, StatusAttributeValue};
 
 use crate::imap::command::anonymous;
 use crate::imap::flow;
@@ -165,26 +166,78 @@ impl<'a> AuthenticatedContext<'a> {
     async fn status(
         self,
         mailbox: &MailboxCodec,
-        _attributes: &[StatusAttribute],
+        attributes: &[StatusAttribute],
     ) -> Result<(Response, flow::Transition)> {
-        let _name = String::try_from(mailbox.clone())?;
+        let name = String::try_from(mailbox.clone())?;
+        let mb_opt = self.user.open_mailbox(&name).await?;
+        let mb = match mb_opt {
+            Some(mb) => mb,
+            None => {
+                return Ok((
+                    Response::no("Mailbox does not exist")?,
+                    flow::Transition::None,
+                ))
+            }
+        };
 
-        Ok((Response::bad("Not implemented")?, flow::Transition::None))
+        let (view, _data) = MailboxView::new(mb).await?;
+
+        let mut ret_attrs = vec![];
+        for attr in attributes.iter() {
+            ret_attrs.push(match attr {
+                StatusAttribute::Messages => StatusAttributeValue::Messages(view.exists()?),
+                StatusAttribute::Unseen => {
+                    StatusAttributeValue::Unseen(view.unseen().map(|x| x.get()).unwrap_or(0))
+                }
+                StatusAttribute::Recent => StatusAttributeValue::Recent(view.recent()?),
+                StatusAttribute::UidNext => StatusAttributeValue::UidNext(view.uidnext()),
+                StatusAttribute::UidValidity => {
+                    StatusAttributeValue::UidValidity(view.uidvalidity())
+                }
+            });
+        }
+
+        let data = vec![Body::Data(Data::Status {
+            mailbox: mailbox.clone(),
+            attributes: ret_attrs,
+        })];
+
+        Ok((
+            Response::ok("STATUS completed")?.with_body(data),
+            flow::Transition::None,
+        ))
     }
 
     async fn subscribe(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
-        let _name = String::try_from(mailbox.clone())?;
+        let name = String::try_from(mailbox.clone())?;
 
-        Ok((Response::bad("Not implemented")?, flow::Transition::None))
+        if self.user.has_mailbox(&name).await? {
+            Ok((Response::ok("SUBSCRIBE complete")?, flow::Transition::None))
+        } else {
+            Ok((
+                Response::bad(&format!("Mailbox {} does not exist", name))?,
+                flow::Transition::None,
+            ))
+        }
     }
 
     async fn unsubscribe(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
-        let _name = String::try_from(mailbox.clone())?;
+        let name = String::try_from(mailbox.clone())?;
 
-        Ok((
-            Response::bad("Aerogramme does not support unsubscribing from a mailbox")?,
-            flow::Transition::None,
-        ))
+        if self.user.has_mailbox(&name).await? {
+            Ok((
+                Response::bad(&format!(
+                    "Cannot unsubscribe from mailbox {}: not supported by Aerogramme",
+                    name
+                ))?,
+                flow::Transition::None,
+            ))
+        } else {
+            Ok((
+                Response::bad(&format!("Mailbox {} does not exist", name))?,
+                flow::Transition::None,
+            ))
+        }
     }
 
     /*
