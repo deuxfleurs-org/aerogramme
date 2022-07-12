@@ -4,20 +4,17 @@ use anyhow::Result;
 use boitalettres::proto::Request;
 use boitalettres::proto::Response;
 use imap_codec::types::command::{CommandBody, SearchKey};
-use imap_codec::types::core::Charset;
-use imap_codec::types::core::NonZeroBytes;
+use imap_codec::types::core::{Charset, NonZeroBytes};
 use imap_codec::types::datetime::MyDateTime;
 use imap_codec::types::fetch_attributes::MacroOrFetchAttributes;
-use imap_codec::types::flag::{Flag, FlagNameAttribute};
-use imap_codec::types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
-use imap_codec::types::response::{Code, Data, StatusAttributeValue};
+use imap_codec::types::flag::Flag;
+use imap_codec::types::mailbox::Mailbox as MailboxCodec;
+use imap_codec::types::response::Code;
 use imap_codec::types::sequence::SequenceSet;
 
 use crate::imap::command::authenticated;
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
-
-use crate::mail::uidindex::*;
 use crate::mail::user::User;
 
 pub struct ExaminedContext<'a> {
