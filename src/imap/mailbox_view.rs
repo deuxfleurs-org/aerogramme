@@ -47,9 +47,6 @@ impl MailboxView {
     /// has a satisfactory summary of the current mailbox's state.
     /// These are the messages that are sent in response to a SELECT command.
     pub async fn new(mailbox: Arc<Mailbox>) -> Result<(Self, Vec<Body>)> {
-        // TODO THIS IS JUST A TEST REMOVE LATER
-        mailbox.test().await?;
-
         let state = mailbox.current_uid_index().await;
 
         let new_view = Self {
@@ -74,8 +71,6 @@ impl MailboxView {
     /// responses describing the changes.
     pub async fn sync_update(&mut self) -> Result<Vec<Body>> {
         self.mailbox.sync().await?;
-        // TODO THIS IS JUST A TEST REMOVE LATER
-        self.mailbox.test().await?;
 
         self.update().await
     }

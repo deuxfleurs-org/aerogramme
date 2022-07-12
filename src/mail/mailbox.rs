@@ -44,6 +44,8 @@ impl Mailbox {
                 .await?;
         }
 
+        dump(&uid_index);
+
         let mbox = RwLock::new(MailboxInternal {
             id,
             bucket: creds.bucket().to_string(),
@@ -152,13 +154,6 @@ impl Mailbox {
             selflock = self.mbox.write().await;
         };
         selflock.move_from(&mut fromlock, uuid).await
-    }
-
-    // ----
-
-    /// Test procedure TODO WILL REMOVE THIS
-    pub async fn test(&self) -> Result<()> {
-        self.mbox.write().await.test().await
     }
 }
 
@@ -436,47 +431,6 @@ impl MailboxInternal {
         self.uid_index.push(add_mail_op).await?;
 
         Ok(())
-    }
-
-    // ----
-
-    async fn test(&mut self) -> Result<()> {
-        Ok(())
-
-        /*
-                self.uid_index.sync().await?;
-
-                dump(&self.uid_index);
-
-                let mail = br#"From: Garage team <garagehq@deuxfleurs.fr>
-        Subject: Welcome to Aerogramme!!
-
-        This is just a test email, feel free to ignore.
-        "#;
-                let mail = IMF::try_from(&mail[..]).unwrap();
-                self.append(mail, None).await?;
-
-                dump(&self.uid_index);
-
-                if self.uid_index.state().idx_by_uid.len() > 6 {
-                    for i in 0..2 {
-                        let (_, ident) = self
-                            .uid_index
-                            .state()
-                            .idx_by_uid
-                            .iter()
-                            .skip(3 + i)
-                            .next()
-                            .unwrap();
-
-                        self.delete(*ident).await?;
-
-                        dump(&self.uid_index);
-                    }
-                }
-
-                Ok(())
-                */
     }
 }
 

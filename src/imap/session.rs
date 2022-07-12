@@ -72,12 +72,6 @@ impl Manager {
 
 //-----
 
-pub struct InnerContext<'a> {
-    pub req: &'a Request,
-    pub state: &'a flow::State,
-    pub login: &'a ArcLoginProvider,
-}
-
 pub struct Instance {
     rx: mpsc::Receiver<Message>,
 

@@ -296,7 +296,6 @@ async fn k2v_lock_loop_internal(
                 }
             }
         }
-        info!("Stopping lock state watch");
     }
     .boxed();
 
