@@ -15,7 +15,7 @@ use crate::mail::uidindex::ImapUidvalidity;
 use crate::mail::unique_ident::{gen_ident, UniqueIdent};
 use crate::time::now_msec;
 
-const MAILBOX_HIERARCHY_DELIMITER: &str = "/";
+pub const MAILBOX_HIERARCHY_DELIMITER: char = '.';
 
 /// INBOX is the only mailbox that must always exist.
 /// It is created automatically when the account is created.
@@ -25,7 +25,7 @@ const MAILBOX_HIERARCHY_DELIMITER: &str = "/";
 /// In our implementation, we indeed move the underlying mailbox
 /// to the new name (i.e. the new name has the same id as the previous
 /// INBOX), and we create a new empty mailbox for INBOX.
-const INBOX: &str = "INBOX";
+pub const INBOX: &str = "INBOX";
 
 const MAILBOX_LIST_PK: &str = "mailboxes";
 const MAILBOX_LIST_SK: &str = "list";
@@ -94,20 +94,24 @@ impl User {
     /// Creates a new mailbox in the user's IMAP namespace.
     pub async fn create_mailbox(&self, name: &str) -> Result<()> {
         let (mut list, ct) = self.load_mailbox_list().await?;
-        match self.create_mailbox_internal(&mut list, ct, name).await? {
+        match self.mblist_create_mailbox(&mut list, ct, name).await? {
             CreatedMailbox::Created(_, _) => Ok(()),
             CreatedMailbox::Existed(_, _) => Err(anyhow!("Mailbox {} already exists", name)),
         }
     }
 
     /// Deletes a mailbox in the user's IMAP namespace.
-    pub fn delete_mailbox(&self, _name: &str) -> Result<()> {
-        unimplemented!()
+    pub async fn delete_mailbox(&self, _name: &str) -> Result<()> {
+        bail!("Deleting mailboxes not implemented yet")
     }
 
     /// Renames a mailbox in the user's IMAP namespace.
-    pub fn rename_mailbox(&self, _old_name: &str, _new_name: &str) -> Result<()> {
-        unimplemented!()
+    pub async fn rename_mailbox(&self, old_name: &str, new_name: &str) -> Result<()> {
+        if old_name == INBOX {
+            bail!("Renaming INBOX not implemented yet")
+        } else {
+            bail!("Renaming not implemented yet")
+        }
     }
 
     // ---- Internal user & mailbox management ----
@@ -180,22 +184,31 @@ impl User {
             }
         };
 
+        self.ensure_inbox_exists(&mut list, &ct).await?;
+
+        Ok((list, ct))
+    }
+
+    async fn ensure_inbox_exists(
+        &self,
+        list: &mut MailboxList,
+        ct: &Option<CausalityToken>,
+    ) -> Result<()> {
         // If INBOX doesn't exist, create a new mailbox with that name
         // and save new mailbox list.
         // Also, ensure that the mpsc::watch that keeps track of the
         // inbox id is up-to-date.
-        let (inbox_id, inbox_uidvalidity) = match self
-            .create_mailbox_internal(&mut list, ct.clone(), INBOX)
-            .await?
-        {
-            CreatedMailbox::Created(i, v) => (i, v),
-            CreatedMailbox::Existed(i, v) => (i, v),
-        };
-        self.tx_inbox_id
-            .send(Some((inbox_id, inbox_uidvalidity)))
-            .unwrap();
+        let (inbox_id, inbox_uidvalidity) =
+            match self.mblist_create_mailbox(list, ct.clone(), INBOX).await? {
+                CreatedMailbox::Created(i, v) => (i, v),
+                CreatedMailbox::Existed(i, v) => (i, v),
+            };
+        let inbox_id = Some((inbox_id, inbox_uidvalidity));
+        if *self.tx_inbox_id.borrow() != inbox_id {
+            self.tx_inbox_id.send(inbox_id).unwrap();
+        }
 
-        Ok((list, ct))
+        Ok(())
     }
 
     async fn save_mailbox_list(
@@ -210,7 +223,7 @@ impl User {
         Ok(())
     }
 
-    async fn create_mailbox_internal(
+    async fn mblist_create_mailbox(
         &self,
         list: &mut MailboxList,
         ct: Option<CausalityToken>,

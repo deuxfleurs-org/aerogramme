@@ -1,16 +1,18 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use boitalettres::proto::{Request, Response};
 use imap_codec::types::command::{CommandBody, StatusAttribute};
+use imap_codec::types::flag::FlagNameAttribute;
 use imap_codec::types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
-use imap_codec::types::response::Code;
+use imap_codec::types::response::{Code, Data};
 
 use crate::imap::command::anonymous;
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
 
-use crate::mail::user::User;
+use crate::mail::user::{User, INBOX, MAILBOX_HIERARCHY_DELIMITER};
 
 pub struct AuthenticatedContext<'a> {
     pub req: &'a Request,
@@ -28,15 +30,17 @@ pub async fn dispatch<'a>(ctx: AuthenticatedContext<'a>) -> Result<(Response, fl
         CommandBody::Lsub {
             reference,
             mailbox_wildcard,
-        } => ctx.lsub(reference, mailbox_wildcard).await,
+        } => ctx.list(reference, mailbox_wildcard, true).await,
         CommandBody::List {
             reference,
             mailbox_wildcard,
-        } => ctx.list(reference, mailbox_wildcard).await,
+        } => ctx.list(reference, mailbox_wildcard, false).await,
         CommandBody::Status {
             mailbox,
             attributes,
         } => ctx.status(mailbox, attributes).await,
+        CommandBody::Subscribe { mailbox } => ctx.subscribe(mailbox).await,
+        CommandBody::Unsubscribe { mailbox } => ctx.unsubscribe(mailbox).await,
         CommandBody::Select { mailbox } => ctx.select(mailbox).await,
         CommandBody::Examine { mailbox } => ctx.examine(mailbox).await,
         _ => {
@@ -53,11 +57,28 @@ pub async fn dispatch<'a>(ctx: AuthenticatedContext<'a>) -> Result<(Response, fl
 
 impl<'a> AuthenticatedContext<'a> {
     async fn create(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
-        Ok((Response::bad("Not implemented")?, flow::Transition::None))
+        let name = String::try_from(mailbox.clone())?;
+
+        if name == INBOX {
+            return Ok((
+                Response::bad("Cannot create INBOX")?,
+                flow::Transition::None,
+            ));
+        }
+
+        match self.user.create_mailbox(&name).await {
+            Ok(()) => Ok((Response::ok("CREATE complete")?, flow::Transition::None)),
+            Err(e) => Ok((Response::no(&e.to_string())?, flow::Transition::None)),
+        }
     }
 
     async fn delete(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
-        Ok((Response::bad("Not implemented")?, flow::Transition::None))
+        let name = String::try_from(mailbox.clone())?;
+
+        match self.user.delete_mailbox(&name).await {
+            Ok(()) => Ok((Response::ok("DELETE complete")?, flow::Transition::None)),
+            Err(e) => Ok((Response::no(&e.to_string())?, flow::Transition::None)),
+        }
     }
 
     async fn rename(
@@ -65,23 +86,80 @@ impl<'a> AuthenticatedContext<'a> {
         mailbox: &MailboxCodec,
         new_mailbox: &MailboxCodec,
     ) -> Result<(Response, flow::Transition)> {
-        Ok((Response::bad("Not implemented")?, flow::Transition::None))
-    }
+        let name = String::try_from(mailbox.clone())?;
+        let new_name = String::try_from(new_mailbox.clone())?;
 
-    async fn lsub(
-        self,
-        _reference: &MailboxCodec,
-        _mailbox_wildcard: &ListMailbox,
-    ) -> Result<(Response, flow::Transition)> {
-        Ok((Response::bad("Not implemented")?, flow::Transition::None))
+        match self.user.rename_mailbox(&name, &new_name).await {
+            Ok(()) => Ok((Response::ok("RENAME complete")?, flow::Transition::None)),
+            Err(e) => Ok((Response::no(&e.to_string())?, flow::Transition::None)),
+        }
     }
 
     async fn list(
         self,
-        _reference: &MailboxCodec,
-        _mailbox_wildcard: &ListMailbox,
+        reference: &MailboxCodec,
+        mailbox_wildcard: &ListMailbox,
+        is_lsub: bool,
     ) -> Result<(Response, flow::Transition)> {
-        Ok((Response::bad("Not implemented")?, flow::Transition::None))
+        let reference = String::try_from(reference.clone())?;
+        if !reference.is_empty() {
+            return Ok((
+                Response::bad("References not supported")?,
+                flow::Transition::None,
+            ));
+        }
+
+        let mailboxes = self.user.list_mailboxes().await?;
+        let mut vmailboxes = BTreeMap::new();
+        for mb in mailboxes.iter() {
+            for (i, _) in mb.match_indices(MAILBOX_HIERARCHY_DELIMITER) {
+                if i > 0 {
+                    let smb = &mb[..i];
+                    if !vmailboxes.contains_key(&smb) {
+                        vmailboxes.insert(smb, false);
+                    }
+                }
+            }
+            vmailboxes.insert(mb, true);
+        }
+
+        let wildcard = String::try_from(mailbox_wildcard.clone())?;
+        let wildcard_pat = globset::Glob::new(&wildcard)?.compile_matcher();
+
+        let mut ret = vec![];
+        for (mb, is_real) in vmailboxes.iter() {
+            if wildcard_pat.is_match(mb) {
+                let mailbox = mb
+                    .to_string()
+                    .try_into()
+                    .map_err(|_| anyhow!("invalid mailbox name"))?;
+                let mut items = vec![];
+                if !*is_real {
+                    items.push(FlagNameAttribute::Noselect);
+                }
+                if is_lsub {
+                    items.push(FlagNameAttribute::Extension(
+                        "\\Subscribed".try_into().unwrap(),
+                    ));
+                    ret.push(Data::Lsub {
+                        items,
+                        delimiter: Some(MAILBOX_HIERARCHY_DELIMITER),
+                        mailbox,
+                    });
+                } else {
+                    ret.push(Data::List {
+                        items,
+                        delimiter: Some(MAILBOX_HIERARCHY_DELIMITER),
+                        mailbox,
+                    });
+                }
+            }
+        }
+
+        Ok((
+            Response::ok("LIST completed")?.with_body(ret),
+            flow::Transition::None,
+        ))
     }
 
     async fn status(
@@ -89,7 +167,24 @@ impl<'a> AuthenticatedContext<'a> {
         mailbox: &MailboxCodec,
         attributes: &[StatusAttribute],
     ) -> Result<(Response, flow::Transition)> {
+        let name = String::try_from(mailbox.clone())?;
+
         Ok((Response::bad("Not implemented")?, flow::Transition::None))
+    }
+
+    async fn subscribe(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
+        let name = String::try_from(mailbox.clone())?;
+
+        Ok((Response::bad("Not implemented")?, flow::Transition::None))
+    }
+
+    async fn unsubscribe(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
+        let name = String::try_from(mailbox.clone())?;
+
+        Ok((
+            Response::bad("Aerogramme does not support unsubscribing from a mailbox")?,
+            flow::Transition::None,
+        ))
     }
 
     /*
