@@ -13,13 +13,14 @@ use imap_codec::types::core::{Atom, IString, NString};
 use imap_codec::types::datetime::MyDateTime;
 use imap_codec::types::envelope::Envelope;
 use imap_codec::types::fetch_attributes::{FetchAttribute, MacroOrFetchAttributes};
-use imap_codec::types::flag::Flag;
+use imap_codec::types::flag::{Flag, StoreResponse, StoreType};
 use imap_codec::types::response::{Code, Data, MessageAttribute, Status};
 use imap_codec::types::sequence::{self, SequenceSet};
 use mail_parser::*;
 
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::{ImapUid, ImapUidvalidity, UidIndex};
+use crate::mail::unique_ident::UniqueIdent;
 
 const DEFAULT_FLAGS: [Flag; 5] = [
     Flag::Seen,
@@ -144,6 +145,60 @@ impl MailboxView {
         Ok(data)
     }
 
+    pub async fn store(
+        &mut self,
+        sequence_set: &SequenceSet,
+        kind: &StoreType,
+        _response: &StoreResponse,
+        flags: &[Flag],
+        uid: &bool,
+    ) -> Result<Vec<Body>> {
+        if *uid {
+            bail!("UID STORE not implemented");
+        }
+
+        let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+
+        let mails = self.get_mail_ids(sequence_set)?;
+        for (i, uid, uuid) in mails.iter() {
+            match kind {
+                StoreType::Add => {
+                    self.mailbox.add_flags(*uuid, &flags[..]).await?;
+                }
+                StoreType::Remove => {
+                    self.mailbox.del_flags(*uuid, &flags[..]).await?;
+                }
+                StoreType::Replace => {
+                    let old_flags = &self
+                        .known_state
+                        .table
+                        .get(uuid)
+                        .ok_or(anyhow!(
+                            "Missing message: {} (UID {}, UUID {})",
+                            i,
+                            uid,
+                            uuid
+                        ))?
+                        .1;
+                    let to_remove = old_flags
+                        .iter()
+                        .filter(|x| !flags.contains(&x))
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let to_add = flags
+                        .iter()
+                        .filter(|x| !old_flags.contains(&x))
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    self.mailbox.add_flags(*uuid, &to_add[..]).await?;
+                    self.mailbox.del_flags(*uuid, &to_remove[..]).await?;
+                }
+            }
+        }
+
+        self.update().await
+    }
+
     /// Looks up state changes in the mailbox and produces a set of IMAP
     /// responses describing the new state.
     pub async fn fetch(
@@ -156,28 +211,11 @@ impl MailboxView {
             bail!("UID FETCH not implemented");
         }
 
-        let mail_vec = self
-            .known_state
-            .idx_by_uid
-            .iter()
-            .map(|(uid, uuid)| (*uid, *uuid))
-            .collect::<Vec<_>>();
-
-        let mut mails = vec![];
-        let iter_strat = sequence::Strategy::Naive {
-            largest: NonZeroU32::try_from((self.known_state.idx_by_uid.len() + 1) as u32).unwrap(),
-        };
-        for i in sequence_set.iter(iter_strat) {
-            if let Some(mail) = mail_vec.get(i.get() as usize - 1) {
-                mails.push((i, *mail));
-            } else {
-                bail!("No such mail: {}", i);
-            }
-        }
+        let mails = self.get_mail_ids(sequence_set)?;
 
         let mails_uuid = mails
             .iter()
-            .map(|(_i, (_uid, uuid))| *uuid)
+            .map(|(_i, _uid, uuid)| *uuid)
             .collect::<Vec<_>>();
         let mails_meta = self.mailbox.fetch_meta(&mails_uuid).await?;
 
@@ -200,7 +238,7 @@ impl MailboxView {
             let mut iter = mails
                 .into_iter()
                 .zip(mails_meta.into_iter())
-                .map(|((i, (uid, uuid)), meta)| async move {
+                .map(|((i, uid, uuid), meta)| async move {
                     let body = self.mailbox.fetch_full(uuid, &meta.message_key).await?;
                     Ok::<_, anyhow::Error>((i, uid, uuid, meta, Some(body)))
                 })
@@ -214,7 +252,7 @@ impl MailboxView {
             mails
                 .into_iter()
                 .zip(mails_meta.into_iter())
-                .map(|((i, (uid, uuid)), meta)| (i, uid, uuid, meta, None))
+                .map(|((i, uid, uuid), meta)| (i, uid, uuid, meta, None))
                 .collect::<Vec<_>>()
         };
 
@@ -310,6 +348,36 @@ impl MailboxView {
         }
 
         Ok(ret)
+    }
+
+    // ----
+
+    // Gets the UIDs and UUIDs of mails identified by a SequenceSet of
+    // sequence numbers
+    fn get_mail_ids(
+        &self,
+        sequence_set: &SequenceSet,
+    ) -> Result<Vec<(NonZeroU32, ImapUid, UniqueIdent)>> {
+        let mail_vec = self
+            .known_state
+            .idx_by_uid
+            .iter()
+            .map(|(uid, uuid)| (*uid, *uuid))
+            .collect::<Vec<_>>();
+
+        let mut mails = vec![];
+        let iter_strat = sequence::Strategy::Naive {
+            largest: NonZeroU32::try_from((self.known_state.idx_by_uid.len() + 1) as u32).unwrap(),
+        };
+        for i in sequence_set.iter(iter_strat) {
+            if let Some(mail) = mail_vec.get(i.get() as usize - 1) {
+                mails.push((i, mail.0, mail.1));
+            } else {
+                bail!("No such mail: {}", i);
+            }
+        }
+
+        Ok(mails)
     }
 
     // ----
@@ -420,7 +488,21 @@ impl MailboxView {
 
 fn string_to_flag(f: &str) -> Option<Flag> {
     match f.chars().next() {
-        Some('\\') => None,
+        Some('\\') => match f {
+            "\\Seen" => Some(Flag::Seen),
+            "\\Answered" => Some(Flag::Answered),
+            "\\Flagged" => Some(Flag::Flagged),
+            "\\Deleted" => Some(Flag::Deleted),
+            "\\Draft" => Some(Flag::Draft),
+            "\\Recent" => Some(Flag::Recent),
+            _ => match Atom::try_from(f.strip_prefix('\\').unwrap().clone()) {
+                Err(_) => {
+                    tracing::error!(flag=%f, "Unable to encode flag as IMAP atom");
+                    None
+                }
+                Ok(a) => Some(Flag::Extension(a)),
+            },
+        },
         Some('$') if f == "$unseen" => None,
         Some(_) => match Atom::try_from(f.clone()) {
             Err(_) => {

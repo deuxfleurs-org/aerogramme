@@ -67,13 +67,21 @@ impl<'a> SelectedContext<'a> {
 
     async fn store(
         self,
-        _sequence_set: &SequenceSet,
-        _kind: &StoreType,
-        _response: &StoreResponse,
-        _flags: &[Flag],
-        _uid: &bool,
+        sequence_set: &SequenceSet,
+        kind: &StoreType,
+        response: &StoreResponse,
+        flags: &[Flag],
+        uid: &bool,
     ) -> Result<(Response, flow::Transition)> {
-        Ok((Response::bad("Not implemented")?, flow::Transition::None))
+        let data = self
+            .mailbox
+            .store(sequence_set, kind, response, flags, uid)
+            .await?;
+
+        Ok((
+            Response::ok("STORE completed")?.with_body(data),
+            flow::Transition::None,
+        ))
     }
 
     async fn copy(
