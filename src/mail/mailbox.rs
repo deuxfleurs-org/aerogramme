@@ -125,7 +125,7 @@ impl Mailbox {
             bail!("Cannot copy into same mailbox");
         }
 
-        let (mut selflock, mut fromlock);
+        let (mut selflock, fromlock);
         if self.id < from.id {
             selflock = self.mbox.write().await;
             fromlock = from.mbox.write().await;

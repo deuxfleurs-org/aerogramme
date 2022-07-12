@@ -1,15 +1,14 @@
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::pin::Pin;
+
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, Result};
-use futures::{future::BoxFuture, Future, FutureExt};
+use futures::{future::BoxFuture, FutureExt};
 use k2v_client::{CausalValue, CausalityToken, K2vClient, K2vValue};
 use rusoto_s3::{
-    DeleteObjectRequest, GetObjectRequest, HeadObjectRequest, ListObjectsV2Request,
-    PutObjectRequest, S3Client, S3,
+    DeleteObjectRequest, GetObjectRequest, ListObjectsV2Request, PutObjectRequest, S3Client, S3,
 };
 use tokio::io::AsyncReadExt;
 use tokio::sync::watch;

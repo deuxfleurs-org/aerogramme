@@ -71,9 +71,9 @@ impl<'a> ExaminedContext<'a> {
 
     pub async fn search(
         self,
-        charset: &Option<Charset>,
-        criteria: &SearchKey,
-        uid: &bool,
+        _charset: &Option<Charset>,
+        _criteria: &SearchKey,
+        _uid: &bool,
     ) -> Result<(Response, flow::Transition)> {
         Ok((Response::bad("Not implemented")?, flow::Transition::None))
     }

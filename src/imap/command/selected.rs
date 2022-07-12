@@ -4,7 +4,7 @@ use anyhow::Result;
 use boitalettres::proto::Request;
 use boitalettres::proto::Response;
 use imap_codec::types::command::CommandBody;
-use imap_codec::types::fetch_attributes::MacroOrFetchAttributes;
+
 use imap_codec::types::flag::{Flag, StoreResponse, StoreType};
 use imap_codec::types::mailbox::Mailbox as MailboxCodec;
 
@@ -67,20 +67,20 @@ impl<'a> SelectedContext<'a> {
 
     async fn store(
         self,
-        sequence_set: &SequenceSet,
-        kind: &StoreType,
-        response: &StoreResponse,
-        flags: &[Flag],
-        uid: &bool,
+        _sequence_set: &SequenceSet,
+        _kind: &StoreType,
+        _response: &StoreResponse,
+        _flags: &[Flag],
+        _uid: &bool,
     ) -> Result<(Response, flow::Transition)> {
         Ok((Response::bad("Not implemented")?, flow::Transition::None))
     }
 
     async fn copy(
         self,
-        sequence_set: &SequenceSet,
-        mailbox: &MailboxCodec,
-        uid: &bool,
+        _sequence_set: &SequenceSet,
+        _mailbox: &MailboxCodec,
+        _uid: &bool,
     ) -> Result<(Response, flow::Transition)> {
         Ok((Response::bad("Not implemented")?, flow::Transition::None))
     }

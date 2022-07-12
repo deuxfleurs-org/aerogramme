@@ -1,6 +1,5 @@
-use std::borrow::{Borrow, Cow};
-use std::collections::HashMap;
-use std::io::{BufRead, Cursor};
+use std::borrow::Cow;
+
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
@@ -10,7 +9,7 @@ use chrono::{Offset, TimeZone, Utc};
 use futures::stream::{FuturesOrdered, StreamExt};
 use imap_codec::types::address::Address;
 use imap_codec::types::body::{BasicFields, Body as FetchBody, BodyStructure, SpecificFields};
-use imap_codec::types::core::{Atom, IString, NString, NonZeroBytes};
+use imap_codec::types::core::{Atom, IString, NString};
 use imap_codec::types::datetime::MyDateTime;
 use imap_codec::types::envelope::Envelope;
 use imap_codec::types::fetch_attributes::{FetchAttribute, MacroOrFetchAttributes};
@@ -287,9 +286,9 @@ impl MailboxView {
                         build_imap_email_struct(&parsed, &parsed.structure)?,
                     )),
                     FetchAttribute::BodyExt {
-                        section,
-                        partial,
-                        peek,
+                        section: _,
+                        partial: _,
+                        peek: _,
                     } => {
                         // @TODO This is a stub
                         let is = IString::try_from("test").unwrap();
@@ -579,7 +578,7 @@ fn build_imap_email_struct<'a>(
                     })
                 }
                 MessagePart::Binary(bp) | MessagePart::InlineBinary(bp) => {
-                    let (_, mut basic) = headers_to_basic_fields(bp)?;
+                    let (_, basic) = headers_to_basic_fields(bp)?;
 
                     let ct = bp
                         .get_content_type()

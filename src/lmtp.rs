@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::{pin::Pin, sync::Arc};
 
@@ -8,7 +7,6 @@ use duplexify::Duplex;
 use futures::{io, AsyncRead, AsyncReadExt, AsyncWrite};
 use futures::{stream, stream::FuturesUnordered, StreamExt};
 use log::*;
-use rusoto_s3::{PutObjectRequest, S3};
 use tokio::net::TcpListener;
 use tokio::select;
 use tokio::sync::watch;
@@ -18,10 +16,8 @@ use smtp_message::{Email, EscapedDataReader, Reply, ReplyCode};
 use smtp_server::{reply, Config, ConnectionMetadata, Decision, MailMetadata};
 
 use crate::config::*;
-use crate::cryptoblob::*;
 use crate::login::*;
 use crate::mail::incoming::EncryptedMessage;
-use crate::mail::unique_ident::*;
 
 pub struct LmtpServer {
     bind_addr: SocketAddr,

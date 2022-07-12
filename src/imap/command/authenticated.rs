@@ -165,21 +165,21 @@ impl<'a> AuthenticatedContext<'a> {
     async fn status(
         self,
         mailbox: &MailboxCodec,
-        attributes: &[StatusAttribute],
+        _attributes: &[StatusAttribute],
     ) -> Result<(Response, flow::Transition)> {
-        let name = String::try_from(mailbox.clone())?;
+        let _name = String::try_from(mailbox.clone())?;
 
         Ok((Response::bad("Not implemented")?, flow::Transition::None))
     }
 
     async fn subscribe(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
-        let name = String::try_from(mailbox.clone())?;
+        let _name = String::try_from(mailbox.clone())?;
 
         Ok((Response::bad("Not implemented")?, flow::Transition::None))
     }
 
     async fn unsubscribe(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
-        let name = String::try_from(mailbox.clone())?;
+        let _name = String::try_from(mailbox.clone())?;
 
         Ok((
             Response::bad("Aerogramme does not support unsubscribing from a mailbox")?,
