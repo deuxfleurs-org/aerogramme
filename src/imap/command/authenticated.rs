@@ -134,14 +134,13 @@ impl<'a> AuthenticatedContext<'a> {
                     .to_string()
                     .try_into()
                     .map_err(|_| anyhow!("invalid mailbox name"))?;
-                let mut items = vec![];
+                let mut items = vec![FlagNameAttribute::Extension(
+                    "Subscribed".try_into().unwrap(),
+                )];
                 if !*is_real {
                     items.push(FlagNameAttribute::Noselect);
                 }
                 if is_lsub {
-                    items.push(FlagNameAttribute::Extension(
-                        "\\Subscribed".try_into().unwrap(),
-                    ));
                     ret.push(Data::Lsub {
                         items,
                         delimiter: Some(MAILBOX_HIERARCHY_DELIMITER),
