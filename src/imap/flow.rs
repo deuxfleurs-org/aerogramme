@@ -49,8 +49,9 @@ impl State {
                 State::Authenticated(u) | State::Selected(u, _) | State::Examined(u, _),
                 Transition::Examine(m),
             ) => Ok(State::Examined(u, m)),
-            (State::Selected(u, _), Transition::Unselect) => Ok(State::Authenticated(u)),
-            (State::Examined(u, _), Transition::Unselect) => Ok(State::Authenticated(u)),
+            (State::Selected(u, _) | State::Examined(u, _), Transition::Unselect) => {
+                Ok(State::Authenticated(u))
+            }
             (_, Transition::Logout) => Ok(State::Logout),
             _ => Err(Error::ForbiddenTransition),
         }
