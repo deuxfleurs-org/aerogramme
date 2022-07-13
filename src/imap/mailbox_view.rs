@@ -12,7 +12,9 @@ use imap_codec::types::body::{BasicFields, Body as FetchBody, BodyStructure, Spe
 use imap_codec::types::core::{Atom, IString, NString};
 use imap_codec::types::datetime::MyDateTime;
 use imap_codec::types::envelope::Envelope;
-use imap_codec::types::fetch_attributes::{FetchAttribute, MacroOrFetchAttributes};
+use imap_codec::types::fetch_attributes::{
+    FetchAttribute, MacroOrFetchAttributes, Part as FetchPart, Section as FetchSection,
+};
 use imap_codec::types::flag::{Flag, StoreResponse, StoreType};
 use imap_codec::types::response::{Code, Data, MessageAttribute, Status};
 use imap_codec::types::sequence::{self, SequenceSet};
@@ -306,16 +308,52 @@ impl MailboxView {
                         build_imap_email_struct(&parsed, &parsed.structure)?,
                     )),
                     FetchAttribute::BodyExt {
-                        section: _,
-                        partial: _,
-                        peek: _,
+                        section,
+                        partial,
+                        peek,
                     } => {
-                        // @TODO This is a stub
-                        let is = IString::try_from("test").unwrap();
+                        // @TODO Add missing section specifiers
+                        let text = match section {
+                            Some(FetchSection::Text(None)) => {
+                                parsed
+                                    .raw_message.get(parsed.offset_body..parsed.offset_end)
+                                    .ok_or(Error::msg("Unable to extract email body, cursors out of bound. This is a bug."))?
+                            }
+                            Some(FetchSection::Header(None)) => {
+                                parsed
+                                    .raw_message.get(..parsed.offset_body)
+                                    .ok_or(Error::msg("Unable to extract email body, cursors out of bound. This is a bug."))?
+                            }
+                            None => &parsed.raw_message,
+                            _ => bail!("Unimplemented: section {:?}", section),
+                        };
 
+                        let seen_flag = Flag::Seen.to_string();
+                        if !peek && !flags.iter().any(|x| *x == seen_flag) {
+                            // Add \Seen flag
+                            self.mailbox.add_flags(uuid, &[seen_flag]).await?;
+                        }
+
+                        let (text, origin) = match partial {
+                            Some((begin, len)) => {
+                                if *begin as usize > text.len() {
+                                    (&[][..], Some(*begin))
+                                } else if (*begin + len.get()) as usize >= text.len() {
+                                    (&text[*begin as usize..], Some(*begin))
+                                } else {
+                                    (
+                                        &text[*begin as usize..(*begin + len.get()) as usize],
+                                        Some(*begin),
+                                    )
+                                }
+                            }
+                            None => (text, None),
+                        };
+
+                        let is = IString::try_from(std::str::from_utf8(text)?).unwrap();
                         attributes.push(MessageAttribute::BodyExt {
-                            section: None,
-                            origin: None,
+                            section: section.clone(),
+                            origin,
                             data: NString(Some(is)),
                         })
                     }
