@@ -169,34 +169,16 @@ impl MailboxView {
                     self.mailbox.del_flags(*uuid, &flags[..]).await?;
                 }
                 StoreType::Replace => {
-                    let old_flags = &self
-                        .known_state
-                        .table
-                        .get(uuid)
-                        .ok_or(anyhow!(
-                            "Missing message: {} (UID {}, UUID {})",
-                            i,
-                            uid,
-                            uuid
-                        ))?
-                        .1;
-                    let to_remove = old_flags
-                        .iter()
-                        .filter(|x| !flags.contains(&x))
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    let to_add = flags
-                        .iter()
-                        .filter(|x| !old_flags.contains(&x))
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    self.mailbox.add_flags(*uuid, &to_add[..]).await?;
-                    self.mailbox.del_flags(*uuid, &to_remove[..]).await?;
+                    self.mailbox.set_flags(*uuid, &flags[..]).await?;
                 }
             }
         }
 
         self.update().await
+    }
+
+    pub async fn expunge(&mut self) -> Result<Vec<Body>> {
+        unimplemented!()
     }
 
     /// Looks up state changes in the mailbox and produces a set of IMAP

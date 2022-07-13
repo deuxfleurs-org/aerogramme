@@ -95,6 +95,11 @@ impl Mailbox {
         self.mbox.write().await.del_flags(id, flags).await
     }
 
+    /// Define the new flags for this message
+    pub async fn set_flags<'a>(&self, id: UniqueIdent, flags: &[Flag]) -> Result<()> {
+        self.mbox.write().await.set_flags(id, flags).await
+    }
+
     /// Insert an email into the mailbox
     pub async fn append<'a>(
         &self,
@@ -263,6 +268,11 @@ impl MailboxInternal {
     async fn del_flags(&mut self, ident: UniqueIdent, flags: &[Flag]) -> Result<()> {
         let del_flag_op = self.uid_index.state().op_flag_del(ident, flags.to_vec());
         self.uid_index.push(del_flag_op).await
+    }
+
+    async fn set_flags(&mut self, ident: UniqueIdent, flags: &[Flag]) -> Result<()> {
+        let set_flag_op = self.uid_index.state().op_flag_set(ident, flags.to_vec());
+        self.uid_index.push(set_flag_op).await
     }
 
     async fn append(

@@ -36,6 +36,7 @@ pub enum UidIndexOp {
     MailDel(UniqueIdent),
     FlagAdd(UniqueIdent, Vec<Flag>),
     FlagDel(UniqueIdent, Vec<Flag>),
+    FlagSet(UniqueIdent, Vec<Flag>),
     BumpUidvalidity(u32),
 }
 
@@ -58,6 +59,11 @@ impl UidIndex {
     #[must_use]
     pub fn op_flag_del(&self, ident: UniqueIdent, flags: Vec<Flag>) -> UidIndexOp {
         UidIndexOp::FlagDel(ident, flags)
+    }
+
+    #[must_use]
+    pub fn op_flag_set(&self, ident: UniqueIdent, flags: Vec<Flag>) -> UidIndexOp {
+        UidIndexOp::FlagSet(ident, flags)
     }
 
     #[must_use]
@@ -160,6 +166,24 @@ impl BayouState for UidIndex {
                     // Remove flags from the source of trust and the cache
                     existing_flags.retain(|x| !rm_flags.contains(x));
                     new.idx_by_flag.remove(*uid, rm_flags);
+                }
+            }
+            UidIndexOp::FlagSet(ident, new_flags) => {
+                if let Some((uid, existing_flags)) = new.table.get_mut(ident) {
+                    // Remove flags from the source of trust and the cache
+                    let (keep_flags, rm_flags): (Vec<String>, Vec<String>) = existing_flags
+                        .iter()
+                        .cloned()
+                        .partition(|x| new_flags.contains(x));
+                    *existing_flags = keep_flags;
+                    let mut to_add: Vec<Flag> = new_flags
+                        .iter()
+                        .filter(|f| !existing_flags.contains(f))
+                        .cloned()
+                        .collect();
+                    existing_flags.append(&mut to_add);
+                    new.idx_by_flag.remove(*uid, &rm_flags);
+                    new.idx_by_flag.insert(*uid, &to_add);
                 }
             }
             UidIndexOp::BumpUidvalidity(count) => {

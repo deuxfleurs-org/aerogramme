@@ -62,7 +62,12 @@ impl<'a> SelectedContext<'a> {
     }
 
     async fn expunge(self) -> Result<(Response, flow::Transition)> {
-        Ok((Response::bad("Not implemented")?, flow::Transition::None))
+        let data = self.mailbox.expunge().await?;
+
+        Ok((
+            Response::ok("EXPUNGE completed")?.with_body(data),
+            flow::Transition::None,
+        ))
     }
 
     async fn store(
