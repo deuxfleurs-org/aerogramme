@@ -121,6 +121,29 @@ impl<'a> AuthenticatedContext<'a> {
             ));
         }
 
+        let wildcard = String::try_from(mailbox_wildcard.clone())?;
+        if wildcard.is_empty() {
+            if is_lsub {
+                return Ok((
+                    Response::ok("LSUB complete")?.with_body(vec![Data::Lsub {
+                        items: vec![],
+                        delimiter: Some(MAILBOX_HIERARCHY_DELIMITER),
+                        mailbox: "".try_into().unwrap(),
+                    }]),
+                    flow::Transition::None,
+                ));
+            } else {
+                return Ok((
+                    Response::ok("LIST complete")?.with_body(vec![Data::List {
+                        items: vec![],
+                        delimiter: Some(MAILBOX_HIERARCHY_DELIMITER),
+                        mailbox: "".try_into().unwrap(),
+                    }]),
+                    flow::Transition::None,
+                ));
+            }
+        }
+
         let mailboxes = self.user.list_mailboxes().await?;
         let mut vmailboxes = BTreeMap::new();
         for mb in mailboxes.iter() {
@@ -135,12 +158,9 @@ impl<'a> AuthenticatedContext<'a> {
             vmailboxes.insert(mb, true);
         }
 
-        let wildcard = String::try_from(mailbox_wildcard.clone())?;
-        let wildcard_pat = globset::Glob::new(&wildcard)?.compile_matcher();
-
         let mut ret = vec![];
         for (mb, is_real) in vmailboxes.iter() {
-            if wildcard_pat.is_match(mb) {
+            if matches_wildcard(&wildcard, &mb) {
                 let mailbox = mb
                     .to_string()
                     .try_into()
@@ -376,5 +396,51 @@ impl<'a> AuthenticatedContext<'a> {
         let (uidvalidity, uid) = mb.append(msg, None, &flags[..]).await?;
 
         Ok((mb, uidvalidity, uid))
+    }
+}
+
+fn matches_wildcard(wildcard: &str, name: &str) -> bool {
+    let wildcard = wildcard.chars().collect::<Vec<char>>();
+    let name = name.chars().collect::<Vec<char>>();
+
+    let mut matches = vec![vec![false; wildcard.len() + 1]; name.len() + 1];
+
+    for i in 0..=name.len() {
+        for j in 0..=wildcard.len() {
+            matches[i][j] = (i == 0 && j == 0)
+                || (j > 0
+                    && matches[i][j - 1]
+                    && (wildcard[j - 1] == '%' || wildcard[j - 1] == '*'))
+                || (i > 0
+                    && j > 0
+                    && matches[i - 1][j - 1]
+                    && wildcard[j - 1] == name[i - 1]
+                    && wildcard[j - 1] != '%'
+                    && wildcard[j - 1] != '*')
+                || (i > 0
+                    && j > 0
+                    && matches[i - 1][j]
+                    && (wildcard[j - 1] == '*'
+                        || (wildcard[j - 1] == '%' && name[i - 1] != MAILBOX_HIERARCHY_DELIMITER)));
+        }
+    }
+
+    matches[name.len()][wildcard.len()]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_wildcard_matches() {
+        assert!(matches_wildcard("INBOX", "INBOX"));
+        assert!(matches_wildcard("*", "INBOX"));
+        assert!(matches_wildcard("%", "INBOX"));
+        assert!(!matches_wildcard("%", "Test.Azerty"));
+        assert!(!matches_wildcard("INBOX.*", "INBOX"));
+        assert!(matches_wildcard("Sent.*", "Sent.A"));
+        assert!(matches_wildcard("Sent.*", "Sent.A.B"));
+        assert!(!matches_wildcard("Sent.%", "Sent.A.B"));
     }
 }

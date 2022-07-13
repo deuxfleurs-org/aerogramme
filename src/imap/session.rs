@@ -140,7 +140,13 @@ impl Instance {
             let res = match ctrl {
                 Ok((res, tr)) => {
                     //@FIXME remove unwrap
-                    self.state = self.state.apply(tr).unwrap();
+                    self.state = match self.state.apply(tr) {
+                        Ok(new_state) => new_state,
+                        Err(e) => {
+                            tracing::error!("Invalid transition: {}, exiting", e);
+                            break;
+                        }
+                    };
 
                     //@FIXME enrich here the command with some global status
 

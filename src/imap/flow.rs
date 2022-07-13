@@ -41,8 +41,14 @@ impl State {
         match (self, tr) {
             (s, Transition::None) => Ok(s),
             (State::NotAuthenticated, Transition::Authenticate(u)) => Ok(State::Authenticated(u)),
-            (State::Authenticated(u), Transition::Select(m)) => Ok(State::Selected(u, m)),
-            (State::Authenticated(u), Transition::Examine(m)) => Ok(State::Examined(u, m)),
+            (
+                State::Authenticated(u) | State::Selected(u, _) | State::Examined(u, _),
+                Transition::Select(m),
+            ) => Ok(State::Selected(u, m)),
+            (
+                State::Authenticated(u) | State::Selected(u, _) | State::Examined(u, _),
+                Transition::Examine(m),
+            ) => Ok(State::Examined(u, m)),
             (State::Selected(u, _), Transition::Unselect) => Ok(State::Authenticated(u)),
             (State::Examined(u, _), Transition::Unselect) => Ok(State::Authenticated(u)),
             (_, Transition::Logout) => Ok(State::Logout),
