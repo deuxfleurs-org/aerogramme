@@ -2,6 +2,7 @@ mod bayou;
 mod config;
 mod cryptoblob;
 mod imap;
+mod k2v_util;
 mod lmtp;
 mod login;
 mod mail;

@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, Result};
 use futures::{future::BoxFuture, FutureExt};
-use k2v_client::{CausalValue, CausalityToken, K2vClient, K2vValue};
+use k2v_client::{CausalityToken, K2vClient, K2vValue};
 use rusoto_s3::{
     DeleteObjectRequest, GetObjectRequest, ListObjectsV2Request, PutObjectRequest, S3Client, S3,
 };
@@ -15,6 +15,7 @@ use tokio::sync::watch;
 use tracing::{error, info, warn};
 
 use crate::cryptoblob;
+use crate::k2v_util::k2v_wait_value_changed;
 use crate::login::{Credentials, PublicCredentials};
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::ImapUidvalidity;
@@ -405,32 +406,6 @@ async fn k2v_lock_loop_internal(
     };
     if let Some(ct) = release {
         let _ = k2v.delete_item(pk, sk, ct.clone()).await;
-    }
-}
-
-// ---- UTIL: function to wait for a value to have changed in K2V ----
-
-async fn k2v_wait_value_changed<'a>(
-    k2v: &'a K2vClient,
-    pk: &'static str,
-    sk: &'static str,
-    prev_ct: &'a Option<CausalityToken>,
-) -> Result<CausalValue> {
-    loop {
-        if let Some(ct) = prev_ct {
-            match k2v.poll_item(pk, sk, ct.clone(), None).await? {
-                None => continue,
-                Some(cv) => return Ok(cv),
-            }
-        } else {
-            match k2v.read_item(pk, sk).await {
-                Err(k2v_client::Error::NotFound) => {
-                    k2v.insert_item(pk, sk, vec![0u8], None).await?;
-                }
-                Err(e) => return Err(e.into()),
-                Ok(cv) => return Ok(cv),
-            }
-        }
     }
 }
 
