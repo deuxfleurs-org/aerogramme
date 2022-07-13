@@ -172,10 +172,7 @@ impl<'a> AuthenticatedContext<'a> {
         } else {
             "LIST completed"
         };
-        Ok((
-            Response::ok(msg)?.with_body(ret),
-            flow::Transition::None,
-        ))
+        Ok((Response::ok(msg)?.with_body(ret), flow::Transition::None))
     }
 
     async fn status(
