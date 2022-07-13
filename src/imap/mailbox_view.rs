@@ -68,16 +68,10 @@ impl MailboxView {
         Ok((new_view, data))
     }
 
-    /// Looks up state changes in the mailbox and produces a set of IMAP
-    /// responses describing the changes.
-    pub async fn sync_update(&mut self) -> Result<Vec<Body>> {
-        self.mailbox.sync().await?;
-
-        self.update().await
-    }
-
     /// Produces a set of IMAP responses describing the change between
     /// what the client knows and what is actually in the mailbox.
+    /// This does NOT trigger a sync, it bases itself on what is currently
+    /// loaded in RAM by Bayou.
     pub async fn update(&mut self) -> Result<Vec<Body>> {
         let new_view = MailboxView {
             mailbox: self.mailbox.clone(),
@@ -156,6 +150,8 @@ impl MailboxView {
         flags: &[Flag],
         uid: &bool,
     ) -> Result<Vec<Body>> {
+        self.mailbox.opportunistic_sync().await?;
+
         if *uid {
             bail!("UID STORE not implemented");
         }
@@ -181,9 +177,11 @@ impl MailboxView {
     }
 
     pub async fn expunge(&mut self) -> Result<Vec<Body>> {
+        self.mailbox.opportunistic_sync().await?;
+
         let deleted_flag = Flag::Deleted.to_string();
-        let msgs = self
-            .known_state
+        let state = self.mailbox.current_uid_index().await;
+        let msgs = state
             .table
             .iter()
             .filter(|(_uuid, (_uid, flags))| flags.iter().any(|x| *x == deleted_flag))

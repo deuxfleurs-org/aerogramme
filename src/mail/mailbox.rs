@@ -60,8 +60,14 @@ impl Mailbox {
     }
 
     /// Sync data with backing store
-    pub async fn sync(&self) -> Result<()> {
-        self.mbox.write().await.sync().await
+    pub async fn force_sync(&self) -> Result<()> {
+        self.mbox.write().await.force_sync().await
+    }
+
+    /// Sync data with backing store only if changes are detected
+    /// or last sync is too old
+    pub async fn opportunistic_sync(&self) -> Result<()> {
+        self.mbox.write().await.opportunistic_sync().await
     }
 
     // ---- Functions for reading the mailbox ----
@@ -184,8 +190,13 @@ struct MailboxInternal {
 }
 
 impl MailboxInternal {
-    async fn sync(&mut self) -> Result<()> {
+    async fn force_sync(&mut self) -> Result<()> {
         self.uid_index.sync().await?;
+        Ok(())
+    }
+
+    async fn opportunistic_sync(&mut self) -> Result<()> {
+        self.uid_index.opportunistic_sync().await?;
         Ok(())
     }
 
@@ -308,7 +319,8 @@ impl MailboxInternal {
                     .insert_item(&self.mail_path, &ident.to_string(), meta_blob, None)
                     .await?;
                 Ok::<_, anyhow::Error>(())
-            }
+            },
+            self.uid_index.opportunistic_sync()
         )?;
 
         // Add mail to Bayou mail index
@@ -357,7 +369,8 @@ impl MailboxInternal {
                     .insert_item(&self.mail_path, &ident.to_string(), meta_blob, None)
                     .await?;
                 Ok::<_, anyhow::Error>(())
-            }
+            },
+            self.uid_index.opportunistic_sync()
         )?;
 
         // Add mail to Bayou mail index
@@ -449,6 +462,7 @@ impl MailboxInternal {
                     .await?;
                 Ok::<_, anyhow::Error>(())
             },
+            self.uid_index.opportunistic_sync(),
         )?;
 
         // Add mail to Bayou mail index

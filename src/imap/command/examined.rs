@@ -87,7 +87,9 @@ impl<'a> ExaminedContext<'a> {
     }
 
     pub async fn noop(self) -> Result<(Response, flow::Transition)> {
-        let updates = self.mailbox.sync_update().await?;
+        self.mailbox.mailbox.force_sync().await?;
+
+        let updates = self.mailbox.update().await?;
         Ok((
             Response::ok("NOOP completed.")?.with_body(updates),
             flow::Transition::None,
