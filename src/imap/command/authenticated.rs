@@ -167,8 +167,13 @@ impl<'a> AuthenticatedContext<'a> {
             }
         }
 
+        let msg = if is_lsub {
+            "LSUB completed"
+        } else {
+            "LIST completed"
+        };
         Ok((
-            Response::ok("LIST completed")?.with_body(ret),
+            Response::ok(msg)?.with_body(ret),
             flow::Transition::None,
         ))
     }

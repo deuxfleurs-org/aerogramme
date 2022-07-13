@@ -252,7 +252,7 @@ impl MailboxView {
 
         let mut ret = vec![];
         for (i, uid, uuid, meta, body) in mails {
-            let mut attributes = vec![MessageAttribute::Uid(uid)];
+            let mut attributes = vec![];
 
             let (_uid2, flags) = self
                 .known_state
@@ -270,7 +270,7 @@ impl MailboxView {
 
             for attr in fetch_attrs.iter() {
                 match attr {
-                    FetchAttribute::Uid => (),
+                    FetchAttribute::Uid => attributes.push(MessageAttribute::Uid(uid)),
                     FetchAttribute::Flags => {
                         attributes.push(MessageAttribute::Flags(
                             flags.iter().filter_map(|f| string_to_flag(f)).collect(),
