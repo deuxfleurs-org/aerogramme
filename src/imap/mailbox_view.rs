@@ -160,7 +160,7 @@ impl MailboxView {
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
 
         let mails = self.get_mail_ids(sequence_set)?;
-        for (i, uid, uuid) in mails.iter() {
+        for (_i, _uid, uuid) in mails.iter() {
             match kind {
                 StoreType::Add => {
                     self.mailbox.add_flags(*uuid, &flags[..]).await?;
@@ -178,7 +178,19 @@ impl MailboxView {
     }
 
     pub async fn expunge(&mut self) -> Result<Vec<Body>> {
-        unimplemented!()
+        let deleted_flag = Flag::Deleted.to_string();
+        let msgs = self
+            .known_state
+            .table
+            .iter()
+            .filter(|(_uuid, (_uid, flags))| flags.iter().any(|x| *x == deleted_flag))
+            .map(|(uuid, _)| *uuid);
+
+        for msg in msgs {
+            self.mailbox.delete(msg).await?;
+        }
+
+        self.update().await
     }
 
     /// Looks up state changes in the mailbox and produces a set of IMAP

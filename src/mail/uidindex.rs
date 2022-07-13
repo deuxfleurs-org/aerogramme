@@ -214,9 +214,14 @@ impl FlagIndex {
         });
     }
     fn remove(&mut self, uid: ImapUid, flags: &Vec<Flag>) -> () {
-        flags.iter().for_each(|flag| {
-            self.0.get_mut(flag).and_then(|set| set.remove(&uid));
-        });
+        for flag in flags.iter() {
+            if let Some(set) = self.0.get_mut(flag) {
+                set.remove(&uid);
+                if set.is_empty() {
+                    self.0.remove(flag);
+                }
+            }
+        }
     }
 
     pub fn get(&self, f: &Flag) -> Option<&OrdSet<ImapUid>> {

@@ -5,7 +5,11 @@ use anyhow::Result;
 use async_trait::async_trait;
 use duplexify::Duplex;
 use futures::{io, AsyncRead, AsyncReadExt, AsyncWrite};
-use futures::{stream, stream::FuturesUnordered, StreamExt};
+use futures::{
+    stream,
+    stream::{FuturesOrdered, FuturesUnordered},
+    StreamExt,
+};
 use log::*;
 use tokio::net::TcpListener;
 use tokio::select;
@@ -56,11 +60,12 @@ impl LmtpServer {
                 _ = wait_conn_finished => continue,
                 _ = must_exit.changed() => continue,
             };
+            info!("LMTP: accepted connection from {}", remote_addr);
 
             let conn = tokio::spawn(smtp_server::interact(
                 socket.compat(),
                 smtp_server::IsAlreadyTls::No,
-                Conn { remote_addr },
+                (),
                 self.clone(),
             ));
 
@@ -77,10 +82,6 @@ impl LmtpServer {
 
 // ----
 
-pub struct Conn {
-    remote_addr: SocketAddr,
-}
-
 pub struct Message {
     to: Vec<PublicCredentials>,
 }
@@ -89,21 +90,21 @@ pub struct Message {
 impl Config for LmtpServer {
     type Protocol = smtp_server::protocol::Lmtp;
 
-    type ConnectionUserMeta = Conn;
+    type ConnectionUserMeta = ();
     type MailUserMeta = Message;
 
-    fn hostname(&self, _conn_meta: &ConnectionMetadata<Conn>) -> &str {
+    fn hostname(&self, _conn_meta: &ConnectionMetadata<()>) -> &str {
         &self.hostname
     }
 
-    async fn new_mail(&self, _conn_meta: &mut ConnectionMetadata<Conn>) -> Message {
+    async fn new_mail(&self, _conn_meta: &mut ConnectionMetadata<()>) -> Message {
         Message { to: vec![] }
     }
 
     async fn tls_accept<IO>(
         &self,
         _io: IO,
-        _conn_meta: &mut ConnectionMetadata<Conn>,
+        _conn_meta: &mut ConnectionMetadata<()>,
     ) -> io::Result<Duplex<Pin<Box<dyn Send + AsyncRead>>, Pin<Box<dyn Send + AsyncWrite>>>>
     where
         IO: Send + AsyncRead + AsyncWrite,
@@ -118,7 +119,7 @@ impl Config for LmtpServer {
         &self,
         from: Option<Email>,
         _meta: &mut MailMetadata<Message>,
-        _conn_meta: &mut ConnectionMetadata<Conn>,
+        _conn_meta: &mut ConnectionMetadata<()>,
     ) -> Decision<Option<Email>> {
         Decision::Accept {
             reply: reply::okay_from().convert(),
@@ -130,7 +131,7 @@ impl Config for LmtpServer {
         &self,
         to: Email,
         meta: &mut MailMetadata<Message>,
-        _conn_meta: &mut ConnectionMetadata<Conn>,
+        _conn_meta: &mut ConnectionMetadata<()>,
     ) -> Decision<Email> {
         let to_str = match to.hostname.as_ref() {
             Some(h) => format!("{}@{}", to.localpart, h),
@@ -158,7 +159,7 @@ impl Config for LmtpServer {
         &'resp self,
         reader: &mut EscapedDataReader<'_, R>,
         meta: MailMetadata<Message>,
-        _conn_meta: &'resp mut ConnectionMetadata<Conn>,
+        _conn_meta: &'resp mut ConnectionMetadata<()>,
     ) -> Pin<Box<dyn futures::Stream<Item = Decision<()>> + Send + 'resp>>
     where
         R: Send + Unpin + AsyncRead,
@@ -176,8 +177,8 @@ impl Config for LmtpServer {
         };
 
         let mut text = Vec::new();
-        if reader.read_to_end(&mut text).await.is_err() {
-            return err_response_stream(meta, "io error".into());
+        if let Err(e) = reader.read_to_end(&mut text).await {
+            return err_response_stream(meta, format!("io error: {}", e));
         }
         reader.complete();
 
@@ -186,23 +187,29 @@ impl Config for LmtpServer {
             Err(e) => return err_response_stream(meta, e.to_string()),
         };
 
-        Box::pin(stream::iter(meta.user.to.into_iter()).then(move |creds| {
-            let encrypted_message = encrypted_message.clone();
-            async move {
-                match encrypted_message.deliver_to(creds).await {
-                    Ok(()) => Decision::Accept {
-                        reply: reply::okay_mail().convert(),
-                        res: (),
-                    },
-                    Err(e) => Decision::Reject {
-                        reply: Reply {
-                            code: ReplyCode::POLICY_REASON,
-                            ecode: None,
-                            text: vec![smtp_message::MaybeUtf8::Utf8(e.to_string())],
-                        },
-                    },
-                }
-            }
-        }))
+        Box::pin(
+            meta.user
+                .to
+                .into_iter()
+                .map(move |creds| {
+                    let encrypted_message = encrypted_message.clone();
+                    async move {
+                        match encrypted_message.deliver_to(creds).await {
+                            Ok(()) => Decision::Accept {
+                                reply: reply::okay_mail().convert(),
+                                res: (),
+                            },
+                            Err(e) => Decision::Reject {
+                                reply: Reply {
+                                    code: ReplyCode::POLICY_REASON,
+                                    ecode: None,
+                                    text: vec![smtp_message::MaybeUtf8::Utf8(e.to_string())],
+                                },
+                            },
+                        }
+                    }
+                })
+                .collect::<FuturesOrdered<_>>(),
+        )
     }
 }

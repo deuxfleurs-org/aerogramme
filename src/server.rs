@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
-use futures::{try_join, StreamExt};
+use futures::try_join;
 use log::*;
 use tokio::sync::watch;
 
