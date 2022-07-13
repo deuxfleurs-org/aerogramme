@@ -148,17 +148,13 @@ impl MailboxView {
         kind: &StoreType,
         _response: &StoreResponse,
         flags: &[Flag],
-        uid: &bool,
+        is_uid_store: &bool,
     ) -> Result<Vec<Body>> {
         self.mailbox.opportunistic_sync().await?;
 
-        if *uid {
-            bail!("UID STORE not implemented");
-        }
-
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
 
-        let mails = self.get_mail_ids(sequence_set)?;
+        let mails = self.get_mail_ids(sequence_set, *is_uid_store)?;
         for (_i, _uid, uuid) in mails.iter() {
             match kind {
                 StoreType::Add => {
@@ -200,13 +196,9 @@ impl MailboxView {
         &self,
         sequence_set: &SequenceSet,
         attributes: &MacroOrFetchAttributes,
-        uid: &bool,
+        is_uid_fetch: &bool,
     ) -> Result<Vec<Body>> {
-        if *uid {
-            bail!("UID FETCH not implemented");
-        }
-
-        let mails = self.get_mail_ids(sequence_set)?;
+        let mails = self.get_mail_ids(sequence_set, *is_uid_fetch)?;
 
         let mails_uuid = mails
             .iter()
@@ -214,10 +206,13 @@ impl MailboxView {
             .collect::<Vec<_>>();
         let mails_meta = self.mailbox.fetch_meta(&mails_uuid).await?;
 
-        let fetch_attrs = match attributes {
+        let mut fetch_attrs = match attributes {
             MacroOrFetchAttributes::Macro(m) => m.expand(),
             MacroOrFetchAttributes::FetchAttributes(a) => a.clone(),
         };
+        if *is_uid_fetch && !fetch_attrs.contains(&FetchAttribute::Uid) {
+            fetch_attrs.push(FetchAttribute::Uid);
+        }
         let need_body = fetch_attrs.iter().any(|x| {
             matches!(
                 x,
@@ -352,6 +347,7 @@ impl MailboxView {
     fn get_mail_ids(
         &self,
         sequence_set: &SequenceSet,
+        by_uid: bool,
     ) -> Result<Vec<(NonZeroU32, ImapUid, UniqueIdent)>> {
         let mail_vec = self
             .known_state
@@ -361,14 +357,43 @@ impl MailboxView {
             .collect::<Vec<_>>();
 
         let mut mails = vec![];
-        let iter_strat = sequence::Strategy::Naive {
-            largest: NonZeroU32::try_from((self.known_state.idx_by_uid.len() + 1) as u32).unwrap(),
-        };
-        for i in sequence_set.iter(iter_strat) {
-            if let Some(mail) = mail_vec.get(i.get() as usize - 1) {
-                mails.push((i, mail.0, mail.1));
-            } else {
-                bail!("No such mail: {}", i);
+
+        if by_uid {
+            if mail_vec.is_empty() {
+                return Ok(vec![]);
+            }
+            let iter_strat = sequence::Strategy::Naive {
+                largest: mail_vec.last().unwrap().0,
+            };
+
+            let mut i = 0;
+            for uid in sequence_set.iter(iter_strat) {
+                while mail_vec.get(i).map(|mail| mail.0 < uid).unwrap_or(false) {
+                    i += 1;
+                }
+                if let Some(mail) = mail_vec.get(i) {
+                    if mail.0 == uid {
+                        mails.push((NonZeroU32::try_from(i as u32 + 1).unwrap(), mail.0, mail.1));
+                    }
+                } else {
+                    break;
+                }
+            }
+        } else {
+            if mail_vec.is_empty() {
+                bail!("No such message (mailbox is empty)");
+            }
+
+            let iter_strat = sequence::Strategy::Naive {
+                largest: NonZeroU32::try_from((mail_vec.len()) as u32).unwrap(),
+            };
+
+            for i in sequence_set.iter(iter_strat) {
+                if let Some(mail) = mail_vec.get(i.get() as usize - 1) {
+                    mails.push((i, mail.0, mail.1));
+                } else {
+                    bail!("No such mail: {}", i);
+                }
             }
         }
 
