@@ -218,9 +218,7 @@ impl<'a> AuthenticatedContext<'a> {
         for attr in attributes.iter() {
             ret_attrs.push(match attr {
                 StatusAttribute::Messages => StatusAttributeValue::Messages(view.exists()?),
-                StatusAttribute::Unseen => {
-                    StatusAttributeValue::Unseen(view.unseen().map(|x| x.get()).unwrap_or(0))
-                }
+                StatusAttribute::Unseen => StatusAttributeValue::Unseen(view.unseen_count() as u32),
                 StatusAttribute::Recent => StatusAttributeValue::Recent(view.recent()?),
                 StatusAttribute::UidNext => StatusAttributeValue::UidNext(view.uidnext()),
                 StatusAttribute::UidValidity => {
@@ -287,6 +285,11 @@ impl<'a> AuthenticatedContext<'a> {
     S: A142 OK [READ-WRITE] SELECT completed
 
     --- a mailbox with no unseen message -> no unseen entry
+    NOTES:
+      RFC3501 (imap4rev1) says if there is no OK [UNSEEN] response, client must make no assumption,
+                          it is therefore correct to not return it even if there are unseen messages
+      RFC9051 (imap4rev2) says that OK [UNSEEN] responses are deprecated after SELECT and EXAMINE
+      For Aerogramme, we just don't send the OK [UNSEEN], it's correct to do in both specifications.
 
     20 select "INBOX.achats"
     * FLAGS (\Answered \Flagged \Deleted \Seen \Draft $Forwarded JUNK $label1)

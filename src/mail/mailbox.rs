@@ -374,10 +374,7 @@ impl MailboxInternal {
         )?;
 
         // Add mail to Bayou mail index
-        let add_mail_op = self
-            .uid_index
-            .state()
-            .op_mail_add(ident, vec!["\\Unseen".into()]);
+        let add_mail_op = self.uid_index.state().op_mail_add(ident, vec![]);
         self.uid_index.push(add_mail_op).await?;
 
         Ok(())

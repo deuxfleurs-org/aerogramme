@@ -61,9 +61,6 @@ impl MailboxView {
         data.extend(new_view.flags_status()?.into_iter());
         data.push(new_view.uidvalidity_status()?);
         data.push(new_view.uidnext_status()?);
-        if let Some(unseen) = new_view.unseen_status()? {
-            data.push(unseen);
-        }
 
         Ok((new_view, data))
     }
@@ -432,27 +429,6 @@ impl MailboxView {
         self.known_state.uidnext
     }
 
-    /// Produces an UNSEEN message (if relevant) corresponding to the
-    /// first unseen message id in `known_state`
-    fn unseen_status(&self) -> Result<Option<Body>> {
-        if let Some(unseen) = self.unseen() {
-            let status_unseen =
-                Status::ok(None, Some(Code::Unseen(unseen.clone())), "First unseen UID")
-                    .map_err(Error::msg)?;
-            Ok(Some(Body::Status(status_unseen)))
-        } else {
-            Ok(None)
-        }
-    }
-
-    pub(crate) fn unseen(&self) -> Option<ImapUid> {
-        self.known_state
-            .idx_by_flag
-            .get(&"$unseen".to_string())
-            .and_then(|os| os.get_min())
-            .cloned()
-    }
-
     /// Produce an EXISTS message corresponding to the number of mails
     /// in `known_state`
     fn exists_status(&self) -> Result<Body> {
@@ -504,6 +480,17 @@ impl MailboxView {
 
         Ok(ret)
     }
+
+    pub(crate) fn unseen_count(&self) -> usize {
+        let total = self.known_state.table.len();
+        let seen = self
+            .known_state
+            .idx_by_flag
+            .get(&Flag::Seen.to_string())
+            .map(|x| x.len())
+            .unwrap_or(0);
+        total - seen
+    }
 }
 
 fn string_to_flag(f: &str) -> Option<Flag> {
@@ -523,7 +510,6 @@ fn string_to_flag(f: &str) -> Option<Flag> {
                 Ok(a) => Some(Flag::Extension(a)),
             },
         },
-        Some('$') if f == "$unseen" => None,
         Some(_) => match Atom::try_from(f.clone()) {
             Err(_) => {
                 tracing::error!(flag=%f, "Unable to encode flag as IMAP atom");
