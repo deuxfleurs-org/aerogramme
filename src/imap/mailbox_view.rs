@@ -13,7 +13,7 @@ use imap_codec::types::core::{Atom, IString, NString};
 use imap_codec::types::datetime::MyDateTime;
 use imap_codec::types::envelope::Envelope;
 use imap_codec::types::fetch_attributes::{
-    FetchAttribute, MacroOrFetchAttributes, Part as FetchPart, Section as FetchSection,
+    FetchAttribute, MacroOrFetchAttributes, Section as FetchSection,
 };
 use imap_codec::types::flag::{Flag, StoreResponse, StoreType};
 use imap_codec::types::response::{Code, Data, MessageAttribute, Status};
@@ -982,7 +982,7 @@ fn get_message_section<'a>(
             ))?
             .into()),
         Some(FetchSection::Text(Some(part))) => {
-            subpart_msg_fn(parsed, part.0.as_slice(), |part_msg| {
+            map_subpart_msg(parsed, part.0.as_slice(), |part_msg| {
                 Ok(part_msg
                     .raw_message
                     .get(part_msg.offset_body..parsed.offset_end)
@@ -993,7 +993,7 @@ fn get_message_section<'a>(
                     .into())
             })
         }
-        Some(FetchSection::Header(part)) => subpart_msg_fn(
+        Some(FetchSection::Header(part)) => map_subpart_msg(
             parsed,
             part.as_ref().map(|p| p.0.as_slice()).unwrap_or(&[]),
             |part_msg| {
@@ -1007,7 +1007,7 @@ fn get_message_section<'a>(
                     .into())
             },
         ),
-        Some(FetchSection::Part(part)) => subpart_fn(parsed, part.0.as_slice(), |_msg, part| {
+        Some(FetchSection::Part(part)) => map_subpart(parsed, part.0.as_slice(), |_msg, part| {
             let bytes = match part {
                 MessagePart::Text(p) | MessagePart::Html(p) => p.body.as_bytes().to_vec(),
                 MessagePart::Binary(p) | MessagePart::InlineBinary(p) => p.body.to_vec(),
@@ -1023,7 +1023,7 @@ fn get_message_section<'a>(
             };
             Ok(bytes.into())
         }),
-        Some(FetchSection::Mime(part)) => subpart_fn(parsed, part.0.as_slice(), |msg, part| {
+        Some(FetchSection::Mime(part)) => map_subpart(parsed, part.0.as_slice(), |msg, part| {
             let raw_headers = match part {
                 MessagePart::Text(p) | MessagePart::Html(p) => &p.headers_raw,
                 MessagePart::Binary(p) | MessagePart::InlineBinary(p) => &p.headers_raw,
@@ -1044,7 +1044,7 @@ fn get_message_section<'a>(
     }
 }
 
-fn subpart_msg_fn<'a, F, R>(msg: &Message<'a>, path: &[NonZeroU32], f: F) -> Result<R>
+fn map_subpart_msg<'a, F, R>(msg: &Message<'a>, path: &[NonZeroU32], f: F) -> Result<R>
 where
     F: FnOnce(&Message<'_>) -> Result<R>,
 {
@@ -1059,14 +1059,14 @@ where
             let part_msg = part
                 .parse_message()
                 .ok_or(anyhow!("Cannot parse subpart: {}", path[0]))?;
-            subpart_msg_fn(&part_msg, &path[1..], f)
+            map_subpart_msg(&part_msg, &path[1..], f)
         } else {
             bail!("Subpart is not a message: {}", path[0]);
         }
     }
 }
 
-fn subpart_fn<'a, F, R>(msg: &Message<'a>, path: &[NonZeroU32], f: F) -> Result<R>
+fn map_subpart<'a, F, R>(msg: &Message<'a>, path: &[NonZeroU32], f: F) -> Result<R>
 where
     F: FnOnce(&Message<'_>, &MessagePart<'_>) -> Result<R>,
 {
@@ -1084,7 +1084,7 @@ where
                 let part_msg = part
                     .parse_message()
                     .ok_or(anyhow!("Cannot parse subpart: {}", path[0]))?;
-                subpart_fn(&part_msg, &path[1..], f)
+                map_subpart(&part_msg, &path[1..], f)
             } else {
                 bail!("Subpart is not a message: {}", path[0]);
             }

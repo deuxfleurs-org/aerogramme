@@ -390,7 +390,7 @@ async fn k2v_lock_loop_internal(
     }
     .boxed();
 
-    let res = futures::try_join!(watch_lock_loop, lock_notify_loop, take_lock_loop);
+    let _ = futures::try_join!(watch_lock_loop, lock_notify_loop, take_lock_loop);
 
     info!("lock loop exited, releasing");
 
