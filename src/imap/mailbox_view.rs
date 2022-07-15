@@ -9,7 +9,7 @@ use chrono::{Offset, TimeZone, Utc};
 use futures::stream::{FuturesOrdered, StreamExt};
 use imap_codec::types::address::Address;
 use imap_codec::types::body::{BasicFields, Body as FetchBody, BodyStructure, SpecificFields};
-use imap_codec::types::core::{Atom, IString, NString};
+use imap_codec::types::core::{AString, Atom, IString, NString};
 use imap_codec::types::datetime::MyDateTime;
 use imap_codec::types::envelope::Envelope;
 use imap_codec::types::fetch_attributes::{
@@ -1007,6 +1007,40 @@ fn get_message_section<'a>(
                     .into())
             },
         ),
+        Some(
+            FetchSection::HeaderFields(part, fields) | FetchSection::HeaderFieldsNot(part, fields),
+        ) => {
+            let invert = matches!(section, Some(FetchSection::HeaderFieldsNot(_, _)));
+            let fields = fields
+                .iter()
+                .map(|x| match x {
+                    AString::Atom(a) => a.as_bytes(),
+                    AString::String(IString::Literal(l)) => l.as_slice(),
+                    AString::String(IString::Quoted(q)) => q.as_bytes(),
+                })
+                .collect::<Vec<_>>();
+
+            map_subpart_msg(
+                parsed,
+                part.as_ref().map(|p| p.0.as_slice()).unwrap_or(&[]),
+                |part_msg| {
+                    let mut ret = vec![];
+                    for (hn, hv) in part_msg.get_raw_headers() {
+                        if fields
+                            .as_slice()
+                            .iter()
+                            .any(|x| (*x == hn.as_str().as_bytes()) ^ invert)
+                        {
+                            ret.extend(hn.as_str().as_bytes());
+                            ret.extend(b": ");
+                            ret.extend(hv.as_bytes());
+                        }
+                    }
+                    ret.extend(b"\r\n");
+                    Ok(ret.into())
+                },
+            )
+        }
         Some(FetchSection::Part(part)) => map_subpart(parsed, part.0.as_slice(), |_msg, part| {
             let bytes = match part {
                 MessagePart::Text(p) | MessagePart::Html(p) => p.body.as_bytes().to_vec(),
@@ -1040,7 +1074,6 @@ fn get_message_section<'a>(
             Ok(ret.into())
         }),
         None => Ok(parsed.raw_message.clone()),
-        _ => bail!("Unimplemented: section {:?}", section),
     }
 }
 
