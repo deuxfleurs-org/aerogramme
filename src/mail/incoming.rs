@@ -392,7 +392,7 @@ async fn k2v_lock_loop_internal(
 
     let res = futures::try_join!(watch_lock_loop, lock_notify_loop, take_lock_loop);
 
-    info!("lock loop exited: {:?}, releasing", res);
+    info!("lock loop exited, releasing");
 
     if !held_tx.is_closed() {
         warn!("wierd...");

@@ -9,6 +9,9 @@ mod mail;
 mod server;
 mod time;
 
+#[cfg(test)]
+mod mail_parser_tests;
+
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
@@ -121,7 +124,8 @@ async fn main() -> Result<()> {
 
     // Abort on panic (same behavior as in Go)
     std::panic::set_hook(Box::new(|panic_info| {
-        tracing::error!("{}", panic_info.to_string());
+        eprintln!("{}", panic_info.to_string());
+        eprintln!("{:?}", backtrace::Backtrace::new());
         std::process::abort();
     }));
 

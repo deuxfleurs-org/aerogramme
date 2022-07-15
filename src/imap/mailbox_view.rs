@@ -274,30 +274,28 @@ impl MailboxView {
                     FetchAttribute::Rfc822Size => {
                         attributes.push(MessageAttribute::Rfc822Size(meta.rfc822_size as u32))
                     }
-                    FetchAttribute::Rfc822Header => attributes.push(
-                        MessageAttribute::Rfc822Header(NString(Some(IString::Literal(
-                            meta.headers
-                                .clone()
-                                .try_into()
-                                .or(Err(Error::msg("IString conversion error")))?,
-                        )))),
-                    ),
+                    FetchAttribute::Rfc822Header => {
+                        attributes.push(MessageAttribute::Rfc822Header(NString(
+                            meta.headers.to_vec().try_into().ok().map(IString::Literal),
+                        )))
+                    }
                     FetchAttribute::Rfc822Text => {
                         let r = parsed
                             .raw_message.get(parsed.offset_body..parsed.offset_end)
-                            .ok_or(Error::msg("Unable to extract email body, cursors out of bound. This is a bug."))?
-                            .try_into()
-                            .or(Err(Error::msg("IString conversion error")))?;
+                            .ok_or(Error::msg("Unable to extract email body, cursors out of bound. This is a bug."))?;
 
-                        attributes.push(MessageAttribute::Rfc822Text(NString(Some(
-                            IString::Literal(r),
-                        ))))
+                        attributes.push(MessageAttribute::Rfc822Text(NString(
+                            r.try_into().ok().map(IString::Literal),
+                        )));
                     }
-                    FetchAttribute::Rfc822 => {
-                        attributes.push(MessageAttribute::Rfc822(NString(Some(IString::Literal(
-                            body.as_ref().unwrap().clone().try_into().unwrap(),
-                        )))))
-                    }
+                    FetchAttribute::Rfc822 => attributes.push(MessageAttribute::Rfc822(NString(
+                        body.as_ref()
+                            .unwrap()
+                            .clone()
+                            .try_into()
+                            .ok()
+                            .map(IString::Literal),
+                    ))),
                     FetchAttribute::Envelope => {
                         attributes.push(MessageAttribute::Envelope(message_envelope(&parsed)))
                     }
@@ -313,49 +311,48 @@ impl MailboxView {
                         peek,
                     } => {
                         // @TODO Add missing section specifiers
-                        let text = match section {
-                            Some(FetchSection::Text(None)) => {
-                                parsed
-                                    .raw_message.get(parsed.offset_body..parsed.offset_end)
-                                    .ok_or(Error::msg("Unable to extract email body, cursors out of bound. This is a bug."))?
-                            }
-                            Some(FetchSection::Header(None)) => {
-                                parsed
-                                    .raw_message.get(..parsed.offset_body)
-                                    .ok_or(Error::msg("Unable to extract email body, cursors out of bound. This is a bug."))?
-                            }
-                            None => &parsed.raw_message,
-                            _ => bail!("Unimplemented: section {:?}", section),
-                        };
-
-                        let seen_flag = Flag::Seen.to_string();
-                        if !peek && !flags.iter().any(|x| *x == seen_flag) {
-                            // Add \Seen flag
-                            self.mailbox.add_flags(uuid, &[seen_flag]).await?;
-                        }
-
-                        let (text, origin) = match partial {
-                            Some((begin, len)) => {
-                                if *begin as usize > text.len() {
-                                    (&[][..], Some(*begin))
-                                } else if (*begin + len.get()) as usize >= text.len() {
-                                    (&text[*begin as usize..], Some(*begin))
-                                } else {
-                                    (
-                                        &text[*begin as usize..(*begin + len.get()) as usize],
-                                        Some(*begin),
-                                    )
+                        match get_message_section(&parsed, section) {
+                            Ok(text) => {
+                                let seen_flag = Flag::Seen.to_string();
+                                if !peek && !flags.iter().any(|x| *x == seen_flag) {
+                                    // Add \Seen flag
+                                    self.mailbox.add_flags(uuid, &[seen_flag]).await?;
                                 }
-                            }
-                            None => (text, None),
-                        };
 
-                        let is = IString::try_from(std::str::from_utf8(text)?).unwrap();
-                        attributes.push(MessageAttribute::BodyExt {
-                            section: section.clone(),
-                            origin,
-                            data: NString(Some(is)),
-                        })
+                                let (text, origin) = match partial {
+                                    Some((begin, len)) => {
+                                        if *begin as usize > text.len() {
+                                            (&[][..], Some(*begin))
+                                        } else if (*begin + len.get()) as usize >= text.len() {
+                                            (&text[*begin as usize..], Some(*begin))
+                                        } else {
+                                            (
+                                                &text[*begin as usize
+                                                    ..(*begin + len.get()) as usize],
+                                                Some(*begin),
+                                            )
+                                        }
+                                    }
+                                    None => (&text[..], None),
+                                };
+
+                                let data =
+                                    NString(text.to_vec().try_into().ok().map(IString::Literal));
+                                attributes.push(MessageAttribute::BodyExt {
+                                    section: section.clone(),
+                                    origin,
+                                    data,
+                                })
+                            }
+                            Err(e) => {
+                                tracing::error!(
+                                    "Could not get section {:?} of message {}: {}",
+                                    section,
+                                    uuid,
+                                    e
+                                );
+                            }
+                        }
                     }
                     FetchAttribute::InternalDate => {
                         attributes.push(MessageAttribute::InternalDate(MyDateTime(
@@ -970,6 +967,129 @@ fn headers_to_basic_fields<'a, T>(bp: &'a Part<T>) -> Result<(SpecialAttrs<'a>, 
     };
 
     Ok((attrs, bf))
+}
+
+fn get_message_section<'a>(
+    parsed: &'a Message<'a>,
+    section: &Option<FetchSection>,
+) -> Result<Cow<'a, [u8]>> {
+    match section {
+        Some(FetchSection::Text(None)) => Ok(parsed
+            .raw_message
+            .get(parsed.offset_body..parsed.offset_end)
+            .ok_or(Error::msg(
+                "Unable to extract email body, cursors out of bound. This is a bug.",
+            ))?
+            .into()),
+        Some(FetchSection::Text(Some(part))) => {
+            subpart_msg_fn(parsed, part.0.as_slice(), |part_msg| {
+                Ok(part_msg
+                    .raw_message
+                    .get(part_msg.offset_body..parsed.offset_end)
+                    .ok_or(Error::msg(
+                        "Unable to extract email body, cursors out of bound. This is a bug.",
+                    ))?
+                    .to_vec()
+                    .into())
+            })
+        }
+        Some(FetchSection::Header(part)) => subpart_msg_fn(
+            parsed,
+            part.as_ref().map(|p| p.0.as_slice()).unwrap_or(&[]),
+            |part_msg| {
+                Ok(part_msg
+                    .raw_message
+                    .get(..part_msg.offset_body)
+                    .ok_or(Error::msg(
+                        "Unable to extract email header, cursors out of bound. This is a bug.",
+                    ))?
+                    .to_vec()
+                    .into())
+            },
+        ),
+        Some(FetchSection::Part(part)) => subpart_fn(parsed, part.0.as_slice(), |_msg, part| {
+            let bytes = match part {
+                MessagePart::Text(p) | MessagePart::Html(p) => p.body.as_bytes().to_vec(),
+                MessagePart::Binary(p) | MessagePart::InlineBinary(p) => p.body.to_vec(),
+                MessagePart::Message(Part {
+                    body: MessageAttachment::Raw(r),
+                    ..
+                }) => r.to_vec(),
+                MessagePart::Message(Part {
+                    body: MessageAttachment::Parsed(p),
+                    ..
+                }) => p.raw_message.to_vec(),
+                MessagePart::Multipart(_) => bail!("Multipart part has no body"),
+            };
+            Ok(bytes.into())
+        }),
+        Some(FetchSection::Mime(part)) => subpart_fn(parsed, part.0.as_slice(), |msg, part| {
+            let raw_headers = match part {
+                MessagePart::Text(p) | MessagePart::Html(p) => &p.headers_raw,
+                MessagePart::Binary(p) | MessagePart::InlineBinary(p) => &p.headers_raw,
+                MessagePart::Message(p) => &p.headers_raw,
+                MessagePart::Multipart(m) => &m.headers_raw,
+            };
+            let mut ret = vec![];
+            for (name, body) in raw_headers {
+                ret.extend(name.as_str().as_bytes());
+                ret.extend(b": ");
+                ret.extend(&msg.raw_message[body.start..body.end]);
+            }
+            ret.extend(b"\r\n");
+            Ok(ret.into())
+        }),
+        None => Ok(parsed.raw_message.clone()),
+        _ => bail!("Unimplemented: section {:?}", section),
+    }
+}
+
+fn subpart_msg_fn<'a, F, R>(msg: &Message<'a>, path: &[NonZeroU32], f: F) -> Result<R>
+where
+    F: FnOnce(&Message<'_>) -> Result<R>,
+{
+    if path.is_empty() {
+        f(msg)
+    } else {
+        let part = msg
+            .parts
+            .get(path[0].get() as usize - 1)
+            .ok_or(anyhow!("No such subpart: {}", path[0]))?;
+        if matches!(part, MessagePart::Message(_)) {
+            let part_msg = part
+                .parse_message()
+                .ok_or(anyhow!("Cannot parse subpart: {}", path[0]))?;
+            subpart_msg_fn(&part_msg, &path[1..], f)
+        } else {
+            bail!("Subpart is not a message: {}", path[0]);
+        }
+    }
+}
+
+fn subpart_fn<'a, F, R>(msg: &Message<'a>, path: &[NonZeroU32], f: F) -> Result<R>
+where
+    F: FnOnce(&Message<'_>, &MessagePart<'_>) -> Result<R>,
+{
+    if path.is_empty() {
+        bail!("Unexpected empty path");
+    } else {
+        let part = msg
+            .parts
+            .get(path[0].get() as usize - 1)
+            .ok_or(anyhow!("No such subpart: {}", path[0]))?;
+        if path.len() == 1 {
+            f(msg, part)
+        } else {
+            if matches!(part, MessagePart::Message(_)) {
+                let part_msg = part
+                    .parse_message()
+                    .ok_or(anyhow!("Cannot parse subpart: {}", path[0]))?;
+                subpart_fn(&part_msg, &path[1..], f)
+            } else {
+                bail!("Subpart is not a message: {}", path[0]);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

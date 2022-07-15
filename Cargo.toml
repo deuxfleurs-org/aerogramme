@@ -10,6 +10,7 @@ description = "Encrypted mail storage over Garage"
 anyhow = "1.0.28"
 argon2 = "0.3"
 async-trait = "0.1"
+backtrace = "0.3"
 base64 = "0.13"
 clap = { version = "3.1.18", features = ["derive", "env"] }
 duplexify = "1.1.0"
