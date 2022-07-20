@@ -9,9 +9,6 @@ mod mail;
 mod server;
 mod time;
 
-#[cfg(test)]
-mod mail_parser_tests;
-
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};

@@ -1,9 +1,9 @@
-use mail_parser_superboum::Message;		// FAIL
+use mail_parser_superboum::Message; // FAIL
+
 //use mail_parser_048::Message;				// PASS
 //use mail_parser_05::Message;				// PASS
 //use mail_parser_main::Message;			// PASS
 //use mail_parser_db61a03::Message;			// PASS
-
 
 #[test]
 fn test1() {
@@ -37,7 +37,6 @@ Content-Type: text/plain
     dbg!(message);
 }
 
-
 #[test]
 fn test2() {
     let input = br#"Content-Type: message/rfc822
@@ -54,7 +53,7 @@ Content-Type: text/plain
 
 #[test]
 fn test3() {
-let input = br#"Content-Type: multipart/mixed; boundary=":foo"
+    let input = br#"Content-Type: multipart/mixed; boundary=":foo"
 
 --:foo
 --:foo

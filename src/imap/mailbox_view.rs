@@ -675,7 +675,7 @@ fn build_imap_email_struct<'a>(
                     unreachable!("A multipart entry can not be found here.")
                 }
                 MessagePart::Text(bp) | MessagePart::Html(bp) => {
-                    let (attrs, mut basic) = headers_to_basic_fields(bp)?;
+                    let (attrs, mut basic) = headers_to_basic_fields(bp, bp.body.len())?;
 
                     // If the charset is not defined, set it to "us-ascii"
                     if attrs.charset.is_none() {
@@ -704,7 +704,10 @@ fn build_imap_email_struct<'a>(
                                     // We do not count the number of lines but the number of line
                                     // feeds to have the same behavior as Dovecot and Cyrus.
                                     // 2 lines = 1 line feed.
-                                    bp.body_raw.as_ref().iter().filter(|&c| c == &b'\n').count(),
+                                    // @FIXME+BUG: if the body is base64-encoded, this returns the
+                                    // number of lines in the decoded body, however we should
+                                    // instead return the number of raw base64 lines
+                                    bp.body.as_ref().chars().filter(|&c| c == '\n').count(),
                                 )?,
                             },
                         },
@@ -712,7 +715,7 @@ fn build_imap_email_struct<'a>(
                     })
                 }
                 MessagePart::Binary(bp) | MessagePart::InlineBinary(bp) => {
-                    let (_, basic) = headers_to_basic_fields(bp)?;
+                    let (_, basic) = headers_to_basic_fields(bp, bp.body.len())?;
 
                     let ct = bp
                         .get_content_type()
@@ -742,63 +745,77 @@ fn build_imap_email_struct<'a>(
                     })
                 }
                 MessagePart::Message(bp) => {
-                    let (_, mut basic) = headers_to_basic_fields(bp)?;
-
                     // @NOTE in some cases mail-parser does not parse the MessageAttachment but
-                    // provide it as raw body. Using `as_ref()` masks this fact: if the message is
-                    // parsed, as_ref() will return None. But by looking quickly at the code, it
-                    // seems that the attachment is not parsed when mail-parser encounters some
-                    // encoding problems, so it might be better to trust mail-parser.
-                    let inner = bp
-                        .get_body()
-                        .as_ref()
-                        .ok_or(anyhow!("Unable to parse inner message."))?;
+                    // provide it as raw body. By looking quickly at the code, it seems that the
+                    // attachment is not parsed when mail-parser encounters some encoding problems.
+                    match &bp.body {
+                        MessageAttachment::Parsed(inner) => {
+                            // @FIXME+BUG mail-parser does not handle ways when a MIME message contains
+                            // a raw email and wrongly take its delimiter. The size and number of
+                            // lines returned in that case are wrong. A patch to mail-parser is
+                            // needed to fix this.
+                            let (_, basic) = headers_to_basic_fields(bp, inner.raw_message.len())?;
 
-                    // @FIXME mail-parser does not handle ways when a MIME message contains
-                    // a raw email and wrongly take its delimiter. We thus test the headers to
-                    // learn if it is a RFC822 email (raw) or RFC5322 (MIME) message.
-                    // The correct way would be to patch mail-parser.
-                    let raw_msg = match part.unwrap_message().get_content_type() {
-                        Some(ContentType {
-                            attributes: Some(_),
-                            ..
-                        }) => {
-                            //println!("has a content type {:?}", bp);
-                            &inner.raw_message[..]
+                            // We do not count the number of lines but the number of line
+                            // feeds to have the same behavior as Dovecot and Cyrus.
+                            // 2 lines = 1 line feed.
+                            let nol = inner.raw_message.iter().filter(|&c| c == &b'\n').count();
+
+                            Ok(BodyStructure::Single {
+                                body: FetchBody {
+                                    basic,
+                                    specific: SpecificFields::Message {
+                                        envelope: message_envelope(inner),
+                                        body_structure: Box::new(build_imap_email_struct(
+                                            inner,
+                                            &inner.structure,
+                                        )?),
+
+                                        // @FIXME This solution is bad for 2 reasons:
+                                        // - RFC2045 says line endings are CRLF but we accept LF alone with
+                                        // this method. It could be a feature (be liberal in what you
+                                        // accept) but we must be sure that we don't break things.
+                                        // - It should be done during parsing, we are iterating twice on
+                                        // the same data which results in some wastes.
+                                        number_of_lines: u32::try_from(nol)?,
+                                    },
+                                },
+                                extension: None,
+                            })
                         }
-                        _ => {
-                            //println!("has no content type {:?}", bp);
-                            &inner.raw_message[..(inner.offset_last_part - inner.offset_header)]
+                        MessageAttachment::Raw(raw_msg) => {
+                            let (_, basic) = headers_to_basic_fields(bp, raw_msg.len())?;
+
+                            let ct = bp
+                                .get_content_type()
+                                .ok_or(anyhow!("Content-Type is missing but required here."))?;
+
+                            let type_ =
+                                IString::try_from(ct.c_type.as_ref().to_string()).map_err(|_| {
+                                    anyhow!("Unable to build IString from given Content-Type type given")
+                                })?;
+
+                            let subtype = IString::try_from(
+                                ct.c_subtype
+                                    .as_ref()
+                                    .ok_or(anyhow!("Content-Type invalid, missing subtype"))?
+                                    .to_string(),
+                            )
+                            .map_err(|_| {
+                                anyhow!(
+                                    "Unable to build IString from given Content-Type subtype given"
+                                )
+                            })?;
+
+                            Ok(BodyStructure::Single {
+                                body: FetchBody {
+                                    basic,
+                                    specific: SpecificFields::Basic { type_, subtype },
+                                },
+                                extension: None,
+                            })
                         }
-                    };
-                    basic.size = u32::try_from(raw_msg.len())?;
-
-                    // We do not count the number of lines but the number of line
-                    // feeds to have the same behavior as Dovecot and Cyrus.
-                    // 2 lines = 1 line feed.
-                    let nol = raw_msg.iter().filter(|&c| c == &b'\n').count();
-
-                    Ok(BodyStructure::Single {
-                        body: FetchBody {
-                            basic,
-                            specific: SpecificFields::Message {
-                                envelope: message_envelope(inner),
-                                body_structure: Box::new(build_imap_email_struct(
-                                    inner,
-                                    &inner.structure,
-                                )?),
-
-                                // @FIXME This solution is bad for 2 reasons:
-                                // - RFC2045 says line endings are CRLF but we accept LF alone with
-                                // this method. It could be a feature (be liberal in what you
-                                // accept) but we must be sure that we don't break things.
-                                // - It should be done during parsing, we are iterating twice on
-                                // the same data which results in some wastes.
-                                number_of_lines: u32::try_from(nol)?,
-                            },
-                        },
-                        extension: None,
-                    })
+                    }
                 }
             }
         }
@@ -934,7 +951,10 @@ fn attrs_to_params<'a>(bp: &impl MimeHeaders<'a>) -> (SpecialAttrs, Vec<(IString
 
 /// Takes mail-parser headers and build imap-codec BasicFields
 /// Return some special informations too
-fn headers_to_basic_fields<'a, T>(bp: &'a Part<T>) -> Result<(SpecialAttrs<'a>, BasicFields)> {
+fn headers_to_basic_fields<'a, T>(
+    bp: &'a Part<T>,
+    size: usize,
+) -> Result<(SpecialAttrs<'a>, BasicFields)> {
     let (attrs, parameter_list) = attrs_to_params(bp);
 
     let bf = BasicFields {
@@ -963,7 +983,7 @@ fn headers_to_basic_fields<'a, T>(bp: &'a Part<T>) -> Result<(SpecialAttrs<'a>, 
             .flatten()
             .unwrap_or(unchecked_istring("7bit")),
 
-        size: u32::try_from(bp.body_raw.len())?,
+        size: u32::try_from(size)?,
     };
 
     Ok((attrs, bf))
