@@ -48,7 +48,6 @@ dependencies = [
  "lazy_static",
  "ldap3",
  "log",
- "mail-parser 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "mail-parser 0.4.8 (git+https://github.com/superboum/mail-parser?branch=feature/no_decode)",
  "mail-parser 0.4.8 (git+https://github.com/superboum/mail-parser?rev=db61a03)",
  "mail-parser 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1365,16 +1364,6 @@ checksum = "abb12e687cfb44aa40f41fc3978ef76448f9b6038cad6aef4259d3c095a2382e"
 dependencies = [
  "cfg-if",
  "value-bag",
-]
-
-[[package]]
-name = "mail-parser"
-version = "0.4.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c46a841ae5276aba5218ade7bb76896358f9f95a925c7b3deea6a0ec0fb8e2a7"
-dependencies = [
- "encoding_rs",
- "serde",
 ]
 
 [[package]]

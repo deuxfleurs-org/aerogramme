@@ -21,7 +21,7 @@ itertools = "0.10"
 lazy_static = "1.4"
 ldap3 = { version = "0.10", default-features = false, features = ["tls"] }
 log = "0.4"
-mail-parser = "0.4.8"
+mail-parser = "0.5"
 pretty_env_logger = "0.4"
 rusoto_core = "0.48.0"
 rusoto_credential = "0.48.0"
@@ -52,7 +52,7 @@ smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/
 #k2v-client = { path = "../garage/src/k2v-client" }
 
 [dev-dependencies]
-mail-parser-05 = { package = "mail-parser", version = "0.5" }
+#mail-parser-05 = { package = "mail-parser", version = "0.5" }
 mail-parser-main = { package = "mail-parser", git = "https://github.com/stalwartlabs/mail-parser", branch = "main" }
 mail-parser-superboum = { package = "mail-parser", git = "https://github.com/superboum/mail-parser", branch = "feature/no_decode" }
 mail-parser-db61a03 = { package = "mail-parser", git = "https://github.com/superboum/mail-parser", rev = "db61a03" }
