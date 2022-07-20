@@ -48,7 +48,11 @@ dependencies = [
  "lazy_static",
  "ldap3",
  "log",
- "mail-parser",
+ "mail-parser 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mail-parser 0.4.8 (git+https://github.com/superboum/mail-parser?branch=feature/no_decode)",
+ "mail-parser 0.4.8 (git+https://github.com/superboum/mail-parser?rev=db61a03)",
+ "mail-parser 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mail-parser 0.5.0 (git+https://github.com/stalwartlabs/mail-parser?branch=main)",
  "pretty_env_logger",
  "rand",
  "rmp-serde",
@@ -1368,6 +1372,43 @@ name = "mail-parser"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c46a841ae5276aba5218ade7bb76896358f9f95a925c7b3deea6a0ec0fb8e2a7"
+dependencies = [
+ "encoding_rs",
+ "serde",
+]
+
+[[package]]
+name = "mail-parser"
+version = "0.4.8"
+source = "git+https://github.com/superboum/mail-parser?branch=feature/no_decode#0fe5fe071f25016d9c1232eb452c0c4bbfa8a445"
+dependencies = [
+ "encoding_rs",
+ "serde",
+]
+
+[[package]]
+name = "mail-parser"
+version = "0.4.8"
+source = "git+https://github.com/superboum/mail-parser?rev=db61a03#db61a0364c00d3cf115f20c6d195bfa4594c53ff"
+dependencies = [
+ "encoding_rs",
+ "serde",
+]
+
+[[package]]
+name = "mail-parser"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e25e9e9cd1360538e0ca33499f12fd180f3611d7a8e1a50b7e4e43a4c5dd4b7"
+dependencies = [
+ "encoding_rs",
+ "serde",
+]
+
+[[package]]
+name = "mail-parser"
+version = "0.5.0"
+source = "git+https://github.com/stalwartlabs/mail-parser?branch=main#bb0e3366daabec8d2f94afd22c661394f9ba7cbe"
 dependencies = [
  "encoding_rs",
  "serde",

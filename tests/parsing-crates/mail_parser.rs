@@ -1,6 +1,7 @@
-use mail_parser_superboum::Message; // FAIL
+//use mail_parser_superboum::Message; // FAIL
 
-//use mail_parser_048::Message;				// PASS
+use mail_parser::Message;				// PASS
+
 //use mail_parser_05::Message;				// PASS
 //use mail_parser_main::Message;			// PASS
 //use mail_parser_db61a03::Message;			// PASS

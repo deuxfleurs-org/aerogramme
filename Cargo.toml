@@ -50,3 +50,9 @@ smtp-message = { git = "http://github.com/Alexis211/kannader", branch = "feature
 smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 
 #k2v-client = { path = "../garage/src/k2v-client" }
+
+[dev-dependencies]
+mail-parser-05 = { package = "mail-parser", version = "0.5" }
+mail-parser-main = { package = "mail-parser", git = "https://github.com/stalwartlabs/mail-parser", branch = "main" }
+mail-parser-superboum = { package = "mail-parser", git = "https://github.com/superboum/mail-parser", branch = "feature/no_decode" }
+mail-parser-db61a03 = { package = "mail-parser", git = "https://github.com/superboum/mail-parser", rev = "db61a03" }
