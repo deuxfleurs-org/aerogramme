@@ -138,7 +138,7 @@ impl Mailbox {
 
     /// Copy an email from an other Mailbox to this mailbox
     /// (use this when possible, as it allows for a certain number of storage optimizations)
-    pub async fn copy_from(&self, from: &Mailbox, uuid: UniqueIdent) -> Result<()> {
+    pub async fn copy_from(&self, from: &Mailbox, uuid: UniqueIdent) -> Result<UniqueIdent> {
         if self.id == from.id {
             bail!("Cannot copy into same mailbox");
         }
@@ -412,9 +412,14 @@ impl MailboxInternal {
         Ok(())
     }
 
-    async fn copy_from(&mut self, from: &MailboxInternal, source_id: UniqueIdent) -> Result<()> {
+    async fn copy_from(
+        &mut self,
+        from: &MailboxInternal,
+        source_id: UniqueIdent,
+    ) -> Result<UniqueIdent> {
         let new_id = gen_ident();
-        self.copy_internal(from, source_id, new_id).await
+        self.copy_internal(from, source_id, new_id).await?;
+        Ok(new_id)
     }
 
     async fn move_from(&mut self, from: &mut MailboxInternal, id: UniqueIdent) -> Result<()> {

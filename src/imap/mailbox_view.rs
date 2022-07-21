@@ -168,6 +168,7 @@ impl MailboxView {
             }
         }
 
+        // @TODO: handle _response
         self.update().await
     }
 
@@ -187,6 +188,33 @@ impl MailboxView {
         }
 
         self.update().await
+    }
+
+    pub async fn copy(
+        &self,
+        sequence_set: &SequenceSet,
+        to: Arc<Mailbox>,
+        is_uid_copy: &bool,
+    ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>)> {
+        let mails = self.get_mail_ids(sequence_set, *is_uid_copy)?;
+
+        let mut new_uuids = vec![];
+        for (_i, _uid, uuid) in mails.iter() {
+            new_uuids.push(to.copy_from(&self.mailbox, *uuid).await?);
+        }
+
+        let mut ret = vec![];
+        let to_state = to.current_uid_index().await;
+        for ((_i, uid, _uuid), new_uuid) in mails.iter().zip(new_uuids.iter()) {
+            let dest_uid = to_state
+                .table
+                .get(new_uuid)
+                .ok_or(anyhow!("copied mail not in destination mailbox"))?
+                .0;
+            ret.push((*uid, dest_uid));
+        }
+
+        Ok((to_state.uidvalidity, ret))
     }
 
     /// Looks up state changes in the mailbox and produces a set of IMAP
@@ -838,21 +866,6 @@ fn build_imap_email_struct<'a>(msg: &Message<'a>, part: &MessagePart<'a>) -> Res
                 }
             }
         }
-    }
-}
-
-fn count_lines(mut text: &[u8]) -> Result<u32> {
-    while text.first().map(u8::is_ascii_whitespace).unwrap_or(false) {
-        text = &text[1..];
-    }
-    while text.last().map(u8::is_ascii_whitespace).unwrap_or(false) {
-        text = &text[..text.len() - 1];
-    }
-    if text.is_empty() {
-        Ok(0)
-    } else {
-        let nlf = text.iter().filter(|x| **x == b'\n').count();
-        Ok(u32::try_from(1 + nlf)?)
     }
 }
 

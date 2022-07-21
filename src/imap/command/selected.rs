@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use boitalettres::proto::Request;
 use boitalettres::proto::Response;
 use imap_codec::types::command::CommandBody;
-
 use imap_codec::types::flag::{Flag, StoreResponse, StoreType};
 use imap_codec::types::mailbox::Mailbox as MailboxCodec;
-
+use imap_codec::types::response::Code;
 use imap_codec::types::sequence::SequenceSet;
 
 use crate::imap::command::examined;
@@ -91,10 +90,41 @@ impl<'a> SelectedContext<'a> {
 
     async fn copy(
         self,
-        _sequence_set: &SequenceSet,
-        _mailbox: &MailboxCodec,
-        _uid: &bool,
+        sequence_set: &SequenceSet,
+        mailbox: &MailboxCodec,
+        uid: &bool,
     ) -> Result<(Response, flow::Transition)> {
-        Ok((Response::bad("Not implemented")?, flow::Transition::None))
+        let name = String::try_from(mailbox.clone())?;
+
+        let mb_opt = self.user.open_mailbox(&name).await?;
+        let mb = match mb_opt {
+            Some(mb) => mb,
+            None => bail!("Mailbox does not exist"),
+        };
+
+        let (uidval, uid_map) = self.mailbox.copy(sequence_set, mb, uid).await?;
+
+        let copyuid_str = format!(
+            "{} {} {}",
+            uidval,
+            uid_map
+                .iter()
+                .map(|(sid, _)| format!("{}", sid))
+                .collect::<Vec<_>>()
+                .join(","),
+            uid_map
+                .iter()
+                .map(|(_, tuid)| format!("{}", tuid))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+
+        Ok((
+            Response::ok("COPY completed")?.with_extra_code(Code::Other(
+                "COPYUID".try_into().unwrap(),
+                Some(copyuid_str),
+            )),
+            flow::Transition::None,
+        ))
     }
 }
