@@ -77,17 +77,15 @@ impl User {
         }
 
         if let Some((uidvalidity, Some(mbid))) = list.get_mailbox(name) {
-            let mb_opt = self.open_mailbox_by_id(mbid, uidvalidity).await?;
-            if let Some(mb) = &mb_opt {
-                let mb_uidvalidity = mb.current_uid_index().await.uidvalidity;
-                if mb_uidvalidity > uidvalidity {
-                    list.update_uidvalidity(name, mb_uidvalidity);
-                    self.save_mailbox_list(&list, ct).await?;
-                }
+            let mb = self.open_mailbox_by_id(mbid, uidvalidity).await?;
+            let mb_uidvalidity = mb.current_uid_index().await.uidvalidity;
+            if mb_uidvalidity > uidvalidity {
+                list.update_uidvalidity(name, mb_uidvalidity);
+                self.save_mailbox_list(&list, ct).await?;
             }
-            Ok(mb_opt)
+            Ok(Some(mb))
         } else {
-            bail!("Mailbox does not exist: {}", name);
+            Ok(None)
         }
     }
 
@@ -203,11 +201,11 @@ impl User {
         &self,
         id: UniqueIdent,
         min_uidvalidity: ImapUidvalidity,
-    ) -> Result<Option<Arc<Mailbox>>> {
+    ) -> Result<Arc<Mailbox>> {
         {
             let cache = self.mailboxes.lock().unwrap();
             if let Some(mb) = cache.get(&id).and_then(Weak::upgrade) {
-                return Ok(Some(mb));
+                return Ok(mb);
             }
         }
 
@@ -216,10 +214,10 @@ impl User {
         let mut cache = self.mailboxes.lock().unwrap();
         if let Some(concurrent_mb) = cache.get(&id).and_then(Weak::upgrade) {
             drop(mb); // we worked for nothing but at least we didn't starve someone else
-            Ok(Some(concurrent_mb))
+            Ok(concurrent_mb)
         } else {
             cache.insert(id, Arc::downgrade(&mb));
-            Ok(Some(mb))
+            Ok(mb)
         }
     }
 

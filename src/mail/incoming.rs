@@ -109,7 +109,7 @@ async fn incoming_mail_watch_process_internal(
             if Some(id) != inbox.as_ref().map(|b| b.id) {
                 match user.open_mailbox_by_id(id, uidvalidity).await {
                     Ok(mb) => {
-                        inbox = mb;
+                        inbox = Some(mb);
                     }
                     Err(e) => {
                         inbox = None;

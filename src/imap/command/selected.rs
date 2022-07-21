@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use boitalettres::proto::Request;
 use boitalettres::proto::Response;
 use imap_codec::types::command::CommandBody;
@@ -99,7 +99,13 @@ impl<'a> SelectedContext<'a> {
         let mb_opt = self.user.open_mailbox(&name).await?;
         let mb = match mb_opt {
             Some(mb) => mb,
-            None => bail!("Mailbox does not exist"),
+            None => {
+                return Ok((
+                    Response::no("Destination mailbox does not exist")?
+                        .with_extra_code(Code::TryCreate),
+                    flow::Transition::None,
+                ))
+            }
         };
 
         let (uidval, uid_map) = self.mailbox.copy(sequence_set, mb, uid).await?;
