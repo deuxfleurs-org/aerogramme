@@ -12,6 +12,11 @@
 
  - [Not ready for production]()
 
+# Reference
+
+- [Configuration file](./config.md)
+- [RFC coverage](./rfc.md)
+
 # Design
 
 - [Overview](./overview.md)
@@ -19,9 +24,9 @@
 - [Mutation Log](./log.md)
 - [IMAP UID proof](./imap_uid.md)
 
-# Reference
+# Internals
 
-- [Data format](./data_format.md)
+- [Persisted data structures](./data_format.md)
 - [Cryptography & key management](./crypt-key.md)
 
 # Development
