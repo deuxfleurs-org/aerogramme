@@ -1,12 +1,15 @@
 #!/bin/sh
 
-cd $(dirname $0)
+SCRIPT=$0
+USER=$1
+SUBFOLDER=$2
+cd $(dirname $SCRIPT)
 
 function mail_lmtp_session (
 	echo -e "LHLO localhost\r"
-	for mail in $(find emails -name '*.eml'); do
+	for mail in $(find emails/$SUBFOLDER -name '*.eml' ); do
 		echo -e "MAIL FROM: <alex@adnab.me>\r"
-		echo -e "RCPT TO: <lx@staging.deuxfleurs.org>\r"
+		echo -e "RCPT TO: $USER\r"
 		echo -e "DATA\r"
 		cat $mail
 		echo -e "\r"
