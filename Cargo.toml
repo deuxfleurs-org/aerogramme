@@ -22,7 +22,6 @@ lazy_static = "1.4"
 ldap3 = { version = "0.10", default-features = false, features = ["tls"] }
 log = "0.4"
 mail-parser = "0.5"
-pretty_env_logger = "0.4"
 rusoto_core = "0.48.0"
 rusoto_credential = "0.48.0"
 rusoto_s3 = "0.48"
