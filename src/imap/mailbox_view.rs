@@ -793,12 +793,13 @@ fn build_imap_email_struct<'a>(msg: &Message<'a>, part: &MessagePart<'a>) -> Res
             // @FIXME+BUG mail-parser does not handle ways when a MIME message contains
             // a raw email and wrongly take its delimiter. The size and number of
             // lines returned in that case are wrong. A patch to mail-parser is
-            // needed to fix this.
+            // needed to fix this. (COMMENT MIGHT BE OBSOLETE)
             let (_, basic) = headers_to_basic_fields(&part, inner.raw_message.len())?;
 
             // We do not count the number of lines but the number of line
             // feeds to have the same behavior as Dovecot and Cyrus.
             // 2 lines = 1 line feed.
+            println!("debug qdu: {}", String::from_utf8_lossy(&inner.raw_message[0..128]));
             let nol = inner.raw_message.iter().filter(|&c| c == &b'\n').count();
 
             Ok(BodyStructure::Single {
@@ -1111,7 +1112,7 @@ mod tests {
             let message = Message::parse(&txt).unwrap();
 
             let mut resp = Vec::new();
-            MessageAttribute::Body(build_imap_email_struct(&message, message.get_root_part())?)
+            MessageAttribute::Body(build_imap_email_struct(&message, message.root_part())?)
                 .encode(&mut resp);
 
             let resp_str = String::from_utf8_lossy(&resp).to_lowercase();
@@ -1119,7 +1120,7 @@ mod tests {
             let exp_no_parenthesis = &exp[1..exp.len() - 1];
             let exp_str = String::from_utf8_lossy(exp_no_parenthesis).to_lowercase();
 
-            println!("aerogramme: {}\ndovecot:    {}", resp_str, exp_str);
+            println!("aerogramme: {}\n\ndovecot:    {}\n\n", resp_str, exp_str);
             //println!("\n\n {} \n\n", String::from_utf8_lossy(&resp));
             assert_eq!(resp_str, exp_str);
         }
