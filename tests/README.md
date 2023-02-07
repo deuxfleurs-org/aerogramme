@@ -13,8 +13,12 @@ docker-compose up
     - listen on :994,  run `openssl s_client -connect 127.0.0.1:994`
     - login with `A LOGIN test@example.com pass`
   - Cyrus
-    - lient on :143, run `nc 127.0.0.1 143`
+    - listen on :143, run `nc 127.0.0.1 143`
     - login with `A LOGIN test pass`
+  - Stalwart
+    - listen on :1993, run `openssl s_client -connect 127.0.0.1:993`
+    - login with `A LOGIN test@example.com pass`
+    - note: not packaged in docker yet...
 
 Other IMAP servers we could add:
   - WildDuck (own node.js imap implementation)
