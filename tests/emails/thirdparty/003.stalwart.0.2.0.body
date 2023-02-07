@@ -1,0 +1,1 @@
+(BODY (("text" "plain" ("charset" "us-ascii") NIL NIL "7bit" 35 1) ("text" "plain" ("charset" "UTF-8") NIL NIL "binary" 23 1) ("text" "plain" ("charset" "us-ascii") NIL NIL "8bit" 66 3) ("text" "plain" ("charset" "us-ascii") NIL NIL "quoted-printable" 84 3) ("text" "plain" ("charset" "UTF-8") NIL NIL "base64" 34 1) "mixed"))

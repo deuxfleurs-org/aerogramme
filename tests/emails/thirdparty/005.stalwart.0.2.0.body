@@ -1,0 +1,1 @@
+(BODY (("text" "plain" ("charset" "utf-16le") NIL NIL "binary" 27 1) ("text" "plain" ("charset" "utf-16be") NIL NIL "base64" 38 1) ("text" "plain" ("charset" "utf-16le") NIL NIL "base64" 38 1) ("text" "plain" ("charset" "EUC-JP") NIL NIL "base64" 26 1) ("text" "plain" ("charset" "UTF-8") NIL NIL "binary" 7 0) "mixed"))

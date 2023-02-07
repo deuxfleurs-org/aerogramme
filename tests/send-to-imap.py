@@ -50,6 +50,14 @@ parameters = {
     "pw": "pass",
     "ext": ".cyrus",
     "mb": "INBOX."+base_test_mb,
+  },
+  "stalwart": {
+    "con": IMAP4_SSL,
+    "port": 1993,
+    "user": "test@example.com",
+    "pw": "pass",
+    "ext": ".stalwart.0.2.0",
+    "mb": base_test_mb,
   }
 }
 

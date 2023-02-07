@@ -1,0 +1,1 @@
+(BODYSTRUCTURE (("text" "plain" ("charset" "us-ascii") NIL NIL "quoted-printable" 35 2 "900d974c56a0239f94cae2992a575b06" NIL NIL NIL) ("application" "pgp-signature" ("name" "signature.asc") NIL NIL NIL 9 "26043330a1b34f460e93dc28a6c8bcec" NIL NIL NIL) "signed" ("micalg" "pgp-sha1" "protocol" "application/pgp-signature" "boundary" "=-GNQXLhuj24Pl1aCkk4/d") NIL NIL NIL))
