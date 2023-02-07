@@ -308,7 +308,7 @@ impl MailboxView {
                         )))
                     }
                     FetchAttribute::Rfc822Text => {
-                        let rp = parsed.get_root_part();
+                        let rp = parsed.root_part();
                         let r = parsed
                             .raw_message
                             .get(rp.offset_body..rp.offset_end)
@@ -332,10 +332,10 @@ impl MailboxView {
                         attributes.push(MessageAttribute::Envelope(message_envelope(&parsed)))
                     }
                     FetchAttribute::Body => attributes.push(MessageAttribute::Body(
-                        build_imap_email_struct(&parsed, parsed.get_root_part())?,
+                        build_imap_email_struct(&parsed, parsed.root_part())?,
                     )),
                     FetchAttribute::BodyStructure => attributes.push(MessageAttribute::Body(
-                        build_imap_email_struct(&parsed, parsed.get_root_part())?,
+                        build_imap_email_struct(&parsed, parsed.root_part())?,
                     )),
                     FetchAttribute::BodyExt {
                         section,
@@ -610,26 +610,26 @@ fn string_to_flag(f: &str) -> Option<Flag> {
 //@FIXME return an error if the envelope is invalid instead of panicking
 //@FIXME some fields must be defaulted if there are not set.
 fn message_envelope(msg: &mail_parser::Message<'_>) -> Envelope {
-    let from = convert_addresses(msg.get_from()).unwrap_or(vec![]);
+    let from = convert_addresses(msg.from()).unwrap_or(vec![]);
 
     Envelope {
         date: NString(
-            msg.get_date()
-                .map(|d| IString::try_from(d.to_iso8601()).unwrap()),
+            msg.date()
+                .map(|d| IString::try_from(d.to_rfc3339()).unwrap()),
         ),
         subject: NString(
-            msg.get_subject()
+            msg.subject()
                 .map(|d| IString::try_from(d.to_string()).unwrap()),
         ),
         from: from.clone(),
-        sender: convert_addresses(msg.get_sender()).unwrap_or(from.clone()),
-        reply_to: convert_addresses(msg.get_reply_to()).unwrap_or(from.clone()),
-        to: convert_addresses(msg.get_to()).unwrap_or(vec![]),
-        cc: convert_addresses(msg.get_cc()).unwrap_or(vec![]),
-        bcc: convert_addresses(msg.get_bcc()).unwrap_or(vec![]),
+        sender: convert_addresses(msg.sender()).unwrap_or(from.clone()),
+        reply_to: convert_addresses(msg.reply_to()).unwrap_or(from.clone()),
+        to: convert_addresses(msg.to()).unwrap_or(vec![]),
+        cc: convert_addresses(msg.cc()).unwrap_or(vec![]),
+        bcc: convert_addresses(msg.bcc()).unwrap_or(vec![]),
         in_reply_to: NString(None), // @TODO
         message_id: NString(
-            msg.get_message_id()
+            msg.message_id()
                 .map(|d| IString::try_from(d.to_string()).unwrap()),
         ),
     }
@@ -642,12 +642,6 @@ fn convert_addresses(a: &mail_parser::HeaderValue<'_>) -> Option<Vec<Address>> {
             Some(l.iter().map(|a| convert_address(a)).collect())
         }
         mail_parser::HeaderValue::Empty => None,
-        mail_parser::HeaderValue::Collection(c) => Some(
-            c.iter()
-                .map(|l| convert_addresses(l).unwrap_or(vec![]))
-                .flatten()
-                .collect(),
-        ),
         _ => {
             tracing::warn!("Invalid address header");
             None
@@ -698,10 +692,10 @@ fn build_imap_email_struct<'a>(msg: &Message<'a>, part: &MessagePart<'a>) -> Res
     match &part.body {
         PartType::Multipart(parts) => {
             let subtype = IString::try_from(
-                part.headers_rfc
-                    .get(&RfcHeader::ContentType)
+                part.headers
+                    .rfc(&RfcHeader::ContentType)
                     .ok_or(anyhow!("Content-Type is missing but required here."))?
-                    .get_content_type()
+                    .content_type()
                     .c_subtype
                     .as_ref()
                     .ok_or(anyhow!("Content-Type invalid, missing subtype"))?
@@ -741,7 +735,7 @@ fn build_imap_email_struct<'a>(msg: &Message<'a>, part: &MessagePart<'a>) -> Res
             // MUST be defined and hence has no default. But mail-parser does not make any
             // difference between MIME and raw emails, hence raw emails have no subtypes.
             let subtype = part
-                .get_content_type()
+                .content_type()
                 .map(|h| h.c_subtype.as_ref())
                 .flatten()
                 .map(|st| IString::try_from(st.to_string()).ok())
@@ -770,7 +764,7 @@ fn build_imap_email_struct<'a>(msg: &Message<'a>, part: &MessagePart<'a>) -> Res
             let (_, basic) = headers_to_basic_fields(&part, bp.len())?;
 
             let ct = part
-                .get_content_type()
+                .content_type()
                 .ok_or(anyhow!("Content-Type is missing but required here."))?;
 
             let type_ = IString::try_from(ct.c_type.as_ref().to_string()).map_err(|_| {
@@ -795,31 +789,26 @@ fn build_imap_email_struct<'a>(msg: &Message<'a>, part: &MessagePart<'a>) -> Res
                 extension: None,
             })
         }
-        PartType::Message(bp) => {
-            // @NOTE in some cases mail-parser does not parse the MessageAttachment but
-            // provide it as raw body. By looking quickly at the code, it seems that the
-            // attachment is not parsed when mail-parser encounters some encoding problems.
-            match &bp {
-                MessageAttachment::Parsed(inner) => {
-                    // @FIXME+BUG mail-parser does not handle ways when a MIME message contains
-                    // a raw email and wrongly take its delimiter. The size and number of
-                    // lines returned in that case are wrong. A patch to mail-parser is
-                    // needed to fix this.
-                    let (_, basic) = headers_to_basic_fields(&part, inner.raw_message.len())?;
+        PartType::Message(inner) => {
+            // @FIXME+BUG mail-parser does not handle ways when a MIME message contains
+            // a raw email and wrongly take its delimiter. The size and number of
+            // lines returned in that case are wrong. A patch to mail-parser is
+            // needed to fix this.
+            let (_, basic) = headers_to_basic_fields(&part, inner.raw_message.len())?;
 
-                    // We do not count the number of lines but the number of line
-                    // feeds to have the same behavior as Dovecot and Cyrus.
-                    // 2 lines = 1 line feed.
-                    let nol = inner.raw_message.iter().filter(|&c| c == &b'\n').count();
+            // We do not count the number of lines but the number of line
+            // feeds to have the same behavior as Dovecot and Cyrus.
+            // 2 lines = 1 line feed.
+            let nol = inner.raw_message.iter().filter(|&c| c == &b'\n').count();
 
-                    Ok(BodyStructure::Single {
-                        body: FetchBody {
-                            basic,
-                            specific: SpecificFields::Message {
-                                envelope: message_envelope(inner),
-                                body_structure: Box::new(build_imap_email_struct(
-                                    &inner,
-                                    inner.get_root_part(),
+            Ok(BodyStructure::Single {
+                body: FetchBody {
+                    basic,
+                    specific: SpecificFields::Message {
+                        envelope: message_envelope(inner),
+                        body_structure: Box::new(build_imap_email_struct(
+                                &inner,
+                                inner.root_part(),
                                 )?),
 
                                 // @FIXME This solution is bad for 2 reasons:
@@ -829,42 +818,10 @@ fn build_imap_email_struct<'a>(msg: &Message<'a>, part: &MessagePart<'a>) -> Res
                                 // - It should be done during parsing, we are iterating twice on
                                 // the same data which results in some wastes.
                                 number_of_lines: u32::try_from(nol)?,
-                            },
-                        },
-                        extension: None,
-                    })
-                }
-                MessageAttachment::Raw(raw_msg) => {
-                    let (_, basic) = headers_to_basic_fields(&part, raw_msg.len())?;
-
-                    let ct = part
-                        .get_content_type()
-                        .ok_or(anyhow!("Content-Type is missing but required here."))?;
-
-                    let type_ =
-                        IString::try_from(ct.c_type.as_ref().to_string()).map_err(|_| {
-                            anyhow!("Unable to build IString from given Content-Type type given")
-                        })?;
-
-                    let subtype = IString::try_from(
-                        ct.c_subtype
-                            .as_ref()
-                            .ok_or(anyhow!("Content-Type invalid, missing subtype"))?
-                            .to_string(),
-                    )
-                    .map_err(|_| {
-                        anyhow!("Unable to build IString from given Content-Type subtype given")
-                    })?;
-
-                    Ok(BodyStructure::Single {
-                        body: FetchBody {
-                            basic,
-                            specific: SpecificFields::Basic { type_, subtype },
-                        },
-                        extension: None,
-                    })
-                }
-            }
+                    },
+                },
+                extension: None,
+            })
         }
     }
 }
@@ -896,7 +853,7 @@ struct SpecialAttrs<'a> {
 fn attrs_to_params<'a>(bp: &impl MimeHeaders<'a>) -> (SpecialAttrs, Vec<(IString, IString)>) {
     // Try to extract Content-Type attributes from headers
     let attrs = match bp
-        .get_content_type()
+        .content_type()
         .map(|c| c.attributes.as_ref())
         .flatten()
     {
@@ -942,13 +899,13 @@ fn headers_to_basic_fields<'a>(
         parameter_list,
 
         id: NString(
-            bp.get_content_id()
+            bp.content_id()
                 .map(|ci| IString::try_from(ci.to_string()).ok())
                 .flatten(),
         ),
 
         description: NString(
-            bp.get_content_description()
+            bp.content_description()
                 .map(|cd| IString::try_from(cd.to_string()).ok())
                 .flatten(),
         ),
@@ -959,7 +916,7 @@ fn headers_to_basic_fields<'a>(
          * Content-Transfer-Encoding header field is not present.
          */
         content_transfer_encoding: bp
-            .get_content_transfer_encoding()
+            .content_transfer_encoding()
             .map(|h| IString::try_from(h.to_string()).ok())
             .flatten()
             .unwrap_or(unchecked_istring("7bit")),
@@ -976,7 +933,7 @@ fn get_message_section<'a>(
 ) -> Result<Cow<'a, [u8]>> {
     match section {
         Some(FetchSection::Text(None)) => {
-            let rp = parsed.get_root_part();
+            let rp = parsed.root_part();
             Ok(parsed
                 .raw_message
                 .get(rp.offset_body..rp.offset_end)
@@ -987,7 +944,7 @@ fn get_message_section<'a>(
         }
         Some(FetchSection::Text(Some(part))) => {
             map_subpart_msg(parsed, part.0.as_slice(), |part_msg| {
-                let rp = part_msg.get_root_part();
+                let rp = part_msg.root_part();
                 Ok(part_msg
                     .raw_message
                     .get(rp.offset_body..rp.offset_end)
@@ -1002,7 +959,7 @@ fn get_message_section<'a>(
             parsed,
             part.as_ref().map(|p| p.0.as_slice()).unwrap_or(&[]),
             |part_msg| {
-                let rp = part_msg.get_root_part();
+                let rp = part_msg.root_part();
                 Ok(part_msg
                     .raw_message
                     .get(..rp.offset_body)
@@ -1031,13 +988,13 @@ fn get_message_section<'a>(
                 part.as_ref().map(|p| p.0.as_slice()).unwrap_or(&[]),
                 |part_msg| {
                     let mut ret = vec![];
-                    for (hn, hv) in part_msg.get_raw_headers() {
+                    for (hn, hv) in part_msg.headers_raw() {
                         if fields
                             .as_slice()
                             .iter()
-                            .any(|x| (*x == hn.as_str().as_bytes()) ^ invert)
+                            .any(|x| (*x == hn.as_bytes()) ^ invert)
                         {
-                            ret.extend(hn.as_str().as_bytes());
+                            ret.extend(hn.as_bytes());
                             ret.extend(b": ");
                             ret.extend(hv.as_bytes());
                         }
@@ -1051,18 +1008,17 @@ fn get_message_section<'a>(
             let bytes = match &part.body {
                 PartType::Text(p) | PartType::Html(p) => p.as_bytes().to_vec(),
                 PartType::Binary(p) | PartType::InlineBinary(p) => p.to_vec(),
-                PartType::Message(MessageAttachment::Raw(r)) => r.to_vec(),
-                PartType::Message(MessageAttachment::Parsed(p)) => p.raw_message.to_vec(),
+                PartType::Message(p) => p.raw_message.to_vec(),
                 PartType::Multipart(_) => bail!("Multipart part has no body"),
             };
             Ok(bytes.into())
         }),
         Some(FetchSection::Mime(part)) => map_subpart(parsed, part.0.as_slice(), |msg, part| {
             let mut ret = vec![];
-            for (name, body) in part.headers_raw.iter() {
-                ret.extend(name.as_str().as_bytes());
+            for head in part.headers.iter() {
+                ret.extend(head.name.as_str().as_bytes());
                 ret.extend(b": ");
-                ret.extend(&msg.raw_message[body.start..body.end]);
+                ret.extend(&msg.raw_message[head.offset_start..head.offset_end]);
             }
             ret.extend(b"\r\n");
             Ok(ret.into())
@@ -1082,11 +1038,8 @@ where
             .parts
             .get(path[0].get() as usize - 1)
             .ok_or(anyhow!("No such subpart: {}", path[0]))?;
-        if let PartType::Message(msg_attch) = &part.body {
-            let part_msg = msg_attch
-                .get_message()
-                .ok_or(anyhow!("Cannot parse subpart: {}", path[0]))?;
-            map_subpart_msg(&part_msg, &path[1..], f)
+        if let PartType::Message(msg_attach) = &part.body {
+            map_subpart_msg(&msg_attach, &path[1..], f)
         } else {
             bail!("Subpart is not a message: {}", path[0]);
         }
@@ -1107,11 +1060,8 @@ where
         if path.len() == 1 {
             f(msg, part)
         } else {
-            if let PartType::Message(msg_attch) = &part.body {
-                let part_msg = msg_attch
-                    .get_message()
-                    .ok_or(anyhow!("Cannot parse subpart: {}", path[0]))?;
-                map_subpart(&part_msg, &path[1..], f)
+            if let PartType::Message(msg_attach) = &part.body {
+                map_subpart(&msg_attach, &path[1..], f)
             } else {
                 bail!("Subpart is not a message: {}", path[0]);
             }

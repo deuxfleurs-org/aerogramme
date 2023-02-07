@@ -308,7 +308,7 @@ impl MailboxInternal {
             },
             async {
                 // Save mail meta
-                let mail_root = mail.parsed.get_root_part();
+                let mail_root = mail.parsed.root_part();
                 let meta = MailMeta {
                     internaldate: now_msec(),
                     headers: mail.raw[..mail_root.offset_body].to_vec(),
@@ -359,7 +359,7 @@ impl MailboxInternal {
             },
             async {
                 // Save mail meta
-                let mail_root = mail.parsed.get_root_part();
+                let mail_root = mail.parsed.root_part();
                 let meta = MailMeta {
                     internaldate: now_msec(),
                     headers: mail.raw[..mail_root.offset_body].to_vec(),
