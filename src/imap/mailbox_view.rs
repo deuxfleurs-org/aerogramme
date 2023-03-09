@@ -790,17 +790,12 @@ fn build_imap_email_struct<'a>(msg: &Message<'a>, part: &MessagePart<'a>) -> Res
             })
         }
         PartType::Message(inner) => {
-            // @FIXME+BUG mail-parser does not handle ways when a MIME message contains
-            // a raw email and wrongly take its delimiter. The size and number of
-            // lines returned in that case are wrong. A patch to mail-parser is
-            // needed to fix this. (COMMENT MIGHT BE OBSOLETE)
-            let (_, basic) = headers_to_basic_fields(&part, inner.raw_message.len())?;
+            let (_, basic) = headers_to_basic_fields(&part, inner.raw_message().len())?;
 
             // We do not count the number of lines but the number of line
             // feeds to have the same behavior as Dovecot and Cyrus.
             // 2 lines = 1 line feed.
-            println!("debug qdu: {}", String::from_utf8_lossy(&inner.raw_message[0..128]));
-            let nol = inner.raw_message.iter().filter(|&c| c == &b'\n').count();
+            let nol = inner.raw_message().iter().filter(|&c| c == &b'\n').count();
 
             Ok(BodyStructure::Single {
                 body: FetchBody {
@@ -1086,15 +1081,19 @@ mod tests {
             "tests/emails/dxflrs/0001_simple",
             "tests/emails/dxflrs/0002_mime",
             "tests/emails/dxflrs/0003_mime-in-mime",
-            // broken: numbers of lines/characters not counted correctly
             "tests/emails/dxflrs/0004_msg-in-msg",
+
+            // wrong. base64?
             //"tests/emails/dxflrs/0005_mail-parser-readme",
 
-            // broken
-            //"tests/emails/dxflrs/0006_single-mime",
+            "tests/emails/dxflrs/0006_single-mime",
+
+            // panic - thread 'imap::mailbox_view::tests::fetch_body' panicked at 'range end index 128 out of range for slice of length 127', src/imap/mailbox_view.rs:798:64
             //"tests/emails/dxflrs/0007_raw_msg_in_rfc822",
 
-            //"tests/emails/rfc/000", // broken
+            // broken, wrong mimetype text, should be audio
+            // "tests/emails/rfc/000",
+            
             //  "tests/emails/rfc/001", // broken
             //  "tests/emails/rfc/002", // broken: dovecot adds \r when it is missing and count is as
             // a character. Difference on how lines are counted too.
