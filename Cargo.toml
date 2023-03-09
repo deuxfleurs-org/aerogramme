@@ -21,7 +21,7 @@ itertools = "0.10"
 lazy_static = "1.4"
 ldap3 = { version = "0.10", default-features = false, features = ["tls"] }
 log = "0.4"
-mail-parser = "0.8"
+mail-parser = "0.8.2"
 rusoto_core = "0.48.0"
 rusoto_credential = "0.48.0"
 rusoto_s3 = "0.48"
