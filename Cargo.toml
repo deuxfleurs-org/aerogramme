@@ -19,12 +19,13 @@ futures = "0.3"
 im = "15"
 itertools = "0.10"
 lazy_static = "1.4"
-ldap3 = { version = "0.10", default-features = false, features = ["tls"] }
+ldap3 = { version = "0.10", default-features = false, features = ["tls-rustls"] }
 log = "0.4"
 mail-parser = "0.8.2"
-rusoto_core = "0.48.0"
+rusoto_core = { version = "0.48.0", default_features = false, features = ["rustls"] }
 rusoto_credential = "0.48.0"
-rusoto_s3 = "0.48"
+rusoto_s3 = { version = "0.48.0", default_features = false, features = ["rustls"] }
+
 rusoto_signature = "0.48.0"
 serde = "1.0.137"
 rand = "0.8.5"
@@ -52,6 +53,6 @@ smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/
 
 [dev-dependencies]
 #mail-parser-05 = { package = "mail-parser", version = "0.5" }
-mail-parser-main = { package = "mail-parser", git = "https://github.com/stalwartlabs/mail-parser", branch = "main" }
-mail-parser-superboum = { package = "mail-parser", git = "https://github.com/superboum/mail-parser", branch = "feature/no_decode" }
-mail-parser-db61a03 = { package = "mail-parser", git = "https://github.com/superboum/mail-parser", rev = "db61a03" }
+#mail-parser-main = { package = "mail-parser", git = "https://github.com/stalwartlabs/mail-parser", branch = "main" }
+#mail-parser-superboum = { package = "mail-parser", git = "https://github.com/superboum/mail-parser", branch = "feature/no_decode" }
+#mail-parser-db61a03 = { package = "mail-parser", git = "https://github.com/superboum/mail-parser", rev = "db61a03" }
