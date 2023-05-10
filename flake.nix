@@ -58,10 +58,12 @@
     };
 
     rustTarget = if targetHost == "armv6l-unknown-linux-musleabihf" then "arm-unknown-linux-musleabihf" else targetHost;
-    
-    rustPkgs = pkgs.rustBuilder.makePackageSet({
+
+    # release builds
+    rustRelease = pkgs.rustBuilder.makePackageSet({
       packageFun = import ./Cargo.nix;
       target = rustTarget;
+      release = true;
       rustToolchain = with fenix.packages.x86_64-linux; combine [
         minimal.cargo
         minimal.rustc
@@ -69,9 +71,47 @@
       ];
     });
 
+    # debug builds with clippy as the compiler (hack to speed up compilation)
+    debugBuildEnv = (drv:
+    ''
+        ${drv.setBuildEnv or ""}
+        echo
+        echo --- BUILDING WITH CLIPPY ---
+        echo
+
+        export NIX_RUST_BUILD_FLAGS="''${NIX_RUST_BUILD_FLAGS} --deny warnings"
+        export RUSTC="''${CLIPPY_DRIVER}"
+    '');
+    rustDebug = pkgs.rustBuilder.makePackageSet({
+    packageFun = import ./Cargo.nix;
+      target = rustTarget;
+      release = false;
+      rustToolchain = with fenix.packages.x86_64-linux; combine [
+        default.cargo
+        default.rustc
+        default.clippy
+        targets.${rustTarget}.latest.rust-std
+      ];
+      packageOverrides = pkgs: pkgs.rustBuilder.overrides.all ++ [
+        (pkgs.rustBuilder.rustLib.makeOverride {
+          name = "aerogramme";
+          overrideAttrs = drv: {
+            setBuildEnv = (debugBuildEnv drv);
+          };
+        })
+      ];
+    });
+
+    # binary extract
+    # @TODO
+
+    # docker packaging
+    # @TODO
+
     in {
       devShells.default = shell;
-      packages.aerogramme =  (rustPkgs.workspace.aerogramme {}).bin;
+      packages.debug = (rustDebug.workspace.aerogramme {}).bin;
+      packages.aerogramme =  (rustRelease.workspace.aerogramme {}).bin;
       packages.default = self.packages.${targetHost}.aerogramme;
     });
 }
