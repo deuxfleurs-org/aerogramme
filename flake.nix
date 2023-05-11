@@ -103,15 +103,41 @@
     });
 
     # binary extract
-    # @TODO
+    bin = pkgs.stdenv.mkDerivation {
+      pname = "aerogramme-bin";
+      version = "0.0.1";
+      dontUnpack = true;
+      dontBuild = true;
+      installPhase = ''
+        cp ${(rustRelease.workspace.aerogramme {}).bin}/bin/aerogramme $out
+      '';
+    };
 
     # docker packaging
-    # @TODO
+    archMap = {
+      "x86_64-unknown-linux-musl" = {
+        GOARCH = "amd64";
+      };
+      "aarch64-unknown-linux-musl" = {
+        GOARCH = "arm64";
+      };
+      "armv6l-unknown-linux-musleabihf" = {
+        GOARCH = "arm";
+      };
+    };
+    container = pkgs.dockerTools.buildImage {
+      name = "dxflrs/aerogramme";
+      architecture = (builtins.getAttr targetHost archMap).GOARCH;
+      config = {
+       Cmd = [ "${bin}" ];
+      };
+    };
 
     in {
       devShells.default = shell;
       packages.debug = (rustDebug.workspace.aerogramme {}).bin;
-      packages.aerogramme =  (rustRelease.workspace.aerogramme {}).bin;
+      packages.aerogramme = bin;
+      packages.container = container;
       packages.default = self.packages.${targetHost}.aerogramme;
     });
 }
