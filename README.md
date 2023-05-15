@@ -1,5 +1,15 @@
 # Aerogramme - Encrypted e-mail storage over Garage
 
+## Nix builds
+
+you can cross compile static binaries with:
+
+```bash
+nix build -L .#packages.x86_64-unknown-linux-musl.default # linux/amd64
+nix build -L .#packages.aarch64-unknown-linux-musl.default # linux/arm64
+nix build -L .#packages.armv6l-unknown-linux-musleabihf.default # linux/arm
+```
+
 ## Usage
 
 Start by running:
