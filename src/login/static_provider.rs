@@ -151,7 +151,7 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
         Argon2,
     };
     let parsed_hash =
-        PasswordHash::new(&hash).map_err(|e| anyhow!("Invalid hashed password: {}", e))?;
+        PasswordHash::new(hash).map_err(|e| anyhow!("Invalid hashed password: {}", e))?;
     Ok(Argon2::default()
         .verify_password(password.as_bytes(), &parsed_hash)
         .is_ok())

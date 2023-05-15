@@ -126,7 +126,7 @@ impl MailboxView {
                         data.push(Body::Data(Data::Fetch {
                             seq_or_uid: NonZeroU32::try_from((i + 1) as u32).unwrap(),
                             attributes: vec![
-                                MessageAttribute::Uid((*uid).try_into().unwrap()),
+                                MessageAttribute::Uid(*uid),
                                 MessageAttribute::Flags(
                                     flags.iter().filter_map(|f| string_to_flag(f)).collect(),
                                 ),
@@ -387,10 +387,8 @@ impl MailboxView {
                         }
                     }
                     FetchAttribute::InternalDate => {
-                        attributes.push(MessageAttribute::InternalDate(MyDateTime(
-                            Utc.fix()
-                                .timestamp(i64::try_from(meta.internaldate / 1000)?, 0),
-                        )));
+                        let dt = Utc.fix().timestamp_opt(i64::try_from(meta.internaldate / 1000)?, 0).earliest().ok_or(anyhow!("Unable to parse internal date"))?;
+                        attributes.push(MessageAttribute::InternalDate(MyDateTime(dt)));
                     }
                 }
             }
@@ -529,8 +527,7 @@ impl MailboxView {
             .known_state
             .idx_by_flag
             .flags()
-            .map(|f| string_to_flag(f))
-            .flatten()
+            .filter_map(|f| string_to_flag(f))
             .collect();
         for f in DEFAULT_FLAGS.iter() {
             if !flags.contains(f) {
@@ -569,7 +566,7 @@ fn string_to_flag(f: &str) -> Option<Flag> {
             "\\Deleted" => Some(Flag::Deleted),
             "\\Draft" => Some(Flag::Draft),
             "\\Recent" => Some(Flag::Recent),
-            _ => match Atom::try_from(f.strip_prefix('\\').unwrap().clone()) {
+            _ => match Atom::try_from(f.strip_prefix('\\').unwrap().to_string()) {
                 Err(_) => {
                     tracing::error!(flag=%f, "Unable to encode flag as IMAP atom");
                     None
@@ -577,7 +574,7 @@ fn string_to_flag(f: &str) -> Option<Flag> {
                 Ok(a) => Some(Flag::Extension(a)),
             },
         },
-        Some(_) => match Atom::try_from(f.clone()) {
+        Some(_) => match Atom::try_from(f.to_string()) {
             Err(_) => {
                 tracing::error!(flag=%f, "Unable to encode flag as IMAP atom");
                 None
@@ -623,7 +620,7 @@ fn message_envelope(msg: &mail_parser::Message<'_>) -> Envelope {
         ),
         from: from.clone(),
         sender: convert_addresses(msg.sender()).unwrap_or(from.clone()),
-        reply_to: convert_addresses(msg.reply_to()).unwrap_or(from.clone()),
+        reply_to: convert_addresses(msg.reply_to()).unwrap_or(from),
         to: convert_addresses(msg.to()).unwrap_or(vec![]),
         cc: convert_addresses(msg.cc()).unwrap_or(vec![]),
         bcc: convert_addresses(msg.bcc()).unwrap_or(vec![]),
@@ -639,7 +636,7 @@ fn convert_addresses(a: &mail_parser::HeaderValue<'_>) -> Option<Vec<Address>> {
     match a {
         mail_parser::HeaderValue::Address(a) => Some(vec![convert_address(a)]),
         mail_parser::HeaderValue::AddressList(l) => {
-            Some(l.iter().map(|a| convert_address(a)).collect())
+            Some(l.iter().map(convert_address).collect())
         }
         mail_parser::HeaderValue::Empty => None,
         _ => {
@@ -722,7 +719,7 @@ fn build_imap_email_struct<'a>(msg: &Message<'a>, part: &MessagePart<'a>) -> Res
             })
         }
         PartType::Text(bp) | PartType::Html(bp) => {
-            let (attrs, mut basic) = headers_to_basic_fields(&part, bp.len())?;
+            let (attrs, mut basic) = headers_to_basic_fields(part, bp.len())?;
 
             // If the charset is not defined, set it to "us-ascii"
             if attrs.charset.is_none() {
@@ -736,10 +733,8 @@ fn build_imap_email_struct<'a>(msg: &Message<'a>, part: &MessagePart<'a>) -> Res
             // difference between MIME and raw emails, hence raw emails have no subtypes.
             let subtype = part
                 .content_type()
-                .map(|h| h.c_subtype.as_ref())
-                .flatten()
-                .map(|st| IString::try_from(st.to_string()).ok())
-                .flatten()
+                .and_then(|h| h.c_subtype.as_ref())
+                .and_then(|st| IString::try_from(st.to_string()).ok())
                 .unwrap_or(unchecked_istring("plain"));
 
             let number_of_lines = msg
@@ -761,7 +756,7 @@ fn build_imap_email_struct<'a>(msg: &Message<'a>, part: &MessagePart<'a>) -> Res
             })
         }
         PartType::Binary(bp) | PartType::InlineBinary(bp) => {
-            let (_, basic) = headers_to_basic_fields(&part, bp.len())?;
+            let (_, basic) = headers_to_basic_fields(part, bp.len())?;
 
             let ct = part
                 .content_type()
@@ -790,7 +785,7 @@ fn build_imap_email_struct<'a>(msg: &Message<'a>, part: &MessagePart<'a>) -> Res
             })
         }
         PartType::Message(inner) => {
-            let (_, basic) = headers_to_basic_fields(&part, inner.raw_message().len())?;
+            let (_, basic) = headers_to_basic_fields(part, inner.raw_message().len())?;
 
             // We do not count the number of lines but the number of line
             // feeds to have the same behavior as Dovecot and Cyrus.
@@ -803,7 +798,7 @@ fn build_imap_email_struct<'a>(msg: &Message<'a>, part: &MessagePart<'a>) -> Res
                     specific: SpecificFields::Message {
                         envelope: message_envelope(inner),
                         body_structure: Box::new(build_imap_email_struct(
-                                &inner,
+                                inner,
                                 inner.root_part(),
                                 )?),
 
@@ -850,8 +845,7 @@ fn attrs_to_params<'a>(bp: &impl MimeHeaders<'a>) -> (SpecialAttrs, Vec<(IString
     // Try to extract Content-Type attributes from headers
     let attrs = match bp
         .content_type()
-        .map(|c| c.attributes.as_ref())
-        .flatten()
+        .and_then(|c| c.attributes.as_ref())
     {
         Some(v) => v,
         _ => return (SpecialAttrs::default(), vec![]),
@@ -896,14 +890,12 @@ fn headers_to_basic_fields<'a>(
 
         id: NString(
             bp.content_id()
-                .map(|ci| IString::try_from(ci.to_string()).ok())
-                .flatten(),
+                .and_then(|ci| IString::try_from(ci.to_string()).ok()),
         ),
 
         description: NString(
             bp.content_description()
-                .map(|cd| IString::try_from(cd.to_string()).ok())
-                .flatten(),
+                .and_then(|cd| IString::try_from(cd.to_string()).ok()),
         ),
 
         /*
@@ -913,8 +905,7 @@ fn headers_to_basic_fields<'a>(
          */
         content_transfer_encoding: bp
             .content_transfer_encoding()
-            .map(|h| IString::try_from(h.to_string()).ok())
-            .flatten()
+            .and_then(|h| IString::try_from(h.to_string()).ok())
             .unwrap_or(unchecked_istring("7bit")),
 
         size: u32::try_from(size)?,
@@ -1023,7 +1014,7 @@ fn get_message_section<'a>(
     }
 }
 
-fn map_subpart_msg<'a, F, R>(msg: &Message<'a>, path: &[NonZeroU32], f: F) -> Result<R>
+fn map_subpart_msg<F, R>(msg: &Message<'_>, path: &[NonZeroU32], f: F) -> Result<R>
 where
     F: FnOnce(&Message<'_>) -> Result<R>,
 {
@@ -1035,14 +1026,14 @@ where
             .get(path[0].get() as usize - 1)
             .ok_or(anyhow!("No such subpart: {}", path[0]))?;
         if let PartType::Message(msg_attach) = &part.body {
-            map_subpart_msg(&msg_attach, &path[1..], f)
+            map_subpart_msg(msg_attach, &path[1..], f)
         } else {
             bail!("Subpart is not a message: {}", path[0]);
         }
     }
 }
 
-fn map_subpart<'a, F, R>(msg: &Message<'a>, path: &[NonZeroU32], f: F) -> Result<R>
+fn map_subpart<F, R>(msg: &Message<'_>, path: &[NonZeroU32], f: F) -> Result<R>
 where
     F: FnOnce(&Message<'_>, &MessagePart<'_>) -> Result<R>,
 {
@@ -1055,12 +1046,10 @@ where
             .ok_or(anyhow!("No such subpart: {}", path[0]))?;
         if path.len() == 1 {
             f(msg, part)
+        } else if let PartType::Message(msg_attach) = &part.body {
+            map_subpart(msg_attach, &path[1..], f)
         } else {
-            if let PartType::Message(msg_attach) = &part.body {
-                map_subpart(&msg_attach, &path[1..], f)
-            } else {
-                bail!("Subpart is not a message: {}", path[0]);
-            }
+            bail!("Subpart is not a message: {}", path[0]);
         }
     }
 }

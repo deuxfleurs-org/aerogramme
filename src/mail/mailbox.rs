@@ -156,6 +156,7 @@ impl Mailbox {
 
     /// Move an email from an other Mailbox to this mailbox
     /// (use this when possible, as it allows for a certain number of storage optimizations)
+    #[allow(dead_code)]
     pub async fn move_from(&self, from: &Mailbox, uuid: UniqueIdent) -> Result<()> {
         if self.id == from.id {
             bail!("Cannot copy move same mailbox");
@@ -178,6 +179,8 @@ impl Mailbox {
 // Non standard but common flags:
 // https://www.iana.org/assignments/imap-jmap-keywords/imap-jmap-keywords.xhtml
 struct MailboxInternal {
+    // 2023-05-15 will probably be used later.
+    #[allow(dead_code)]
     id: UniqueIdent,
     bucket: String,
     mail_path: String,
@@ -256,9 +259,11 @@ impl MailboxInternal {
     }
 
     async fn fetch_full(&self, id: UniqueIdent, message_key: &Key) -> Result<Vec<u8>> {
-        let mut gor = GetObjectRequest::default();
-        gor.bucket = self.bucket.clone();
-        gor.key = format!("{}/{}", self.mail_path, id);
+        let gor = GetObjectRequest {
+            bucket: self.bucket.clone(),
+            key: format!("{}/{}", self.mail_path, id),
+            ..Default::default()
+        };
 
         let obj_res = self.s3.get_object(gor).await?;
 
@@ -266,7 +271,7 @@ impl MailboxInternal {
         let mut buf = Vec::with_capacity(obj_res.content_length.unwrap_or(128) as usize);
         obj_body.into_async_read().read_to_end(&mut buf).await?;
 
-        Ok(cryptoblob::open(&buf, &message_key)?)
+        cryptoblob::open(&buf, message_key)
     }
 
     // ---- Functions for changing the mailbox ----
@@ -292,17 +297,19 @@ impl MailboxInternal {
         ident: Option<UniqueIdent>,
         flags: &[Flag],
     ) -> Result<(ImapUidvalidity, ImapUid)> {
-        let ident = ident.unwrap_or_else(|| gen_ident());
+        let ident = ident.unwrap_or_else(gen_ident);
         let message_key = gen_key();
 
         futures::try_join!(
             async {
                 // Encrypt and save mail body
                 let message_blob = cryptoblob::seal(mail.raw, &message_key)?;
-                let mut por = PutObjectRequest::default();
-                por.bucket = self.bucket.clone();
-                por.key = format!("{}/{}", self.mail_path, ident);
-                por.body = Some(message_blob.into());
+                let por = PutObjectRequest {
+                    bucket: self.bucket.clone(),
+                    key: format!("{}/{}", self.mail_path, ident),
+                    body: Some(message_blob.into()),
+                    ..Default::default()
+                };
                 self.s3.put_object(por).await?;
                 Ok::<_, anyhow::Error>(())
             },
@@ -349,11 +356,13 @@ impl MailboxInternal {
         futures::try_join!(
             async {
                 // Copy mail body from previous location
-                let mut cor = CopyObjectRequest::default();
-                cor.bucket = self.bucket.clone();
-                cor.key = format!("{}/{}", self.mail_path, ident);
-                cor.copy_source = format!("{}/{}", self.bucket, s3_key);
-                cor.metadata_directive = Some("REPLACE".into());
+                let cor = CopyObjectRequest {
+                    bucket: self.bucket.clone(),
+                    key: format!("{}/{}", self.mail_path, ident),
+                    copy_source: format!("{}/{}", self.bucket, s3_key),
+                    metadata_directive: Some("REPLACE".into()),
+                    ..Default::default()
+                };
                 self.s3.copy_object(cor).await?;
                 Ok::<_, anyhow::Error>(())
             },
@@ -393,9 +402,11 @@ impl MailboxInternal {
         futures::try_join!(
             async {
                 // Delete mail body from S3
-                let mut dor = DeleteObjectRequest::default();
-                dor.bucket = self.bucket.clone();
-                dor.key = format!("{}/{}", self.mail_path, ident);
+                let dor = DeleteObjectRequest{
+                    bucket: self.bucket.clone(),
+                    key: format!("{}/{}", self.mail_path, ident),
+                    ..Default::default()
+                };
                 self.s3.delete_object(dor).await?;
                 Ok::<_, anyhow::Error>(())
             },
@@ -422,6 +433,8 @@ impl MailboxInternal {
         Ok(new_id)
     }
 
+    #[allow(dead_code)]
+    // 2023-05-15 will probably be used later
     async fn move_from(&mut self, from: &mut MailboxInternal, id: UniqueIdent) -> Result<()> {
         self.copy_internal(from, id, id).await?;
         from.delete(id).await?;
@@ -450,10 +463,13 @@ impl MailboxInternal {
         futures::try_join!(
             async {
                 // Copy mail body from S3
-                let mut cor = CopyObjectRequest::default();
-                cor.bucket = self.bucket.clone();
-                cor.key = format!("{}/{}", self.mail_path, new_id);
-                cor.copy_source = format!("{}/{}/{}", from.bucket, from.mail_path, source_id);
+                let cor = CopyObjectRequest{
+                    bucket: self.bucket.clone(),
+                    key: format!("{}/{}", self.mail_path, new_id),
+                    copy_source: format!("{}/{}/{}", from.bucket, from.mail_path, source_id),
+                    ..Default::default()
+                };
+
                 self.s3.copy_object(cor).await?;
                 Ok::<_, anyhow::Error>(())
             },
@@ -491,7 +507,7 @@ fn dump(uid_index: &Bayou<UidIndex>) {
             s.table.get(ident).cloned().unwrap().1.join(", ")
         );
     }
-    println!("");
+    println!();
 }
 
 // ----

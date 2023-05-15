@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+
+nix build --print-build-logs .#packages.x86_64-unknown-linux-musl.debug

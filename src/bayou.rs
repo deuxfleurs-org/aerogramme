@@ -103,9 +103,12 @@ impl<S: BayouState> Bayou<S> {
             } else {
                 debug!("(sync) loading checkpoint: {}", key);
 
-                let mut gor = GetObjectRequest::default();
-                gor.bucket = self.bucket.clone();
-                gor.key = key.to_string();
+                let gor = GetObjectRequest {
+                    bucket: self.bucket.clone(),
+                    key: key.to_string(),
+                    ..Default::default()
+                };
+
                 let obj_res = self.s3.get_object(gor).await?;
 
                 let obj_body = obj_res.body.ok_or(anyhow!("Missing object body"))?;
@@ -173,7 +176,7 @@ impl<S: BayouState> Bayou<S> {
             }
             match &val.value[0] {
                 K2vValue::Value(v) => {
-                    let op = open_deserialize::<S::Op>(&v, &self.key)?;
+                    let op = open_deserialize::<S::Op>(v, &self.key)?;
                     debug!("(sync) operation {}: {} {:?}", tsstr, base64::encode(v), op);
                     ops.push((ts, op));
                 }
@@ -381,10 +384,12 @@ impl<S: BayouState> Bayou<S> {
         let cryptoblob = seal_serialize(&state_cp, &self.key)?;
         debug!("(cp) checkpoint body length: {}", cryptoblob.len());
 
-        let mut por = PutObjectRequest::default();
-        por.bucket = self.bucket.clone();
-        por.key = format!("{}/checkpoint/{}", self.path, ts_cp.to_string());
-        por.body = Some(cryptoblob.into());
+        let por = PutObjectRequest{
+            bucket: self.bucket.clone(),
+            key: format!("{}/checkpoint/{}", self.path, ts_cp.to_string()),
+            body: Some(cryptoblob.into()),
+            ..Default::default()
+        };
         self.s3.put_object(por).await?;
 
         // Drop old checkpoints (but keep at least CHECKPOINTS_TO_KEEP of them)
@@ -395,9 +400,11 @@ impl<S: BayouState> Bayou<S> {
             // Delete blobs
             for (_ts, key) in existing_checkpoints[..last_to_keep].iter() {
                 debug!("(cp) drop old checkpoint {}", key);
-                let mut dor = DeleteObjectRequest::default();
-                dor.bucket = self.bucket.clone();
-                dor.key = key.to_string();
+                let dor = DeleteObjectRequest {
+                    bucket: self.bucket.clone(),
+                    key: key.to_string(),
+                    ..Default::default()
+                };
                 self.s3.delete_object(dor).await?;
             }
 
@@ -430,10 +437,12 @@ impl<S: BayouState> Bayou<S> {
     async fn list_checkpoints(&self) -> Result<Vec<(Timestamp, String)>> {
         let prefix = format!("{}/checkpoint/", self.path);
 
-        let mut lor = ListObjectsV2Request::default();
-        lor.bucket = self.bucket.clone();
-        lor.max_keys = Some(1000);
-        lor.prefix = Some(prefix.clone());
+        let lor = ListObjectsV2Request{
+            bucket: self.bucket.clone(),
+            max_keys: Some(1000),
+            prefix: Some(prefix.clone()),
+            ..Default::default()
+        };
 
         let checkpoints_res = self.s3.list_objects_v2(lor).await?;
 
@@ -537,6 +546,8 @@ pub struct Timestamp {
 }
 
 impl Timestamp {
+    #[allow(dead_code)]
+    // 2023-05-15 try to make clippy happy and not sure if this fn will be used in the future.
     pub fn now() -> Self {
         let mut rng = thread_rng();
         Self {
@@ -563,7 +574,7 @@ impl ToString for Timestamp {
         let mut bytes = [0u8; 16];
         bytes[0..8].copy_from_slice(&u64::to_be_bytes(self.msec));
         bytes[8..16].copy_from_slice(&u64::to_be_bytes(self.rand));
-        hex::encode(&bytes)
+        hex::encode(bytes)
     }
 }
 

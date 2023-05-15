@@ -68,7 +68,7 @@ async fn incoming_mail_watch_process_internal(
 
             let wait_new_mail = async {
                 loop {
-                    match k2v_wait_value_changed(&k2v, &INCOMING_PK, &INCOMING_WATCH_SK, &prev_ct)
+                    match k2v_wait_value_changed(&k2v, INCOMING_PK, INCOMING_WATCH_SK, &prev_ct)
                         .await
                     {
                         Ok(cv) => break cv,
@@ -104,7 +104,7 @@ async fn incoming_mail_watch_process_internal(
         info!("User still available");
 
         // If INBOX no longer is same mailbox, open new mailbox
-        let inbox_id = rx_inbox_id.borrow().clone();
+        let inbox_id = *rx_inbox_id.borrow();
         if let Some((id, uidvalidity)) = inbox_id {
             if Some(id) != inbox.as_ref().map(|b| b.id) {
                 match user.open_mailbox_by_id(id, uidvalidity).await {
@@ -145,10 +145,12 @@ async fn handle_incoming_mail(
     inbox: &Arc<Mailbox>,
     lock_held: &watch::Receiver<bool>,
 ) -> Result<()> {
-    let mut lor = ListObjectsV2Request::default();
-    lor.bucket = user.creds.storage.bucket.clone();
-    lor.max_keys = Some(1000);
-    lor.prefix = Some("incoming/".into());
+    let lor = ListObjectsV2Request {
+        bucket: user.creds.storage.bucket.clone(),
+        max_keys: Some(1000),
+        prefix: Some("incoming/".into()),
+        ..Default::default()
+    };
     let mails_res = s3.list_objects_v2(lor).await?;
 
     for object in mails_res.contents.unwrap_or_default() {
@@ -178,9 +180,11 @@ async fn move_incoming_message(
     let object_key = format!("incoming/{}", id);
 
     // 1. Fetch message from S3
-    let mut gor = GetObjectRequest::default();
-    gor.bucket = user.creds.storage.bucket.clone();
-    gor.key = object_key.clone();
+    let gor = GetObjectRequest {
+        bucket: user.creds.storage.bucket.clone(),
+        key: object_key.clone(),
+        ..Default::default()
+    };
     let get_result = s3.get_object(gor).await?;
 
     // 1.a decrypt message key from headers
@@ -218,9 +222,11 @@ async fn move_incoming_message(
         .await?;
 
     // 3 delete from incoming
-    let mut dor = DeleteObjectRequest::default();
-    dor.bucket = user.creds.storage.bucket.clone();
-    dor.key = object_key.clone();
+    let dor = DeleteObjectRequest {
+        bucket: user.creds.storage.bucket.clone(),
+        key: object_key.clone(),
+        ..Default::default()
+    };
     s3.delete_object(dor).await?;
 
     Ok(())
@@ -441,15 +447,17 @@ impl EncryptedMessage {
             sodiumoxide::crypto::sealedbox::seal(self.key.as_ref(), &creds.public_key);
         let key_header = base64::encode(&encrypted_key);
 
-        let mut por = PutObjectRequest::default();
-        por.bucket = creds.storage.bucket.clone();
-        por.key = format!("incoming/{}", gen_ident().to_string());
-        por.metadata = Some(
+        let por = PutObjectRequest {
+            bucket: creds.storage.bucket.clone(),
+            key: format!("incoming/{}", gen_ident()),
+            metadata:  Some(
             [(MESSAGE_KEY.to_string(), key_header)]
                 .into_iter()
                 .collect::<HashMap<_, _>>(),
-        );
-        por.body = Some(self.encrypted_body.clone().into());
+            ),
+            body: Some(self.encrypted_body.clone().into()),
+            ..Default::default()
+        };
         s3_client.put_object(por).await?;
 
         // Update watch key to signal new mail

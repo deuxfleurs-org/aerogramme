@@ -36,7 +36,7 @@ pub fn seal(plainblob: &[u8], key: &Key) -> Result<Vec<u8>> {
     use secretbox::{gen_nonce, NONCEBYTES};
 
     // Compress data using zstd
-    let mut reader = &plainblob[..];
+    let mut reader = plainblob;
     let zstdblob = zstd_encode(&mut reader, 0)?;
 
     // Encrypt
@@ -63,5 +63,5 @@ pub fn seal_serialize<T: Serialize>(obj: T, key: &Key) -> Result<Vec<u8>> {
         .with_string_variants();
     obj.serialize(&mut se)?;
 
-    Ok(seal(&wr, key)?)
+    seal(&wr, key)
 }

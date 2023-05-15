@@ -23,7 +23,7 @@ pub struct ExaminedContext<'a> {
     pub mailbox: &'a mut MailboxView,
 }
 
-pub async fn dispatch<'a>(ctx: ExaminedContext<'a>) -> Result<(Response, flow::Transition)> {
+pub async fn dispatch(ctx: ExaminedContext<'_>) -> Result<(Response, flow::Transition)> {
     match &ctx.req.command.body {
         // CLOSE in examined state is not the same as in selected state
         // (in selected state it also does an EXPUNGE, here it doesn't)

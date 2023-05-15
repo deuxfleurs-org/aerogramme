@@ -80,6 +80,7 @@
         echo
 
         export NIX_RUST_BUILD_FLAGS="''${NIX_RUST_BUILD_FLAGS} --deny warnings"
+        export NIX_RUST_LINK_FLAGS="''${NIX_RUST_LINK_FLAGS} --deny warnings"
         export RUSTC="''${CLIPPY_DRIVER}"
     '');
     rustDebug = pkgs.rustBuilder.makePackageSet({

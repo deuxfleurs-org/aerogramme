@@ -9,6 +9,8 @@ pub mod user;
 
 // Internet Message Format
 // aka RFC 822 - RFC 2822 - RFC 5322
+// 2023-05-15 don't want to refactor this struct now.
+#[allow(clippy::upper_case_acronyms)]
 pub struct IMF<'a> {
     raw: &'a [u8],
     parsed: mail_parser::Message<'a>,

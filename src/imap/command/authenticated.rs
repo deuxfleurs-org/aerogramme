@@ -25,7 +25,7 @@ pub struct AuthenticatedContext<'a> {
     pub user: &'a Arc<User>,
 }
 
-pub async fn dispatch<'a>(ctx: AuthenticatedContext<'a>) -> Result<(Response, flow::Transition)> {
+pub async fn dispatch(ctx: AuthenticatedContext<'_>) -> Result<(Response, flow::Transition)> {
     match &ctx.req.command.body {
         CommandBody::Create { mailbox } => ctx.create(mailbox).await,
         CommandBody::Delete { mailbox } => ctx.delete(mailbox).await,
@@ -150,9 +150,7 @@ impl<'a> AuthenticatedContext<'a> {
             for (i, _) in mb.match_indices(MAILBOX_HIERARCHY_DELIMITER) {
                 if i > 0 {
                     let smb = &mb[..i];
-                    if !vmailboxes.contains_key(&smb) {
-                        vmailboxes.insert(smb, false);
-                    }
+                    vmailboxes.entry(smb).or_insert(false);
                 }
             }
             vmailboxes.insert(mb, true);
@@ -160,7 +158,7 @@ impl<'a> AuthenticatedContext<'a> {
 
         let mut ret = vec![];
         for (mb, is_real) in vmailboxes.iter() {
-            if matches_wildcard(&wildcard, &mb) {
+            if matches_wildcard(&wildcard, mb) {
                 let mailbox = mb
                     .to_string()
                     .try_into()

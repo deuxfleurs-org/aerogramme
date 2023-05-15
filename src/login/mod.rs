@@ -190,8 +190,8 @@ impl CryptoKeys {
 
         // Write values to storage
         k2v.insert_batch(&[
-            k2v_insert_single_key("keys", "salt", salt_ct, &ident_salt),
-            k2v_insert_single_key("keys", "public", public_ct, &keys.public),
+            k2v_insert_single_key("keys", "salt", salt_ct, ident_salt),
+            k2v_insert_single_key("keys", "public", public_ct, keys.public),
             k2v_insert_single_key("keys", &password_sortkey, None, &password_blob),
         ])
         .await
@@ -223,8 +223,8 @@ impl CryptoKeys {
 
         // Write values to storage
         k2v.insert_batch(&[
-            k2v_insert_single_key("keys", "salt", salt_ct, &ident_salt),
-            k2v_insert_single_key("keys", "public", public_ct, &keys.public),
+            k2v_insert_single_key("keys", "salt", salt_ct, ident_salt),
+            k2v_insert_single_key("keys", "public", public_ct, keys.public),
         ])
         .await
         .context("InsertBatch for salt and public")?;
@@ -265,7 +265,7 @@ impl CryptoKeys {
         // Try to open blob
         let kdf_salt = &password_blob[..32];
         let password_openned =
-            user_secrets.try_open_encrypted_keys(&kdf_salt, password, &password_blob[32..])?;
+            user_secrets.try_open_encrypted_keys(kdf_salt, password, &password_blob[32..])?;
 
         let keys = Self::deserialize(&password_openned)?;
         if keys.public != expected_public {
@@ -332,7 +332,7 @@ impl CryptoKeys {
                 if entry.value.iter().any(|x| matches!(x, K2vValue::Value(_))) {
                     bail!("password already exists");
                 }
-                Some(entry.causality.clone())
+                Some(entry.causality)
             }
         };
 
@@ -523,7 +523,7 @@ impl CryptoKeys {
 impl UserSecrets {
     fn derive_password_key_with(user_secret: &str, kdf_salt: &[u8], password: &str) -> Result<Key> {
         let tmp = format!("{}\n\n{}", user_secret, password);
-        Ok(Key::from_slice(&argon2_kdf(&kdf_salt, tmp.as_bytes(), 32)?).unwrap())
+        Ok(Key::from_slice(&argon2_kdf(kdf_salt, tmp.as_bytes(), 32)?).unwrap())
     }
 
     fn derive_password_key(&self, kdf_salt: &[u8], password: &str) -> Result<Key> {
@@ -579,7 +579,7 @@ pub fn k2v_read_single_key<'a>(
     tombstones: bool,
 ) -> BatchReadOp<'a> {
     BatchReadOp {
-        partition_key: partition_key,
+        partition_key,
         filter: Filter {
             start: Some(sort_key),
             end: None,

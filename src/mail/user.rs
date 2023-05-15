@@ -257,7 +257,7 @@ impl User {
         let saved;
         let (inbox_id, inbox_uidvalidity) = match list.create_mailbox(INBOX) {
             CreatedMailbox::Created(i, v) => {
-                self.save_mailbox_list(&list, ct.clone()).await?;
+                self.save_mailbox_list(list, ct.clone()).await?;
                 saved = true;
                 (i, v)
             }
@@ -334,23 +334,17 @@ impl MailboxList {
     }
 
     fn has_mailbox(&self, name: &str) -> bool {
-        match self.0.get(name) {
-            Some(MailboxListEntry {
-                id_lww: (_, Some(_)),
-                ..
-            }) => true,
-            _ => false,
-        }
+        matches!(self.0.get(name), Some(MailboxListEntry {
+            id_lww: (_, Some(_)),
+            ..
+        }))
     }
 
     fn get_mailbox(&self, name: &str) -> Option<(ImapUidvalidity, Option<UniqueIdent>)> {
-        match self.0.get(name) {
-            None => None,
-            Some(MailboxListEntry {
-                id_lww: (_, mailbox_id),
-                uidvalidity,
-            }) => Some((*uidvalidity, *mailbox_id)),
-        }
+        self.0.get(name).map(|MailboxListEntry {
+            id_lww: (_, mailbox_id),
+            uidvalidity,
+        }| (*uidvalidity, *mailbox_id))
     }
 
     /// Ensures mailbox `name` maps to id `id`.

@@ -121,7 +121,7 @@ async fn main() -> Result<()> {
 
     // Abort on panic (same behavior as in Go)
     std::panic::set_hook(Box::new(|panic_info| {
-        eprintln!("{}", panic_info.to_string());
+        eprintln!("{}", panic_info);
         eprintln!("{:?}", backtrace::Backtrace::new());
         std::process::abort();
     }));
@@ -292,7 +292,7 @@ fn make_user_secrets(c: UserSecretsArgs) -> UserSecrets {
         user_secret: c.user_secret,
         alternate_user_secrets: c
             .alternate_user_secrets
-            .split(",")
+            .split(',')
             .map(|x| x.trim())
             .filter(|x| !x.is_empty())
             .map(|x| x.to_string())

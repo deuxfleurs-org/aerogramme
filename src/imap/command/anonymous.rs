@@ -15,7 +15,7 @@ pub struct AnonymousContext<'a> {
     pub login_provider: Option<&'a ArcLoginProvider>,
 }
 
-pub async fn dispatch<'a>(ctx: AnonymousContext<'a>) -> Result<(Response, flow::Transition)> {
+pub async fn dispatch(ctx: AnonymousContext<'_>) -> Result<(Response, flow::Transition)> {
     match &ctx.req.command.body {
         CommandBody::Noop => Ok((Response::ok("Noop completed.")?, flow::Transition::None)),
         CommandBody::Capability => ctx.capability().await,

@@ -73,9 +73,9 @@ impl UidIndex {
 
     // INTERNAL functions to keep state consistent
 
-    fn reg_email(&mut self, ident: UniqueIdent, uid: ImapUid, flags: &Vec<Flag>) {
+    fn reg_email(&mut self, ident: UniqueIdent, uid: ImapUid, flags: &[Flag]) {
         // Insert the email in our table
-        self.table.insert(ident, (uid, flags.clone()));
+        self.table.insert(ident, (uid, flags.to_owned()));
 
         // Update the indexes/caches
         self.idx_by_uid.insert(uid, ident);
@@ -205,7 +205,7 @@ impl FlagIndex {
     fn new() -> Self {
         Self(HashMap::new())
     }
-    fn insert(&mut self, uid: ImapUid, flags: &Vec<Flag>) {
+    fn insert(&mut self, uid: ImapUid, flags: &[Flag]) {
         flags.iter().for_each(|flag| {
             self.0
                 .entry(flag.clone())
@@ -213,7 +213,7 @@ impl FlagIndex {
                 .insert(uid);
         });
     }
-    fn remove(&mut self, uid: ImapUid, flags: &Vec<Flag>) -> () {
+    fn remove(&mut self, uid: ImapUid, flags: &[Flag]) {
         for flag in flags.iter() {
             if let Some(set) = self.0.get_mut(flag) {
                 set.remove(&uid);

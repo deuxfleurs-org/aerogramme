@@ -21,7 +21,7 @@ pub struct SelectedContext<'a> {
     pub mailbox: &'a mut MailboxView,
 }
 
-pub async fn dispatch<'a>(ctx: SelectedContext<'a>) -> Result<(Response, flow::Transition)> {
+pub async fn dispatch(ctx: SelectedContext<'_>) -> Result<(Response, flow::Transition)> {
     match &ctx.req.command.body {
         // Only write commands here, read commands are handled in
         // `examined.rs`
