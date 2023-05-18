@@ -143,7 +143,7 @@
     gpkgs = import nixpkgs {
       system = "x86_64-linux"; # hardcoded as we will cross compile
     };
-    alba = albatros.alba;
+    alba = albatros.packages.x86_64-linux.alba;
 
     build-static = gpkgs.writeScriptBin "aerogramme-build-static" ''
         set -euxo pipefail
