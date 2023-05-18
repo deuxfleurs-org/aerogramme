@@ -146,30 +146,35 @@
     alba = albatros.alba;
 
     build-static = gpkgs.writeScriptBin "aerogramme-build-static" ''
+        set -euxo pipefail
         nix build --print-build-logs .#packages.x86_64-unknown-linux-musl.aerogramme  -o static/linux/amd64/aerogramme
         nix build --print-build-logs .#packages.aarch64-unknown-linux-musl.aerogramme -o static/linux/arm64/aerogramme
         nix build --print-build-logs .#packages.armv6l-unknown-linux-musleabihf.aerogramme  -o static/linux/arm/aerogramme
         '';
 
     publish-static = gpkgs.writeScriptBin "aerogramme-push-static" ''
+        set -euxo pipefail
         RTAG=''${TAG:-$COMMIT}
         echo "selected release tag is $RTAG"
         ${alba} static push -t aerogramme:$RTAG static/ 's3://download.deuxfleurs.org?endpoint=garage.deuxfleurs.fr&s3ForcePathStyle=true&region=garage' 1>&2
         '';
 
     build-container = gpkgs.writeScriptBin "aerogramme-build-container" ''
+        set -euxo pipefail
         nix build --print-build-logs .#packages.x86_64-unknown-linux-musl.container  -o docker/linux.amd64.tar.gz
-        nix build --print-build-logs .#packages.armv6l-unknown-linux-musl.container  -o docker/linux.arm.tar.gz
-        nix build --print-build-logs .#packages.aarch64-unknown-linux-musleabihf.container -o docker/linux.arm64.tar.gz
+        nix build --print-build-logs .#packages.aarch64-unknown-linux-musl.container -o docker/linux.arm64.tar.gz
+        nix build --print-build-logs .#packages.armv6l-unknown-linux-musleabihf.container  -o docker/linux.arm.tar.gz
         '';
 
     publish-garage = gpkgs.writeScriptBin "aerogramme-publish-garage" ''
+        set -euxo pipefail
         RTAG=''${TAG:-$COMMIT}
         echo "selected release tag is $RTAG"
         ${alba} container push -t aerogramme:$RTAG docker/ 's3://registry.deuxfleurs.org?endpoint=garage.deuxfleurs.fr&s3ForcePathStyle=true&region=garage' 1>&2
         '';
 
     publish-docker-hub = gpkgs.writeScriptBin "aerogramme-publish-dockerhub" ''
+        set -euxo pipefail
         RTAG=''${TAG:-$COMMIT}
         echo "selected release tag is $RTAG"
         ${alba} container push -t aerogramme:$RTAG docker/ "docker://docker.io/dxflrs/aerogramme:$RTAG" 1>&2
