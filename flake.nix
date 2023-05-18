@@ -15,10 +15,13 @@
 
     # use rust project builds 
     fenix.url = "github:nix-community/fenix/monthly";
+
+    # import alba releasing tool
+    albatros.url = "git+https://git.deuxfleurs.fr/Deuxfleurs/albatros.git?ref=main";
   };
 
-  outputs = { self, nixpkgs, cargo2nix, flake-utils, fenix }: 
-    flake-utils.lib.eachSystem [
+  outputs = { self, nixpkgs, cargo2nix, flake-utils, fenix, albatros }: 
+    let platformSpecific = flake-utils.lib.eachSystem [
       "x86_64-unknown-linux-musl"
       "aarch64-unknown-linux-musl"
       "armv6l-unknown-linux-musleabihf"
@@ -48,12 +51,6 @@
       overlays = [
         cargo2nix.overlays.default
         muslOverlay
-      ];
-    };
-
-    shell = pkgs.mkShell {
-      buildInputs = [
-        cargo2nix.packages.x86_64-linux.default
       ];
     };
 
@@ -135,10 +132,55 @@
     };
 
     in {
-      devShells.default = shell;
-      packages.debug = (rustDebug.workspace.aerogramme {}).bin;
-      packages.aerogramme = bin;
-      packages.container = container;
-      packages.default = self.packages.${targetHost}.aerogramme;
+      packages = {
+        debug = (rustDebug.workspace.aerogramme {}).bin;
+        aerogramme = bin;
+        container = container;
+        default = self.packages.${targetHost}.aerogramme;
+      };
     });
+
+    gpkgs = import nixpkgs {
+      system = "x86_64-linux"; # hardcoded as we will cross compile
+    };
+    alba = albatros.alba;
+
+    build-static = gpkgs.writeScriptBin "aerogramme-build-static" ''
+        nix build --print-build-logs .#packages.x86_64-unknown-linux-musl.aerogramme  -o static/linux/amd64/aerogramme
+        nix build --print-build-logs .#packages.aarch64-unknown-linux-musl.aerogramme -o static/linux/arm64/aerogramme
+        nix build --print-build-logs .#packages.armv6l-unknown-linux-musleabihf.aerogramme  -o static/linux/arm/aerogramme
+        '';
+
+    publish-static = gpkgs.writeScriptBin "aerogramme-push-static" ''
+        RTAG=''${TAG:-$COMMIT}
+        echo "selected release tag is $RTAG"
+        ${alba} static push -t aerogramme:$RTAG static/ 's3://download.deuxfleurs.org?endpoint=garage.deuxfleurs.fr&s3ForcePathStyle=true&region=garage' 1>&2
+        '';
+
+    build-container = gpkgs.writeScriptBin "aerogramme-build-container" ''
+        nix build --print-build-logs .#packages.x86_64-unknown-linux-musl.container  -o docker/linux.amd64.tar.gz
+        nix build --print-build-logs .#packages.armv6l-unknown-linux-musl.container  -o docker/linux.arm.tar.gz
+        nix build --print-build-logs .#packages.aarch64-unknown-linux-musleabihf.container -o docker/linux.arm64.tar.gz
+        '';
+
+    publish-garage = gpkgs.writeScriptBin "aerogramme-publish-garage" ''
+        RTAG=''${TAG:-$COMMIT}
+        echo "selected release tag is $RTAG"
+        ${alba} container push -t aerogramme:$RTAG docker/ 's3://registry.deuxfleurs.org?endpoint=garage.deuxfleurs.fr&s3ForcePathStyle=true&region=garage' 1>&2
+        '';
+
+    publish-docker-hub = gpkgs.writeScriptBin "aerogramme-publish-dockerhub" ''
+        RTAG=''${TAG:-$COMMIT}
+        echo "selected release tag is $RTAG"
+        ${alba} container push -t aerogramme:$RTAG docker/ "docker://docker.io/dxflrs/aerogramme:$RTAG" 1>&2
+        '';
+
+    in 
+    {
+        packages = {
+            x86_64-linux = {
+                inherit build-static publish-static build-container publish-garage publish-docker-hub;
+            };
+        } // platformSpecific.packages;
+    };
 }

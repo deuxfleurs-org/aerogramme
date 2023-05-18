@@ -2,3 +2,22 @@
 set -euxo pipefail
 
 nix build --print-build-logs .#packages.x86_64-unknown-linux-musl.debug
+
+if [[ ! -z $TAG && ! -z $DOCKER_AUTH ]]; then
+
+# Configure Docker Auth
+mkdir .docker
+cat > .docker/config.json <<EOF
+{"auths":{"https://index.docker.io/v1/":{"auth":"${DOCKER_AUTH}"}}}
+EOF
+export DOCKER_CONFIG=`pwd`/.docker/
+
+# Hack to circumvent "initializing source docker-archive:docker/linux.386.tar.gz: creating temporary file: open /var/tmp/docker-tar1213702538: no such file or directory"
+mkdir -p /var/tmp/
+
+# Release
+nix run .#publish-static
+nix run .#publish-garage
+nix run .#publish-docker-hub
+
+fi
