@@ -3,7 +3,10 @@ set -euxo pipefail
 
 nix build --print-build-logs .#packages.x86_64-unknown-linux-musl.debug
 
-if [[ ! -z $TAG && ! -z $DOCKER_AUTH ]]; then
+if [[ ! -z $TAG ]]; then
+# Build
+nix run .#build-static
+nix run .#build-container
 
 # Configure Docker Auth
 mkdir .docker
