@@ -114,6 +114,17 @@
       '';
     };
 
+    binroot = pkgs.stdenv.mkDerivation {
+      pname = "aerogramme-bin";
+      version = "0.0.1";
+      dontUnpack = true;
+      dontBuild = true;
+      installPhase = ''
+        mkdir -p $out
+        cp ${(rustRelease.workspace.aerogramme {}).bin}/bin/aerogramme $out/
+      '';
+    };
+
     # docker packaging
     archMap = {
       "x86_64-unknown-linux-musl" = {
@@ -129,8 +140,9 @@
     container = pkgs.dockerTools.buildImage {
       name = "dxflrs/aerogramme";
       architecture = (builtins.getAttr targetHost archMap).GOARCH;
+      copyToRoot = binroot;
       config = {
-       Cmd = [ "${bin}" ];
+       Cmd = [ "/aerogramme" "server" ];
       };
     };
 
