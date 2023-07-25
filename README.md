@@ -8,9 +8,13 @@ A resilient & standards-compliant open-source IMAP server with built-in encrypti
 
 ## Quickly jump to our website!
 
-[![Download](https://aerogramme.deuxfleurs.fr/images/download.png)](https://aerogramme.deuxfleurs.fr/download/) [![Getting Started](https://aerogramme.deuxfleurs.fr/images/getting-started.png)}(https://aerogramme.deuxfleurs.fr/documentation/quick-start/)
+<a href="https://aerogramme.deuxfleurs.fr/download/"><img height="100" src="https://aerogramme.deuxfleurs.fr/images/download.png" alt="Download"/></a>
+<a href="https://aerogramme.deuxfleurs.fr/documentation/quick-start/"><img height="100" src="https://aerogramme.deuxfleurs.fr/images/getting-started.png" alt="Getting Start"/></a>
 
-[RFC Coverage](https://aerogramme.deuxfleurs.fr/documentation/reference/rfc/) - [Design overview](https://aerogramme.deuxfleurs.fr/documentation/design/overview/) - [Mailbox Datastructure](https://aerogramme.deuxfleurs.fr/documentation/design/mailbox/) - [Mailbox Mutation Log](https://aerogramme.deuxfleurs.fr/documentation/design/log/).
+[RFC Coverage](https://aerogramme.deuxfleurs.fr/documentation/reference/rfc/) -
+[Design overview](https://aerogramme.deuxfleurs.fr/documentation/design/overview/) -
+[Mailbox Datastructure](https://aerogramme.deuxfleurs.fr/documentation/design/mailbox/) -
+[Mailbox Mutation Log](https://aerogramme.deuxfleurs.fr/documentation/design/log/).
 
 ## Roadmap
 
