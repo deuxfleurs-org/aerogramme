@@ -56,7 +56,7 @@
 
     shell = pkgVanilla.mkShell {
       buildInputs = [
-        #cargo2nix.packages.x86_64-linux.default
+        cargo2nix.packages.x86_64-linux.default
         fenix.packages.x86_64-linux.minimal.toolchain
       ];
       shellHook = ''
