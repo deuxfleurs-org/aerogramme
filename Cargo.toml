@@ -1,7 +1,7 @@
 [package]
 name = "aerogramme"
-version = "0.0.1"
-authors = ["Alex Auvolat <alex@adnab.me>"]
+version = "0.1.0"
+authors = ["Alex Auvolat <alex@adnab.me>", "Quentin Dufour <quentin@dufour.io>"]
 edition = "2021"
 license = "AGPL-3.0"
 description = "Encrypted mail storage over Garage"
