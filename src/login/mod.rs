@@ -7,11 +7,11 @@ use std::sync::Arc;
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use k2v_client::{
-    BatchInsertOp, BatchReadOp, CausalValue, CausalityToken, Filter, K2vClient, K2vValue, K2vClientConfig
+    BatchInsertOp, BatchReadOp, CausalValue, CausalityToken, Filter, K2vClient, K2vValue
 };
 use rand::prelude::*;
 use rusoto_core::HttpClient;
-use rusoto_credential::{StaticProvider};
+use rusoto_credential::{AwsCredentials, StaticProvider};
 use rusoto_s3::S3Client;
 
 use crate::cryptoblob::*;
@@ -120,16 +120,19 @@ impl Credentials {
 
 impl StorageCredentials {
     pub fn k2v_client(&self) -> Result<K2vClient> {
-        let config = K2vClientConfig {
-		    endpoint: self.k2v_region.endpoint.clone(),
-		    region: self.k2v_region.name.clone(),
-		    aws_access_key_id: self.aws_access_key_id.clone(),
-		    aws_secret_access_key: self.aws_secret_access_key.clone(),
-		    bucket: self.bucket.clone(),
-		    user_agent: None,
-	    };
+        let aws_creds = AwsCredentials::new(
+            self.aws_access_key_id.clone(),
+            self.aws_secret_access_key.clone(),
+            None,
+            None,
+        );
 
-        Ok(K2vClient::new(config)?)
+        Ok(K2vClient::new(
+            self.k2v_region.as_rusoto_region(),
+            self.bucket.clone(),
+            aws_creds,
+            None,
+        )?)
     }
 
     pub fn s3_client(&self) -> Result<S3Client> {
@@ -138,8 +141,16 @@ impl StorageCredentials {
             self.aws_secret_access_key.clone(),
         );
 
+		let connector = hyper_rustls::HttpsConnectorBuilder::new()
+			.with_native_roots()
+			.https_or_http()
+			.enable_http1()
+			.enable_http2()
+			.build();
+		let client = HttpClient::from_connector(connector);
+
         Ok(S3Client::new_with(
-            HttpClient::new()?,
+            client,
             aws_creds_provider,
             self.s3_region.as_rusoto_region(),
         ))

@@ -137,7 +137,7 @@
       name = "dxflrs/aerogramme";
       architecture = (builtins.getAttr targetHost archMap).GOARCH;
       config = {
-       Cmd = [ "${bin}" ];
+       Cmd = [ "${bin}" "server" ];
       };
     };
 
