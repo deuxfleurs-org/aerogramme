@@ -315,10 +315,9 @@ impl MailboxInternal {
             },
             async {
                 // Save mail meta
-                let mail_root = mail.parsed.imf;
                 let meta = MailMeta {
                     internaldate: now_msec(),
-                    headers: vec![],
+                    headers: mail.parsed.raw_headers.to_vec(),
                     message_key: message_key.clone(),
                     rfc822_size: mail.raw.len(),
                 };
@@ -368,10 +367,9 @@ impl MailboxInternal {
             },
             async {
                 // Save mail meta
-                let mail_root = mail.parsed.imf;
                 let meta = MailMeta {
                     internaldate: now_msec(),
-                    headers: vec![], //@FIXME we need to put the headers part
+                    headers: mail.parsed.raw_headers.to_vec(), 
                     message_key: message_key.clone(),
                     rfc822_size: mail.raw.len(),
                 };

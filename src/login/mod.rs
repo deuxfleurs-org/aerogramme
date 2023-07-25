@@ -11,7 +11,7 @@ use k2v_client::{
 };
 use rand::prelude::*;
 use rusoto_core::HttpClient;
-use rusoto_credential::{AwsCredentials, StaticProvider};
+use rusoto_credential::{StaticProvider};
 use rusoto_s3::S3Client;
 
 use crate::cryptoblob::*;

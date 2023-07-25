@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
@@ -21,8 +19,7 @@ use imap_codec::types::sequence::{self, SequenceSet};
 use eml_codec::{
     imf::{self as imf},
     part::{AnyPart}, 
-    part::discrete::{Text, Binary}, 
-    part::composite::{Message, Multipart},
+    mime::r#type::Deductible,
     mime,
 };
 
@@ -619,6 +616,8 @@ fn string_to_flag(f: &str) -> Option<Flag> {
 //@FIXME return an error if the envelope is invalid instead of panicking
 //@FIXME some fields must be defaulted if there are not set.
 fn message_envelope(msg: &imf::Imf) -> Envelope {
+    let from = msg.from.iter().map(convert_mbx).collect::<Vec<_>>();
+
     Envelope {
         date: NString(
             msg.date.as_ref()
@@ -628,9 +627,13 @@ fn message_envelope(msg: &imf::Imf) -> Envelope {
             msg.subject.as_ref()
                 .map(|d| IString::try_from(d.to_string()).unwrap()),
         ),
-        from: msg.from.iter().map(convert_mbx).collect(),
-        sender: msg.sender.iter().map(convert_mbx).collect(), //@FIXME put from[0] if empty
-        reply_to: convert_addresses(&msg.reply_to), //@FIXME put from if empty
+        sender: msg.sender.as_ref().map(|v| vec![convert_mbx(v)]).unwrap_or(from.clone()),
+        reply_to: if msg.reply_to.is_empty() {
+                from.clone() 
+            } else { 
+               convert_addresses(&msg.reply_to)
+            },
+        from: from,
         to: convert_addresses(&msg.to),
         cc: convert_addresses(&msg.cc),
         bcc: convert_addresses(&msg.bcc),
@@ -681,10 +684,8 @@ b OK Fetch completed (0.001 + 0.000 secs).
 fn build_imap_email_struct<'a>(part: &AnyPart<'a>) -> Result<BodyStructure> {
     match part {
         AnyPart::Mult(x) => {
-            let subtype = x.interpreted.parsed.ctype.as_ref()
-                .map(|x| IString::try_from(String::from_utf8_lossy(x.sub).to_string()).ok())
-                .flatten()
-                .unwrap_or(unchecked_istring("alternative"));
+            let itype = &x.mime.interpreted_type;
+            let subtype = IString::try_from(itype.subtype.to_string()).unwrap_or(unchecked_istring("alternative"));
 
             Ok(BodyStructure::Multi {
                 bodies: x.children
@@ -703,39 +704,39 @@ fn build_imap_email_struct<'a>(part: &AnyPart<'a>) -> Result<BodyStructure> {
             })
         }
         AnyPart::Txt(x) => {
-            //@FIXME check if we must really guess a charset if none is provided, if so we must
-            //update this code
-            let basic = basic_fields(&x.interpreted.parsed)?;
+            let mut basic = basic_fields(&x.mime.fields, x.body.len())?;
 
-            let subtype = x.interpreted.parsed.ctype.as_ref()
-                .map(|x| IString::try_from(String::from_utf8_lossy(x.sub).to_string()).ok())
-                .flatten()
-                .unwrap_or(unchecked_istring("plain"));
+            // Get the interpreted content type, set it 
+            let itype = match &x.mime.interpreted_type {
+                Deductible::Inferred(v) | Deductible::Explicit(v) => v
+            };
+            let subtype = IString::try_from(itype.subtype.to_string()).unwrap_or(unchecked_istring("plain"));
 
-            let number_of_lines = x.body.iter()
-                .filter(|x| **x == b'\n')
-                .count()
-                .try_into()
-                .unwrap_or(0);
-
+            // Add charset to the list of parameters if we know it has been inferred as it will be
+            // missing from the parsed content.
+            if let Deductible::Inferred(charset) = &itype.charset {
+                basic.parameter_list.push((
+                    unchecked_istring("charset"),
+                    IString::try_from(charset.to_string()).unwrap_or(unchecked_istring("us-ascii"))
+                ));
+            }
 
             Ok(BodyStructure::Single {
                 body: FetchBody {
                     basic,
                     specific: SpecificFields::Text {
                         subtype,
-                        number_of_lines,
+                        number_of_lines: nol(x.body),
                     },
                 },
                 extension: None,
             })
         }
         AnyPart::Bin(x) => {
-            //let (_, basic) = headers_to_basic_fields(part, bp.len())?;
-            let basic = basic_fields(&x.interpreted.parsed)?;
-            
-            let default = mime::r#type::NaiveType { main: &[], sub: &[], params: vec![] };
-            let ct = x.interpreted.parsed.ctype.as_ref().unwrap_or(&default);
+            let basic = basic_fields(&x.mime.fields, x.body.len())?;
+
+            let default = mime::r#type::NaiveType { main: &b"application"[..], sub: &b"octet-stream"[..], params: vec![] };
+            let ct = x.mime.fields.ctype.as_ref().unwrap_or(&default);
 
             let type_ = IString::try_from(String::from_utf8_lossy(ct.main).to_string())
                 .or(Err(anyhow!("Unable to build IString from given Content-Type type given")))?;
@@ -753,13 +754,7 @@ fn build_imap_email_struct<'a>(part: &AnyPart<'a>) -> Result<BodyStructure> {
             })
         }
         AnyPart::Msg(x) => {
-            let basic = basic_fields(&x.interpreted.parsed)?;
-
-            // We do not count the number of lines but the number of line
-            // feeds to have the same behavior as Dovecot and Cyrus.
-            // 2 lines = 1 line feed.
-            //let nol = inner.raw_message().iter().filter(|&c| c == &b'\n').count();
-            let nol = 0; // @FIXME broken for now
+            let basic = basic_fields(&x.mime.fields, x.raw_part.len())?;
 
             Ok(BodyStructure::Single {
                 body: FetchBody {
@@ -767,7 +762,7 @@ fn build_imap_email_struct<'a>(part: &AnyPart<'a>) -> Result<BodyStructure> {
                     specific: SpecificFields::Message {
                         envelope: message_envelope(&x.imf),
                         body_structure: Box::new(build_imap_email_struct(x.child.as_ref())?),
-                        number_of_lines: u32::try_from(nol)?,
+                        number_of_lines: nol(x.raw_part),
                     },
                 },
                 extension: None,
@@ -776,13 +771,21 @@ fn build_imap_email_struct<'a>(part: &AnyPart<'a>) -> Result<BodyStructure> {
     }
 }
 
+fn nol(input: &[u8]) -> u32 {
+    input.iter()
+        .filter(|x| **x == b'\n')
+        .count()
+        .try_into()
+        .unwrap_or(0)
+}
+
 /// s is set to static to ensure that only compile time values
 /// checked by developpers are passed.
 fn unchecked_istring(s: &'static str) -> IString {
     IString::try_from(s).expect("this value is expected to be a valid imap-codec::IString")
 }
 
-fn basic_fields(m: &mime::NaiveMIME) -> Result<BasicFields> {
+fn basic_fields(m: &mime::NaiveMIME, sz: usize) -> Result<BasicFields> {
     let parameter_list = m.ctype
         .as_ref()
         .map(|x| x.params.iter()
@@ -810,7 +813,7 @@ fn basic_fields(m: &mime::NaiveMIME) -> Result<BasicFields> {
                 _ => unchecked_istring("7bit"),
         },
         // @FIXME we can't compute the size of the message currently...
-        size: u32::try_from(0)?,
+        size: u32::try_from(sz)?,
     })
 }
 
@@ -968,41 +971,42 @@ mod tests {
     #[test]
     fn fetch_body() -> Result<()> {
         let prefixes = [
+            /* *** MY OWN DATASET *** */
             "tests/emails/dxflrs/0001_simple",
             "tests/emails/dxflrs/0002_mime",
             "tests/emails/dxflrs/0003_mime-in-mime",
             "tests/emails/dxflrs/0004_msg-in-msg",
-
-            // wrong. base64?
+            // eml_codec do not support continuation for the moment
             //"tests/emails/dxflrs/0005_mail-parser-readme",
-
             "tests/emails/dxflrs/0006_single-mime",
+            "tests/emails/dxflrs/0007_raw_msg_in_rfc822",
 
-            // panic - thread 'imap::mailbox_view::tests::fetch_body' panicked at 'range end index 128 out of range for slice of length 127', src/imap/mailbox_view.rs:798:64
-            //"tests/emails/dxflrs/0007_raw_msg_in_rfc822",
+            /* *** (STRANGE) RFC *** */
+            //"tests/emails/rfc/000", // must return text/enriched, we return text/plain
+            //"tests/emails/rfc/001", // does not recognize the multipart/external-body, breaks the
+                                      // whole parsing
+            //"tests/emails/rfc/002", // wrong date in email
 
-            // broken, wrong mimetype text, should be audio
-            // "tests/emails/rfc/000",
-            
-            //  "tests/emails/rfc/001", // broken
-            //  "tests/emails/rfc/002", // broken: dovecot adds \r when it is missing and count it as
-            // a character. Difference on how lines are counted too.
-            /*"tests/emails/rfc/003", // broken for the same reason
-               "tests/emails/thirdparty/000",
-               "tests/emails/thirdparty/001",
-               "tests/emails/thirdparty/002",
-            */
+            //"tests/emails/rfc/003", // dovecot fixes \r\r: the bytes number is wrong + text/enriched
+
+            /* *** THIRD PARTY *** */
+            //"tests/emails/thirdparty/000", // dovecot fixes \r\r: the bytes number is wrong
+            //"tests/emails/thirdparty/001", // same
+            "tests/emails/thirdparty/002", // same
+
+
+            /* *** LEGACY *** */
+            //"tests/emails/legacy/000", // same issue with \r\r
         ];
 
         for pref in prefixes.iter() {
             println!("{}", pref);
             let txt = fs::read(format!("{}.eml", pref))?;
             let exp = fs::read(format!("{}.dovecot.body", pref))?;
-            let message = eml_codec::email(&txt).unwrap();
+            let message = eml_codec::parse_message(&txt).unwrap().1;
 
             let mut resp = Vec::new();
-            MessageAttribute::Body(build_imap_email_struct(&message, message.root_part())?)
-                .encode(&mut resp);
+            MessageAttribute::Body(build_imap_email_struct(&message.child)?).encode(&mut resp).unwrap();
 
             let resp_str = String::from_utf8_lossy(&resp).to_lowercase();
 
