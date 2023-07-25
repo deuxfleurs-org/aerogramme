@@ -1,8 +1,8 @@
+![Aerogramme logo](https://aerogramme.deuxfleurs.fr/logo/aerogramme-blue-hz.svg)
+
 # Aerogramme - Encrypted e-mail storage over Garage
 
 ⚠️ **TECHNOLOGICAL PREVIEW, THIS SERVER IS NOT READY FOR PRODUCTION OR EVEN BETA TESTING**
-
-![Aerogramme logo](https://aerogramme.deuxfleurs.fr/logo/aerogramme-blue-hz.svg)
 
 A resilient & standards-compliant open-source IMAP server with built-in encryption 
 
