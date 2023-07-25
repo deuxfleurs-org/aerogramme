@@ -30,7 +30,7 @@ rusoto_signature = "0.48.0"
 serde = "1.0.137"
 rand = "0.8.5"
 rmp-serde = "0.15"
-rpassword = "6.0"
+rpassword = "7.0"
 sodiumoxide = "0.2"
 tokio = { version = "1.18", default-features = false, features = ["rt", "rt-multi-thread", "io-util", "net", "time", "macros", "sync", "signal", "fs"] }
 tokio-util = { version = "0.7", features = [ "compat" ]  }

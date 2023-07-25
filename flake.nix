@@ -90,8 +90,9 @@
         export NIX_RUST_LINK_FLAGS="''${NIX_RUST_LINK_FLAGS} --deny warnings"
         export RUSTC="''${CLIPPY_DRIVER}"
     '');
+
     rustDebug = pkgs.rustBuilder.makePackageSet({
-    packageFun = import ./Cargo.nix;
+      packageFun = import ./Cargo.nix;
       target = rustTarget;
       release = false;
       rustToolchain = with fenix.packages.x86_64-linux; combine [
@@ -107,13 +108,22 @@
             setBuildEnv = (debugBuildEnv drv);
           };
         })
+        (pkgs.rustBuilder.rustLib.makeOverride {
+          name = "smtp-message";
+          overrideAttrs = drv: {
+            /*setBuildEnv = (traceBuildEnv drv);
+            propagatedBuildInputs = drv.propagatedBuildInputs or [ ] ++ [
+              traceRust    
+            ];*/
+          };
+        })
       ];
     });
 
     # binary extract
     bin = pkgs.stdenv.mkDerivation {
       pname = "aerogramme-bin";
-      version = "0.0.1";
+      version = "0.1.0";
       dontUnpack = true;
       dontBuild = true;
       installPhase = ''
