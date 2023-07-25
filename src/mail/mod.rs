@@ -13,7 +13,7 @@ pub mod user;
 #[allow(clippy::upper_case_acronyms)]
 pub struct IMF<'a> {
     raw: &'a [u8],
-    parsed: mail_parser::Message<'a>,
+    parsed: eml_codec::part::composite::Message<'a>,
 }
 
 impl<'a> TryFrom<&'a [u8]> for IMF<'a> {
@@ -23,7 +23,7 @@ impl<'a> TryFrom<&'a [u8]> for IMF<'a> {
         eprintln!("---- BEGIN PARSED MESSAGE ----");
         let _ = std::io::stderr().write_all(body);
         eprintln!("---- END PARSED MESSAGE ----");
-        let parsed = mail_parser::Message::parse(body).ok_or(())?;
+        let parsed = eml_codec::parse_message(body).or(Err(()))?.1;
         Ok(Self { raw: body, parsed })
     }
 }

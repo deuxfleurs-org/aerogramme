@@ -7,7 +7,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use k2v_client::{
-    BatchInsertOp, BatchReadOp, CausalValue, CausalityToken, Filter, K2vClient, K2vValue,
+    BatchInsertOp, BatchReadOp, CausalValue, CausalityToken, Filter, K2vClient, K2vValue, K2vClientConfig
 };
 use rand::prelude::*;
 use rusoto_core::HttpClient;
@@ -120,19 +120,16 @@ impl Credentials {
 
 impl StorageCredentials {
     pub fn k2v_client(&self) -> Result<K2vClient> {
-        let aws_creds = AwsCredentials::new(
-            self.aws_access_key_id.clone(),
-            self.aws_secret_access_key.clone(),
-            None,
-            None,
-        );
+        let config = K2vClientConfig {
+		    endpoint: self.k2v_region.endpoint.clone(),
+		    region: self.k2v_region.name.clone(),
+		    aws_access_key_id: self.aws_access_key_id.clone(),
+		    aws_secret_access_key: self.aws_secret_access_key.clone(),
+		    bucket: self.bucket.clone(),
+		    user_agent: None,
+	    };
 
-        Ok(K2vClient::new(
-            self.k2v_region.as_rusoto_region(),
-            self.bucket.clone(),
-            aws_creds,
-            None,
-        )?)
+        Ok(K2vClient::new(config)?)
     }
 
     pub fn s3_client(&self) -> Result<S3Client> {

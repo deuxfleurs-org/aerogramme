@@ -18,7 +18,13 @@ use imap_codec::types::fetch_attributes::{
 use imap_codec::types::flag::{Flag, StoreResponse, StoreType};
 use imap_codec::types::response::{Code, Data, MessageAttribute, Status};
 use imap_codec::types::sequence::{self, SequenceSet};
-use mail_parser::*;
+use eml_codec::{
+    imf::{self as imf},
+    part::{AnyPart}, 
+    part::discrete::{Text, Binary}, 
+    part::composite::{Message, Multipart},
+    mime,
+};
 
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::{ImapUid, ImapUidvalidity, UidIndex};
@@ -31,6 +37,8 @@ const DEFAULT_FLAGS: [Flag; 5] = [
     Flag::Deleted,
     Flag::Draft,
 ];
+
+const BODY_CHECK: &str = "body attribute asked but only header is fetched, logic error";
 
 /// A MailboxView is responsible for giving the client the information
 /// it needs about a mailbox, such as an initial summary of the mailbox's
@@ -283,12 +291,15 @@ impl MailboxView {
                 .get(&uuid)
                 .ok_or_else(|| anyhow!("Mail not in uidindex table: {}", uuid))?;
 
-            let parsed = match &body {
+            let (parts, imf) = match &body {
                 Some(m) => {
-                    mail_parser::Message::parse(m).ok_or_else(|| anyhow!("Invalid mail body"))?
+                    let eml = eml_codec::parse_message(m).or(Err(anyhow!("Invalid mail body")))?.1;
+                    (Some(eml.child), eml.imf)
                 }
-                None => mail_parser::Message::parse(&meta.headers)
-                    .ok_or_else(|| anyhow!("Invalid mail headers"))?,
+                None => {
+                    let imf = eml_codec::parse_imf(&meta.headers).or(Err(anyhow!("Invalid mail headers")))?.1;
+                    (None, imf)
+                }
             };
 
             for attr in fetch_attrs.iter() {
@@ -308,42 +319,42 @@ impl MailboxView {
                         )))
                     }
                     FetchAttribute::Rfc822Text => {
-                        let rp = parsed.root_part();
-                        let r = parsed
-                            .raw_message
-                            .get(rp.offset_body..rp.offset_end)
-                            .ok_or(Error::msg(
-                            "Unable to extract email body, cursors out of bound. This is a bug.",
-                        ))?;
+                        //@FIXME this is not efficient, this is a hack as we need to patch
+                        // eml_codec to correctly implement this behavior
+                        let txt = eml_codec::parse_imf(body.as_ref().expect(BODY_CHECK).as_slice())
+                            .map(|(x, _)| x)
+                            .unwrap_or(b"");
 
                         attributes.push(MessageAttribute::Rfc822Text(NString(
-                            r.try_into().ok().map(IString::Literal),
+                            txt.try_into().ok().map(IString::Literal),
                         )));
                     }
                     FetchAttribute::Rfc822 => attributes.push(MessageAttribute::Rfc822(NString(
                         body.as_ref()
-                            .unwrap()
+                            .expect(BODY_CHECK)
                             .clone()
                             .try_into()
                             .ok()
                             .map(IString::Literal),
                     ))),
                     FetchAttribute::Envelope => {
-                        attributes.push(MessageAttribute::Envelope(message_envelope(&parsed)))
+                        attributes.push(MessageAttribute::Envelope(message_envelope(&imf)))
                     }
                     FetchAttribute::Body => attributes.push(MessageAttribute::Body(
-                        build_imap_email_struct(&parsed, parsed.root_part())?,
+                        build_imap_email_struct(parts.as_ref().expect(BODY_CHECK).as_ref())?,
                     )),
                     FetchAttribute::BodyStructure => attributes.push(MessageAttribute::Body(
-                        build_imap_email_struct(&parsed, parsed.root_part())?,
+                        build_imap_email_struct(parts.as_ref().expect(BODY_CHECK).as_ref())?,
                     )),
                     FetchAttribute::BodyExt {
                         section,
                         partial,
                         peek,
                     } => {
+                        // @FIXME deactivated while eml_codec is integrated
+                        todo!();
                         // @TODO Add missing section specifiers
-                        match get_message_section(&parsed, section) {
+                        /*match get_message_section(&parts.expect("body attribute asked but only header is fetched, logic error"), section) {
                             Ok(text) => {
                                 let seen_flag = Flag::Seen.to_string();
                                 if !peek && !flags.iter().any(|x| *x == seen_flag) {
@@ -385,6 +396,7 @@ impl MailboxView {
                                 );
                             }
                         }
+                        */
                     }
                     FetchAttribute::InternalDate => {
                         let dt = Utc.fix().timestamp_opt(i64::try_from(meta.internaldate / 1000)?, 0).earliest().ok_or(anyhow!("Unable to parse internal date"))?;
@@ -606,67 +618,48 @@ fn string_to_flag(f: &str) -> Option<Flag> {
 
 //@FIXME return an error if the envelope is invalid instead of panicking
 //@FIXME some fields must be defaulted if there are not set.
-fn message_envelope(msg: &mail_parser::Message<'_>) -> Envelope {
-    let from = convert_addresses(msg.from()).unwrap_or(vec![]);
-
+fn message_envelope(msg: &imf::Imf) -> Envelope {
     Envelope {
         date: NString(
-            msg.date()
+            msg.date.as_ref()
                 .map(|d| IString::try_from(d.to_rfc3339()).unwrap()),
         ),
         subject: NString(
-            msg.subject()
+            msg.subject.as_ref()
                 .map(|d| IString::try_from(d.to_string()).unwrap()),
         ),
-        from: from.clone(),
-        sender: convert_addresses(msg.sender()).unwrap_or(from.clone()),
-        reply_to: convert_addresses(msg.reply_to()).unwrap_or(from),
-        to: convert_addresses(msg.to()).unwrap_or(vec![]),
-        cc: convert_addresses(msg.cc()).unwrap_or(vec![]),
-        bcc: convert_addresses(msg.bcc()).unwrap_or(vec![]),
-        in_reply_to: NString(None), // @TODO
+        from: msg.from.iter().map(convert_mbx).collect(),
+        sender: msg.sender.iter().map(convert_mbx).collect(), //@FIXME put from[0] if empty
+        reply_to: convert_addresses(&msg.reply_to), //@FIXME put from if empty
+        to: convert_addresses(&msg.to),
+        cc: convert_addresses(&msg.cc),
+        bcc: convert_addresses(&msg.bcc),
+        in_reply_to: NString(msg.in_reply_to.iter().next().map(|d| IString::try_from(d.to_string()).unwrap())),
         message_id: NString(
-            msg.message_id()
-                .map(|d| IString::try_from(d.to_string()).unwrap()),
+            msg.msg_id.as_ref().map(|d| IString::try_from(d.to_string()).unwrap()),
         ),
     }
 }
 
-fn convert_addresses(a: &mail_parser::HeaderValue<'_>) -> Option<Vec<Address>> {
-    match a {
-        mail_parser::HeaderValue::Address(a) => Some(vec![convert_address(a)]),
-        mail_parser::HeaderValue::AddressList(l) => {
-            Some(l.iter().map(convert_address).collect())
-        }
-        mail_parser::HeaderValue::Empty => None,
-        _ => {
-            tracing::warn!("Invalid address header");
-            None
+fn convert_addresses(addrlist: &Vec<imf::address::AddressRef>) -> Vec<Address> {
+    let mut acc = vec![];
+    for item in addrlist {
+        match item {
+            imf::address::AddressRef::Single(a) => acc.push(convert_mbx(a)),
+            imf::address::AddressRef::Many(l) => acc.extend(l.participants.iter().map(convert_mbx))
         }
     }
+    return acc
 }
 
-//@FIXME Remove unwrap
-fn convert_address(a: &mail_parser::Addr<'_>) -> Address {
-    let (user, host) = match &a.address {
-        None => (None, None),
-        Some(x) => match x.split_once('@') {
-            Some((u, h)) => (Some(u.to_string()), Some(h.to_string())),
-            None => (Some(x.to_string()), None),
-        },
-    };
-
+fn convert_mbx(addr: &imf::mailbox::MailboxRef) -> Address {
     Address::new(
-        NString(
-            a.name
-                .as_ref()
-                .map(|x| IString::try_from(x.to_string()).unwrap()),
-        ),
+        NString(addr.name.as_ref().map(|x| IString::try_from(x.to_string()).unwrap())),
         // SMTP at-domain-list (source route) seems obsolete since at least 1991
         // https://www.mhonarc.org/archive/html/ietf-822/1991-06/msg00060.html
         NString(None),
-        NString(user.map(|x| IString::try_from(x).unwrap())),
-        NString(host.map(|x| IString::try_from(x).unwrap())),
+        NString(Some(IString::try_from(addr.addrspec.local_part.to_string()).unwrap())),
+        NString(Some(IString::try_from(addr.addrspec.domain.to_string()).unwrap())),
     )
 }
 
@@ -685,28 +678,19 @@ b fetch 29878:29879 (BODY)
 b OK Fetch completed (0.001 + 0.000 secs).
 */
 
-fn build_imap_email_struct<'a>(msg: &Message<'a>, part: &MessagePart<'a>) -> Result<BodyStructure> {
-    match &part.body {
-        PartType::Multipart(parts) => {
-            let subtype = IString::try_from(
-                part.headers
-                    .rfc(&RfcHeader::ContentType)
-                    .ok_or(anyhow!("Content-Type is missing but required here."))?
-                    .content_type()
-                    .c_subtype
-                    .as_ref()
-                    .ok_or(anyhow!("Content-Type invalid, missing subtype"))?
-                    .to_string(),
-            )
-            .map_err(|_| {
-                anyhow!("Unable to build IString from given Content-Type subtype given")
-            })?;
+fn build_imap_email_struct<'a>(part: &AnyPart<'a>) -> Result<BodyStructure> {
+    match part {
+        AnyPart::Mult(x) => {
+            let subtype = x.interpreted.parsed.ctype.as_ref()
+                .map(|x| IString::try_from(String::from_utf8_lossy(x.sub).to_string()).ok())
+                .flatten()
+                .unwrap_or(unchecked_istring("alternative"));
 
             Ok(BodyStructure::Multi {
-                bodies: parts
+                bodies: x.children
                     .iter()
-                    .map(|index| build_imap_email_struct(msg, &msg.parts[*index]))
-                    .fold(Ok(vec![]), try_collect_shime)?,
+                    .filter_map(|inner| build_imap_email_struct(&inner).ok())
+                    .collect(),
                 subtype,
                 extension_data: None,
                 /*Some(MultipartExtensionData {
@@ -718,31 +702,22 @@ fn build_imap_email_struct<'a>(msg: &Message<'a>, part: &MessagePart<'a>) -> Res
                 })*/
             })
         }
-        PartType::Text(bp) | PartType::Html(bp) => {
-            let (attrs, mut basic) = headers_to_basic_fields(part, bp.len())?;
+        AnyPart::Txt(x) => {
+            //@FIXME check if we must really guess a charset if none is provided, if so we must
+            //update this code
+            let basic = basic_fields(&x.interpreted.parsed)?;
 
-            // If the charset is not defined, set it to "us-ascii"
-            if attrs.charset.is_none() {
-                basic
-                    .parameter_list
-                    .push((unchecked_istring("charset"), unchecked_istring("us-ascii")));
-            }
-
-            // If the subtype is not defined, set it to "plain". MIME (RFC2045) says that subtype
-            // MUST be defined and hence has no default. But mail-parser does not make any
-            // difference between MIME and raw emails, hence raw emails have no subtypes.
-            let subtype = part
-                .content_type()
-                .and_then(|h| h.c_subtype.as_ref())
-                .and_then(|st| IString::try_from(st.to_string()).ok())
+            let subtype = x.interpreted.parsed.ctype.as_ref()
+                .map(|x| IString::try_from(String::from_utf8_lossy(x.sub).to_string()).ok())
+                .flatten()
                 .unwrap_or(unchecked_istring("plain"));
 
-            let number_of_lines = msg
-                .raw_message
-                .get(part.offset_body..part.offset_end)
-                .map(|text| text.iter().filter(|x| **x == b'\n').count())
-                .unwrap_or(0)
-                .try_into()?;
+            let number_of_lines = x.body.iter()
+                .filter(|x| **x == b'\n')
+                .count()
+                .try_into()
+                .unwrap_or(0);
+
 
             Ok(BodyStructure::Single {
                 body: FetchBody {
@@ -755,26 +730,19 @@ fn build_imap_email_struct<'a>(msg: &Message<'a>, part: &MessagePart<'a>) -> Res
                 extension: None,
             })
         }
-        PartType::Binary(bp) | PartType::InlineBinary(bp) => {
-            let (_, basic) = headers_to_basic_fields(part, bp.len())?;
+        AnyPart::Bin(x) => {
+            //let (_, basic) = headers_to_basic_fields(part, bp.len())?;
+            let basic = basic_fields(&x.interpreted.parsed)?;
+            
+            let default = mime::r#type::NaiveType { main: &[], sub: &[], params: vec![] };
+            let ct = x.interpreted.parsed.ctype.as_ref().unwrap_or(&default);
 
-            let ct = part
-                .content_type()
-                .ok_or(anyhow!("Content-Type is missing but required here."))?;
+            let type_ = IString::try_from(String::from_utf8_lossy(ct.main).to_string())
+                .or(Err(anyhow!("Unable to build IString from given Content-Type type given")))?;
 
-            let type_ = IString::try_from(ct.c_type.as_ref().to_string()).map_err(|_| {
-                anyhow!("Unable to build IString from given Content-Type type given")
-            })?;
 
-            let subtype = IString::try_from(
-                ct.c_subtype
-                    .as_ref()
-                    .ok_or(anyhow!("Content-Type invalid, missing subtype"))?
-                    .to_string(),
-            )
-            .map_err(|_| {
-                anyhow!("Unable to build IString from given Content-Type subtype given")
-            })?;
+            let subtype = IString::try_from(String::from_utf8_lossy(ct.sub).to_string())
+                .or(Err(anyhow!("Unable to build IString from given Content-Type subtype given")))?;
 
             Ok(BodyStructure::Single {
                 body: FetchBody {
@@ -784,45 +752,26 @@ fn build_imap_email_struct<'a>(msg: &Message<'a>, part: &MessagePart<'a>) -> Res
                 extension: None,
             })
         }
-        PartType::Message(inner) => {
-            let (_, basic) = headers_to_basic_fields(part, inner.raw_message().len())?;
+        AnyPart::Msg(x) => {
+            let basic = basic_fields(&x.interpreted.parsed)?;
 
             // We do not count the number of lines but the number of line
             // feeds to have the same behavior as Dovecot and Cyrus.
             // 2 lines = 1 line feed.
-            let nol = inner.raw_message().iter().filter(|&c| c == &b'\n').count();
+            //let nol = inner.raw_message().iter().filter(|&c| c == &b'\n').count();
+            let nol = 0; // @FIXME broken for now
 
             Ok(BodyStructure::Single {
                 body: FetchBody {
                     basic,
                     specific: SpecificFields::Message {
-                        envelope: message_envelope(inner),
-                        body_structure: Box::new(build_imap_email_struct(
-                                inner,
-                                inner.root_part(),
-                                )?),
-
-                                // @FIXME This solution is bad for 2 reasons:
-                                // - RFC2045 says line endings are CRLF but we accept LF alone with
-                                // this method. It could be a feature (be liberal in what you
-                                // accept) but we must be sure that we don't break things.
-                                // - It should be done during parsing, we are iterating twice on
-                                // the same data which results in some wastes.
-                                number_of_lines: u32::try_from(nol)?,
+                        envelope: message_envelope(&x.imf),
+                        body_structure: Box::new(build_imap_email_struct(x.child.as_ref())?),
+                        number_of_lines: u32::try_from(nol)?,
                     },
                 },
                 extension: None,
             })
-        }
-    }
-}
-
-fn try_collect_shime<T>(acc: Result<Vec<T>>, elem: Result<T>) -> Result<Vec<T>> {
-    match (acc, elem) {
-        (Err(e), _) | (_, Err(e)) => Err(e),
-        (Ok(mut ac), Ok(el)) => {
-            ac.push(el);
-            Ok(ac)
         }
     }
 }
@@ -833,87 +782,39 @@ fn unchecked_istring(s: &'static str) -> IString {
     IString::try_from(s).expect("this value is expected to be a valid imap-codec::IString")
 }
 
-#[derive(Default)]
-struct SpecialAttrs<'a> {
-    charset: Option<&'a Cow<'a, str>>,
-    boundary: Option<&'a Cow<'a, str>>,
-}
+fn basic_fields(m: &mime::NaiveMIME) -> Result<BasicFields> {
+    let parameter_list = m.ctype
+        .as_ref()
+        .map(|x| x.params.iter()
+             .map(|p| (IString::try_from(String::from_utf8_lossy(p.name).to_string()), IString::try_from(p.value.to_string())))
+             .filter(|(k, v)| k.is_ok() && v.is_ok())
+             .map(|(k, v)| (k.unwrap(), v.unwrap()))
+             .collect())
+        .unwrap_or(vec![]);
 
-/// Takes mail-parser Content-Type attributes, build imap-codec BasicFields.parameter_list and
-/// identify some specific attributes (charset and boundary).
-fn attrs_to_params<'a>(bp: &impl MimeHeaders<'a>) -> (SpecialAttrs, Vec<(IString, IString)>) {
-    // Try to extract Content-Type attributes from headers
-    let attrs = match bp
-        .content_type()
-        .and_then(|c| c.attributes.as_ref())
-    {
-        Some(v) => v,
-        _ => return (SpecialAttrs::default(), vec![]),
-    };
-
-    // Transform the Content-Type attributes into IMAP's parameter list
-    // Also collect some special attributes that might be used elsewhere
-    attrs.iter().fold(
-        (SpecialAttrs::default(), vec![]),
-        |(mut sa, mut param_list), (k, v)| {
-            let nk = k.to_lowercase();
-            match (IString::try_from(k.as_ref()), IString::try_from(v.as_ref())) {
-                (Ok(ik), Ok(iv)) => param_list.push((ik, iv)),
-                _ => return (sa, param_list),
-            };
-
-            match nk.as_str() {
-                "charset" => {
-                    sa.charset = Some(v);
-                }
-                "boundary" => {
-                    sa.boundary = Some(v);
-                }
-                _ => (),
-            };
-
-            (sa, param_list)
-        },
-    )
-}
-
-/// Takes mail-parser headers and build imap-codec BasicFields
-/// Return some special informations too
-fn headers_to_basic_fields<'a>(
-    bp: &'a MessagePart<'a>,
-    size: usize,
-) -> Result<(SpecialAttrs<'a>, BasicFields)> {
-    let (attrs, parameter_list) = attrs_to_params(bp);
-
-    let bf = BasicFields {
+    Ok(BasicFields {
         parameter_list,
-
         id: NString(
-            bp.content_id()
+            m.id.as_ref()
                 .and_then(|ci| IString::try_from(ci.to_string()).ok()),
-        ),
-
+            ),
         description: NString(
-            bp.content_description()
+            m.description.as_ref()
                 .and_then(|cd| IString::try_from(cd.to_string()).ok()),
         ),
-
-        /*
-         * RFC2045 - section 6.1
-         * "Content-Transfer-Encoding: 7BIT" is assumed if the
-         * Content-Transfer-Encoding header field is not present.
-         */
-        content_transfer_encoding: bp
-            .content_transfer_encoding()
-            .and_then(|h| IString::try_from(h.to_string()).ok())
-            .unwrap_or(unchecked_istring("7bit")),
-
-        size: u32::try_from(size)?,
-    };
-
-    Ok((attrs, bf))
+        content_transfer_encoding: match m.transfer_encoding {
+                mime::mechanism::Mechanism::_8Bit => unchecked_istring("8bit"),
+                mime::mechanism::Mechanism::Binary => unchecked_istring("binary"),
+                mime::mechanism::Mechanism::QuotedPrintable => unchecked_istring("quoted-printable"),
+                mime::mechanism::Mechanism::Base64 => unchecked_istring("base64"),
+                _ => unchecked_istring("7bit"),
+        },
+        // @FIXME we can't compute the size of the message currently...
+        size: u32::try_from(0)?,
+    })
 }
 
+/*
 fn get_message_section<'a>(
     parsed: &'a Message<'a>,
     section: &Option<FetchSection>,
@@ -993,10 +894,10 @@ fn get_message_section<'a>(
         }
         Some(FetchSection::Part(part)) => map_subpart(parsed, part.0.as_slice(), |_msg, part| {
             let bytes = match &part.body {
-                PartType::Text(p) | PartType::Html(p) => p.as_bytes().to_vec(),
-                PartType::Binary(p) | PartType::InlineBinary(p) => p.to_vec(),
-                PartType::Message(p) => p.raw_message.to_vec(),
-                PartType::Multipart(_) => bail!("Multipart part has no body"),
+                AnyPart::Txt(p) => p.as_bytes().to_vec(),
+                AnyPart::Bin(p) => p.to_vec(),
+                AnyPart::Msg(p) => p.raw_message.to_vec(),
+                AnyPart::Multipart(_) => bail!("Multipart part has no body"),
             };
             Ok(bytes.into())
         }),
@@ -1052,7 +953,7 @@ where
             bail!("Subpart is not a message: {}", path[0]);
         }
     }
-}
+}*/
 
 #[cfg(test)]
 mod tests {
@@ -1084,7 +985,7 @@ mod tests {
             // "tests/emails/rfc/000",
             
             //  "tests/emails/rfc/001", // broken
-            //  "tests/emails/rfc/002", // broken: dovecot adds \r when it is missing and count is as
+            //  "tests/emails/rfc/002", // broken: dovecot adds \r when it is missing and count it as
             // a character. Difference on how lines are counted too.
             /*"tests/emails/rfc/003", // broken for the same reason
                "tests/emails/thirdparty/000",
@@ -1097,7 +998,7 @@ mod tests {
             println!("{}", pref);
             let txt = fs::read(format!("{}.eml", pref))?;
             let exp = fs::read(format!("{}.dovecot.body", pref))?;
-            let message = Message::parse(&txt).unwrap();
+            let message = eml_codec::email(&txt).unwrap();
 
             let mut resp = Vec::new();
             MessageAttribute::Body(build_imap_email_struct(&message, message.root_part())?)
