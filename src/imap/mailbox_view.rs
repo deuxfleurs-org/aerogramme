@@ -18,6 +18,7 @@ use imap_codec::types::flag::{Flag, StoreResponse, StoreType};
 use imap_codec::types::response::{Code, Data, MessageAttribute, Status};
 use imap_codec::types::sequence::{self, SequenceSet};
 use eml_codec::{
+    header,
     imf,
     part::{AnyPart, composite::Message}, 
     mime::r#type::Deductible,
@@ -889,8 +890,7 @@ fn get_message_section<'a>(
         Some(
             FetchSection::HeaderFields(part, fields) | FetchSection::HeaderFieldsNot(part, fields),
         ) => {
-            todo!();
-            /*let invert = matches!(section, Some(FetchSection::HeaderFieldsNot(_, _)));
+            let invert = matches!(section, Some(FetchSection::HeaderFieldsNot(_, _)));
             let fields = fields
                 .iter()
                 .map(|x| match x {
@@ -900,26 +900,32 @@ fn get_message_section<'a>(
                 })
                 .collect::<Vec<_>>();
 
-            map_subpart_msg(
-                parsed,
+            
+            map_subpart(
+                parsed.child.as_ref(),
                 part.as_ref().map(|p| p.0.as_slice()).unwrap_or(&[]),
                 |part_msg| {
                     let mut ret = vec![];
-                    for (hn, hv) in part_msg.headers_raw() {
+                    for f in &part_msg.mime().kv {
+                        let (k, v) = match f {
+                            header::Field::Good(header::Kv2(k, v)) => (k, v),
+                            _ => continue,
+                        };
                         if fields
                             .as_slice()
                             .iter()
-                            .any(|x| (*x == hn.as_bytes()) ^ invert)
+                            .any(|x| (x == k) ^ invert)
                         {
-                            ret.extend(hn.as_bytes());
+                            ret.extend(*k);
                             ret.extend(b": ");
-                            ret.extend(hv.as_bytes());
+                            ret.extend(*v);
+                            ret.extend(b"\r\n");
                         }
                     }
                     ret.extend(b"\r\n");
                     Ok(ret.into())
                 },
-            )*/
+            )
         }
         Some(FetchSection::Part(part)) => map_subpart(parsed.child.as_ref(), part.0.as_slice(), |part| {
             let bytes = match &part {
