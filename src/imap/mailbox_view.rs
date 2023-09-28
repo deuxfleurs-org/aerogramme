@@ -59,6 +59,96 @@ impl<'a> FetchedMail<'a> {
     }
 }
 
+pub struct MailIdentifiers {
+    i: NonZeroU32,
+    uid: ImapUid,
+    uuid: UniqueIdent,
+}
+
+pub struct MailView<'a> {
+    ids: MailIdentifiers,
+    meta: MailMeta,
+    flags: Vec<Flag>,
+    content: FetchedMail<'a>, 
+}
+
+pub struct AttributesProxy {
+    attrs: FetchAttributes
+}
+impl AttributeProxy {
+    fn new(attrs: &MacroOrFetchAttributes, is_uid_fetch: bool) -> Self {
+        // Expand macros
+        let mut fetch_attrs = match attributes {
+            MacroOrFetchAttributes::Macro(m) => m.expand(),
+            MacroOrFetchAttributes::FetchAttributes(a) => a.clone(),
+        };
+
+        // Handle uids
+        if *is_uid_fetch && !fetch_attrs.contains(&FetchAttribute::Uid) {
+            fetch_attrs.push(FetchAttribute::Uid);
+        }
+
+        Self { attrs: fetch_attrs }
+    }
+
+    fn need_body(&self) -> bool {
+        self.attrs.iter().any(|x| {
+            matches!(
+                x,
+                FetchAttribute::Body
+                    | FetchAttribute::BodyExt { .. }
+                    | FetchAttribute::Rfc822
+                    | FetchAttribute::Rfc822Text
+                    | FetchAttribute::BodyStructure
+            )
+        })
+    }
+}
+
+#[derive(Default)]
+pub BatchMailViewBuilder<'a> struct {
+    attrs: AttributeProxy,
+    mi: Vec<MailIdentifiers>,
+    meta: Vec<MailMeta>,
+    flags: Vec<Vec<Flag>>,
+    bodies: Vec<FetchedMail<'a>>,
+}
+impl BatchMailViewBuilder<'a> {
+    fn new(req_attr: &MacroOrFetchAttributes) -> Self {
+       Self {
+           attrs: AttributeProxy::new(req_attr)
+       } 
+    }
+
+    fn with_mail_identifiers(mut self, mi: Vec<MailIdentifiers>) -> Self {
+        self.mi = mi;
+        self
+    }
+
+    fn with_metadata(mut self, meta: Vec<MailMeta>) -> Self {
+        self.meta = meta;
+        self
+    }
+    
+    fn with_flags(mut self, flags: Vec<Vec<Flag>>) -> Self {
+        self.flags = flags;
+        self
+    }
+
+    fn collect_bodies(mut self, FnOnce) -> Self {
+        if self.attrs.need_body() {
+
+        } else {
+            self.bodies = 
+        }
+        self
+    }
+
+    fn build(self) -> Result<Vec<MailView>> {
+
+    }
+}
+
 /// A MailboxView is responsible for giving the client the information
 /// it needs about a mailbox, such as an initial summary of the mailbox's
 /// content and continuous updates indicating when the content
@@ -252,32 +342,29 @@ impl MailboxView {
         attributes: &MacroOrFetchAttributes,
         is_uid_fetch: &bool,
     ) -> Result<Vec<Body>> {
+
+        /*
+           let mails = self.get_mail_ids(sequence_set, *is_uid_fetch)?;
+           let mails_uuid = mails
+            .iter()
+            .map(|mi| mi.uuid)
+            .collect::<Vec<_>>();
+            
+        let mails_meta = self.mailbox.fetch_meta(&mails_uuid).await?;
+         */
+
+        // mail identifiers
         let mails = self.get_mail_ids(sequence_set, *is_uid_fetch)?;
 
         let mails_uuid = mails
             .iter()
             .map(|(_i, _uid, uuid)| *uuid)
             .collect::<Vec<_>>();
+
+        // mail metadata
         let mails_meta = self.mailbox.fetch_meta(&mails_uuid).await?;
 
-        let mut fetch_attrs = match attributes {
-            MacroOrFetchAttributes::Macro(m) => m.expand(),
-            MacroOrFetchAttributes::FetchAttributes(a) => a.clone(),
-        };
-        if *is_uid_fetch && !fetch_attrs.contains(&FetchAttribute::Uid) {
-            fetch_attrs.push(FetchAttribute::Uid);
-        }
-        let need_body = fetch_attrs.iter().any(|x| {
-            matches!(
-                x,
-                FetchAttribute::Body
-                    | FetchAttribute::BodyExt { .. }
-                    | FetchAttribute::Rfc822
-                    | FetchAttribute::Rfc822Text
-                    | FetchAttribute::BodyStructure
-            )
-        });
-
+        // fectch email body and transform to a state usable by select
         let mails = if need_body {
             let mut iter = mails
                 .into_iter()
@@ -300,16 +387,16 @@ impl MailboxView {
                 .collect::<Vec<_>>()
         };
 
-        let mut ret = vec![];
-        for (i, uid, uuid, meta, body) in mails {
-            let mut attributes = vec![];
-
-            let (_uid2, flags) = self
+        // add flags
+        let mails = mails.into_iter().filter_map(|(i, uid, uuid, meta, body)| 
+            self
                 .known_state
                 .table
                 .get(&uuid)
-                .ok_or_else(|| anyhow!("Mail not in uidindex table: {}", uuid))?;
+                .map(|(_uid2, flags)| (i, uid, uuid, meta, flags, body)))
+            .collect::<Vec<_>>();
 
+        // parse email body / headers
             let fetched = match &body {
                 Some(m) => {
                     FetchedMail::Full(eml_codec::parse_message(m).or(Err(anyhow!("Invalid mail body")))?.1)
@@ -318,6 +405,16 @@ impl MailboxView {
                     FetchedMail::Partial(eml_codec::parse_imf(&meta.headers).or(Err(anyhow!("Invalid mail headers")))?.1)
                 }
             };
+
+        // do the logic
+        select_mail_fragments(fetch_attrs, mails)
+    }
+        
+        todo!();
+
+        let mut ret = vec![];
+        for (i, uid, uuid, meta, flags, body) in mails {
+            let mut attributes = vec![];
 
             for attr in fetch_attrs.iter() {
                 match attr {
@@ -433,8 +530,8 @@ impl MailboxView {
 
     // ----
 
-    // Gets the UIDs and UUIDs of mails identified by a SequenceSet of
-    // sequence numbers
+    // Gets the IMAP ID, the IMAP UIDs and, the Aerogramme UUIDs of mails identified by a SequenceSet of
+    // sequence numbers (~ IMAP selector)
     fn get_mail_ids(
         &self,
         sequence_set: &SequenceSet,
