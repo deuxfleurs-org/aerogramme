@@ -1,11 +1,15 @@
 use std::borrow::Cow;
 use std::num::NonZeroU32;
 use std::sync::Arc;
+use std::iter::zip;
 
 use anyhow::{anyhow, bail, Error, Result};
 use boitalettres::proto::res::body::Data as Body;
 use chrono::{Offset, TimeZone, Utc};
+
+use futures::future::join_all;
 use futures::stream::{FuturesOrdered, StreamExt};
+
 use imap_codec::types::address::Address;
 use imap_codec::types::body::{BasicFields, Body as FetchBody, BodyStructure, SpecificFields};
 use imap_codec::types::core::{AString, Atom, IString, NString};
@@ -17,6 +21,7 @@ use imap_codec::types::fetch_attributes::{
 use imap_codec::types::flag::{Flag, StoreResponse, StoreType};
 use imap_codec::types::response::{Code, Data, MessageAttribute, Status};
 use imap_codec::types::sequence::{self, SequenceSet};
+
 use eml_codec::{
     header,
     imf,
@@ -25,7 +30,8 @@ use eml_codec::{
     mime,
 };
 
-use crate::mail::mailbox::Mailbox;
+use crate::cryptoblob::Key;
+use crate::mail::mailbox::{Mailbox, MailMeta};
 use crate::mail::uidindex::{ImapUid, ImapUidvalidity, UidIndex};
 use crate::mail::unique_ident::UniqueIdent;
 
@@ -36,8 +42,6 @@ const DEFAULT_FLAGS: [Flag; 5] = [
     Flag::Deleted,
     Flag::Draft,
 ];
-
-const BODY_CHECK: &str = "body attribute asked but only header is fetched, logic error";
 
 enum FetchedMail<'a> {
     Partial(imf::Imf<'a>),
@@ -59,26 +63,13 @@ impl<'a> FetchedMail<'a> {
     }
 }
 
-pub struct MailIdentifiers {
-    i: NonZeroU32,
-    uid: ImapUid,
-    uuid: UniqueIdent,
-}
-
-pub struct MailView<'a> {
-    ids: MailIdentifiers,
-    meta: MailMeta,
-    flags: Vec<Flag>,
-    content: FetchedMail<'a>, 
-}
-
 pub struct AttributesProxy {
-    attrs: FetchAttributes
+    attrs: Vec<FetchAttribute>
 }
-impl AttributeProxy {
+impl AttributesProxy {
     fn new(attrs: &MacroOrFetchAttributes, is_uid_fetch: bool) -> Self {
         // Expand macros
-        let mut fetch_attrs = match attributes {
+        let mut fetch_attrs = match attrs {
             MacroOrFetchAttributes::Macro(m) => m.expand(),
             MacroOrFetchAttributes::FetchAttributes(a) => a.clone(),
         };
@@ -105,47 +96,230 @@ impl AttributeProxy {
     }
 }
 
+pub struct MailIdentifiers {
+    i: NonZeroU32,
+    uid: ImapUid,
+    uuid: UniqueIdent,
+}
+
+pub struct MailView<'a> {
+    ids: &'a MailIdentifiers,
+    meta: &'a MailMeta,
+    flags: &'a Vec<Flag>,
+    content: FetchedMail<'a>, 
+    add_seen: bool
+}
+
+impl<'a> MailView<'a> {
+    fn uid(&self) -> MessageAttribute {
+        MessageAttribute::Uid(self.ids.uid)
+    }
+
+    fn flags(&self) -> MessageAttribute {
+        MessageAttribute::Flags(
+            self.flags.iter().filter_map(|f| string_to_flag(f)).collect(),
+        )
+    }
+
+    fn rfc_822_size(&self) -> MessageAttribute {
+        MessageAttribute::Rfc822Size(self.meta.rfc822_size as u32)
+    }
+
+    fn rfc_822_header(&self) -> MessageAttribute {
+        MessageAttribute::Rfc822Header(NString(self.meta.headers.to_vec().try_into().ok().map(IString::Literal)))
+    }
+
+    fn rfc_822_text(&self) -> Result<MessageAttribute> {
+        Ok(MessageAttribute::Rfc822Text(NString(
+            self.content.as_full()?.raw_body.try_into().ok().map(IString::Literal),
+        )))
+    }
+
+    fn rfc822(&self) -> Result<MessageAttribute> {
+        Ok(MessageAttribute::Rfc822(NString(
+            self.content.as_full()?.raw_body.clone().try_into().ok().map(IString::Literal))))
+    }
+
+    fn envelope(&self) -> MessageAttribute {
+        message_envelope(self.content.imf())
+    }
+
+    fn body(&self) -> Result<MessageAttribute> {
+        Ok(MessageAttribute::Body(
+            build_imap_email_struct(self.content.as_full()?.child.as_ref())?,
+        ))
+    }
+
+    fn body_structure(&self) -> Result<MessageAttribute> {
+        Ok(MessageAttribute::Body(
+            build_imap_email_struct(self.content.as_full()?.child.as_ref())?,
+        ))
+    }
+
+    /// maps to BODY[<section>]<<partial>> and BODY.PEEK[<section>]<<partial>>
+    /// peek does not implicitly set the \Seen flag
+    /// eg. BODY[HEADER.FIELDS (DATE FROM)]
+    /// eg. BODY[]<0.2048>
+    fn body_ext(&mut self, section: Option<FetchSection>, partial: Option<(u32, NonZeroU32)>, peek: bool) -> Result<Option<MessageAttribute>> {
+        // Extract message section
+        match get_message_section(self.content.as_full()?, section) {
+            Ok(text) => {
+                let seen_flag = Flag::Seen.to_string();
+                if !peek && !self.flags.iter().any(|x| *x == seen_flag) {
+                    // Add \Seen flag
+                    //self.mailbox.add_flags(uuid, &[seen_flag]).await?;
+                    self.add_seen = true;
+                }
+
+                // Handle <<partial>> which cut the message bytes
+                let (text, origin) = apply_partial(partial, text);
+
+                let data = NString(text.to_vec().try_into().ok().map(IString::Literal));
+
+                return Ok(Some(MessageAttribute::BodyExt {
+                    section: section.clone(),
+                    origin,
+                    data,
+                }))
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Could not get section {:?} of message {}: {}",
+                    section,
+                    self.mi.uuid,
+                    e
+                );
+                return Ok(None)
+            }
+        }
+    }
+
+    fn internal_date(&self) -> Result<MessageAttribute> {
+        let dt = Utc.fix().timestamp_opt(i64::try_from(self.meta.internaldate / 1000)?, 0).earliest().ok_or(anyhow!("Unable to parse internal date"))?;
+        Ok(MessageAttribute::InternalDate(MyDateTime(dt)))
+    }
+
+    fn filter(&mut self, ap: &AttributesProxy) -> Result<Option<Body>> {
+        let res_attrs = ap.attrs.iter().filter_map(|attr| match attr {
+            FetchAttribute::Uid => Some(self.uid()),
+            FetchAttribute::Flags => Some(self.flags()),
+            FetchAttribute::Rfc822Size => Some(self.rfc_822_size()),
+            FetchAttribute::Rfc822Header => Some(self.rfc_822_header()),
+            FetchAttribute::Rfc822Text => Some(self.rfc_822_text()?),
+            FetchAttribute::Rfc822 => Some(self.rfc822()?),
+            FetchAttribute::Envelope => Some(self.envelope()),
+            FetchAttribute::Body => Some(self.body()?),
+            FetchAttribute::BodyStructure => Some(self.body_structure()?),
+            FetchAttribute::BodyExt { section, partial, peek } => self.body_ext(section, partial, peek)?,
+            FetchAttribute::InternalDate => Some(self.internal_date()?)
+        }).collect::<Vec<_>>();
+
+        Body::Data(Data::Fetch {
+            seq_or_uid: self.ids.i,
+            res_attrs,
+        })
+    }
+}
+
+fn apply_partial(partial: Option<(u32, NonZeroU32)>, text: &[u8]) -> (&[u8], Option<u32>) {
+    match partial {
+        Some((begin, len)) => {
+            if *begin as usize > text.len() {
+                (&[][..], Some(*begin))
+            } else if (*begin + len.get()) as usize >= text.len() {
+                (&text[*begin as usize..], Some(*begin))
+            } else {
+                (
+                    &text[*begin as usize..(*begin + len.get()) as usize],
+                    Some(*begin),
+                )
+            }
+        }
+        None => (&text[..], None),
+    };
+
+}
+
+pub struct BodyIdentifier<'a> {
+    msg_uuid: &'a UniqueIdent,
+    msg_key: &'a Key,
+}
+
 #[derive(Default)]
-pub BatchMailViewBuilder<'a> struct {
-    attrs: AttributeProxy,
-    mi: Vec<MailIdentifiers>,
-    meta: Vec<MailMeta>,
-    flags: Vec<Vec<Flag>>,
+pub struct MailSelectionBuilder<'a> {
+    //attrs: AttributeProxy,
+    mail_count: usize,
+    need_body: bool,
+    mi: &'a [MailIdentifiers],
+    meta: &'a [MailMeta],
+    flags: &'a [Vec<Flag>],
     bodies: Vec<FetchedMail<'a>>,
 }
-impl BatchMailViewBuilder<'a> {
-    fn new(req_attr: &MacroOrFetchAttributes) -> Self {
-       Self {
-           attrs: AttributeProxy::new(req_attr)
+
+impl<'a> MailSelectionBuilder<'a> {
+    fn new(need_body: bool, mail_count: usize) -> Self {
+        Self { 
+            mail_count, 
+            need_body,
+            bodies: vec![0; mail_count],
+            ..MailSelectionBuilder::default()
        } 
     }
 
-    fn with_mail_identifiers(mut self, mi: Vec<MailIdentifiers>) -> Self {
+    fn with_mail_identifiers(mut self, mi: &[MailIdentifiers]) -> Self {
         self.mi = mi;
         self
     }
 
-    fn with_metadata(mut self, meta: Vec<MailMeta>) -> Self {
+    fn uuids(&self) -> Vec<&UniqueIdent> {
+        self.mi.iter().map(|i| i.uuid ).collect::<Vec<_>>()
+    }
+
+    fn with_metadata(mut self, meta: &[MailMeta]) -> Self {
         self.meta = meta;
         self
     }
     
-    fn with_flags(mut self, flags: Vec<Vec<Flag>>) -> Self {
+    fn with_flags(mut self, flags: &[Vec<Flag>]) -> Self {
         self.flags = flags;
         self
     }
 
-    fn collect_bodies(mut self, FnOnce) -> Self {
-        if self.attrs.need_body() {
-
-        } else {
-            self.bodies = 
+    fn bodies_to_collect(&self) -> Vec<BodyIdentifier> {
+        if !self.attrs.need_body() {
+            return vec![]
         }
+        zip(self.mi, self.meta).as_ref().iter().enumerate().map(|(i , (mi, k))| BodyIdentifier { i, mi, k }).collect::<Vec<_>>()
+    }
+
+    fn with_bodies(mut self, rbodies: &[&'a [u8]]) -> Self {
+        for rb in rbodies.iter() {
+            let (_, p) = eml_codec::parse_message(&rb).or(Err(anyhow!("Invalid mail body")))?;
+            self.bodies.push(FetchedMail::Full(p));
+        }
+
         self
     }
 
-    fn build(self) -> Result<Vec<MailView>> {
+    fn build(self) -> Result<Vec<MailView<'a>>> {
+        if !self.need_body && self.bodies.len() == 0 {
+            for m in self.meta.iter() {
+                let (_, hdrs) = eml_codec::parse_imf(&self.meta.headers).or(Err(anyhow!("Invalid mail headers")))?;
+                self.bodies.push(FetchedMail::Partial(hdrs));
+            }
+        }
 
+        if self.mi.len() != self.mail_count && self.meta.len() != self.mail_count || self.flags.len() != self.mail_count || self.bodies.len() != self.mail_count {
+            return Err(anyhow!("Can't build a mail view selection as parts were not correctly registered into the builder."))
+        }
+
+        let views = Vec::with_capacity(self.mail_count);
+        for (ids, meta, flags, content) in zip(self.mi, self.meta, self.flags, self.bodies) {
+            let mv = MailView { ids, meta, flags, content };
+            views.push(mv);
+        }
+
+        return Ok(views)
     }
 }
 
@@ -343,187 +517,47 @@ impl MailboxView {
         is_uid_fetch: &bool,
     ) -> Result<Vec<Body>> {
 
-        /*
-           let mails = self.get_mail_ids(sequence_set, *is_uid_fetch)?;
-           let mails_uuid = mails
-            .iter()
-            .map(|mi| mi.uuid)
-            .collect::<Vec<_>>();
-            
-        let mails_meta = self.mailbox.fetch_meta(&mails_uuid).await?;
-         */
+        let ap = AttributesProxy::new(attributes, *is_uid_fetch);
+        let mail_count = sequence_set.iter().count();
 
-        // mail identifiers
-        let mails = self.get_mail_ids(sequence_set, *is_uid_fetch)?;
-
-        let mails_uuid = mails
-            .iter()
-            .map(|(_i, _uid, uuid)| *uuid)
-            .collect::<Vec<_>>();
-
-        // mail metadata
-        let mails_meta = self.mailbox.fetch_meta(&mails_uuid).await?;
-
-        // fectch email body and transform to a state usable by select
-        let mails = if need_body {
-            let mut iter = mails
-                .into_iter()
-                .zip(mails_meta.into_iter())
-                .map(|((i, uid, uuid), meta)| async move {
-                    let body = self.mailbox.fetch_full(uuid, &meta.message_key).await?;
-                    Ok::<_, anyhow::Error>((i, uid, uuid, meta, Some(body)))
-                })
-                .collect::<FuturesOrdered<_>>();
-            let mut mails = vec![];
-            while let Some(m) = iter.next().await {
-                mails.push(m?);
-            }
-            mails
-        } else {
-            mails
-                .into_iter()
-                .zip(mails_meta.into_iter())
-                .map(|((i, uid, uuid), meta)| (i, uid, uuid, meta, None))
-                .collect::<Vec<_>>()
-        };
-
-        // add flags
-        let mails = mails.into_iter().filter_map(|(i, uid, uuid, meta, body)| 
-            self
-                .known_state
-                .table
-                .get(&uuid)
-                .map(|(_uid2, flags)| (i, uid, uuid, meta, flags, body)))
-            .collect::<Vec<_>>();
-
-        // parse email body / headers
-            let fetched = match &body {
-                Some(m) => {
-                    FetchedMail::Full(eml_codec::parse_message(m).or(Err(anyhow!("Invalid mail body")))?.1)
-                }
-                None => {
-                    FetchedMail::Partial(eml_codec::parse_imf(&meta.headers).or(Err(anyhow!("Invalid mail headers")))?.1)
-                }
-            };
-
-        // do the logic
-        select_mail_fragments(fetch_attrs, mails)
-    }
+        // Fetch various metadata about the email selection
+        let selection = MailSelectionBuilder::new(ap.need_body(), mail_count);
+        selection.with_mail_identifiers(self.get_mail_ids(sequence_set, *is_uid_fetch)?);
+        selection.with_metadata(self.mailbox.fetch_meta(&selection.uuids()).await?);
+        selection.with_flags(self.known_state.table.get(&selection.uuids()).map(|(_, flags)| flags).collect::<Vec<_>>());
         
-        todo!();
+        // Asynchronously fetch full bodies (if needed)
+        let future_bodies = selection.bodies_to_collect().iter().map(|bi| async move {
+            let body = self.mailbox.fetch_full(bi.msg_uuid, bi.msg_key).await?;
+            Ok::<_, anyhow::Error>(bi, body)
+        }).collect::<FuturesOrdered<_>>(); 
+        let bodies = join_all(future_bodies).await.into_iter().collect::<Result<Vec<_>, _>>()?;
+        selection.with_bodies(bodies);
 
-        let mut ret = vec![];
-        for (i, uid, uuid, meta, flags, body) in mails {
-            let mut attributes = vec![];
+       /* while let Some(m) = future_bodies.next().await {
+            let (bi, body) = m?;
+            selection.with_body(bi.pos, body);
+        }*/
 
-            for attr in fetch_attrs.iter() {
-                match attr {
-                    FetchAttribute::Uid => attributes.push(MessageAttribute::Uid(uid)),
-                    FetchAttribute::Flags => {
-                        attributes.push(MessageAttribute::Flags(
-                            flags.iter().filter_map(|f| string_to_flag(f)).collect(),
-                        ));
-                    }
-                    FetchAttribute::Rfc822Size => {
-                        attributes.push(MessageAttribute::Rfc822Size(meta.rfc822_size as u32))
-                    }
-                    FetchAttribute::Rfc822Header => {
-                        attributes.push(MessageAttribute::Rfc822Header(NString(
-                            meta.headers.to_vec().try_into().ok().map(IString::Literal),
-                        )))
-                    }
-                    FetchAttribute::Rfc822Text => {
-                        attributes.push(MessageAttribute::Rfc822Text(NString(
-                            fetched.as_full()?.raw_body.try_into().ok().map(IString::Literal),
-                        )));
-                    }
-                    FetchAttribute::Rfc822 => attributes.push(MessageAttribute::Rfc822(NString(
-                        body.as_ref()
-                            .expect(BODY_CHECK)
-                            .clone()
-                            .try_into()
-                            .ok()
-                            .map(IString::Literal),
-                    ))),
-                    FetchAttribute::Envelope => {
-                        attributes.push(MessageAttribute::Envelope(message_envelope(fetched.imf())))
-                    }
-                    FetchAttribute::Body => attributes.push(MessageAttribute::Body(
-                        build_imap_email_struct(fetched.as_full()?.child.as_ref())?,
-                    )),
-                    FetchAttribute::BodyStructure => attributes.push(MessageAttribute::Body(
-                        build_imap_email_struct(fetched.as_full()?.child.as_ref())?,
-                    )),
+        // Build mail selection views
+        let views = selection.build()?;
 
-                    // maps to BODY[<section>]<<partial>> and BODY.PEEK[<section>]<<partial>>
-                    // peek does not implicitly set the \Seen flag
-                    //
-                    // eg. BODY[HEADER.FIELDS (DATE FROM)]
-                    // eg. BODY[]<0.2048>
-                    FetchAttribute::BodyExt {
-                        section,
-                        partial,
-                        peek,
-                    } => {
-                        // @TODO Add missing section specifiers
-                        
-                        // Extract message section
-                        match get_message_section(fetched.as_full()?, section) {
-                            Ok(text) => {
-                                let seen_flag = Flag::Seen.to_string();
-                                if !peek && !flags.iter().any(|x| *x == seen_flag) {
-                                    // Add \Seen flag
-                                    self.mailbox.add_flags(uuid, &[seen_flag]).await?;
-                                }
-
-                                // Handle <<partial>> which cut the message byts
-                                let (text, origin) = match partial {
-                                    Some((begin, len)) => {
-                                        if *begin as usize > text.len() {
-                                            (&[][..], Some(*begin))
-                                        } else if (*begin + len.get()) as usize >= text.len() {
-                                            (&text[*begin as usize..], Some(*begin))
-                                        } else {
-                                            (
-                                                &text[*begin as usize
-                                                    ..(*begin + len.get()) as usize],
-                                                Some(*begin),
-                                            )
-                                        }
-                                    }
-                                    None => (&text[..], None),
-                                };
-
-                                let data =
-                                    NString(text.to_vec().try_into().ok().map(IString::Literal));
-                                attributes.push(MessageAttribute::BodyExt {
-                                    section: section.clone(),
-                                    origin,
-                                    data,
-                                })
-                            }
-                            Err(e) => {
-                                tracing::error!(
-                                    "Could not get section {:?} of message {}: {}",
-                                    section,
-                                    uuid,
-                                    e
-                                );
-                            }
-                        }
-                    }
-                    FetchAttribute::InternalDate => {
-                        let dt = Utc.fix().timestamp_opt(i64::try_from(meta.internaldate / 1000)?, 0).earliest().ok_or(anyhow!("Unable to parse internal date"))?;
-                        attributes.push(MessageAttribute::InternalDate(MyDateTime(dt)));
-                    }
-                }
+        // Filter views to build the result
+        let mut ret = Vec::with_capacity(mail_count);
+        for mail_view in views.iter() {
+            let maybe_body = mail_view.filter(&ap)?;
+            if let Some(body) = maybe_body {
+                ret.push(body)
             }
-
-            ret.push(Body::Data(Data::Fetch {
-                seq_or_uid: i,
-                attributes,
-            }));
         }
+
+        // Register seen flags
+        let future_flags = views.iter().filter(|mv| mv.add_seen).map(|mv| async move {
+            let seen_flag = Flag::Seen.to_string();
+            self.mailbox.add_flags(mv.mi.uuid, &[seen_flag]).await?;
+            Ok::<_, anyhow::Error>(())
+        }).collect::<FuturesOrdered<_>>();
+        join_all(future_flags).await.iter().find(Result::is_err).unwrap_or(Ok(()))?;
 
         Ok(ret)
     }
@@ -536,7 +570,7 @@ impl MailboxView {
         &self,
         sequence_set: &SequenceSet,
         by_uid: bool,
-    ) -> Result<Vec<(NonZeroU32, ImapUid, UniqueIdent)>> {
+    ) -> Result<Vec<MailIdentifiers>> {
         let mail_vec = self
             .known_state
             .idx_by_uid
@@ -561,7 +595,7 @@ impl MailboxView {
                 }
                 if let Some(mail) = mail_vec.get(i) {
                     if mail.0 == uid {
-                        mails.push((NonZeroU32::try_from(i as u32 + 1).unwrap(), mail.0, mail.1));
+                        mails.push(MailIdentifiers { id: NonZeroU32::try_from(i as u32 + 1).unwrap(), uid: mail.0, uuid: mail.1 });
                     }
                 } else {
                     break;
@@ -578,7 +612,7 @@ impl MailboxView {
 
             for i in sequence_set.iter(iter_strat) {
                 if let Some(mail) = mail_vec.get(i.get() as usize - 1) {
-                    mails.push((i, mail.0, mail.1));
+                    mails.push(MailIdentifiers { id: i, uid: mail.0, uuid: mail.1 });
                 } else {
                     bail!("No such mail: {}", i);
                 }
