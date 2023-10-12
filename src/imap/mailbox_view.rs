@@ -1,10 +1,14 @@
+use std::borrow::Cow;
+use std::iter::zip;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Error, Result};
 use boitalettres::proto::res::body::Data as Body;
 use chrono::{Offset, TimeZone, Utc};
+
 use futures::stream::{FuturesOrdered, StreamExt};
+
 use imap_codec::types::address::Address;
 use imap_codec::types::body::{BasicFields, Body as FetchBody, BodyStructure, SpecificFields};
 use imap_codec::types::core::{AString, Atom, IString, NString};
@@ -16,14 +20,15 @@ use imap_codec::types::fetch_attributes::{
 use imap_codec::types::flag::{Flag, StoreResponse, StoreType};
 use imap_codec::types::response::{Code, Data, MessageAttribute, Status};
 use imap_codec::types::sequence::{self, SequenceSet};
+
 use eml_codec::{
-    imf::{self as imf},
-    part::{AnyPart}, 
+    header, imf, mime,
     mime::r#type::Deductible,
-    mime,
+    part::{composite::Message, AnyPart},
 };
 
-use crate::mail::mailbox::Mailbox;
+use crate::cryptoblob::Key;
+use crate::mail::mailbox::{MailMeta, Mailbox};
 use crate::mail::uidindex::{ImapUid, ImapUidvalidity, UidIndex};
 use crate::mail::unique_ident::UniqueIdent;
 
@@ -35,7 +40,347 @@ const DEFAULT_FLAGS: [Flag; 5] = [
     Flag::Draft,
 ];
 
-const BODY_CHECK: &str = "body attribute asked but only header is fetched, logic error";
+enum FetchedMail<'a> {
+    Partial(imf::Imf<'a>),
+    Full(AnyPart<'a>),
+}
+impl<'a> FetchedMail<'a> {
+    fn new_from_message(msg: Message<'a>) -> Self {
+        FetchedMail::Full(AnyPart::Msg(msg))
+    }
+
+    /*fn new_from_header(hdr: imf::Imf<'a>) -> Self {
+        FetchedMail::Partial(hdr)
+    }*/
+
+    fn as_anypart(&self) -> Result<&AnyPart<'a>> {
+        match self {
+            FetchedMail::Full(x) => Ok(&x),
+            _ => bail!("The full message must be fetched, not only its headers"),
+        }
+    }
+
+    fn as_full(&self) -> Result<&Message<'a>> {
+        match self {
+            FetchedMail::Full(AnyPart::Msg(x)) => Ok(&x),
+            _ => bail!("The full message must be fetched, not only its headers AND it must be an AnyPart::Msg."),
+        }
+    }
+
+    fn imf(&self) -> &imf::Imf<'a> {
+        match self {
+            FetchedMail::Full(AnyPart::Msg(x)) => &x.imf,
+            FetchedMail::Partial(x) => &x,
+            _ => panic!("Can't contain AnyPart that is not a message"),
+        }
+    }
+}
+
+pub struct AttributesProxy {
+    attrs: Vec<FetchAttribute>,
+}
+impl AttributesProxy {
+    fn new(attrs: &MacroOrFetchAttributes, is_uid_fetch: bool) -> Self {
+        // Expand macros
+        let mut fetch_attrs = match attrs {
+            MacroOrFetchAttributes::Macro(m) => m.expand(),
+            MacroOrFetchAttributes::FetchAttributes(a) => a.clone(),
+        };
+
+        // Handle uids
+        if is_uid_fetch && !fetch_attrs.contains(&FetchAttribute::Uid) {
+            fetch_attrs.push(FetchAttribute::Uid);
+        }
+
+        Self { attrs: fetch_attrs }
+    }
+
+    fn need_body(&self) -> bool {
+        self.attrs.iter().any(|x| {
+            matches!(
+                x,
+                FetchAttribute::Body
+                    | FetchAttribute::BodyExt { .. }
+                    | FetchAttribute::Rfc822
+                    | FetchAttribute::Rfc822Text
+                    | FetchAttribute::BodyStructure
+            )
+        })
+    }
+}
+
+pub struct MailIdentifiers {
+    i: NonZeroU32,
+    uid: ImapUid,
+    uuid: UniqueIdent,
+}
+struct MailIdentifiersList(Vec<MailIdentifiers>);
+
+impl MailIdentifiersList {
+    fn uuids(&self) -> Vec<UniqueIdent> {
+        self.0.iter().map(|mi| mi.uuid).collect()
+    }
+}
+
+pub struct MailView<'a> {
+    ids: &'a MailIdentifiers,
+    meta: &'a MailMeta,
+    flags: &'a Vec<String>,
+    content: FetchedMail<'a>,
+    add_seen: bool,
+}
+
+impl<'a> MailView<'a> {
+    fn uid(&self) -> MessageAttribute {
+        MessageAttribute::Uid(self.ids.uid)
+    }
+
+    fn flags(&self) -> MessageAttribute {
+        MessageAttribute::Flags(
+            self.flags
+                .iter()
+                .filter_map(|f| string_to_flag(f))
+                .collect(),
+        )
+    }
+
+    fn rfc_822_size(&self) -> MessageAttribute {
+        MessageAttribute::Rfc822Size(self.meta.rfc822_size as u32)
+    }
+
+    fn rfc_822_header(&self) -> MessageAttribute {
+        MessageAttribute::Rfc822Header(NString(
+            self.meta
+                .headers
+                .to_vec()
+                .try_into()
+                .ok()
+                .map(IString::Literal),
+        ))
+    }
+
+    fn rfc_822_text(&self) -> Result<MessageAttribute> {
+        Ok(MessageAttribute::Rfc822Text(NString(
+            self.content
+                .as_full()?
+                .raw_body
+                .try_into()
+                .ok()
+                .map(IString::Literal),
+        )))
+    }
+
+    fn rfc822(&self) -> Result<MessageAttribute> {
+        Ok(MessageAttribute::Rfc822(NString(
+            self.content
+                .as_full()?
+                .raw_body
+                .clone()
+                .try_into()
+                .ok()
+                .map(IString::Literal),
+        )))
+    }
+
+    fn envelope(&self) -> MessageAttribute {
+        MessageAttribute::Envelope(message_envelope(self.content.imf()))
+    }
+
+    fn body(&self) -> Result<MessageAttribute> {
+        Ok(MessageAttribute::Body(build_imap_email_struct(
+            self.content.as_full()?.child.as_ref(),
+        )?))
+    }
+
+    fn body_structure(&self) -> Result<MessageAttribute> {
+        Ok(MessageAttribute::Body(build_imap_email_struct(
+            self.content.as_full()?.child.as_ref(),
+        )?))
+    }
+
+    /// maps to BODY[<section>]<<partial>> and BODY.PEEK[<section>]<<partial>>
+    /// peek does not implicitly set the \Seen flag
+    /// eg. BODY[HEADER.FIELDS (DATE FROM)]
+    /// eg. BODY[]<0.2048>
+    fn body_ext(
+        &mut self,
+        section: &Option<FetchSection>,
+        partial: &Option<(u32, NonZeroU32)>,
+        peek: &bool,
+    ) -> Result<MessageAttribute> {
+        // Extract message section
+        let text = get_message_section(self.content.as_anypart()?, section)?;
+
+        let seen_flag = Flag::Seen.to_string();
+        if !peek && !self.flags.iter().any(|x| *x == seen_flag) {
+            // Add \Seen flag
+            //self.mailbox.add_flags(uuid, &[seen_flag]).await?;
+            self.add_seen = true;
+        }
+
+        // Handle <<partial>> which cut the message bytes
+        let (text, origin) = apply_partial(partial, &text);
+
+        let data = NString(text.to_vec().try_into().ok().map(IString::Literal));
+
+        return Ok(MessageAttribute::BodyExt {
+            section: section.clone(),
+            origin,
+            data,
+        });
+    }
+
+    fn internal_date(&self) -> Result<MessageAttribute> {
+        let dt = Utc
+            .fix()
+            .timestamp_opt(i64::try_from(self.meta.internaldate / 1000)?, 0)
+            .earliest()
+            .ok_or(anyhow!("Unable to parse internal date"))?;
+        Ok(MessageAttribute::InternalDate(MyDateTime(dt)))
+    }
+
+    fn filter(&mut self, ap: &AttributesProxy) -> Result<Body> {
+        let res_attrs = ap
+            .attrs
+            .iter()
+            .map(|attr| match attr {
+                FetchAttribute::Uid => Ok(self.uid()),
+                FetchAttribute::Flags => Ok(self.flags()),
+                FetchAttribute::Rfc822Size => Ok(self.rfc_822_size()),
+                FetchAttribute::Rfc822Header => Ok(self.rfc_822_header()),
+                FetchAttribute::Rfc822Text => self.rfc_822_text(),
+                FetchAttribute::Rfc822 => self.rfc822(),
+                FetchAttribute::Envelope => Ok(self.envelope()),
+                FetchAttribute::Body => self.body(),
+                FetchAttribute::BodyStructure => self.body_structure(),
+                FetchAttribute::BodyExt {
+                    section,
+                    partial,
+                    peek,
+                } => self.body_ext(section, partial, peek),
+                FetchAttribute::InternalDate => self.internal_date(),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Body::Data(Data::Fetch {
+            seq_or_uid: self.ids.i,
+            attributes: res_attrs,
+        }))
+    }
+}
+
+fn apply_partial<'a>(
+    partial: &'_ Option<(u32, NonZeroU32)>,
+    text: &'a [u8],
+) -> (&'a [u8], Option<u32>) {
+    match partial {
+        Some((begin, len)) => {
+            if *begin as usize > text.len() {
+                (&[][..], Some(*begin))
+            } else if (begin + len.get()) as usize >= text.len() {
+                (&text[*begin as usize..], Some(*begin))
+            } else {
+                (
+                    &text[*begin as usize..(begin + len.get()) as usize],
+                    Some(*begin),
+                )
+            }
+        }
+        None => (&text[..], None),
+    }
+}
+
+pub struct BodyIdentifier<'a> {
+    msg_uuid: &'a UniqueIdent,
+    msg_key: &'a Key,
+}
+
+#[derive(Default)]
+pub struct MailSelectionBuilder<'a> {
+    //attrs: AttributeProxy,
+    mail_count: usize,
+    need_body: bool,
+    mi: &'a [MailIdentifiers],
+    meta: &'a [MailMeta],
+    flags: &'a [&'a Vec<String>],
+    bodies: &'a [Vec<u8>],
+}
+
+impl<'a> MailSelectionBuilder<'a> {
+    fn new(need_body: bool, mail_count: usize) -> Self {
+        Self {
+            mail_count,
+            need_body,
+            ..MailSelectionBuilder::default()
+        }
+    }
+
+    fn with_mail_identifiers(&mut self, mi: &'a [MailIdentifiers]) -> &mut Self {
+        self.mi = mi;
+        self
+    }
+
+    fn with_metadata(&mut self, meta: &'a [MailMeta]) -> &mut Self {
+        self.meta = meta;
+        self
+    }
+
+    fn with_flags(&mut self, flags: &'a [&'a Vec<String>]) -> &mut Self {
+        self.flags = flags;
+        self
+    }
+
+    fn bodies_to_collect(&self) -> Vec<BodyIdentifier> {
+        if !self.need_body {
+            return vec![];
+        }
+        zip(self.mi, self.meta)
+            .map(|(mi, meta)| BodyIdentifier {
+                msg_uuid: &mi.uuid,
+                msg_key: &meta.message_key,
+            })
+            .collect::<Vec<_>>()
+    }
+
+    fn with_bodies(&mut self, rbodies: &'a [Vec<u8>]) -> &mut Self {
+        self.bodies = rbodies;
+        self
+    }
+
+    fn build(&self) -> Result<Vec<MailView<'a>>> {
+        let mut bodies = vec![];
+
+        if !self.need_body {
+            for m in self.meta.iter() {
+                let (_, hdrs) =
+                    eml_codec::parse_imf(&m.headers).or(Err(anyhow!("Invalid mail headers")))?;
+                bodies.push(FetchedMail::Partial(hdrs));
+            }
+        } else {
+            for rb in self.bodies.iter() {
+                let (_, p) = eml_codec::parse_message(&rb).or(Err(anyhow!("Invalid mail body")))?;
+                bodies.push(FetchedMail::new_from_message(p));
+            }
+        }
+
+        if self.mi.len() != self.mail_count && self.meta.len() != self.mail_count
+            || self.flags.len() != self.mail_count
+            || bodies.len() != self.mail_count
+        {
+            return Err(anyhow!("Can't build a mail view selection as parts were not correctly registered into the builder."));
+        }
+
+        Ok(zip(self.mi, zip(self.meta, zip(self.flags, bodies)))
+            .map(|(ids, (meta, (flags, content)))| MailView {
+                ids,
+                meta,
+                flags,
+                content,
+                add_seen: false,
+            })
+            .collect())
+    }
+}
 
 /// A MailboxView is responsible for giving the client the information
 /// it needs about a mailbox, such as an initial summary of the mailbox's
@@ -159,16 +504,16 @@ impl MailboxView {
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
 
         let mails = self.get_mail_ids(sequence_set, *is_uid_store)?;
-        for (_i, _uid, uuid) in mails.iter() {
+        for mi in mails.iter() {
             match kind {
                 StoreType::Add => {
-                    self.mailbox.add_flags(*uuid, &flags[..]).await?;
+                    self.mailbox.add_flags(mi.uuid, &flags[..]).await?;
                 }
                 StoreType::Remove => {
-                    self.mailbox.del_flags(*uuid, &flags[..]).await?;
+                    self.mailbox.del_flags(mi.uuid, &flags[..]).await?;
                 }
                 StoreType::Replace => {
-                    self.mailbox.set_flags(*uuid, &flags[..]).await?;
+                    self.mailbox.set_flags(mi.uuid, &flags[..]).await?;
                 }
             }
         }
@@ -204,19 +549,19 @@ impl MailboxView {
         let mails = self.get_mail_ids(sequence_set, *is_uid_copy)?;
 
         let mut new_uuids = vec![];
-        for (_i, _uid, uuid) in mails.iter() {
-            new_uuids.push(to.copy_from(&self.mailbox, *uuid).await?);
+        for mi in mails.iter() {
+            new_uuids.push(to.copy_from(&self.mailbox, mi.uuid).await?);
         }
 
         let mut ret = vec![];
         let to_state = to.current_uid_index().await;
-        for ((_i, uid, _uuid), new_uuid) in mails.iter().zip(new_uuids.iter()) {
+        for (mi, new_uuid) in mails.iter().zip(new_uuids.iter()) {
             let dest_uid = to_state
                 .table
                 .get(new_uuid)
                 .ok_or(anyhow!("copied mail not in destination mailbox"))?
                 .0;
-            ret.push((*uid, dest_uid));
+            ret.push((mi.uid, dest_uid));
         }
 
         Ok((to_state.uidvalidity, ret))
@@ -230,196 +575,86 @@ impl MailboxView {
         attributes: &MacroOrFetchAttributes,
         is_uid_fetch: &bool,
     ) -> Result<Vec<Body>> {
-        let mails = self.get_mail_ids(sequence_set, *is_uid_fetch)?;
+        let ap = AttributesProxy::new(attributes, *is_uid_fetch);
 
-        let mails_uuid = mails
+        // Prepare data
+        let mids = MailIdentifiersList(self.get_mail_ids(sequence_set, *is_uid_fetch)?);
+        let mail_count = mids.0.len();
+        let uuids = mids.uuids();
+        let meta = self.mailbox.fetch_meta(&uuids).await?;
+        let flags = uuids
             .iter()
-            .map(|(_i, _uid, uuid)| *uuid)
+            .map(|uuid| {
+                self.known_state
+                    .table
+                    .get(uuid)
+                    .map(|(_uuid, f)| f)
+                    .ok_or(anyhow!("missing email from the flag table"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // Start filling data to build the view
+        let mut selection = MailSelectionBuilder::new(ap.need_body(), mail_count);
+        selection
+            .with_mail_identifiers(&mids.0)
+            .with_metadata(&meta)
+            .with_flags(&flags);
+
+        // Asynchronously fetch full bodies (if needed)
+        let btc = selection.bodies_to_collect();
+        let future_bodies = btc
+            .iter()
+            .map(|bi| async move {
+                let body = self.mailbox.fetch_full(*bi.msg_uuid, bi.msg_key).await?;
+                Ok::<_, anyhow::Error>(body)
+            })
+            .collect::<FuturesOrdered<_>>();
+        let bodies = future_bodies
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // Add bodies
+        selection.with_bodies(bodies.as_slice());
+
+        // Build mail selection views
+        let mut views = selection.build()?;
+
+        // Filter views to build the result
+        let ret = views
+            .iter_mut()
+            .filter_map(|mv| mv.filter(&ap).ok())
             .collect::<Vec<_>>();
-        let mails_meta = self.mailbox.fetch_meta(&mails_uuid).await?;
 
-        let mut fetch_attrs = match attributes {
-            MacroOrFetchAttributes::Macro(m) => m.expand(),
-            MacroOrFetchAttributes::FetchAttributes(a) => a.clone(),
-        };
-        if *is_uid_fetch && !fetch_attrs.contains(&FetchAttribute::Uid) {
-            fetch_attrs.push(FetchAttribute::Uid);
-        }
-        let need_body = fetch_attrs.iter().any(|x| {
-            matches!(
-                x,
-                FetchAttribute::Body
-                    | FetchAttribute::BodyExt { .. }
-                    | FetchAttribute::Rfc822
-                    | FetchAttribute::Rfc822Text
-                    | FetchAttribute::BodyStructure
-            )
-        });
-
-        let mails = if need_body {
-            let mut iter = mails
-                .into_iter()
-                .zip(mails_meta.into_iter())
-                .map(|((i, uid, uuid), meta)| async move {
-                    let body = self.mailbox.fetch_full(uuid, &meta.message_key).await?;
-                    Ok::<_, anyhow::Error>((i, uid, uuid, meta, Some(body)))
-                })
-                .collect::<FuturesOrdered<_>>();
-            let mut mails = vec![];
-            while let Some(m) = iter.next().await {
-                mails.push(m?);
-            }
-            mails
-        } else {
-            mails
-                .into_iter()
-                .zip(mails_meta.into_iter())
-                .map(|((i, uid, uuid), meta)| (i, uid, uuid, meta, None))
-                .collect::<Vec<_>>()
-        };
-
-        let mut ret = vec![];
-        for (i, uid, uuid, meta, body) in mails {
-            let mut attributes = vec![];
-
-            let (_uid2, flags) = self
-                .known_state
-                .table
-                .get(&uuid)
-                .ok_or_else(|| anyhow!("Mail not in uidindex table: {}", uuid))?;
-
-            let (parts, imf) = match &body {
-                Some(m) => {
-                    let eml = eml_codec::parse_message(m).or(Err(anyhow!("Invalid mail body")))?.1;
-                    (Some(eml.child), eml.imf)
-                }
-                None => {
-                    let imf = eml_codec::parse_imf(&meta.headers).or(Err(anyhow!("Invalid mail headers")))?.1;
-                    (None, imf)
-                }
-            };
-
-            for attr in fetch_attrs.iter() {
-                match attr {
-                    FetchAttribute::Uid => attributes.push(MessageAttribute::Uid(uid)),
-                    FetchAttribute::Flags => {
-                        attributes.push(MessageAttribute::Flags(
-                            flags.iter().filter_map(|f| string_to_flag(f)).collect(),
-                        ));
-                    }
-                    FetchAttribute::Rfc822Size => {
-                        attributes.push(MessageAttribute::Rfc822Size(meta.rfc822_size as u32))
-                    }
-                    FetchAttribute::Rfc822Header => {
-                        attributes.push(MessageAttribute::Rfc822Header(NString(
-                            meta.headers.to_vec().try_into().ok().map(IString::Literal),
-                        )))
-                    }
-                    FetchAttribute::Rfc822Text => {
-                        //@FIXME this is not efficient, this is a hack as we need to patch
-                        // eml_codec to correctly implement this behavior
-                        let txt = eml_codec::parse_imf(body.as_ref().expect(BODY_CHECK).as_slice())
-                            .map(|(x, _)| x)
-                            .unwrap_or(b"");
-
-                        attributes.push(MessageAttribute::Rfc822Text(NString(
-                            txt.try_into().ok().map(IString::Literal),
-                        )));
-                    }
-                    FetchAttribute::Rfc822 => attributes.push(MessageAttribute::Rfc822(NString(
-                        body.as_ref()
-                            .expect(BODY_CHECK)
-                            .clone()
-                            .try_into()
-                            .ok()
-                            .map(IString::Literal),
-                    ))),
-                    FetchAttribute::Envelope => {
-                        attributes.push(MessageAttribute::Envelope(message_envelope(&imf)))
-                    }
-                    FetchAttribute::Body => attributes.push(MessageAttribute::Body(
-                        build_imap_email_struct(parts.as_ref().expect(BODY_CHECK).as_ref())?,
-                    )),
-                    FetchAttribute::BodyStructure => attributes.push(MessageAttribute::Body(
-                        build_imap_email_struct(parts.as_ref().expect(BODY_CHECK).as_ref())?,
-                    )),
-                    FetchAttribute::BodyExt {
-                        section,
-                        partial,
-                        peek,
-                    } => {
-                        // @FIXME deactivated while eml_codec is integrated
-                        todo!();
-                        // @TODO Add missing section specifiers
-                        /*match get_message_section(&parts.expect("body attribute asked but only header is fetched, logic error"), section) {
-                            Ok(text) => {
-                                let seen_flag = Flag::Seen.to_string();
-                                if !peek && !flags.iter().any(|x| *x == seen_flag) {
-                                    // Add \Seen flag
-                                    self.mailbox.add_flags(uuid, &[seen_flag]).await?;
-                                }
-
-                                let (text, origin) = match partial {
-                                    Some((begin, len)) => {
-                                        if *begin as usize > text.len() {
-                                            (&[][..], Some(*begin))
-                                        } else if (*begin + len.get()) as usize >= text.len() {
-                                            (&text[*begin as usize..], Some(*begin))
-                                        } else {
-                                            (
-                                                &text[*begin as usize
-                                                    ..(*begin + len.get()) as usize],
-                                                Some(*begin),
-                                            )
-                                        }
-                                    }
-                                    None => (&text[..], None),
-                                };
-
-                                let data =
-                                    NString(text.to_vec().try_into().ok().map(IString::Literal));
-                                attributes.push(MessageAttribute::BodyExt {
-                                    section: section.clone(),
-                                    origin,
-                                    data,
-                                })
-                            }
-                            Err(e) => {
-                                tracing::error!(
-                                    "Could not get section {:?} of message {}: {}",
-                                    section,
-                                    uuid,
-                                    e
-                                );
-                            }
-                        }
-                        */
-                    }
-                    FetchAttribute::InternalDate => {
-                        let dt = Utc.fix().timestamp_opt(i64::try_from(meta.internaldate / 1000)?, 0).earliest().ok_or(anyhow!("Unable to parse internal date"))?;
-                        attributes.push(MessageAttribute::InternalDate(MyDateTime(dt)));
-                    }
-                }
-            }
-
-            ret.push(Body::Data(Data::Fetch {
-                seq_or_uid: i,
-                attributes,
-            }));
-        }
+        // Register seen flags
+        let future_flags = views
+            .iter()
+            .filter(|mv| mv.add_seen)
+            .map(|mv| async move {
+                let seen_flag = Flag::Seen.to_string();
+                self.mailbox.add_flags(mv.ids.uuid, &[seen_flag]).await?;
+                Ok::<_, anyhow::Error>(())
+            })
+            .collect::<FuturesOrdered<_>>();
+        future_flags
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .collect::<Result<_, _>>()?;
 
         Ok(ret)
     }
 
     // ----
 
-    // Gets the UIDs and UUIDs of mails identified by a SequenceSet of
-    // sequence numbers
+    // Gets the IMAP ID, the IMAP UIDs and, the Aerogramme UUIDs of mails identified by a SequenceSet of
+    // sequence numbers (~ IMAP selector)
     fn get_mail_ids(
         &self,
         sequence_set: &SequenceSet,
         by_uid: bool,
-    ) -> Result<Vec<(NonZeroU32, ImapUid, UniqueIdent)>> {
+    ) -> Result<Vec<MailIdentifiers>> {
         let mail_vec = self
             .known_state
             .idx_by_uid
@@ -444,7 +679,11 @@ impl MailboxView {
                 }
                 if let Some(mail) = mail_vec.get(i) {
                     if mail.0 == uid {
-                        mails.push((NonZeroU32::try_from(i as u32 + 1).unwrap(), mail.0, mail.1));
+                        mails.push(MailIdentifiers {
+                            i: NonZeroU32::try_from(i as u32 + 1).unwrap(),
+                            uid: mail.0,
+                            uuid: mail.1,
+                        });
                     }
                 } else {
                     break;
@@ -461,7 +700,11 @@ impl MailboxView {
 
             for i in sequence_set.iter(iter_strat) {
                 if let Some(mail) = mail_vec.get(i.get() as usize - 1) {
-                    mails.push((i, mail.0, mail.1));
+                    mails.push(MailIdentifiers {
+                        i,
+                        uid: mail.0,
+                        uuid: mail.1,
+                    });
                 } else {
                     bail!("No such mail: {}", i);
                 }
@@ -620,26 +863,39 @@ fn message_envelope(msg: &imf::Imf) -> Envelope {
 
     Envelope {
         date: NString(
-            msg.date.as_ref()
+            msg.date
+                .as_ref()
                 .map(|d| IString::try_from(d.to_rfc3339()).unwrap()),
         ),
         subject: NString(
-            msg.subject.as_ref()
+            msg.subject
+                .as_ref()
                 .map(|d| IString::try_from(d.to_string()).unwrap()),
         ),
-        sender: msg.sender.as_ref().map(|v| vec![convert_mbx(v)]).unwrap_or(from.clone()),
+        sender: msg
+            .sender
+            .as_ref()
+            .map(|v| vec![convert_mbx(v)])
+            .unwrap_or(from.clone()),
         reply_to: if msg.reply_to.is_empty() {
-                from.clone() 
-            } else { 
-               convert_addresses(&msg.reply_to)
-            },
-        from: from,
+            from.clone()
+        } else {
+            convert_addresses(&msg.reply_to)
+        },
+        from,
         to: convert_addresses(&msg.to),
         cc: convert_addresses(&msg.cc),
         bcc: convert_addresses(&msg.bcc),
-        in_reply_to: NString(msg.in_reply_to.iter().next().map(|d| IString::try_from(d.to_string()).unwrap())),
+        in_reply_to: NString(
+            msg.in_reply_to
+                .iter()
+                .next()
+                .map(|d| IString::try_from(d.to_string()).unwrap()),
+        ),
         message_id: NString(
-            msg.msg_id.as_ref().map(|d| IString::try_from(d.to_string()).unwrap()),
+            msg.msg_id
+                .as_ref()
+                .map(|d| IString::try_from(d.to_string()).unwrap()),
         ),
     }
 }
@@ -649,20 +905,28 @@ fn convert_addresses(addrlist: &Vec<imf::address::AddressRef>) -> Vec<Address> {
     for item in addrlist {
         match item {
             imf::address::AddressRef::Single(a) => acc.push(convert_mbx(a)),
-            imf::address::AddressRef::Many(l) => acc.extend(l.participants.iter().map(convert_mbx))
+            imf::address::AddressRef::Many(l) => acc.extend(l.participants.iter().map(convert_mbx)),
         }
     }
-    return acc
+    return acc;
 }
 
 fn convert_mbx(addr: &imf::mailbox::MailboxRef) -> Address {
     Address::new(
-        NString(addr.name.as_ref().map(|x| IString::try_from(x.to_string()).unwrap())),
+        NString(
+            addr.name
+                .as_ref()
+                .map(|x| IString::try_from(x.to_string()).unwrap()),
+        ),
         // SMTP at-domain-list (source route) seems obsolete since at least 1991
         // https://www.mhonarc.org/archive/html/ietf-822/1991-06/msg00060.html
         NString(None),
-        NString(Some(IString::try_from(addr.addrspec.local_part.to_string()).unwrap())),
-        NString(Some(IString::try_from(addr.addrspec.domain.to_string()).unwrap())),
+        NString(Some(
+            IString::try_from(addr.addrspec.local_part.to_string()).unwrap(),
+        )),
+        NString(Some(
+            IString::try_from(addr.addrspec.domain.to_string()).unwrap(),
+        )),
     )
 }
 
@@ -685,10 +949,12 @@ fn build_imap_email_struct<'a>(part: &AnyPart<'a>) -> Result<BodyStructure> {
     match part {
         AnyPart::Mult(x) => {
             let itype = &x.mime.interpreted_type;
-            let subtype = IString::try_from(itype.subtype.to_string()).unwrap_or(unchecked_istring("alternative"));
+            let subtype = IString::try_from(itype.subtype.to_string())
+                .unwrap_or(unchecked_istring("alternative"));
 
             Ok(BodyStructure::Multi {
-                bodies: x.children
+                bodies: x
+                    .children
                     .iter()
                     .filter_map(|inner| build_imap_email_struct(&inner).ok())
                     .collect(),
@@ -706,18 +972,19 @@ fn build_imap_email_struct<'a>(part: &AnyPart<'a>) -> Result<BodyStructure> {
         AnyPart::Txt(x) => {
             let mut basic = basic_fields(&x.mime.fields, x.body.len())?;
 
-            // Get the interpreted content type, set it 
+            // Get the interpreted content type, set it
             let itype = match &x.mime.interpreted_type {
-                Deductible::Inferred(v) | Deductible::Explicit(v) => v
+                Deductible::Inferred(v) | Deductible::Explicit(v) => v,
             };
-            let subtype = IString::try_from(itype.subtype.to_string()).unwrap_or(unchecked_istring("plain"));
+            let subtype =
+                IString::try_from(itype.subtype.to_string()).unwrap_or(unchecked_istring("plain"));
 
             // Add charset to the list of parameters if we know it has been inferred as it will be
             // missing from the parsed content.
             if let Deductible::Inferred(charset) = &itype.charset {
                 basic.parameter_list.push((
                     unchecked_istring("charset"),
-                    IString::try_from(charset.to_string()).unwrap_or(unchecked_istring("us-ascii"))
+                    IString::try_from(charset.to_string()).unwrap_or(unchecked_istring("us-ascii")),
                 ));
             }
 
@@ -735,15 +1002,21 @@ fn build_imap_email_struct<'a>(part: &AnyPart<'a>) -> Result<BodyStructure> {
         AnyPart::Bin(x) => {
             let basic = basic_fields(&x.mime.fields, x.body.len())?;
 
-            let default = mime::r#type::NaiveType { main: &b"application"[..], sub: &b"octet-stream"[..], params: vec![] };
+            let default = mime::r#type::NaiveType {
+                main: &b"application"[..],
+                sub: &b"octet-stream"[..],
+                params: vec![],
+            };
             let ct = x.mime.fields.ctype.as_ref().unwrap_or(&default);
 
-            let type_ = IString::try_from(String::from_utf8_lossy(ct.main).to_string())
-                .or(Err(anyhow!("Unable to build IString from given Content-Type type given")))?;
+            let type_ = IString::try_from(String::from_utf8_lossy(ct.main).to_string()).or(Err(
+                anyhow!("Unable to build IString from given Content-Type type given"),
+            ))?;
 
-
-            let subtype = IString::try_from(String::from_utf8_lossy(ct.sub).to_string())
-                .or(Err(anyhow!("Unable to build IString from given Content-Type subtype given")))?;
+            let subtype =
+                IString::try_from(String::from_utf8_lossy(ct.sub).to_string()).or(Err(anyhow!(
+                    "Unable to build IString from given Content-Type subtype given"
+                )))?;
 
             Ok(BodyStructure::Single {
                 body: FetchBody {
@@ -772,7 +1045,8 @@ fn build_imap_email_struct<'a>(part: &AnyPart<'a>) -> Result<BodyStructure> {
 }
 
 fn nol(input: &[u8]) -> u32 {
-    input.iter()
+    input
+        .iter()
         .filter(|x| **x == b'\n')
         .count()
         .try_into()
@@ -786,13 +1060,22 @@ fn unchecked_istring(s: &'static str) -> IString {
 }
 
 fn basic_fields(m: &mime::NaiveMIME, sz: usize) -> Result<BasicFields> {
-    let parameter_list = m.ctype
+    let parameter_list = m
+        .ctype
         .as_ref()
-        .map(|x| x.params.iter()
-             .map(|p| (IString::try_from(String::from_utf8_lossy(p.name).to_string()), IString::try_from(p.value.to_string())))
-             .filter(|(k, v)| k.is_ok() && v.is_ok())
-             .map(|(k, v)| (k.unwrap(), v.unwrap()))
-             .collect())
+        .map(|x| {
+            x.params
+                .iter()
+                .map(|p| {
+                    (
+                        IString::try_from(String::from_utf8_lossy(p.name).to_string()),
+                        IString::try_from(p.value.to_string()),
+                    )
+                })
+                .filter(|(k, v)| k.is_ok() && v.is_ok())
+                .map(|(k, v)| (k.unwrap(), v.unwrap()))
+                .collect()
+        })
         .unwrap_or(vec![]);
 
     Ok(BasicFields {
@@ -800,64 +1083,80 @@ fn basic_fields(m: &mime::NaiveMIME, sz: usize) -> Result<BasicFields> {
         id: NString(
             m.id.as_ref()
                 .and_then(|ci| IString::try_from(ci.to_string()).ok()),
-            ),
+        ),
         description: NString(
-            m.description.as_ref()
+            m.description
+                .as_ref()
                 .and_then(|cd| IString::try_from(cd.to_string()).ok()),
         ),
         content_transfer_encoding: match m.transfer_encoding {
-                mime::mechanism::Mechanism::_8Bit => unchecked_istring("8bit"),
-                mime::mechanism::Mechanism::Binary => unchecked_istring("binary"),
-                mime::mechanism::Mechanism::QuotedPrintable => unchecked_istring("quoted-printable"),
-                mime::mechanism::Mechanism::Base64 => unchecked_istring("base64"),
-                _ => unchecked_istring("7bit"),
+            mime::mechanism::Mechanism::_8Bit => unchecked_istring("8bit"),
+            mime::mechanism::Mechanism::Binary => unchecked_istring("binary"),
+            mime::mechanism::Mechanism::QuotedPrintable => unchecked_istring("quoted-printable"),
+            mime::mechanism::Mechanism::Base64 => unchecked_istring("base64"),
+            _ => unchecked_istring("7bit"),
         },
         // @FIXME we can't compute the size of the message currently...
         size: u32::try_from(sz)?,
     })
 }
 
-/*
+/// Extract message section for section identifier passed by the FETCH BODY[<section>]<<partial>>
+/// request
+///
+/// Example of message sections:
+///
+/// ```
+///    HEADER     ([RFC-2822] header of the message)
+///    TEXT       ([RFC-2822] text body of the message) MULTIPART/MIXED
+///    1          TEXT/PLAIN
+///    2          APPLICATION/OCTET-STREAM
+///    3          MESSAGE/RFC822
+///    3.HEADER   ([RFC-2822] header of the message)
+///    3.TEXT     ([RFC-2822] text body of the message) MULTIPART/MIXED
+///    3.1        TEXT/PLAIN
+///    3.2        APPLICATION/OCTET-STREAM
+///    4          MULTIPART/MIXED
+///    4.1        IMAGE/GIF
+///    4.1.MIME   ([MIME-IMB] header for the IMAGE/GIF)
+///    4.2        MESSAGE/RFC822
+///    4.2.HEADER ([RFC-2822] header of the message)
+///    4.2.TEXT   ([RFC-2822] text body of the message) MULTIPART/MIXED
+///    4.2.1      TEXT/PLAIN
+///    4.2.2      MULTIPART/ALTERNATIVE
+///    4.2.2.1    TEXT/PLAIN
+///    4.2.2.2    TEXT/RICHTEXT
+/// ```
 fn get_message_section<'a>(
-    parsed: &'a Message<'a>,
+    parsed: &'a AnyPart<'a>,
     section: &Option<FetchSection>,
 ) -> Result<Cow<'a, [u8]>> {
+    let msg = parsed
+        .as_message()
+        .ok_or(anyhow!("Part must be a message"))?;
     match section {
-        Some(FetchSection::Text(None)) => {
-            let rp = parsed.root_part();
-            Ok(parsed
-                .raw_message
-                .get(rp.offset_body..rp.offset_end)
-                .ok_or(Error::msg(
-                    "Unable to extract email body, cursors out of bound. This is a bug.",
-                ))?
-                .into())
-        }
+        Some(FetchSection::Text(None)) => Ok(msg.raw_body.into()),
         Some(FetchSection::Text(Some(part))) => {
-            map_subpart_msg(parsed, part.0.as_slice(), |part_msg| {
-                let rp = part_msg.root_part();
+            map_subpart(parsed, part.0.as_slice(), |part_msg| {
                 Ok(part_msg
-                    .raw_message
-                    .get(rp.offset_body..rp.offset_end)
+                    .as_message()
                     .ok_or(Error::msg(
-                        "Unable to extract email body, cursors out of bound. This is a bug.",
+                        "Not a message/rfc822 part while expected by request (TEXT)",
                     ))?
-                    .to_vec()
+                    .raw_body
                     .into())
             })
         }
-        Some(FetchSection::Header(part)) => map_subpart_msg(
+        Some(FetchSection::Header(part)) => map_subpart(
             parsed,
             part.as_ref().map(|p| p.0.as_slice()).unwrap_or(&[]),
             |part_msg| {
-                let rp = part_msg.root_part();
                 Ok(part_msg
-                    .raw_message
-                    .get(..rp.offset_body)
+                    .as_message()
                     .ok_or(Error::msg(
-                        "Unable to extract email header, cursors out of bound. This is a bug.",
+                        "Not a message/rfc822 part while expected by request (HEADER)",
                     ))?
-                    .to_vec()
+                    .raw_headers
                     .into())
             },
         ),
@@ -874,20 +1173,21 @@ fn get_message_section<'a>(
                 })
                 .collect::<Vec<_>>();
 
-            map_subpart_msg(
+            map_subpart(
                 parsed,
                 part.as_ref().map(|p| p.0.as_slice()).unwrap_or(&[]),
                 |part_msg| {
                     let mut ret = vec![];
-                    for (hn, hv) in part_msg.headers_raw() {
-                        if fields
-                            .as_slice()
-                            .iter()
-                            .any(|x| (*x == hn.as_bytes()) ^ invert)
-                        {
-                            ret.extend(hn.as_bytes());
+                    for f in &part_msg.mime().kv {
+                        let (k, v) = match f {
+                            header::Field::Good(header::Kv2(k, v)) => (k, v),
+                            _ => continue,
+                        };
+                        if fields.as_slice().iter().any(|x| (x == k) ^ invert) {
+                            ret.extend(*k);
                             ret.extend(b": ");
-                            ret.extend(hv.as_bytes());
+                            ret.extend(*v);
+                            ret.extend(b"\r\n");
                         }
                     }
                     ret.extend(b"\r\n");
@@ -895,74 +1195,119 @@ fn get_message_section<'a>(
                 },
             )
         }
-        Some(FetchSection::Part(part)) => map_subpart(parsed, part.0.as_slice(), |_msg, part| {
-            let bytes = match &part.body {
-                AnyPart::Txt(p) => p.as_bytes().to_vec(),
-                AnyPart::Bin(p) => p.to_vec(),
-                AnyPart::Msg(p) => p.raw_message.to_vec(),
-                AnyPart::Multipart(_) => bail!("Multipart part has no body"),
+        Some(FetchSection::Part(part)) => map_subpart(parsed, part.0.as_slice(), |part| {
+            let bytes = match &part {
+                AnyPart::Txt(p) => p.body,
+                AnyPart::Bin(p) => p.body,
+                AnyPart::Msg(p) => p.raw_part,
+                AnyPart::Mult(_) => bail!("Multipart part has no body"),
             };
-            Ok(bytes.into())
+            Ok(bytes.to_vec().into())
         }),
-        Some(FetchSection::Mime(part)) => map_subpart(parsed, part.0.as_slice(), |msg, part| {
-            let mut ret = vec![];
-            for head in part.headers.iter() {
-                ret.extend(head.name.as_str().as_bytes());
-                ret.extend(b": ");
-                ret.extend(&msg.raw_message[head.offset_start..head.offset_end]);
-            }
-            ret.extend(b"\r\n");
-            Ok(ret.into())
+        Some(FetchSection::Mime(part)) => map_subpart(parsed, part.0.as_slice(), |part| {
+            let bytes = match &part {
+                AnyPart::Txt(p) => p.mime.fields.raw,
+                AnyPart::Bin(p) => p.mime.fields.raw,
+                AnyPart::Msg(p) => p.mime.fields.raw,
+                AnyPart::Mult(p) => p.mime.fields.raw,
+            };
+            Ok(bytes.to_vec().into())
         }),
-        None => Ok(parsed.raw_message.clone()),
+        None => Ok(msg.raw_part.into()),
     }
 }
 
-fn map_subpart_msg<F, R>(msg: &Message<'_>, path: &[NonZeroU32], f: F) -> Result<R>
+/// Fetch a MIME SubPart
+///
+/// eg. FETCH BODY[4.2.2.1] -> [4, 2, 2, 1]
+fn map_subpart<'a, F, R>(part: &AnyPart<'a>, path: &[NonZeroU32], f: F) -> Result<R>
 where
-    F: FnOnce(&Message<'_>) -> Result<R>,
+    F: FnOnce(&AnyPart<'a>) -> Result<R>,
 {
     if path.is_empty() {
-        f(msg)
+        f(part)
     } else {
-        let part = msg
-            .parts
-            .get(path[0].get() as usize - 1)
-            .ok_or(anyhow!("No such subpart: {}", path[0]))?;
-        if let PartType::Message(msg_attach) = &part.body {
-            map_subpart_msg(msg_attach, &path[1..], f)
-        } else {
-            bail!("Subpart is not a message: {}", path[0]);
+        match part {
+            AnyPart::Mult(x) => map_subpart(
+                x.children
+                    .get(path[0].get() as usize - 1)
+                    .ok_or(anyhow!("Unable to resolve subpath {:?}, current multipart has only {} elements", path, x.children.len()))?,
+                &path[1..],
+                f),
+            AnyPart::Msg(x) => map_subpart(x.child.as_ref(), path, f),
+            _ => bail!("You tried to access a subpart on an atomic part (text or binary). Unresolved subpath {:?}", path),
         }
     }
 }
-
-fn map_subpart<F, R>(msg: &Message<'_>, path: &[NonZeroU32], f: F) -> Result<R>
-where
-    F: FnOnce(&Message<'_>, &MessagePart<'_>) -> Result<R>,
-{
-    if path.is_empty() {
-        bail!("Unexpected empty path");
-    } else {
-        let part = msg
-            .parts
-            .get(path[0].get() as usize - 1)
-            .ok_or(anyhow!("No such subpart: {}", path[0]))?;
-        if path.len() == 1 {
-            f(msg, part)
-        } else if let PartType::Message(msg_attach) = &part.body {
-            map_subpart(msg_attach, &path[1..], f)
-        } else {
-            bail!("Subpart is not a message: {}", path[0]);
-        }
-    }
-}*/
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cryptoblob;
+    use crate::mail::unique_ident;
     use imap_codec::codec::Encode;
+    use imap_codec::types::fetch_attributes::Section;
     use std::fs;
+
+    #[test]
+    fn mailview_body_ext() -> Result<()> {
+        let ap = AttributesProxy::new(
+            &MacroOrFetchAttributes::FetchAttributes(vec![FetchAttribute::BodyExt {
+                section: Some(Section::Header(None)),
+                partial: None,
+                peek: false,
+            }]),
+            false,
+        );
+
+        let flags = vec![];
+        let key = cryptoblob::gen_key();
+        let meta = MailMeta {
+            internaldate: 0u64,
+            headers: vec![],
+            message_key: key,
+            rfc822_size: 8usize,
+        };
+        let ids = MailIdentifiers {
+            i: NonZeroU32::MIN,
+            uid: NonZeroU32::MIN,
+            uuid: unique_ident::gen_ident(),
+        };
+        let rfc822 = b"Subject: hello\r\nFrom: a@a.a\r\nTo: b@b.b\r\nDate: Thu, 12 Oct 2023 08:45:28 +0000\r\n\r\nhello world";
+        let content = FetchedMail::new_from_message(eml_codec::parse_message(rfc822)?.1);
+
+        let mut mv = MailView {
+            ids: &ids,
+            content,
+            meta: &meta,
+            flags: &flags,
+            add_seen: false,
+        };
+        let res_body = mv.filter(&ap)?;
+
+        let fattr = match res_body {
+            Body::Data(Data::Fetch {
+                seq_or_uid: _seq,
+                attributes: attr,
+            }) => Ok(attr),
+            _ => Err(anyhow!("Not a fetch body")),
+        }?;
+
+        assert_eq!(fattr.len(), 1);
+
+        let (sec, _orig, _data) = match &fattr[0] {
+            MessageAttribute::BodyExt {
+                section,
+                origin,
+                data,
+            } => Ok((section, origin, data)),
+            _ => Err(anyhow!("not a body ext message attribute")),
+        }?;
+
+        assert_eq!(sec.as_ref().unwrap(), &Section::Header(None));
+
+        Ok(())
+    }
 
     /// Future automated test. We use lossy utf8 conversion + lowercase everything,
     /// so this test might allow invalid results. But at least it allows us to quickly test a
@@ -980,7 +1325,6 @@ mod tests {
             //"tests/emails/dxflrs/0005_mail-parser-readme",
             "tests/emails/dxflrs/0006_single-mime",
             "tests/emails/dxflrs/0007_raw_msg_in_rfc822",
-
             /* *** (STRANGE) RFC *** */
             //"tests/emails/rfc/000", // must return text/enriched, we return text/plain
             //"tests/emails/rfc/001", // does not recognize the multipart/external-body, breaks the
@@ -994,9 +1338,8 @@ mod tests {
             //"tests/emails/thirdparty/001", // same
             "tests/emails/thirdparty/002", // same
 
-
-            /* *** LEGACY *** */
-            //"tests/emails/legacy/000", // same issue with \r\r
+                                           /* *** LEGACY *** */
+                                           //"tests/emails/legacy/000", // same issue with \r\r
         ];
 
         for pref in prefixes.iter() {
@@ -1006,7 +1349,9 @@ mod tests {
             let message = eml_codec::parse_message(&txt).unwrap().1;
 
             let mut resp = Vec::new();
-            MessageAttribute::Body(build_imap_email_struct(&message.child)?).encode(&mut resp).unwrap();
+            MessageAttribute::Body(build_imap_email_struct(&message.child)?)
+                .encode(&mut resp)
+                .unwrap();
 
             let resp_str = String::from_utf8_lossy(&resp).to_lowercase();
 

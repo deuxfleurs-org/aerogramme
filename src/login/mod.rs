@@ -7,7 +7,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
 use k2v_client::{
-    BatchInsertOp, BatchReadOp, CausalValue, CausalityToken, Filter, K2vClient, K2vValue
+    BatchInsertOp, BatchReadOp, CausalValue, CausalityToken, Filter, K2vClient, K2vValue,
 };
 use rand::prelude::*;
 use rusoto_core::HttpClient;
@@ -141,13 +141,13 @@ impl StorageCredentials {
             self.aws_secret_access_key.clone(),
         );
 
-		let connector = hyper_rustls::HttpsConnectorBuilder::new()
-			.with_native_roots()
-			.https_or_http()
-			.enable_http1()
-			.enable_http2()
-			.build();
-		let client = HttpClient::from_connector(connector);
+        let connector = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_native_roots()
+            .https_or_http()
+            .enable_http1()
+            .enable_http2()
+            .build();
+        let client = HttpClient::from_connector(connector);
 
         Ok(S3Client::new_with(
             client,

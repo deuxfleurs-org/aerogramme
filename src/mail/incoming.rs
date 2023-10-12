@@ -450,10 +450,10 @@ impl EncryptedMessage {
         let por = PutObjectRequest {
             bucket: creds.storage.bucket.clone(),
             key: format!("incoming/{}", gen_ident()),
-            metadata:  Some(
-            [(MESSAGE_KEY.to_string(), key_header)]
-                .into_iter()
-                .collect::<HashMap<_, _>>(),
+            metadata: Some(
+                [(MESSAGE_KEY.to_string(), key_header)]
+                    .into_iter()
+                    .collect::<HashMap<_, _>>(),
             ),
             body: Some(self.encrypted_body.clone().into()),
             ..Default::default()

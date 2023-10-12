@@ -843,9 +843,8 @@ checksum = "a26ae43d7bcc3b814de94796a5e736d4029efb0ee900c12e2d54c993ad1a1e07"
 
 [[package]]
 name = "eml-codec"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac20cff537caf72385ffa5d9353ae63cb6c283a53665569408f040b8db36c90d"
+version = "0.1.2"
+source = "git+https://git.deuxfleurs.fr/Deuxfleurs/eml-codec.git?branch=main#a7bd3c475a58e42b86c163ec075ce01ddae7e60a"
 dependencies = [
  "base64 0.21.2",
  "chrono",

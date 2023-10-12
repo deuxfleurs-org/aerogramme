@@ -14,7 +14,7 @@ backtrace = "0.3"
 base64 = "0.13"
 clap = { version = "3.1.18", features = ["derive", "env"] }
 duplexify = "1.1.0"
-eml-codec = "0.1.1"
+eml-codec = { git = "https://git.deuxfleurs.fr/Deuxfleurs/eml-codec.git", branch = "main" }
 hex = "0.4"
 futures = "0.3"
 im = "15"

@@ -334,17 +334,22 @@ impl MailboxList {
     }
 
     fn has_mailbox(&self, name: &str) -> bool {
-        matches!(self.0.get(name), Some(MailboxListEntry {
-            id_lww: (_, Some(_)),
-            ..
-        }))
+        matches!(
+            self.0.get(name),
+            Some(MailboxListEntry {
+                id_lww: (_, Some(_)),
+                ..
+            })
+        )
     }
 
     fn get_mailbox(&self, name: &str) -> Option<(ImapUidvalidity, Option<UniqueIdent>)> {
-        self.0.get(name).map(|MailboxListEntry {
-            id_lww: (_, mailbox_id),
-            uidvalidity,
-        }| (*uidvalidity, *mailbox_id))
+        self.0.get(name).map(
+            |MailboxListEntry {
+                 id_lww: (_, mailbox_id),
+                 uidvalidity,
+             }| (*uidvalidity, *mailbox_id),
+        )
     }
 
     /// Ensures mailbox `name` maps to id `id`.

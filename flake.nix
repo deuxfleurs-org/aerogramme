@@ -61,6 +61,7 @@
       ];
       shellHook = ''
         echo "AEROGRAME DEVELOPMENT SHELL ${fenix.packages.x86_64-linux.minimal.rustc}"
+        export RUST_SRC_PATH="${fenix.packages.x86_64-linux.latest.rust-src}/lib/rustlib/src/rust/library"
       '';
     };
 
