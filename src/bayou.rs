@@ -384,7 +384,7 @@ impl<S: BayouState> Bayou<S> {
         let cryptoblob = seal_serialize(&state_cp, &self.key)?;
         debug!("(cp) checkpoint body length: {}", cryptoblob.len());
 
-        let por = PutObjectRequest{
+        let por = PutObjectRequest {
             bucket: self.bucket.clone(),
             key: format!("{}/checkpoint/{}", self.path, ts_cp.to_string()),
             body: Some(cryptoblob.into()),
@@ -437,7 +437,7 @@ impl<S: BayouState> Bayou<S> {
     async fn list_checkpoints(&self) -> Result<Vec<(Timestamp, String)>> {
         let prefix = format!("{}/checkpoint/", self.path);
 
-        let lor = ListObjectsV2Request{
+        let lor = ListObjectsV2Request {
             bucket: self.bucket.clone(),
             max_keys: Some(1000),
             prefix: Some(prefix.clone()),

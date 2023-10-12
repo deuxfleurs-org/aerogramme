@@ -369,7 +369,7 @@ impl MailboxInternal {
                 // Save mail meta
                 let meta = MailMeta {
                     internaldate: now_msec(),
-                    headers: mail.parsed.raw_headers.to_vec(), 
+                    headers: mail.parsed.raw_headers.to_vec(),
                     message_key: message_key.clone(),
                     rfc822_size: mail.raw.len(),
                 };
@@ -400,7 +400,7 @@ impl MailboxInternal {
         futures::try_join!(
             async {
                 // Delete mail body from S3
-                let dor = DeleteObjectRequest{
+                let dor = DeleteObjectRequest {
                     bucket: self.bucket.clone(),
                     key: format!("{}/{}", self.mail_path, ident),
                     ..Default::default()
@@ -461,7 +461,7 @@ impl MailboxInternal {
         futures::try_join!(
             async {
                 // Copy mail body from S3
-                let cor = CopyObjectRequest{
+                let cor = CopyObjectRequest {
                     bucket: self.bucket.clone(),
                     key: format!("{}/{}", self.mail_path, new_id),
                     copy_source: format!("{}/{}/{}", from.bucket, from.mail_path, source_id),
