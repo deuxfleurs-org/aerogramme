@@ -7,6 +7,7 @@ mod lmtp;
 mod login;
 mod mail;
 mod server;
+mod storage;
 mod time;
 
 use std::path::PathBuf;
