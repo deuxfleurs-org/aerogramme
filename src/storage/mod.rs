@@ -32,12 +32,15 @@ pub enum Error {
     Internal,
 }
 
-// ------ Rows
+// ------ Store
 pub trait RowStore {
-    fn new_ref(partition: &str, sort: &str) -> impl RowRef;
-    fn new_ref_batch(partition: &str, filter: Selector) -> impl RowRefBatch;
+    fn new_row(&self, partition: &str, sort: &str) -> impl RowRef;
+    fn new_row_batch(&self, partition: &str, filter: Selector) -> impl RowRefBatch;
+    fn new_blob(&self, key: &str) -> impl BlobRef;
+    fn new_blob_list(&self) -> Vec<impl BlobRef>; 
 }
 
+// ------- Row
 pub trait RowRef {
     fn to_value(&self, content: &[u8]) -> impl RowValue;
     async fn get(&self) -> Result<impl RowValue, Error>;
@@ -66,11 +69,6 @@ pub trait RowValueBatch {
 }
 
 // ----- Blobs
-pub trait BlobStore {
-    fn new_ref(key: &str) -> impl BlobRef;
-    async fn list(&self) -> ();
-}
-
 pub trait BlobRef {
     fn set_value(&self, content: &[u8]) -> impl BlobValue;
     async fn get(&self) -> impl BlobValue;
