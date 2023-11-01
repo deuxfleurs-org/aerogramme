@@ -15,6 +15,9 @@ use rusoto_credential::{AwsCredentials, StaticProvider};
 use rusoto_s3::S3Client;
 
 use crate::cryptoblob::*;
+use crate::storage::*;
+use crate::storage::in_memory::MemTypes;
+use crate::storage::garage::GrgTypes;
 
 /// The trait LoginProvider defines the interface for a login provider that allows
 /// to retrieve storage and cryptographic credentials for access to a user account
@@ -23,10 +26,15 @@ use crate::cryptoblob::*;
 pub trait LoginProvider {
     /// The login method takes an account's password as an input to decypher
     /// decryption keys and obtain full access to the user's account.
-    async fn login(&self, username: &str, password: &str) -> Result<Credentials>;
+    async fn login(&self, username: &str, password: &str) -> Result<AnyCredentials>;
     /// The public_login method takes an account's email address and returns
     /// public credentials for adding mails to the user's inbox.
     async fn public_login(&self, email: &str) -> Result<PublicCredentials>;
+}
+
+pub enum AnyCredentials {
+    InMemory(Credentials<MemTypes>),
+    Garage(Credentials<GrgTypes>),
 }
 
 /// ArcLoginProvider is simply an alias on a structure that is used
@@ -36,9 +44,9 @@ pub type ArcLoginProvider = Arc<dyn LoginProvider + Send + Sync>;
 /// The struct Credentials represent all of the necessary information to interact
 /// with a user account's data after they are logged in.
 #[derive(Clone, Debug)]
-pub struct Credentials {
+pub struct Credentials<T: StorageEngine> {
     /// The storage credentials are used to authenticate access to the underlying storage (S3, K2V)
-    pub storage: StorageCredentials,
+    pub storage: T::Builder,
     /// The cryptographic keys are used to encrypt and decrypt data stored in S3 and K2V
     pub keys: CryptoKeys,
 }
@@ -106,6 +114,7 @@ impl Region {
 
 // ----
 
+/*
 impl Credentials {
     pub fn k2v_client(&self) -> Result<K2vClient> {
         self.storage.k2v_client()
@@ -115,6 +124,14 @@ impl Credentials {
     }
     pub fn bucket(&self) -> &str {
         self.storage.bucket.as_str()
+    }
+}*/
+impl<T: StorageEngine> From<AnyCredentials> for Credentials<T> {
+    fn from(ac: AnyCredentials) -> Self {
+        match ac {
+            AnyCredentials::InMemory(c) => c,
+            AnyCredentials::Garage(c) => c,
+        }
     }
 }
 

@@ -8,8 +8,8 @@
  * into the object system so it is not exposed.
  */
 
-mod in_memory;
-mod garage;
+pub mod in_memory;
+pub mod garage;
 
 pub enum Selector<'a> {
     Range{ begin: &'a str, end: &'a str },
@@ -29,10 +29,13 @@ pub enum Error {
 }
 
 pub trait RowRealization: Sized {
+    type Builder: RowBuilder<Self>;
     type Store: RowStore<Self>;
     type Ref: RowRef<Self>;
     type Value: RowValue<Self>;
 }
+
+pub trait StorageEngine: RowRealization {}
 
 // ------ Row Builder
 pub trait RowBuilder<R: RowRealization> 
