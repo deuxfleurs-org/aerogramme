@@ -24,7 +24,7 @@ use crate::storage::*;
 pub trait LoginProvider {
     /// The login method takes an account's password as an input to decypher
     /// decryption keys and obtain full access to the user's account.
-    async fn login(&self, username: &str, password: &str) -> Result<AnyCredentials>;
+    async fn login(&self, username: &str, password: &str) -> Result<Credentials>;
     /// The public_login method takes an account's email address and returns
     /// public credentials for adding mails to the user's inbox.
     async fn public_login(&self, email: &str) -> Result<PublicCredentials>;
@@ -34,26 +34,12 @@ pub trait LoginProvider {
 /// in many places in the code
 pub type ArcLoginProvider = Arc<dyn LoginProvider + Send + Sync>;
 
-pub enum AnyCredentials {
-    InMemory(Credentials<in_memory::MemTypes>),
-    Garage(Credentials<garage::GrgTypes>),
-}
-impl<X> AnyCredentials where X: Sto
-{
-    fn to_gen(&self) -> Credentials<X> {
-        match self {
-            Self::InMemory(u) => u,
-            Self::Garage(u) => u,
-        } 
-    }
-}
-
 /// The struct Credentials represent all of the necessary information to interact
 /// with a user account's data after they are logged in.
 #[derive(Clone, Debug)]
-pub struct Credentials<T: Sto> {
+pub struct Credentials {
     /// The storage credentials are used to authenticate access to the underlying storage (S3, K2V)
-    pub storage: T::Builder,
+    pub storage: AnyEngine,
     /// The cryptographic keys are used to encrypt and decrypt data stored in S3 and K2V
     pub keys: CryptoKeys,
 }

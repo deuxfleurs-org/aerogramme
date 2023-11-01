@@ -32,9 +32,9 @@ const MAILBOX_LIST_SK: &str = "list";
 
 use crate::storage::*;
 
-pub struct User<T: Sto> {
+pub struct User {
     pub username: String,
-    pub creds: Credentials<T>,
+    pub creds: Credentials,
     pub k2v: K2vClient,
     pub mailboxes: std::sync::Mutex<HashMap<UniqueIdent, Weak<Mailbox>>>,
 

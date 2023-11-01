@@ -29,10 +29,28 @@ pub enum Error {
 }
 
 pub trait Sto: Sized {
-    type Builder: RowStore<Self>;
+    type Builder: RowBuilder<Self>;
     type Store: RowStore<Self>;
     type Ref: RowRef<Self>;
     type Value: RowValue<Self>;
+}
+
+pub struct Engine<T: Sto> {
+    bucket: String,
+    row: T::Builder,
+}
+
+pub enum AnyEngine {
+    InMemory(Engine<in_memory::MemTypes>),
+    Garage(Engine<garage::GrgTypes>),
+}
+impl AnyEngine {
+    fn engine<X: Sto>(&self) -> &Engine<X> {
+        match self {
+            Self::InMemory(x) => x,
+            Self::Garage(x) => x,
+        }
+    }
 }
 
 // ------ Row Builder
