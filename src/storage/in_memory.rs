@@ -6,7 +6,8 @@ pub struct MemRef {}
 pub struct MemValue {}
 
 pub struct MemTypes {}
-impl RowRealization for MemTypes {
+impl Sto for MemTypes {
+    type Builder=MemCreds;
     type Store=MemStore;
     type Ref=MemRef;
     type Value=MemValue;

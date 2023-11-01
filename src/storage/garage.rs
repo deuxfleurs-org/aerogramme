@@ -6,7 +6,8 @@ pub struct GrgRef {}
 pub struct GrgValue {}
 
 pub struct GrgTypes {}
-impl RowRealization for GrgTypes {
+impl Sto for GrgTypes {
+    type Builder=GrgCreds;
     type Store=GrgStore;
     type Ref=GrgRef;
     type Value=GrgValue;

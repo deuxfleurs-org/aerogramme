@@ -28,29 +28,27 @@ pub enum Error {
     Internal,
 }
 
-pub trait RowRealization: Sized {
-    type Builder: RowBuilder<Self>;
+pub trait Sto: Sized {
+    type Builder: RowStore<Self>;
     type Store: RowStore<Self>;
     type Ref: RowRef<Self>;
     type Value: RowValue<Self>;
 }
 
-pub trait StorageEngine: RowRealization {}
-
 // ------ Row Builder
-pub trait RowBuilder<R: RowRealization> 
+pub trait RowBuilder<R: Sto> 
 {
     fn row_store(&self) -> R::Store;
 }
 
 // ------ Row Store
-pub trait RowStore<R: RowRealization> 
+pub trait RowStore<R: Sto> 
 {
     fn new_row(&self, partition: &str, sort: &str) -> R::Ref;
 }
 
 // ------- Row Item
-pub trait RowRef<R: RowRealization> 
+pub trait RowRef<R: Sto> 
 {
     fn set_value(&self, content: Vec<u8>) -> R::Value;
     async fn fetch(&self) -> Result<R::Value, Error>;
@@ -58,7 +56,7 @@ pub trait RowRef<R: RowRealization>
     async fn poll(&self) -> Result<Option<R::Value>, Error>;
 }
 
-pub trait RowValue<R: RowRealization> 
+pub trait RowValue<R: Sto> 
 {
     fn to_ref(&self) -> R::Ref;
     fn content(&self) -> ConcurrentValues;
