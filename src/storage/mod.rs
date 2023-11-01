@@ -1,32 +1,83 @@
-pub trait RowStore<K: RowRef, E> {
-    fn new_row_ref(partition: &str, sort: &str) -> K<E>;
+/*
+ * T1 : Filter
+ * T2 : Range
+ * T3 : Atom
+ */
+
+/*
+ * My idea: we can encapsulate the causality token
+ * into the object system so it is not exposed.
+ *
+ * This abstraction goal is to leverage all the semantic of Garage K2V+S3,
+ * to be as tailored as possible to it ; it aims to be a zero-cost abstraction
+ * compared to when we where directly using the K2V+S3 client.
+ */
+
+
+mod garage;
+
+pub enum Selector<'a> {
+    Range{ begin: &'a str, end: &'a str },
+    Filter(u64),
+}
+
+pub enum Alternative {
+    Tombstone,
+    Value(Vec<u8>),
+}
+type ConcurrentValues = Vec<Alternative>;
+
+pub enum Error {
+    NotFound,
+    Internal,
+}
+
+// ------ Rows
+pub trait RowStore {
+    fn new_ref(partition: &str, sort: &str) -> impl RowRef;
+    fn new_ref_batch(partition: &str, filter: Selector) -> impl RowRefBatch;
 }
 
 pub trait RowRef {
-    fn set_value(&self, content: &[u8]) -> RowValue;
-    async fn get(&self) -> Result<RowValue, E>;
-    async fn rm(&self) -> Result<(), E>;
-    async fn obs(&self) -> Result<Option<RowValue>, ()>;
+    fn to_value(&self, content: &[u8]) -> impl RowValue;
+    async fn get(&self) -> Result<impl RowValue, Error>;
+    async fn rm(&self) -> Result<(), Error>;
+    async fn poll(&self) -> Result<Option<impl RowValue>, Error>;
 }
 
 pub trait RowValue {
-    fn row_ref(&self) -> RowRef;
-    fn content(&self) -> Vec<u8>;
-    async fn put(&self) -> Result<(), E>;
+    fn row_ref(&self) -> impl RowRef;
+    fn content(&self) -> ConcurrentValues;
+    async fn persist(&self) -> Result<(), Error>;
 }
 
-/*
-    async fn get_many_keys(&self, keys: &[K]) -> Result<Vec<V>, ()>;
-    async fn put_many_keys(&self, values: &[V]) -> Result<(), ()>;
-}*/
+// ------ Row batch
+pub trait RowRefBatch {
+    fn to_values(&self, content: Vec<&[u8]>) -> impl RowValueBatch;
+    fn into_independant(&self) -> Vec<impl RowRef>;
+    async fn get(&self) -> Result<impl RowValueBatch, Error>;
+    async fn rm(&self) -> Result<(), Error>;
+}
 
+pub trait RowValueBatch {
+    fn into_independant(&self) -> Vec<impl RowValue>;
+    fn content(&self) -> Vec<ConcurrentValues>;
+    async fn persist(&self) -> Result<(), Error>;
+}
+
+// ----- Blobs
 pub trait BlobStore {
-    fn new_blob_ref(key: &str) -> BlobRef;
+    fn new_ref(key: &str) -> impl BlobRef;
     async fn list(&self) -> ();
 }
 
 pub trait BlobRef {
-    async fn put(&self, key: &str, body: &[u8]) -> ();
-    async fn copy(&self, dst: &BlobRef) -> ();
-    async fn rm(&self, key: &str);
+    fn set_value(&self, content: &[u8]) -> impl BlobValue;
+    async fn get(&self) -> impl BlobValue;
+    async fn copy(&self, dst: &impl BlobRef) -> ();
+    async fn rm(&self, key: &str) -> ();
+}
+
+pub trait BlobValue {
+    async fn persist();
 }
