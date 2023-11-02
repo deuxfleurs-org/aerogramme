@@ -28,55 +28,39 @@ pub enum Error {
     Internal,
 }
 
-pub trait Sto: Sized {
-    type Builder: RowBuilder<Self>;
-    type Store: RowStore<Self>;
-    type Ref: RowRef<Self>;
-    type Value: RowValue<Self>;
-}
-
-pub struct Engine<T: Sto> {
+pub struct Engine {
     pub bucket: String,
-    pub row: T::Builder,
-}
-
-pub enum AnyEngine {
-    InMemory(Engine<in_memory::MemTypes>),
-    Garage(Engine<garage::GrgTypes>),
-}
-impl AnyEngine {
-    pub fn engine<X: Sto>(&self) -> &Engine<X> {
-        match self {
-            Self::InMemory(x) => x,
-            Self::Garage(x) => x,
-        }
-    }
+    pub row: RowBuilder,
 }
 
 // ------ Row Builder
-pub trait RowBuilder<R: Sto> 
+pub trait IRowBuilder
 {
-    fn row_store(&self) -> R::Store;
+    fn row_store(&self) -> RowStore;
 }
+pub type RowBuilder = Box<dyn IRowBuilder>;
 
 // ------ Row Store
-pub trait RowStore<R: Sto> 
+pub trait IRowStore
 {
-    fn new_row(&self, partition: &str, sort: &str) -> R::Ref;
+    fn new_row(&self, partition: &str, sort: &str) -> RowRef;
 }
+type RowStore = Box<dyn IRowStore>;
 
 // ------- Row Item
-pub trait RowRef<R: Sto> 
+pub trait IRowRef 
 {
-    fn set_value(&self, content: Vec<u8>) -> R::Value;
-    async fn fetch(&self) -> Result<R::Value, Error>;
+    fn set_value(&self, content: Vec<u8>) -> RowValue;
+    async fn fetch(&self) -> Result<RowValue, Error>;
     async fn rm(&self) -> Result<(), Error>;
-    async fn poll(&self) -> Result<Option<R::Value>, Error>;
+    async fn poll(&self) -> Result<Option<RowValue>, Error>;
 }
+type RowRef = Box<dyn IRowRef>;
 
-pub trait RowValue<R: Sto> 
+pub trait IRowValue
 {
-    fn to_ref(&self) -> R::Ref;
+    fn to_ref(&self) -> RowRef;
     fn content(&self) -> ConcurrentValues;
     async fn push(&self) -> Result<(), Error>;
 }
+type RowValue = Box<dyn IRowValue>;

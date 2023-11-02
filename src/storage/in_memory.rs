@@ -5,27 +5,19 @@ pub struct MemStore {}
 pub struct MemRef {}
 pub struct MemValue {}
 
-pub struct MemTypes {}
-impl Sto for MemTypes {
-    type Builder=MemCreds;
-    type Store=MemStore;
-    type Ref=MemRef;
-    type Value=MemValue;
-}
-
-impl RowBuilder<MemTypes> for MemCreds {
+impl IRowBuilder for MemCreds {
     fn row_store(&self) -> MemStore {
         unimplemented!();
     }
 }
 
-impl RowStore<MemTypes> for MemStore {
+impl IRowStore for MemStore {
     fn new_row(&self, partition: &str, sort: &str) -> MemRef {
         unimplemented!();
     }
 }
 
-impl RowRef<MemTypes> for MemRef {
+impl IRowRef for MemRef {
     fn set_value(&self, content: Vec<u8>) -> MemValue {
         unimplemented!();
     }
@@ -40,7 +32,7 @@ impl RowRef<MemTypes> for MemRef {
     }
 }
 
-impl RowValue<MemTypes> for MemValue {
+impl IRowValue for MemValue {
     fn to_ref(&self) -> MemRef {
         unimplemented!();
     }

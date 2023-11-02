@@ -5,27 +5,19 @@ pub struct GrgStore {}
 pub struct GrgRef {}
 pub struct GrgValue {}
 
-pub struct GrgTypes {}
-impl Sto for GrgTypes {
-    type Builder=GrgCreds;
-    type Store=GrgStore;
-    type Ref=GrgRef;
-    type Value=GrgValue;
-}
-
-impl RowBuilder<GrgTypes> for GrgCreds {
+impl IRowBuilder for GrgCreds {
     fn row_store(&self) -> GrgStore {
         unimplemented!();
     }
 }
 
-impl RowStore<GrgTypes> for GrgStore {
+impl IRowStore for GrgStore {
     fn new_row(&self, partition: &str, sort: &str) -> GrgRef {
         unimplemented!();
     }
 }
 
-impl RowRef<GrgTypes> for GrgRef {
+impl IRowRef for GrgRef {
     fn set_value(&self, content: Vec<u8>) -> GrgValue {
         unimplemented!();
     }
@@ -40,7 +32,7 @@ impl RowRef<GrgTypes> for GrgRef {
     }
 }
 
-impl RowValue<GrgTypes> for GrgValue {
+impl IRowValue for GrgValue {
     fn to_ref(&self) -> GrgRef {
         unimplemented!();
     }
