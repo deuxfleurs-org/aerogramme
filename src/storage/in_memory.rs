@@ -8,7 +8,7 @@ pub struct MemRef {}
 pub struct MemValue {}
 
 impl IRowBuilder for MemCreds {
-    fn row_store(&self) -> RowStore {
+    fn row_store(&self) -> Result<RowStore, Error> {
         unimplemented!();
     }
 }

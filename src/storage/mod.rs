@@ -54,7 +54,7 @@ pub type AsyncResult<'a, T> = BoxFuture<'a, Result<T, Error>>;
 // ------ Row Builder
 pub trait IRowBuilder
 {
-    fn row_store(&self) -> RowStore;
+    fn row_store(&self) -> Result<RowStore, Error>;
 }
 pub type RowBuilder = Box<dyn IRowBuilder + Send + Sync>;
 
@@ -63,7 +63,7 @@ pub trait IRowStore
 {
     fn new_row(&self, partition: &str, sort: &str) -> RowRef;
 }
-type RowStore = Box<dyn IRowStore>;
+pub type RowStore = Box<dyn IRowStore>;
 
 // ------- Row Item
 pub trait IRowRef 

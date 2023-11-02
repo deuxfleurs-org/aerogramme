@@ -7,7 +7,7 @@ pub struct GrgRef {}
 pub struct GrgValue {}
 
 impl IRowBuilder for GrgCreds {
-    fn row_store(&self) -> RowStore {
+    fn row_store(&self) -> Result<RowStore, Error> {
         unimplemented!();
     }
 }
