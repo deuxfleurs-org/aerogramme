@@ -14,7 +14,7 @@ use crate::login::Credentials;
 use crate::mail::uidindex::*;
 use crate::mail::unique_ident::*;
 use crate::mail::IMF;
-use crate::storage::{RowStore, BlobStore};
+use crate::storage::{RowStore, BlobStore, self};
 use crate::time::now_msec;
 
 pub struct Mailbox {
@@ -121,13 +121,13 @@ impl Mailbox {
         &self,
         msg: IMF<'a>,
         ident: UniqueIdent,
-        s3_key: &str,
+        blob_ref: storage::BlobRef,
         message_key: Key,
     ) -> Result<()> {
         self.mbox
             .write()
             .await
-            .append_from_s3(msg, ident, s3_key, message_key)
+            .append_from_s3(msg, ident, blob_ref, message_key)
             .await
     }
 
@@ -348,20 +348,14 @@ impl MailboxInternal {
         &mut self,
         mail: IMF<'a>,
         ident: UniqueIdent,
-        s3_key: &str,
+        blob_ref: storage::BlobRef,
         message_key: Key,
     ) -> Result<()> {
         futures::try_join!(
             async {
                 // Copy mail body from previous location
-                let cor = CopyObjectRequest {
-                    bucket: self.bucket.clone(),
-                    key: format!("{}/{}", self.mail_path, ident),
-                    copy_source: format!("{}/{}", self.bucket, s3_key),
-                    metadata_directive: Some("REPLACE".into()),
-                    ..Default::default()
-                };
-                self.s3.copy_object(cor).await?;
+                let dst = self.s3.blob(format!("{}/{}", self.mail_path, ident));
+                blob_ref.copy(dst).await?;
                 Ok::<_, anyhow::Error>(())
             },
             async {

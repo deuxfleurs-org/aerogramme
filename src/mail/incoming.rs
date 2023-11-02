@@ -198,7 +198,7 @@ async fn move_incoming_message(
     // 2 parse mail and add to inbox
     let msg = IMF::try_from(&plain_mail[..]).map_err(|_| anyhow!("Invalid email body"))?;
     inbox
-        .append_from_s3(msg, id, &object_key, message_key)
+        .append_from_s3(msg, id, object.to_ref(), message_key)
         .await?;
 
     // 3 delete from incoming
