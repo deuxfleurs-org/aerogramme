@@ -1,3 +1,4 @@
+use futures::FutureExt;
 use crate::storage::*;
 
 #[derive(Clone, Debug)]
@@ -29,7 +30,9 @@ impl IRowRef for MemRef {
         unimplemented!();
     }
     fn poll(&self) -> AsyncResult<Option<RowValue>> {
-        unimplemented!();
+        async {
+            Ok(None)
+        }.boxed()
     }
 }
 
