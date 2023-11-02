@@ -14,16 +14,17 @@ use futures::future::BoxFuture;
 pub mod in_memory;
 pub mod garage;
 
-pub enum Selector<'a> {
-    Range{ begin: &'a str, end: &'a str },
-    Filter(u64),
-}
-
 pub enum Alternative {
     Tombstone,
     Value(Vec<u8>),
 }
 type ConcurrentValues = Vec<Alternative>;
+
+pub enum Selector<'a> {
+    Range { begin: &'a str, end: &'a str },
+    List (Vec<(&'a str, &'a str)>),
+    Prefix (&'a str),
+}
 
 #[derive(Debug)]
 pub enum StorageError {
@@ -78,12 +79,15 @@ impl Hash for Builders {
 pub trait IRowStore
 {
     fn row(&self, partition: &str, sort: &str) -> RowRef;
+    fn select(&self, selector: Selector) -> AsyncResult<Vec<RowValue>>;
 }
 pub type RowStore = Box<dyn IRowStore + Sync + Send>;
 
 pub trait IRowRef 
 {
     fn clone_boxed(&self) -> RowRef;
+    fn pk(&self) -> &str;
+    fn sk(&self) -> &str;
     fn set_value(&self, content: Vec<u8>) -> RowValue;
     fn fetch(&self) -> AsyncResult<RowValue>;
     fn rm(&self) -> AsyncResult<()>;
