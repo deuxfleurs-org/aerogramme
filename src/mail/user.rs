@@ -30,8 +30,6 @@ pub const INBOX: &str = "INBOX";
 const MAILBOX_LIST_PK: &str = "mailboxes";
 const MAILBOX_LIST_SK: &str = "list";
 
-use crate::storage::*;
-
 pub struct User {
     pub username: String,
     pub creds: Credentials,

@@ -36,8 +36,8 @@ pub trait Sto: Sized {
 }
 
 pub struct Engine<T: Sto> {
-    bucket: String,
-    row: T::Builder,
+    pub bucket: String,
+    pub row: T::Builder,
 }
 
 pub enum AnyEngine {
@@ -45,7 +45,7 @@ pub enum AnyEngine {
     Garage(Engine<garage::GrgTypes>),
 }
 impl AnyEngine {
-    fn engine<X: Sto>(&self) -> &Engine<X> {
+    pub fn engine<X: Sto>(&self) -> &Engine<X> {
         match self {
             Self::InMemory(x) => x,
             Self::Garage(x) => x,
