@@ -25,20 +25,30 @@ pub enum Alternative {
 type ConcurrentValues = Vec<Alternative>;
 
 #[derive(Debug)]
-pub enum Error {
+pub enum StorageError {
     NotFound,
     Internal,
 }
+impl std::fmt::Display for StorageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Storage Error: ");
+        match self {
+            Self::NotFound => f.write_str("Item not found"),
+            Self::Internal => f.write_str("An internal error occured"),
+        }
+    }
+}
+impl std::error::Error for StorageError {}
 
 pub struct Engine {
     pub bucket: String,
-    pub row: RowBuilder,
+    pub builders: Builder,
 }
 impl Clone for Engine {
     fn clone(&self) -> Self {
         Engine {
             bucket: "test".into(),
-            row: Box::new(in_memory::MemCreds{})
+            builders: Box::new(in_memory::FullMem{})
         }
     }
 }
@@ -48,24 +58,22 @@ impl std::fmt::Debug for Engine {
     }
 }
 
-// A result
-pub type AsyncResult<'a, T> = BoxFuture<'a, Result<T, Error>>;
+// Utils
+pub type AsyncResult<'a, T> = BoxFuture<'a, Result<T, StorageError>>;
 
-// ------ Row Builder
-pub trait IRowBuilder
-{
-    fn row_store(&self) -> Result<RowStore, Error>;
+pub trait IBuilder {
+    fn row_store(&self) -> Result<RowStore, StorageError>;
+    fn blob_store(&self) -> Result<BlobStore, StorageError>;
 }
-pub type RowBuilder = Box<dyn IRowBuilder + Send + Sync>;
+pub type Builder = Box<dyn IBuilder + Send + Sync>;
 
-// ------ Row Store
+// ------ Row 
 pub trait IRowStore
 {
     fn new_row(&self, partition: &str, sort: &str) -> RowRef;
 }
-pub type RowStore = Box<dyn IRowStore>;
+pub type RowStore = Box<dyn IRowStore + Sync + Send>;
 
-// ------- Row Item
 pub trait IRowRef 
 {
     fn set_value(&self, content: Vec<u8>) -> RowValue;
@@ -73,7 +81,7 @@ pub trait IRowRef
     fn rm(&self) -> AsyncResult<()>;
     fn poll(&self) -> AsyncResult<Option<RowValue>>;
 }
-type RowRef = Box<dyn IRowRef>;
+pub type RowRef = Box<dyn IRowRef>;
 
 pub trait IRowValue
 {
@@ -81,4 +89,27 @@ pub trait IRowValue
     fn content(&self) -> ConcurrentValues;
     fn push(&self) -> AsyncResult<()>;
 }
-type RowValue = Box<dyn IRowValue>;
+pub type RowValue = Box<dyn IRowValue>;
+
+// ------- Blob 
+pub trait IBlobStore
+{
+    fn new_blob(&self, key: &str) -> BlobRef;
+    fn list(&self) -> AsyncResult<Vec<BlobRef>>;
+}
+pub type BlobStore = Box<dyn IBlobStore + Send + Sync>;
+
+pub trait IBlobRef
+{
+    fn set_value(&self, content: Vec<u8>) -> BlobValue;
+    fn fetch(&self) -> AsyncResult<BlobValue>;
+    fn copy(&self, dst: &BlobRef) -> AsyncResult<()>;
+    fn rm(&self) -> AsyncResult<()>;
+}
+pub type BlobRef = Box<dyn IBlobRef>;
+
+pub trait IBlobValue {
+    fn to_ref(&self) -> BlobRef;
+    fn push(&self) -> AsyncResult<()>;
+}
+pub type BlobValue = Box<dyn IBlobValue>;

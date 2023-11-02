@@ -109,7 +109,7 @@ impl Region {
 
 
 impl Credentials {
-    pub fn k2v_client(&self) -> Result<RowStore, Error> {
+    pub fn k2v_client(&self) -> Result<RowStore> {
         self.storage.row.row_store()
     }
     pub fn s3_client(&self) -> Result<S3Client> {

@@ -14,6 +14,7 @@ use crate::login::Credentials;
 use crate::mail::uidindex::*;
 use crate::mail::unique_ident::*;
 use crate::mail::IMF;
+use crate::storage::{RowStore, BlobStore};
 use crate::time::now_msec;
 
 pub struct Mailbox {
@@ -50,8 +51,8 @@ impl Mailbox {
             id,
             bucket: creds.bucket().to_string(),
             encryption_key: creds.keys.master.clone(),
-            k2v: creds.k2v_client()?,
-            s3: creds.s3_client()?,
+            k2v: creds.storage.builders.row_store()?,
+            s3: creds.storage.builders.blob_store()?,
             uid_index,
             mail_path,
         });
@@ -186,8 +187,8 @@ struct MailboxInternal {
     mail_path: String,
     encryption_key: Key,
 
-    k2v: K2vClient,
-    s3: S3Client,
+    k2v: RowStore,
+    s3: BlobStore,
 
     uid_index: Bayou<UidIndex>,
 }

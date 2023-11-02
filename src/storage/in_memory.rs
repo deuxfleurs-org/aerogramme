@@ -2,13 +2,17 @@ use futures::FutureExt;
 use crate::storage::*;
 
 #[derive(Clone, Debug)]
-pub struct MemCreds {}
+pub struct FullMem {}
 pub struct MemStore {}
 pub struct MemRef {}
 pub struct MemValue {}
 
-impl IRowBuilder for MemCreds {
-    fn row_store(&self) -> Result<RowStore, Error> {
+impl IBuilder for FullMem {
+    fn row_store(&self) -> Result<RowStore, StorageError> {
+        unimplemented!();
+    }
+
+    fn blob_store(&self) -> Result<BlobStore, StorageError> {
         unimplemented!();
     }
 }

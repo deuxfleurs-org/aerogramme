@@ -6,8 +6,12 @@ pub struct GrgStore {}
 pub struct GrgRef {}
 pub struct GrgValue {}
 
-impl IRowBuilder for GrgCreds {
-    fn row_store(&self) -> Result<RowStore, Error> {
+impl IBuilder for GrgCreds {
+    fn row_store(&self) -> Result<RowStore, StorageError> {
+        unimplemented!();
+    }
+
+    fn blob_store(&self) -> Result<BlobStore, StorageError> {
         unimplemented!();
     }
 }
