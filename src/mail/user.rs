@@ -13,6 +13,7 @@ use crate::mail::incoming::incoming_mail_watch_process;
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::ImapUidvalidity;
 use crate::mail::unique_ident::{gen_ident, UniqueIdent};
+use crate::storage;
 use crate::time::now_msec;
 
 pub const MAILBOX_HIERARCHY_DELIMITER: char = '.';
@@ -455,6 +456,6 @@ enum CreatedMailbox {
 // ---- User cache ----
 
 lazy_static! {
-    static ref USER_CACHE: std::sync::Mutex<HashMap<(String, StorageCredentials), Weak<User>>> =
+    static ref USER_CACHE: std::sync::Mutex<HashMap<(String, storage::Builders), Weak<User>>> =
         std::sync::Mutex::new(HashMap::new());
 }

@@ -39,7 +39,7 @@ pub type ArcLoginProvider = Arc<dyn LoginProvider + Send + Sync>;
 #[derive(Clone, Debug)]
 pub struct Credentials {
     /// The storage credentials are used to authenticate access to the underlying storage (S3, K2V)
-    pub storage: Engine,
+    pub storage: Builders,
     /// The cryptographic keys are used to encrypt and decrypt data stored in S3 and K2V
     pub keys: CryptoKeys,
 }
@@ -109,14 +109,11 @@ impl Region {
 
 
 impl Credentials {
-    pub fn k2v_client(&self) -> Result<RowStore> {
-        self.storage.row.row_store()
+    pub fn row_client(&self) -> Result<RowStore> {
+        Ok(self.storage.row_store()?)
     }
-    pub fn s3_client(&self) -> Result<S3Client> {
-        self.storage.s3_client()
-    }
-    pub fn bucket(&self) -> &str {
-        self.storage.bucket.as_str()
+    pub fn blob_client(&self) -> Result<BlobStore> {
+        Ok(self.storage.blob_store()?)
     }
 }
 

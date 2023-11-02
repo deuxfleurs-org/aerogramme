@@ -1,18 +1,22 @@
 use crate::storage::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct GrgCreds {}
 pub struct GrgStore {}
 pub struct GrgRef {}
 pub struct GrgValue {}
 
-impl IBuilder for GrgCreds {
+impl IBuilders for GrgCreds {
     fn row_store(&self) -> Result<RowStore, StorageError> {
         unimplemented!();
     }
 
     fn blob_store(&self) -> Result<BlobStore, StorageError> {
         unimplemented!();
+    }
+
+    fn url(&self) -> &str {
+        return "grg://unimplemented;"
     }
 }
 

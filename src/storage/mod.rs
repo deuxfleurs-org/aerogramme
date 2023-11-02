@@ -8,6 +8,7 @@
  * into the object system so it is not exposed.
  */
 
+use std::hash::{Hash, Hasher};
 use futures::future::BoxFuture;
 
 pub mod in_memory;
@@ -40,32 +41,38 @@ impl std::fmt::Display for StorageError {
 }
 impl std::error::Error for StorageError {}
 
-pub struct Engine {
-    pub bucket: String,
-    pub builders: Builder,
-}
-impl Clone for Engine {
-    fn clone(&self) -> Self {
-        Engine {
-            bucket: "test".into(),
-            builders: Box::new(in_memory::FullMem{})
-        }
-    }
-}
-impl std::fmt::Debug for Engine {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Engine").field("bucket", &self.bucket).finish()
-    }
-}
-
 // Utils
 pub type AsyncResult<'a, T> = BoxFuture<'a, Result<T, StorageError>>;
 
-pub trait IBuilder {
+// ----- Builders
+pub trait IBuilders {
     fn row_store(&self) -> Result<RowStore, StorageError>;
     fn blob_store(&self) -> Result<BlobStore, StorageError>;
+    fn url(&self) -> &str;
 }
-pub type Builder = Box<dyn IBuilder + Send + Sync>;
+pub type Builders = Box<dyn IBuilders + Send + Sync>;
+impl Clone for Builders {
+    fn clone(&self) -> Self {
+        // @FIXME write a real implementation with a box_clone function
+        Box::new(in_memory::FullMem{})
+    }
+}
+impl std::fmt::Debug for Builders {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("aerogramme::storage::Builder")
+    }
+}
+impl PartialEq for Builders {
+    fn eq(&self, other: &Self) -> bool {
+        self.url() == other.url()
+    }
+}
+impl Eq for Builders {}
+impl Hash for Builders {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.url().hash(state);
+    }
+}
 
 // ------ Row 
 pub trait IRowStore

@@ -1,19 +1,23 @@
 use futures::FutureExt;
 use crate::storage::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct FullMem {}
 pub struct MemStore {}
 pub struct MemRef {}
 pub struct MemValue {}
 
-impl IBuilder for FullMem {
+impl IBuilders for FullMem {
     fn row_store(&self) -> Result<RowStore, StorageError> {
         unimplemented!();
     }
 
     fn blob_store(&self) -> Result<BlobStore, StorageError> {
         unimplemented!();
+    }
+
+    fn url(&self) -> &str {
+        return "mem://unimplemented;"
     }
 }
 
