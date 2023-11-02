@@ -28,6 +28,10 @@ impl IRowStore for MemStore {
 }
 
 impl IRowRef for MemRef {
+    fn clone_boxed(&self) -> RowRef {
+        unimplemented!();
+    }
+
     fn set_value(&self, content: Vec<u8>) -> RowValue {
         unimplemented!();
     }
@@ -37,9 +41,10 @@ impl IRowRef for MemRef {
     fn rm(&self) -> AsyncResult<()> {
         unimplemented!();
     }
-    fn poll(&self) -> AsyncResult<Option<RowValue>> {
+    fn poll(&self) -> AsyncResult<RowValue> {
         async {
-            Ok(None)
+            let rv: RowValue = Box::new(MemValue{});
+            Ok(rv)
         }.boxed()
     }
 }

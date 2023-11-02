@@ -49,10 +49,9 @@ impl Mailbox {
 
         let mbox = RwLock::new(MailboxInternal {
             id,
-            bucket: creds.bucket().to_string(),
             encryption_key: creds.keys.master.clone(),
-            k2v: creds.storage.builders.row_store()?,
-            s3: creds.storage.builders.blob_store()?,
+            k2v: creds.storage.row_store()?,
+            s3: creds.storage.blob_store()?,
             uid_index,
             mail_path,
         });
@@ -183,7 +182,6 @@ struct MailboxInternal {
     // 2023-05-15 will probably be used later.
     #[allow(dead_code)]
     id: UniqueIdent,
-    bucket: String,
     mail_path: String,
     encryption_key: Key,
 

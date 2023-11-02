@@ -83,12 +83,18 @@ pub type RowStore = Box<dyn IRowStore + Sync + Send>;
 
 pub trait IRowRef 
 {
+    fn clone_boxed(&self) -> RowRef;
     fn set_value(&self, content: Vec<u8>) -> RowValue;
     fn fetch(&self) -> AsyncResult<RowValue>;
     fn rm(&self) -> AsyncResult<()>;
-    fn poll(&self) -> AsyncResult<Option<RowValue>>;
+    fn poll(&self) -> AsyncResult<RowValue>;
 }
 pub type RowRef = Box<dyn IRowRef + Send + Sync>;
+impl Clone for RowRef {
+    fn clone(&self) -> Self {
+        return self.clone_boxed()
+    }
+}
 
 pub trait IRowValue
 {
@@ -101,14 +107,15 @@ pub type RowValue = Box<dyn IRowValue + Send + Sync>;
 // ------- Blob 
 pub trait IBlobStore
 {
-    fn new_blob(&self, key: &str) -> BlobRef;
-    fn list(&self) -> AsyncResult<Vec<BlobRef>>;
+    fn blob(&self, key: &str) -> BlobRef;
+    fn list(&self, prefix: &str) -> AsyncResult<Vec<BlobRef>>;
 }
 pub type BlobStore = Box<dyn IBlobStore + Send + Sync>;
 
 pub trait IBlobRef
 {
     fn set_value(&self, content: Vec<u8>) -> BlobValue;
+    fn key(&self) -> &str;
     fn fetch(&self) -> AsyncResult<BlobValue>;
     fn copy(&self, dst: &BlobRef) -> AsyncResult<()>;
     fn rm(&self) -> AsyncResult<()>;
@@ -117,6 +124,8 @@ pub type BlobRef = Box<dyn IBlobRef + Send + Sync>;
 
 pub trait IBlobValue {
     fn to_ref(&self) -> BlobRef;
+    fn get_meta(&self, key: &str) -> Option<&[u8]>;
+    fn content(&self) -> Option<&[u8]>;
     fn push(&self) -> AsyncResult<()>;
 }
 pub type BlobValue = Box<dyn IBlobValue + Send + Sync>;
