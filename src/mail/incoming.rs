@@ -23,7 +23,6 @@ use crate::mail::unique_ident::*;
 use crate::mail::user::User;
 use crate::mail::IMF;
 use crate::time::now_msec;
-use crate::storage::Sto;
 
 const INCOMING_PK: &str = "incoming";
 const INCOMING_LOCK_SK: &str = "lock";
@@ -140,14 +139,14 @@ async fn incoming_mail_watch_process_internal(
     Ok(())
 }
 
-async fn handle_incoming_mail<X: Sto>(
+async fn handle_incoming_mail(
     user: &Arc<User>,
     s3: &S3Client,
     inbox: &Arc<Mailbox>,
     lock_held: &watch::Receiver<bool>,
 ) -> Result<()> {
     let lor = ListObjectsV2Request {
-        bucket: user.creds.storage.engine::<X>().bucket.clone(),
+        bucket: user.creds.storage.bucket.clone(),
         max_keys: Some(1000),
         prefix: Some("incoming/".into()),
         ..Default::default()

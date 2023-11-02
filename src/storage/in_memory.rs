@@ -1,45 +1,46 @@
 use crate::storage::*;
 
+#[derive(Clone, Debug)]
 pub struct MemCreds {}
 pub struct MemStore {}
 pub struct MemRef {}
 pub struct MemValue {}
 
 impl IRowBuilder for MemCreds {
-    fn row_store(&self) -> MemStore {
+    fn row_store(&self) -> RowStore {
         unimplemented!();
     }
 }
 
 impl IRowStore for MemStore {
-    fn new_row(&self, partition: &str, sort: &str) -> MemRef {
+    fn new_row(&self, partition: &str, sort: &str) -> RowRef {
         unimplemented!();
     }
 }
 
 impl IRowRef for MemRef {
-    fn set_value(&self, content: Vec<u8>) -> MemValue {
+    fn set_value(&self, content: Vec<u8>) -> RowValue {
         unimplemented!();
     }
-    async fn fetch(&self) -> Result<MemValue, Error> {
+    fn fetch(&self) -> AsyncResult<RowValue> {
         unimplemented!();
     }
-    async fn rm(&self) -> Result<(), Error> {
+    fn rm(&self) -> AsyncResult<()> {
         unimplemented!();
     }
-    async fn poll(&self) -> Result<Option<MemValue>, Error> {
+    fn poll(&self) -> AsyncResult<Option<RowValue>> {
         unimplemented!();
     }
 }
 
 impl IRowValue for MemValue {
-    fn to_ref(&self) -> MemRef {
+    fn to_ref(&self) -> RowRef {
         unimplemented!();
     }
     fn content(&self) -> ConcurrentValues {
         unimplemented!();
     }
-    async fn push(&self) -> Result<(), Error> {
+    fn push(&self) -> AsyncResult<()> {
         unimplemented!();
     }
 }

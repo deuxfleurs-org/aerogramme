@@ -39,7 +39,7 @@ pub type ArcLoginProvider = Arc<dyn LoginProvider + Send + Sync>;
 #[derive(Clone, Debug)]
 pub struct Credentials {
     /// The storage credentials are used to authenticate access to the underlying storage (S3, K2V)
-    pub storage: AnyEngine,
+    pub storage: Engine,
     /// The cryptographic keys are used to encrypt and decrypt data stored in S3 and K2V
     pub keys: CryptoKeys,
 }

@@ -8,6 +8,8 @@
  * into the object system so it is not exposed.
  */
 
+use futures::future::BoxFuture;
+
 pub mod in_memory;
 pub mod garage;
 
@@ -32,13 +34,29 @@ pub struct Engine {
     pub bucket: String,
     pub row: RowBuilder,
 }
+impl Clone for Engine {
+    fn clone(&self) -> Self {
+        Engine {
+            bucket: "test".into(),
+            row: Box::new(in_memory::MemCreds{})
+        }
+    }
+}
+impl std::fmt::Debug for Engine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Engine").field("bucket", &self.bucket).finish()
+    }
+}
+
+// A result
+pub type AsyncResult<'a, T> = BoxFuture<'a, Result<T, Error>>;
 
 // ------ Row Builder
 pub trait IRowBuilder
 {
     fn row_store(&self) -> RowStore;
 }
-pub type RowBuilder = Box<dyn IRowBuilder>;
+pub type RowBuilder = Box<dyn IRowBuilder + Send + Sync>;
 
 // ------ Row Store
 pub trait IRowStore
@@ -51,9 +69,9 @@ type RowStore = Box<dyn IRowStore>;
 pub trait IRowRef 
 {
     fn set_value(&self, content: Vec<u8>) -> RowValue;
-    async fn fetch(&self) -> Result<RowValue, Error>;
-    async fn rm(&self) -> Result<(), Error>;
-    async fn poll(&self) -> Result<Option<RowValue>, Error>;
+    fn fetch(&self) -> AsyncResult<RowValue>;
+    fn rm(&self) -> AsyncResult<()>;
+    fn poll(&self) -> AsyncResult<Option<RowValue>>;
 }
 type RowRef = Box<dyn IRowRef>;
 
@@ -61,6 +79,6 @@ pub trait IRowValue
 {
     fn to_ref(&self) -> RowRef;
     fn content(&self) -> ConcurrentValues;
-    async fn push(&self) -> Result<(), Error>;
+    fn push(&self) -> AsyncResult<()>;
 }
 type RowValue = Box<dyn IRowValue>;

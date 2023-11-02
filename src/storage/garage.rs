@@ -1,45 +1,46 @@
 use crate::storage::*;
 
+#[derive(Clone, Debug)]
 pub struct GrgCreds {}
 pub struct GrgStore {}
 pub struct GrgRef {}
 pub struct GrgValue {}
 
 impl IRowBuilder for GrgCreds {
-    fn row_store(&self) -> GrgStore {
+    fn row_store(&self) -> RowStore {
         unimplemented!();
     }
 }
 
 impl IRowStore for GrgStore {
-    fn new_row(&self, partition: &str, sort: &str) -> GrgRef {
+    fn new_row(&self, partition: &str, sort: &str) -> RowRef {
         unimplemented!();
     }
 }
 
 impl IRowRef for GrgRef {
-    fn set_value(&self, content: Vec<u8>) -> GrgValue {
+    fn set_value(&self, content: Vec<u8>) -> RowValue {
         unimplemented!();
     }
-    async fn fetch(&self) -> Result<GrgValue, Error> {
+    fn fetch(&self) -> AsyncResult<RowValue> {
         unimplemented!();
     }
-    async fn rm(&self) -> Result<(), Error> {
+    fn rm(&self) -> AsyncResult<()> {
         unimplemented!();
     }
-    async fn poll(&self) -> Result<Option<GrgValue>, Error> {
+    fn poll(&self) -> AsyncResult<Option<RowValue>> {
         unimplemented!();
     }
 }
 
 impl IRowValue for GrgValue {
-    fn to_ref(&self) -> GrgRef {
+    fn to_ref(&self) -> RowRef {
         unimplemented!();
     }
     fn content(&self) -> ConcurrentValues {
         unimplemented!();
     }
-    async fn push(&self) -> Result<(), Error> {
+    fn push(&self) -> AsyncResult<()> {
         unimplemented!();
     }
 }
