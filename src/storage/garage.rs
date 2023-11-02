@@ -21,7 +21,7 @@ impl IBuilders for GrgCreds {
 }
 
 impl IRowStore for GrgStore {
-    fn new_row(&self, partition: &str, sort: &str) -> RowRef {
+    fn row(&self, partition: &str, sort: &str) -> RowRef {
         unimplemented!();
     }
 }

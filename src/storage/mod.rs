@@ -77,7 +77,7 @@ impl Hash for Builders {
 // ------ Row 
 pub trait IRowStore
 {
-    fn new_row(&self, partition: &str, sort: &str) -> RowRef;
+    fn row(&self, partition: &str, sort: &str) -> RowRef;
 }
 pub type RowStore = Box<dyn IRowStore + Sync + Send>;
 
@@ -88,7 +88,7 @@ pub trait IRowRef
     fn rm(&self) -> AsyncResult<()>;
     fn poll(&self) -> AsyncResult<Option<RowValue>>;
 }
-pub type RowRef = Box<dyn IRowRef>;
+pub type RowRef = Box<dyn IRowRef + Send + Sync>;
 
 pub trait IRowValue
 {
@@ -96,7 +96,7 @@ pub trait IRowValue
     fn content(&self) -> ConcurrentValues;
     fn push(&self) -> AsyncResult<()>;
 }
-pub type RowValue = Box<dyn IRowValue>;
+pub type RowValue = Box<dyn IRowValue + Send + Sync>;
 
 // ------- Blob 
 pub trait IBlobStore
@@ -113,10 +113,10 @@ pub trait IBlobRef
     fn copy(&self, dst: &BlobRef) -> AsyncResult<()>;
     fn rm(&self) -> AsyncResult<()>;
 }
-pub type BlobRef = Box<dyn IBlobRef>;
+pub type BlobRef = Box<dyn IBlobRef + Send + Sync>;
 
 pub trait IBlobValue {
     fn to_ref(&self) -> BlobRef;
     fn push(&self) -> AsyncResult<()>;
 }
-pub type BlobValue = Box<dyn IBlobValue>;
+pub type BlobValue = Box<dyn IBlobValue + Send + Sync>;

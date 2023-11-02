@@ -54,10 +54,10 @@ async fn incoming_mail_watch_process_internal(
     creds: Credentials,
     mut rx_inbox_id: watch::Receiver<Option<(UniqueIdent, ImapUidvalidity)>>,
 ) -> Result<()> {
-    let mut lock_held = k2v_lock_loop(creds.k2v_client()?, INCOMING_PK, INCOMING_LOCK_SK);
+    let mut lock_held = k2v_lock_loop(creds.row_client()?, INCOMING_PK, INCOMING_LOCK_SK);
 
-    let k2v = creds.k2v_client()?;
-    let s3 = creds.s3_client()?;
+    let k2v = creds.row_client()?;
+    let s3 = creds.blob_client()?;
 
     let mut inbox: Option<Arc<Mailbox>> = None;
     let mut prev_ct: Option<CausalityToken> = None;

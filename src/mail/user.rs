@@ -34,7 +34,7 @@ const MAILBOX_LIST_SK: &str = "list";
 pub struct User {
     pub username: String,
     pub creds: Credentials,
-    pub k2v: K2vClient,
+    pub k2v: storage::RowStore,
     pub mailboxes: std::sync::Mutex<HashMap<UniqueIdent, Weak<Mailbox>>>,
 
     tx_inbox_id: watch::Sender<Option<(UniqueIdent, ImapUidvalidity)>>,
@@ -174,7 +174,7 @@ impl User {
     // ---- Internal user & mailbox management ----
 
     async fn open(username: String, creds: Credentials) -> Result<Arc<Self>> {
-        let k2v = creds.k2v_client()?;
+        let k2v = creds.row_client()?;
 
         let (tx_inbox_id, rx_inbox_id) = watch::channel(None);
 
@@ -224,32 +224,32 @@ impl User {
 
     // ---- Mailbox list management ----
 
-    async fn load_mailbox_list(&self) -> Result<(MailboxList, Option<CausalityToken>)> {
-        let (mut list, ct) = match self.k2v.read_item(MAILBOX_LIST_PK, MAILBOX_LIST_SK).await {
-            Err(k2v_client::Error::NotFound) => (MailboxList::new(), None),
+    async fn load_mailbox_list(&self) -> Result<(MailboxList, Option<storage::RowRef>)> {
+        let (mut list, row) = match self.k2v.row(MAILBOX_LIST_PK, MAILBOX_LIST_SK).fetch().await {
+            Err(storage::StorageError::NotFound) => (MailboxList::new(), None),
             Err(e) => return Err(e.into()),
-            Ok(cv) => {
+            Ok(rv) => {
                 let mut list = MailboxList::new();
-                for v in cv.value {
-                    if let K2vValue::Value(vbytes) = v {
+                for v in rv.content() {
+                    if let storage::Alternative::Value(vbytes) = v {
                         let list2 =
                             open_deserialize::<MailboxList>(&vbytes, &self.creds.keys.master)?;
                         list.merge(list2);
                     }
                 }
-                (list, Some(cv.causality))
+                (list, Some(rv.to_ref()))
             }
         };
 
-        self.ensure_inbox_exists(&mut list, &ct).await?;
+        self.ensure_inbox_exists(&mut list, &row).await?;
 
-        Ok((list, ct))
+        Ok((list, row))
     }
 
     async fn ensure_inbox_exists(
         &self,
         list: &mut MailboxList,
-        ct: &Option<CausalityToken>,
+        ct: &Option<storage::RowRef>,
     ) -> Result<bool> {
         // If INBOX doesn't exist, create a new mailbox with that name
         // and save new mailbox list.
@@ -278,12 +278,14 @@ impl User {
     async fn save_mailbox_list(
         &self,
         list: &MailboxList,
-        ct: Option<CausalityToken>,
+        ct: Option<storage::RowRef>,
     ) -> Result<()> {
         let list_blob = seal_serialize(list, &self.creds.keys.master)?;
-        self.k2v
-            .insert_item(MAILBOX_LIST_PK, MAILBOX_LIST_SK, list_blob, ct)
-            .await?;
+        let rref = match ct {
+            Some(x) => x,
+            None => self.k2v.row(MAILBOX_LIST_PK, MAILBOX_LIST_SK),
+        };
+        rref.set_value(list_blob).push().await?;
         Ok(())
     }
 }

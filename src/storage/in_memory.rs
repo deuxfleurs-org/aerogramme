@@ -22,7 +22,7 @@ impl IBuilders for FullMem {
 }
 
 impl IRowStore for MemStore {
-    fn new_row(&self, partition: &str, sort: &str) -> RowRef {
+    fn row(&self, partition: &str, sort: &str) -> RowRef {
         unimplemented!();
     }
 }
