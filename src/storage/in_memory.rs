@@ -25,9 +25,17 @@ impl IRowStore for MemStore {
     fn row(&self, partition: &str, sort: &str) -> RowRef {
         unimplemented!();
     }
+
+    fn select(&self, selector: Selector) -> AsyncResult<Vec<RowValue>> {
+        unimplemented!();
+    }
 }
 
 impl IRowRef for MemRef {
+    fn key(&self) -> (&str, &str) {
+        unimplemented!();
+    }
+
     fn clone_boxed(&self) -> RowRef {
         unimplemented!();
     }

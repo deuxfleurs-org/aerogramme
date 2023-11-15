@@ -86,8 +86,7 @@ pub type RowStore = Box<dyn IRowStore + Sync + Send>;
 pub trait IRowRef 
 {
     fn clone_boxed(&self) -> RowRef;
-    fn pk(&self) -> &str;
-    fn sk(&self) -> &str;
+    fn key(&self) -> (&str, &str);
     fn set_value(&self, content: Vec<u8>) -> RowValue;
     fn fetch(&self) -> AsyncResult<RowValue>;
     fn rm(&self) -> AsyncResult<()>;

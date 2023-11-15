@@ -24,10 +24,18 @@ impl IRowStore for GrgStore {
     fn row(&self, partition: &str, sort: &str) -> RowRef {
         unimplemented!();
     }
+
+    fn select(&self, selector: Selector) -> AsyncResult<Vec<RowValue>> {
+        unimplemented!();
+    }
 }
 
 impl IRowRef for GrgRef {
     fn clone_boxed(&self) -> RowRef {
+        unimplemented!();
+    }
+
+    fn key(&self) -> (&str, &str) {
         unimplemented!();
     }
 

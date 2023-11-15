@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Weak};
 
 use anyhow::{anyhow, bail, Result};
-use k2v_client::{CausalityToken, K2vClient, K2vValue};
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -14,7 +13,7 @@ use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::ImapUidvalidity;
 use crate::mail::unique_ident::{gen_ident, UniqueIdent};
 use crate::storage;
-use crate::time::now_msec;
+use crate::timestamp::now_msec;
 
 pub const MAILBOX_HIERARCHY_DELIMITER: char = '.';
 

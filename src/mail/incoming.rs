@@ -15,7 +15,6 @@ use tokio::sync::watch;
 use tracing::{error, info, warn};
 
 use crate::cryptoblob;
-use crate::k2v_util::k2v_wait_value_changed;
 use crate::login::{Credentials, PublicCredentials};
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::ImapUidvalidity;
@@ -23,7 +22,7 @@ use crate::mail::unique_ident::*;
 use crate::mail::user::User;
 use crate::mail::IMF;
 use crate::storage;
-use crate::time::now_msec;
+use crate::timestamp::now_msec;
 
 const INCOMING_PK: &str = "incoming";
 const INCOMING_LOCK_SK: &str = "lock";

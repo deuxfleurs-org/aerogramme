@@ -9,7 +9,7 @@ use crate::mail::uidindex::*;
 use crate::mail::unique_ident::*;
 use crate::mail::IMF;
 use crate::storage::{RowStore, BlobStore, self};
-use crate::time::now_msec;
+use crate::timestamp::now_msec;
 
 pub struct Mailbox {
     pub(super) id: UniqueIdent,
@@ -227,7 +227,7 @@ impl MailboxInternal {
             if let Some(meta) = meta_opt {
                 meta_vec.push(meta);
             } else {
-                bail!("No valid meta value in k2v for {:?}", res.to_ref().sk());
+                bail!("No valid meta value in k2v for {:?}", res.to_ref().key());
             }
         }
 

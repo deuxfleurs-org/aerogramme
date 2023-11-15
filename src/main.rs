@@ -1,5 +1,6 @@
 #![feature(async_fn_in_trait)]
 
+mod timestamp;
 mod bayou;
 mod config;
 mod cryptoblob;
@@ -10,7 +11,6 @@ mod login;
 mod mail;
 mod server;
 mod storage;
-mod time;
 
 use std::path::PathBuf;
 
