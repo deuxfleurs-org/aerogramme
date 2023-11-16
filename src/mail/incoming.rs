@@ -81,7 +81,7 @@ async fn incoming_mail_watch_process_internal(
 
             tokio::select! {
                 inc_k = wait_new_mail => Some(inc_k),
-                _     = tokio::time::sleep(MAIL_CHECK_INTERVAL) => Some(incoming_key.clone()),
+                _     = tokio::time::sleep(MAIL_CHECK_INTERVAL) => Some(incoming_key),
                 _     = lock_held.changed() => None,
                 _     = rx_inbox_id.changed() => None,
             }

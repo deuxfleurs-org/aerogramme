@@ -28,11 +28,18 @@ impl IRowStore for GrgStore {
     fn select(&self, selector: Selector) -> AsyncResult<Vec<RowValue>> {
         unimplemented!();
     }
+
+    fn rm(&self, selector: Selector) -> AsyncResult<()> {
+        unimplemented!();
+    }
 }
 
 impl IRowRef for GrgRef {
-    fn clone_boxed(&self) -> RowRef {
+    /*fn clone_boxed(&self) -> RowRef {
         unimplemented!();
+    }*/
+    fn to_orphan(&self) -> RowRefOrphan {
+        unimplemented!()
     }
 
     fn key(&self) -> (&str, &str) {

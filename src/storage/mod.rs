@@ -21,9 +21,9 @@ pub enum Alternative {
 type ConcurrentValues = Vec<Alternative>;
 
 pub enum Selector<'a> {
-    Range { begin: &'a str, end: &'a str },
-    List (Vec<(&'a str, &'a str)>),
-    Prefix (&'a str),
+    Range { shard_key: &'a str, begin: &'a str, end: &'a str },
+    List (Vec<(&'a str, &'a str)>), // list of (shard_key, sort_key)
+    Prefix { shard_key: &'a str, prefix: &'a str },
 }
 
 #[derive(Debug)]
@@ -80,12 +80,14 @@ pub trait IRowStore
 {
     fn row(&self, partition: &str, sort: &str) -> RowRef;
     fn select(&self, selector: Selector) -> AsyncResult<Vec<RowValue>>;
+    fn rm(&self, selector: Selector) -> AsyncResult<()>;
 }
 pub type RowStore = Box<dyn IRowStore + Sync + Send>;
 
 pub trait IRowRef 
 {
-    fn clone_boxed(&self) -> RowRef;
+    /*fn clone_boxed(&self) -> RowRef;*/
+    fn to_orphan(&self) -> RowRefOrphan;
     fn key(&self) -> (&str, &str);
     fn set_value(&self, content: Vec<u8>) -> RowValue;
     fn fetch(&self) -> AsyncResult<RowValue>;
@@ -93,11 +95,17 @@ pub trait IRowRef
     fn poll(&self) -> AsyncResult<RowValue>;
 }
 pub type RowRef = Box<dyn IRowRef + Send + Sync>;
-impl Clone for RowRef {
+/*impl Clone for RowRef {
     fn clone(&self) -> Self {
         return self.clone_boxed()
     }
+}*/
+
+pub trait IRowRefOrphan
+{
+    fn attach(&self, store: &RowStore) -> RowRef;
 }
+pub type RowRefOrphan = Box<dyn IRowRefOrphan + Send + Sync>;
 
 pub trait IRowValue
 {

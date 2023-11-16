@@ -29,6 +29,10 @@ impl IRowStore for MemStore {
     fn select(&self, selector: Selector) -> AsyncResult<Vec<RowValue>> {
         unimplemented!();
     }
+
+    fn rm(&self, selector: Selector) -> AsyncResult<()> {
+        unimplemented!();
+    }
 }
 
 impl IRowRef for MemRef {
