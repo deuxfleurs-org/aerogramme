@@ -306,7 +306,7 @@ impl User {
     ) -> Result<()> {
         let list_blob = seal_serialize(list, &self.creds.keys.master)?;
         let rref = match ct {
-            Some(x) => self.k2v.from_orphan(x),
+            Some(x) => self.k2v.from_orphan(x).expect("Source & target must be same storage"),
             None => self.k2v.row(MAILBOX_LIST_PK, MAILBOX_LIST_SK),
         };
         rref.set_value(list_blob).push().await?;

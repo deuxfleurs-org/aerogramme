@@ -77,7 +77,7 @@ async fn incoming_mail_watch_process_internal(
 
             tokio::select! {
                 inc_k = wait_new_mail => Some(inc_k),
-                _     = tokio::time::sleep(MAIL_CHECK_INTERVAL) => Some(k2v.from_orphan(incoming_key.to_orphan())),
+                _     = tokio::time::sleep(MAIL_CHECK_INTERVAL) => Some(k2v.from_orphan(incoming_key.to_orphan()).expect("Incompatible source & target storage")),
                 _     = lock_held.changed() => None,
                 _     = rx_inbox_id.changed() => None,
             }
@@ -358,7 +358,7 @@ async fn k2v_lock_loop_internal(
             ));
             lock[8..].copy_from_slice(&our_pid.0);
             let row = match ct {
-                Some(orphan) => k2v.from_orphan(orphan),
+                Some(orphan) => k2v.from_orphan(orphan).expect("Source & target must be storage compatible"),
                 None => k2v.row(pk, sk),
             };
             if let Err(e) = row.set_value(lock).push().await {
@@ -387,7 +387,7 @@ async fn k2v_lock_loop_internal(
         _ => None,
     };
     if let Some(ct) = release {
-        let row = k2v.from_orphan(ct);
+        let row = k2v.from_orphan(ct).expect("Incompatible source & target storage");
         let _ = row.rm().await;
     }
 }

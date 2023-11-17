@@ -37,7 +37,7 @@ impl IRowStore for MemStore {
         unimplemented!();
     }
 
-    fn from_orphan(&self, orphan: OrphanRowRef) -> RowRef {
+    fn from_orphan(&self, orphan: OrphanRowRef) -> Result<RowRef, StorageError> {
         unimplemented!();
     }
 }

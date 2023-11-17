@@ -36,6 +36,7 @@ pub enum Selector<'a> {
 pub enum StorageError {
     NotFound,
     Internal,
+    IncompatibleOrphan,
 }
 impl std::fmt::Display for StorageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -87,7 +88,7 @@ pub trait IRowStore
     fn row(&self, partition: &str, sort: &str) -> RowRef;
     fn select(&self, selector: Selector) -> AsyncResult<Vec<RowValue>>;
     fn rm(&self, selector: Selector) -> AsyncResult<()>;
-    fn from_orphan(&self, orphan: OrphanRowRef) -> RowRef;
+    fn from_orphan(&self, orphan: OrphanRowRef) -> Result<RowRef, StorageError>;
 }
 pub type RowStore = Box<dyn IRowStore + Sync + Send>;
 
