@@ -61,18 +61,9 @@ impl Server {
 }
 
 fn build(config: Config) -> Result<(ArcLoginProvider, Option<LmtpConfig>, Option<ImapConfig>)> {
-    let s3_region = Region {
-        name: config.aws_region.clone(),
-        endpoint: config.s3_endpoint,
-    };
-    let k2v_region = Region {
-        name: config.aws_region,
-        endpoint: config.k2v_endpoint,
-    };
-
     let lp: ArcLoginProvider = match (config.login_static, config.login_ldap) {
-        (Some(st), None) => Arc::new(StaticLoginProvider::new(st, k2v_region, s3_region)?),
-        (None, Some(ld)) => Arc::new(LdapLoginProvider::new(ld, k2v_region, s3_region)?),
+        (Some(st), None) => Arc::new(StaticLoginProvider::new(st)?),
+        (None, Some(ld)) => Arc::new(LdapLoginProvider::new(ld)?),
         (Some(_), Some(_)) => {
             bail!("A single login provider must be set up in config file")
         }

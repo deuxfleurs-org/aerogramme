@@ -46,6 +46,8 @@ pub struct LoginStaticUser {
 
     pub master_key: Option<String>,
     pub secret_key: Option<String>,
+
+    pub storage: StaticStorage,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

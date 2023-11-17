@@ -10,18 +10,13 @@ use crate::login::*;
 use crate::storage;
 
 pub struct StaticLoginProvider {
-    default_bucket: Option<String>,
     users: HashMap<String, Arc<LoginStaticUser>>,
     users_by_email: HashMap<String, Arc<LoginStaticUser>>,
-
-    k2v_region: Region,
-    s3_region: Region,
 }
 
 impl StaticLoginProvider {
-    pub fn new(config: LoginStaticConfig, k2v_region: Region, s3_region: Region) -> Result<Self> {
+    pub fn new(config: LoginStaticConfig) -> Result<Self> {
         let users = config
-            .users
             .into_iter()
             .map(|(k, v)| (k, Arc::new(v)))
             .collect::<HashMap<_, _>>();
@@ -36,11 +31,8 @@ impl StaticLoginProvider {
         }
 
         Ok(Self {
-            default_bucket: config.default_bucket,
             users,
             users_by_email,
-            k2v_region,
-            s3_region,
         })
     }
 }
@@ -59,23 +51,30 @@ impl LoginProvider for StaticLoginProvider {
             bail!("Wrong password");
         }
 
+        /*
         tracing::debug!(user=%username, "fetch bucket");
         let bucket = user
             .bucket
             .clone()
             .or_else(|| self.default_bucket.clone())
             .ok_or(anyhow!(
-                "No bucket configured and no default bucket specieid"
-            ))?;
+                "No bucket configured and no default bucket specified"
+            ))?;*/
 
         tracing::debug!(user=%username, "fetch keys");
-        let storage = StorageCredentials {
+        let storage: storage::Builders = match user.storage {
+            StaticStorage::InMemory => Box::new(storage::in_memory::FullMem {}),
+            StaticStorage::Garage(c) => Box::new(storage::garage::GrgCreds {}),
+        };
+
+        /*
+        StorageCredentials {
             k2v_region: self.k2v_region.clone(),
             s3_region: self.s3_region.clone(),
             aws_access_key_id: user.aws_access_key_id.clone(),
             aws_secret_access_key: user.aws_secret_access_key.clone(),
             bucket,
-        };
+        };*/
 
         let keys = match (&user.master_key, &user.secret_key) {
             (Some(m), Some(s)) => {
