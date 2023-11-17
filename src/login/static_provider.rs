@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use crate::config::*;
 use crate::cryptoblob::{Key, SecretKey};
 use crate::login::*;
+use crate::storage;
 
 pub struct StaticLoginProvider {
     default_bucket: Option<String>,
