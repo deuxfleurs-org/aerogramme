@@ -47,7 +47,7 @@ pub struct Credentials {
 #[derive(Clone, Debug)]
 pub struct PublicCredentials {
     /// The storage credentials are used to authenticate access to the underlying storage (S3, K2V)
-    pub storage: StorageCredentials,
+    pub storage: Builders,
     pub public_key: PublicKey,
 }
 

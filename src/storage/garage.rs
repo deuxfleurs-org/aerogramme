@@ -67,6 +67,12 @@ impl IRowRef for GrgRef {
     }
 }
 
+impl std::fmt::Debug for GrgRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        unimplemented!();
+    }
+}
+
 impl IRowValue for GrgValue {
     fn to_ref(&self) -> RowRef {
         unimplemented!();

@@ -91,7 +91,7 @@ pub trait IRowStore
 }
 pub type RowStore = Box<dyn IRowStore + Sync + Send>;
 
-pub trait IRowRef 
+pub trait IRowRef: std::fmt::Debug
 {
     /*fn clone_boxed(&self) -> RowRef;*/
     fn to_orphan(&self) -> OrphanRowRef;
@@ -138,6 +138,7 @@ pub type BlobRef = Box<dyn IBlobRef + Send + Sync>;
 pub trait IBlobValue {
     fn to_ref(&self) -> BlobRef;
     fn get_meta(&self, key: &str) -> Option<&[u8]>;
+    fn set_meta(&mut self, key: &str, val: &str);
     fn content(&self) -> Option<&[u8]>;
     fn push(&self) -> AsyncResult<()>;
 }

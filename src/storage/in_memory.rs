@@ -72,6 +72,12 @@ impl IRowRef for MemRef {
     }
 }
 
+impl std::fmt::Debug for MemRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        unimplemented!();
+    }
+}
+
 impl IRowValue for MemValue {
     fn to_ref(&self) -> RowRef {
         unimplemented!();
