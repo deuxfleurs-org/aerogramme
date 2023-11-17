@@ -81,7 +81,11 @@ impl User {
             let mb_uidvalidity = mb.current_uid_index().await.uidvalidity;
             if mb_uidvalidity > uidvalidity {
                 list.update_uidvalidity(name, mb_uidvalidity);
-                self.save_mailbox_list(&list, ct).await?;
+                let orphan = match ct {
+                    Some(x) => Some(x.to_orphan()),
+                    None => None,
+                };
+                self.save_mailbox_list(&list, orphan).await?;
             }
             Ok(Some(mb))
         } else {
@@ -104,7 +108,11 @@ impl User {
         let (mut list, ct) = self.load_mailbox_list().await?;
         match list.create_mailbox(name) {
             CreatedMailbox::Created(_, _) => {
-                self.save_mailbox_list(&list, ct).await?;
+                let orphan = match ct {
+                    Some(x) => Some(x.to_orphan()),
+                    None => None,
+                };
+                self.save_mailbox_list(&list, orphan).await?;
                 Ok(())
             }
             CreatedMailbox::Existed(_, _) => Err(anyhow!("Mailbox {} already exists", name)),
@@ -121,7 +129,11 @@ impl User {
         if list.has_mailbox(name) {
             // TODO: actually delete mailbox contents
             list.set_mailbox(name, None);
-            self.save_mailbox_list(&list, ct).await?;
+            let orphan = match ct {
+                Some(x) => Some(x.to_orphan()),
+                None => None,
+            };
+            self.save_mailbox_list(&list, orphan).await?;
             Ok(())
         } else {
             bail!("Mailbox {} does not exist", name);
@@ -142,7 +154,11 @@ impl User {
         if old_name == INBOX {
             list.rename_mailbox(old_name, new_name)?;
             if !self.ensure_inbox_exists(&mut list, &ct).await? {
-                self.save_mailbox_list(&list, ct).await?;
+                let orphan = match ct {
+                    Some(x) => Some(x.to_orphan()),
+                    None => None,
+                };
+                self.save_mailbox_list(&list, orphan).await?;
             }
         } else {
             let names = list.existing_mailbox_names();
@@ -165,7 +181,12 @@ impl User {
                     list.rename_mailbox(name, &nnew)?;
                 }
             }
-            self.save_mailbox_list(&list, ct).await?;
+
+            let orphan = match ct {
+                Some(x) => Some(x.to_orphan()),
+                None => None,
+            };
+            self.save_mailbox_list(&list, orphan).await?;
         }
         Ok(())
     }
@@ -257,7 +278,11 @@ impl User {
         let saved;
         let (inbox_id, inbox_uidvalidity) = match list.create_mailbox(INBOX) {
             CreatedMailbox::Created(i, v) => {
-                self.save_mailbox_list(list, ct.clone()).await?;
+                let orphan = match ct {
+                    Some(x) => Some(x.to_orphan()),
+                    None => None,
+                };
+                self.save_mailbox_list(list, orphan).await?;
                 saved = true;
                 (i, v)
             }
@@ -277,11 +302,11 @@ impl User {
     async fn save_mailbox_list(
         &self,
         list: &MailboxList,
-        ct: Option<storage::RowRef>,
+        ct: Option<storage::OrphanRowRef>,
     ) -> Result<()> {
         let list_blob = seal_serialize(list, &self.creds.keys.master)?;
         let rref = match ct {
-            Some(x) => x,
+            Some(x) => self.k2v.from_orphan(x),
             None => self.k2v.row(MAILBOX_LIST_PK, MAILBOX_LIST_SK),
         };
         rref.set_value(list_blob).push().await?;

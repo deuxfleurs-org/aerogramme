@@ -7,6 +7,9 @@ pub struct MemStore {}
 pub struct MemRef {}
 pub struct MemValue {}
 
+#[derive(Clone, Debug)]
+pub struct MemOrphanRowRef {}
+
 impl IBuilders for FullMem {
     fn row_store(&self) -> Result<RowStore, StorageError> {
         unimplemented!();
@@ -33,16 +36,24 @@ impl IRowStore for MemStore {
     fn rm(&self, selector: Selector) -> AsyncResult<()> {
         unimplemented!();
     }
+
+    fn from_orphan(&self, orphan: OrphanRowRef) -> RowRef {
+        unimplemented!();
+    }
 }
 
 impl IRowRef for MemRef {
+    fn to_orphan(&self) -> OrphanRowRef {
+        unimplemented!()
+    }
+
     fn key(&self) -> (&str, &str) {
         unimplemented!();
     }
 
-    fn clone_boxed(&self) -> RowRef {
+    /*fn clone_boxed(&self) -> RowRef {
         unimplemented!();
-    }
+    }*/
 
     fn set_value(&self, content: Vec<u8>) -> RowValue {
         unimplemented!();

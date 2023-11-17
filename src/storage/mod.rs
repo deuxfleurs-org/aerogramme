@@ -20,6 +20,12 @@ pub enum Alternative {
 }
 type ConcurrentValues = Vec<Alternative>;
 
+#[derive(Clone, Debug)]
+pub enum OrphanRowRef {
+    Garage(garage::GrgOrphanRowRef),
+    Memory(in_memory::MemOrphanRowRef),
+}
+
 pub enum Selector<'a> {
     Range { shard_key: &'a str, begin: &'a str, end: &'a str },
     List (Vec<(&'a str, &'a str)>), // list of (shard_key, sort_key)
@@ -81,13 +87,14 @@ pub trait IRowStore
     fn row(&self, partition: &str, sort: &str) -> RowRef;
     fn select(&self, selector: Selector) -> AsyncResult<Vec<RowValue>>;
     fn rm(&self, selector: Selector) -> AsyncResult<()>;
+    fn from_orphan(&self, orphan: OrphanRowRef) -> RowRef;
 }
 pub type RowStore = Box<dyn IRowStore + Sync + Send>;
 
 pub trait IRowRef 
 {
     /*fn clone_boxed(&self) -> RowRef;*/
-    fn to_orphan(&self) -> RowRefOrphan;
+    fn to_orphan(&self) -> OrphanRowRef;
     fn key(&self) -> (&str, &str);
     fn set_value(&self, content: Vec<u8>) -> RowValue;
     fn fetch(&self) -> AsyncResult<RowValue>;
@@ -101,11 +108,6 @@ pub type RowRef = Box<dyn IRowRef + Send + Sync>;
     }
 }*/
 
-pub trait IRowRefOrphan
-{
-    fn attach(&self, store: &RowStore) -> RowRef;
-}
-pub type RowRefOrphan = Box<dyn IRowRefOrphan + Send + Sync>;
 
 pub trait IRowValue
 {

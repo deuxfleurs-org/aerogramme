@@ -6,6 +6,9 @@ pub struct GrgStore {}
 pub struct GrgRef {}
 pub struct GrgValue {}
 
+#[derive(Clone, Debug)]
+pub struct GrgOrphanRowRef {}
+
 impl IBuilders for GrgCreds {
     fn row_store(&self) -> Result<RowStore, StorageError> {
         unimplemented!();
@@ -32,13 +35,17 @@ impl IRowStore for GrgStore {
     fn rm(&self, selector: Selector) -> AsyncResult<()> {
         unimplemented!();
     }
+
+    fn from_orphan(&self, orphan: OrphanRowRef) -> RowRef {
+        unimplemented!();
+    }
 }
 
 impl IRowRef for GrgRef {
     /*fn clone_boxed(&self) -> RowRef {
         unimplemented!();
     }*/
-    fn to_orphan(&self) -> RowRefOrphan {
+    fn to_orphan(&self) -> OrphanRowRef {
         unimplemented!()
     }
 

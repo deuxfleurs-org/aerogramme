@@ -443,7 +443,7 @@ impl<S: BayouState> Bayou<S> {
 struct K2vWatch {
     pk: String,
     sk: String,
-    rx: watch::Receiver<storage::RowRef>,
+    rx: watch::Receiver<storage::OrphanRowRef>,
     notify: Notify,
 }
 
@@ -454,7 +454,7 @@ impl K2vWatch {
     fn new(creds: &Credentials, pk: String, sk: String) -> Result<Arc<Self>> {
         let row_client = creds.row_client()?;
 
-        let (tx, rx) = watch::channel::<storage::RowRef>(row_client.row(&pk, &sk));
+        let (tx, rx) = watch::channel::<storage::OrphanRowRef>(row_client.row(&pk, &sk).to_orphan());
         let notify = Notify::new();
 
         let watch = Arc::new(K2vWatch { pk, sk, rx, notify });
@@ -471,7 +471,7 @@ impl K2vWatch {
     async fn background_task(
         self_weak: Weak<Self>,
         k2v: storage::RowStore,
-        tx: watch::Sender<storage::RowRef>,
+        tx: watch::Sender<storage::OrphanRowRef>,
     ) {
         let mut row = match Weak::upgrade(&self_weak) {
             Some(this) => k2v.row(&this.pk, &this.sk),
@@ -497,7 +497,7 @@ impl K2vWatch {
                         }
                         Ok(new_value) => {
                             row = new_value.to_ref();
-                            if tx.send(XXX).is_err() {
+                            if tx.send(row.to_orphan()).is_err() {
                                 break;
                             }
                         }
