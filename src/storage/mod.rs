@@ -20,7 +20,7 @@ pub enum Alternative {
 }
 type ConcurrentValues = Vec<Alternative>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum OrphanRowRef {
     Garage(garage::GrgOrphanRowRef),
     Memory(in_memory::MemOrphanRowRef),

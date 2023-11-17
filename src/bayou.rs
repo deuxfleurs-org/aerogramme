@@ -1,4 +1,3 @@
-use std::str::FromStr;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -6,7 +5,6 @@ use anyhow::{anyhow, bail, Result};
 use log::{debug, error, info};
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncReadExt;
 use tokio::sync::{watch, Notify};
 
 use crate::cryptoblob::*;
@@ -233,7 +231,7 @@ impl<S: BayouState> Bayou<S> {
 
         // Save info that sync has been done
         self.last_sync = new_last_sync;
-        self.last_sync_watch_ct = new_last_sync_watch_ct;
+        self.last_sync_watch_ct = self.k2v.from_orphan(new_last_sync_watch_ct).expect("Source & target storage must be compatible");
         Ok(())
     }
 
@@ -245,7 +243,7 @@ impl<S: BayouState> Bayou<S> {
             Some(t) => Instant::now() > t + (CHECKPOINT_INTERVAL / 5),
             _ => true,
         };
-        let changed = self.last_sync_watch_ct != *self.watch.rx.borrow();
+        let changed = self.last_sync_watch_ct.to_orphan() != *self.watch.rx.borrow();
         if too_old || changed {
             self.sync().await?;
         }
@@ -266,12 +264,9 @@ impl<S: BayouState> Bayou<S> {
                 .unwrap_or(&self.checkpoint.0),
         );
         self.k2v
-            .insert_item(
-                &self.path,
-                &ts.to_string(),
-                seal_serialize(&op, &self.key)?,
-                None,
-            )
+            .row(&self.path, &ts.to_string())
+            .set_value(seal_serialize(&op, &self.key)?)
+            .push()
             .await?;
 
         self.watch.notify.notify_one();

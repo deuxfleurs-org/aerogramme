@@ -6,7 +6,7 @@ pub struct GrgStore {}
 pub struct GrgRef {}
 pub struct GrgValue {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct GrgOrphanRowRef {}
 
 impl IBuilders for GrgCreds {

@@ -7,7 +7,7 @@ pub struct MemStore {}
 pub struct MemRef {}
 pub struct MemValue {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct MemOrphanRowRef {}
 
 impl IBuilders for FullMem {
