@@ -106,6 +106,7 @@ impl LoginProvider for StaticLoginProvider {
             Some(u) => u,
         };
 
+        /*
         let bucket = user
             .bucket
             .clone()
@@ -120,6 +121,10 @@ impl LoginProvider for StaticLoginProvider {
             aws_access_key_id: user.aws_access_key_id.clone(),
             aws_secret_access_key: user.aws_secret_access_key.clone(),
             bucket,
+        };*/
+        let storage: storage::Builders = match user.storage {
+            StaticStorage::InMemory => X,
+            StaticStorage::Garage => Y,
         };
 
         let k2v_client = storage.k2v_client()?;

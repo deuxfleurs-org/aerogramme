@@ -51,17 +51,6 @@ pub struct PublicCredentials {
     pub public_key: PublicKey,
 }
 
-/// The struct StorageCredentials contains access key to an S3 and K2V bucket
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct StorageCredentials {
-    pub s3_region: Region,
-    pub k2v_region: Region,
-
-    pub aws_access_key_id: String,
-    pub aws_secret_access_key: String,
-    pub bucket: String,
-}
-
 /// The struct UserSecrets represents intermediary secrets that are mixed in with the user's
 /// password when decrypting the cryptographic keys that are stored in their bucket.
 /// These secrets should be stored somewhere else (e.g. in the LDAP server or in the
@@ -87,24 +76,6 @@ pub struct CryptoKeys {
     pub public: PublicKey,
 }
 
-/// A custom S3 region, composed of a region name and endpoint.
-/// We use this instead of rusoto_signature::Region so that we can
-/// derive Hash and Eq
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct Region {
-    pub name: String,
-    pub endpoint: String,
-}
-
-impl Region {
-    pub fn as_rusoto_region(&self) -> rusoto_signature::Region {
-        rusoto_signature::Region::Custom {
-            name: self.name.clone(),
-            endpoint: self.endpoint.clone(),
-        }
-    }
-}
-
 // ----
 
 
@@ -114,45 +85,6 @@ impl Credentials {
     }
     pub fn blob_client(&self) -> Result<BlobStore> {
         Ok(self.storage.blob_store()?)
-    }
-}
-
-impl StorageCredentials {
-    pub fn k2v_client(&self) -> Result<K2vClient> {
-        let aws_creds = AwsCredentials::new(
-            self.aws_access_key_id.clone(),
-            self.aws_secret_access_key.clone(),
-            None,
-            None,
-        );
-
-        Ok(K2vClient::new(
-            self.k2v_region.as_rusoto_region(),
-            self.bucket.clone(),
-            aws_creds,
-            None,
-        )?)
-    }
-
-    pub fn s3_client(&self) -> Result<S3Client> {
-        let aws_creds_provider = StaticProvider::new_minimal(
-            self.aws_access_key_id.clone(),
-            self.aws_secret_access_key.clone(),
-        );
-
-        let connector = hyper_rustls::HttpsConnectorBuilder::new()
-            .with_native_roots()
-            .https_or_http()
-            .enable_http1()
-            .enable_http2()
-            .build();
-        let client = HttpClient::from_connector(connector);
-
-        Ok(S3Client::new_with(
-            client,
-            aws_creds_provider,
-            self.s3_region.as_rusoto_region(),
-        ))
     }
 }
 
