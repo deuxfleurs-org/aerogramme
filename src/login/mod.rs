@@ -6,13 +6,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
-use k2v_client::{
-    BatchInsertOp, BatchReadOp, CausalValue, CausalityToken, Filter, K2vClient, K2vValue,
-};
 use rand::prelude::*;
-use rusoto_core::HttpClient;
-use rusoto_credential::{AwsCredentials, StaticProvider};
-use rusoto_s3::S3Client;
 
 use crate::cryptoblob::*;
 use crate::storage::*;
@@ -90,12 +84,12 @@ impl Credentials {
 
 impl CryptoKeys {
     pub async fn init(
-        storage: &StorageCredentials,
+        storage: &Builders,
         user_secrets: &UserSecrets,
         password: &str,
     ) -> Result<Self> {
         // Check that salt and public don't exist already
-        let k2v = storage.k2v_client()?;
+        let k2v = storage.row_store()?;
         let (salt_ct, public_ct) = Self::check_uninitialized(&k2v).await?;
 
         // Generate salt for password identifiers
@@ -140,12 +134,12 @@ impl CryptoKeys {
     }
 
     pub async fn init_without_password(
-        storage: &StorageCredentials,
+        storage: &Builders,
         master: &Key,
         secret: &SecretKey,
     ) -> Result<Self> {
         // Check that salt and public don't exist already
-        let k2v = storage.k2v_client()?;
+        let k2v = storage.row_store()?;
         let (salt_ct, public_ct) = Self::check_uninitialized(&k2v).await?;
 
         // Generate salt for password identifiers
@@ -172,7 +166,7 @@ impl CryptoKeys {
     }
 
     pub async fn open(
-        storage: &StorageCredentials,
+        storage: &Builders,
         user_secrets: &UserSecrets,
         password: &str,
     ) -> Result<Self> {
@@ -215,11 +209,11 @@ impl CryptoKeys {
     }
 
     pub async fn open_without_password(
-        storage: &StorageCredentials,
+        storage: &Builders,
         master: &Key,
         secret: &SecretKey,
     ) -> Result<Self> {
-        let k2v = storage.k2v_client()?;
+        let k2v = storage.row_store()?;
         let (_ident_salt, expected_public) = Self::load_salt_and_public(&k2v).await?;
 
         // Create CryptoKeys struct from given keys
@@ -240,11 +234,11 @@ impl CryptoKeys {
 
     pub async fn add_password(
         &self,
-        storage: &StorageCredentials,
+        storage: &Builders,
         user_secrets: &UserSecrets,
         password: &str,
     ) -> Result<()> {
-        let k2v = storage.k2v_client()?;
+        let k2v = storage.row_store()?;
         let (ident_salt, _public) = Self::load_salt_and_public(&k2v).await?;
 
         // Generate short password digest (= password identity)
@@ -289,11 +283,11 @@ impl CryptoKeys {
     }
 
     pub async fn delete_password(
-        storage: &StorageCredentials,
+        storage: &Builders,
         password: &str,
         allow_delete_all: bool,
     ) -> Result<()> {
-        let k2v = storage.k2v_client()?;
+        let k2v = storage.row_client()?;
         let (ident_salt, _public) = Self::load_salt_and_public(&k2v).await?;
 
         // Generate short password digest (= password identity)
@@ -322,47 +316,32 @@ impl CryptoKeys {
     // ---- STORAGE UTIL ----
 
     async fn check_uninitialized(
-        k2v: &K2vClient,
-    ) -> Result<(Option<CausalityToken>, Option<CausalityToken>)> {
+        k2v: &RowStore,
+    ) -> Result<(RowRef, RowRef)> {
         let params = k2v
-            .read_batch(&[
-                k2v_read_single_key("keys", "salt", true),
-                k2v_read_single_key("keys", "public", true),
-            ])
+            .select(Selector::List(vec![
+                ("keys", "salt"),
+                ("keys", "public"),
+            ]))
             .await
             .context("ReadBatch for salt and public in check_uninitialized")?;
+
         if params.len() != 2 {
             bail!(
                 "Invalid response from k2v storage: {:?} (expected two items)",
                 params
             );
         }
-        if params[0].items.len() > 1 || params[1].items.len() > 1 {
-            bail!(
-                "invalid response from k2v storage: {:?} (several items in single_item read)",
-                params
-            );
+
+        let salt_ct = params[0].to_ref();
+        if params[0].content().iter().any(|x| matches!(x, Alternative::Value(_))) {
+            bail!("key storage already initialized");
         }
 
-        let salt_ct = match params[0].items.iter().next() {
-            None => None,
-            Some((_, CausalValue { causality, value })) => {
-                if value.iter().any(|x| matches!(x, K2vValue::Value(_))) {
-                    bail!("key storage already initialized");
-                }
-                Some(causality.clone())
-            }
-        };
-
-        let public_ct = match params[1].items.iter().next() {
-            None => None,
-            Some((_, CausalValue { causality, value })) => {
-                if value.iter().any(|x| matches!(x, K2vValue::Value(_))) {
-                    bail!("key storage already initialized");
-                }
-                Some(causality.clone())
-            }
-        };
+        let public_ct = params[1].to_ref();
+        if params[1].content().iter().any(|x| matches!(x, Alternative::Value(_))) {
+            bail!("key storage already initialized");
+        }
 
         Ok((salt_ct, public_ct))
     }
@@ -510,38 +489,4 @@ pub fn argon2_kdf(salt: &[u8], password: &[u8], output_len: usize) -> Result<Vec
     let hash = hash.hash.ok_or(anyhow!("Missing output"))?;
     assert!(hash.len() == output_len);
     Ok(hash.as_bytes().to_vec())
-}
-
-pub fn k2v_read_single_key<'a>(
-    partition_key: &'a str,
-    sort_key: &'a str,
-    tombstones: bool,
-) -> BatchReadOp<'a> {
-    BatchReadOp {
-        partition_key,
-        filter: Filter {
-            start: Some(sort_key),
-            end: None,
-            prefix: None,
-            limit: None,
-            reverse: false,
-        },
-        conflicts_only: false,
-        tombstones,
-        single_item: true,
-    }
-}
-
-pub fn k2v_insert_single_key<'a>(
-    partition_key: &'a str,
-    sort_key: &'a str,
-    causality: Option<CausalityToken>,
-    value: impl AsRef<[u8]>,
-) -> BatchInsertOp<'a> {
-    BatchInsertOp {
-        partition_key,
-        sort_key,
-        causality,
-        value: K2vValue::Value(value.as_ref().to_vec()),
-    }
 }

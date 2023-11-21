@@ -44,6 +44,7 @@ impl std::fmt::Display for StorageError {
         match self {
             Self::NotFound => f.write_str("Item not found"),
             Self::Internal => f.write_str("An internal error occured"),
+            Self::IncompatibleOrphan => f.write_str("Incompatible orphan"),
         }
     }
 }
@@ -110,7 +111,7 @@ pub type RowRef = Box<dyn IRowRef + Send + Sync>;
 }*/
 
 
-pub trait IRowValue
+pub trait IRowValue: std::fmt::Debug
 {
     fn to_ref(&self) -> RowRef;
     fn content(&self) -> ConcurrentValues;

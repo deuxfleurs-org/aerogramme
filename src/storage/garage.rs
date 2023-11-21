@@ -85,7 +85,11 @@ impl IRowValue for GrgValue {
     }
 }
 
-
+impl std::fmt::Debug for GrgValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        unimplemented!();
+    }
+}
 
 
 /*
