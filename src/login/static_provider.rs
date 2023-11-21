@@ -51,30 +51,11 @@ impl LoginProvider for StaticLoginProvider {
             bail!("Wrong password");
         }
 
-        /*
-        tracing::debug!(user=%username, "fetch bucket");
-        let bucket = user
-            .bucket
-            .clone()
-            .or_else(|| self.default_bucket.clone())
-            .ok_or(anyhow!(
-                "No bucket configured and no default bucket specified"
-            ))?;*/
-
         tracing::debug!(user=%username, "fetch keys");
         let storage: storage::Builders = match user.storage {
             StaticStorage::InMemory => Box::new(storage::in_memory::FullMem {}),
             StaticStorage::Garage(c) => Box::new(storage::garage::GrgCreds {}),
         };
-
-        /*
-        StorageCredentials {
-            k2v_region: self.k2v_region.clone(),
-            s3_region: self.s3_region.clone(),
-            aws_access_key_id: user.aws_access_key_id.clone(),
-            aws_secret_access_key: user.aws_secret_access_key.clone(),
-            bucket,
-        };*/
 
         let keys = match (&user.master_key, &user.secret_key) {
             (Some(m), Some(s)) => {

@@ -95,21 +95,14 @@ pub type RowStore = Box<dyn IRowStore + Sync + Send>;
 
 pub trait IRowRef: std::fmt::Debug
 {
-    /*fn clone_boxed(&self) -> RowRef;*/
     fn to_orphan(&self) -> OrphanRowRef;
     fn key(&self) -> (&str, &str);
-    fn set_value(&self, content: Vec<u8>) -> RowValue;
+    fn set_value(&self, content: &[u8]) -> RowValue;
     fn fetch(&self) -> AsyncResult<RowValue>;
     fn rm(&self) -> AsyncResult<()>;
     fn poll(&self) -> AsyncResult<RowValue>;
 }
 pub type RowRef = Box<dyn IRowRef + Send + Sync>;
-/*impl Clone for RowRef {
-    fn clone(&self) -> Self {
-        return self.clone_boxed()
-    }
-}*/
-
 
 pub trait IRowValue: std::fmt::Debug
 {

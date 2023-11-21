@@ -53,7 +53,7 @@ impl IRowRef for GrgRef {
         unimplemented!();
     }
 
-    fn set_value(&self, content: Vec<u8>) -> RowValue {
+    fn set_value(&self, content: &[u8]) -> RowValue {
         unimplemented!();
     }
     fn fetch(&self) -> AsyncResult<RowValue> {

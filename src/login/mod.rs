@@ -1,8 +1,8 @@
 pub mod ldap_provider;
 pub mod static_provider;
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
+use futures::try_join;
 
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
@@ -122,13 +122,14 @@ impl CryptoKeys {
         let password_blob = [&kdf_salt[..], &password_sealed].concat();
 
         // Write values to storage
-        k2v.insert_batch(&[
-            k2v_insert_single_key("keys", "salt", salt_ct, ident_salt),
-            k2v_insert_single_key("keys", "public", public_ct, keys.public),
-            k2v_insert_single_key("keys", &password_sortkey, None, &password_blob),
-        ])
-        .await
-        .context("InsertBatch for salt, public, and password")?;
+        // @FIXME Implement insert batch in the storage API
+        let (salt, public, passwd) = (
+            salt_ct.set_value(&ident_salt),
+            public_ct.set_value(keys.public.as_ref()),
+            k2v.row("keys", &password_sortkey).set_value(&password_blob)
+        );
+        try_join!(salt.push(), public.push(), passwd.push())
+            .context("InsertBatch for salt, public, and password")?;
 
         Ok(keys)
     }
@@ -155,12 +156,13 @@ impl CryptoKeys {
         };
 
         // Write values to storage
-        k2v.insert_batch(&[
-            k2v_insert_single_key("keys", "salt", salt_ct, ident_salt),
-            k2v_insert_single_key("keys", "public", public_ct, keys.public),
-        ])
-        .await
-        .context("InsertBatch for salt and public")?;
+        // @FIXME implement insert batch in the storage API
+        let (salt, public) = (
+            salt_ct.set_value(&ident_salt),
+            public_ct.set_value(keys.public.as_ref()),
+        );
+
+        try_join!(salt.push(), public.push()).context("InsertBatch for salt and public")?;
 
         Ok(keys)
     }
@@ -170,7 +172,7 @@ impl CryptoKeys {
         user_secrets: &UserSecrets,
         password: &str,
     ) -> Result<Self> {
-        let k2v = storage.k2v_client()?;
+        let k2v = storage.row_store()?;
         let (ident_salt, expected_public) = Self::load_salt_and_public(&k2v).await?;
 
         // Generate short password digest (= password identity)
@@ -178,20 +180,21 @@ impl CryptoKeys {
 
         // Lookup password blob
         let password_sortkey = format!("password:{}", hex::encode(&ident));
+        let password_ref = k2v.row("keys", &password_sortkey);
 
         let password_blob = {
-            let mut val = match k2v.read_item("keys", &password_sortkey).await {
-                Err(k2v_client::Error::NotFound) => {
+            let val = match password_ref.fetch().await {
+                Err(StorageError::NotFound) => {
                     bail!("invalid password")
                 }
                 x => x?,
             };
-            if val.value.len() != 1 {
+            if val.content().len() != 1 {
                 bail!("multiple values for password in storage");
             }
-            match val.value.pop().unwrap() {
-                K2vValue::Value(v) => v,
-                K2vValue::Tombstone => bail!("invalid password"),
+            match val.content().pop().unwrap() {
+                Alternative::Value(v) => v,
+                Alternative::Tombstone => bail!("invalid password"),
             }
         };
 
@@ -258,26 +261,24 @@ impl CryptoKeys {
         let password_blob = [&kdf_salt[..], &password_sealed].concat();
 
         // List existing passwords to overwrite existing entry if necessary
-        let ct = match k2v.read_item("keys", &password_sortkey).await {
-            Err(k2v_client::Error::NotFound) => None,
+        let pass_key = k2v.row("keys", &password_sortkey);
+        let passwd = match pass_key.fetch().await {
+            Err(StorageError::NotFound) => pass_key,
             v => {
                 let entry = v?;
-                if entry.value.iter().any(|x| matches!(x, K2vValue::Value(_))) {
+                if entry.content().iter().any(|x| matches!(x, Alternative::Value(_))) {
                     bail!("password already exists");
                 }
-                Some(entry.causality)
+                entry.to_ref()
             }
         };
 
         // Write values to storage
-        k2v.insert_batch(&[k2v_insert_single_key(
-            "keys",
-            &password_sortkey,
-            ct,
-            &password_blob,
-        )])
-        .await
-        .context("InsertBatch for new password")?;
+        passwd
+            .set_value(&password_blob)
+            .push()
+            .await
+            .context("InsertBatch for new password")?;
 
         Ok(())
     }
@@ -287,7 +288,7 @@ impl CryptoKeys {
         password: &str,
         allow_delete_all: bool,
     ) -> Result<()> {
-        let k2v = storage.row_client()?;
+        let k2v = storage.row_store()?;
         let (ident_salt, _public) = Self::load_salt_and_public(&k2v).await?;
 
         // Generate short password digest (= password identity)
@@ -299,22 +300,23 @@ impl CryptoKeys {
 
         // Check password is there
         let pw = existing_passwords
-            .get(&password_sortkey)
+            .iter()
+            .map(|x| x.to_ref())
+            .find(|x| x.key().1 == &password_sortkey)
+            //.get(&password_sortkey)
             .ok_or(anyhow!("password does not exist"))?;
 
         if !allow_delete_all && existing_passwords.len() < 2 {
             bail!("No other password exists, not deleting last password.");
         }
 
-        k2v.delete_item("keys", &password_sortkey, pw.causality.clone())
-            .await
-            .context("DeleteItem for password")?;
+        pw.rm().await.context("DeleteItem for password")?;
 
         Ok(())
     }
 
     // ---- STORAGE UTIL ----
-
+    //
     async fn check_uninitialized(
         k2v: &RowStore,
     ) -> Result<(RowRef, RowRef)> {
@@ -346,32 +348,29 @@ impl CryptoKeys {
         Ok((salt_ct, public_ct))
     }
 
-    pub async fn load_salt_and_public(k2v: &K2vClient) -> Result<([u8; 32], PublicKey)> {
-        let mut params = k2v
-            .read_batch(&[
-                k2v_read_single_key("keys", "salt", false),
-                k2v_read_single_key("keys", "public", false),
-            ])
+    pub async fn load_salt_and_public(k2v: &RowStore) -> Result<([u8; 32], PublicKey)> {
+        let params = k2v
+            .select(Selector::List(vec![
+                ("keys", "salt"),
+                ("keys", "public"),
+            ]))
             .await
             .context("ReadBatch for salt and public in load_salt_and_public")?;
+
         if params.len() != 2 {
             bail!(
                 "Invalid response from k2v storage: {:?} (expected two items)",
                 params
             );
         }
-        if params[0].items.len() != 1 || params[1].items.len() != 1 {
+        if params[0].content().len() != 1 || params[1].content().len() != 1 {
             bail!("cryptographic keys not initialized for user");
         }
 
         // Retrieve salt from given response
-        let salt_vals = &mut params[0].items.iter_mut().next().unwrap().1.value;
-        if salt_vals.len() != 1 {
-            bail!("Multiple values for `salt`");
-        }
-        let salt: Vec<u8> = match &mut salt_vals[0] {
-            K2vValue::Value(v) => std::mem::take(v),
-            K2vValue::Tombstone => bail!("salt is a tombstone"),
+        let salt: Vec<u8> = match &mut params[0].content().iter_mut().next().unwrap() {
+            Alternative::Value(v) => std::mem::take(v),
+            Alternative::Tombstone => bail!("salt is a tombstone"),
         };
         if salt.len() != 32 {
             bail!("`salt` is not 32 bytes long");
@@ -380,40 +379,21 @@ impl CryptoKeys {
         salt_constlen.copy_from_slice(&salt);
 
         // Retrieve public from given response
-        let public_vals = &mut params[1].items.iter_mut().next().unwrap().1.value;
-        if public_vals.len() != 1 {
-            bail!("Multiple values for `public`");
-        }
-        let public: Vec<u8> = match &mut public_vals[0] {
-            K2vValue::Value(v) => std::mem::take(v),
-            K2vValue::Tombstone => bail!("public is a tombstone"),
+        let public: Vec<u8> = match &mut params[1].content().iter_mut().next().unwrap() {
+            Alternative::Value(v) => std::mem::take(v),
+            Alternative::Tombstone => bail!("public is a tombstone"),
         };
         let public = PublicKey::from_slice(&public).ok_or(anyhow!("Invalid public key length"))?;
 
         Ok((salt_constlen, public))
     }
 
-    async fn list_existing_passwords(k2v: &K2vClient) -> Result<BTreeMap<String, CausalValue>> {
-        let mut res = k2v
-            .read_batch(&[BatchReadOp {
-                partition_key: "keys",
-                filter: Filter {
-                    start: None,
-                    end: None,
-                    prefix: Some("password:"),
-                    limit: None,
-                    reverse: false,
-                },
-                conflicts_only: false,
-                tombstones: false,
-                single_item: false,
-            }])
+    async fn list_existing_passwords(k2v: &RowStore) -> Result<Vec<RowValue>> {
+        let res = k2v.select(Selector::Prefix { shard_key: "keys", prefix: "password:" })
             .await
             .context("ReadBatch for prefix password: in list_existing_passwords")?;
-        if res.len() != 1 {
-            bail!("unexpected k2v result: {:?}, expected one item", res);
-        }
-        Ok(res.pop().unwrap().items)
+
+        Ok(res)
     }
 
     fn serialize(&self) -> [u8; 64] {
