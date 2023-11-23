@@ -1,7 +1,14 @@
 use crate::storage::*;
 
 #[derive(Clone, Debug, Hash)]
-pub struct GrgCreds {}
+pub struct GrgCreds {
+    pub region: String,
+    pub s3_endpoint: String,
+    pub k2v_endpoint: String,
+    pub aws_access_key_id: String,
+    pub aws_secret_access_key: String,
+    pub bucket: String,
+}
 pub struct GrgStore {}
 pub struct GrgRef {}
 pub struct GrgValue {}

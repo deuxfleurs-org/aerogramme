@@ -52,9 +52,16 @@ impl LoginProvider for StaticLoginProvider {
         }
 
         tracing::debug!(user=%username, "fetch keys");
-        let storage: storage::Builders = match user.storage {
+        let storage: storage::Builders = match &user.storage {
             StaticStorage::InMemory => Box::new(storage::in_memory::FullMem {}),
-            StaticStorage::Garage(c) => Box::new(storage::garage::GrgCreds {}),
+            StaticStorage::Garage(grgconf) => Box::new(storage::garage::GrgCreds {
+                region: grgconf.aws_region.clone(),
+                k2v_endpoint: grgconf.k2v_endpoint.clone(),
+                s3_endpoint: grgconf.s3_endpoint.clone(),
+                aws_access_key_id: grgconf.aws_access_key_id.clone(),
+                aws_secret_access_key: grgconf.aws_secret_access_key.clone(),
+                bucket: grgconf.bucket.clone(),
+            }),
         };
 
         let keys = match (&user.master_key, &user.secret_key) {
@@ -87,25 +94,16 @@ impl LoginProvider for StaticLoginProvider {
             Some(u) => u,
         };
 
-        /*
-        let bucket = user
-            .bucket
-            .clone()
-            .or_else(|| self.default_bucket.clone())
-            .ok_or(anyhow!(
-                "No bucket configured and no default bucket specieid"
-            ))?;
-
-        let storage = StorageCredentials {
-            k2v_region: self.k2v_region.clone(),
-            s3_region: self.s3_region.clone(),
-            aws_access_key_id: user.aws_access_key_id.clone(),
-            aws_secret_access_key: user.aws_secret_access_key.clone(),
-            bucket,
-        };*/
-        let storage: storage::Builders = match user.storage {
+        let storage: storage::Builders = match &user.storage {
             StaticStorage::InMemory => Box::new(storage::in_memory::FullMem {}),
-            StaticStorage::Garage(c) => Box::new(storage::garage::GrgCreds {}),
+            StaticStorage::Garage(grgconf) => Box::new(storage::garage::GrgCreds {
+                region: grgconf.aws_region.clone(),
+                k2v_endpoint: grgconf.k2v_endpoint.clone(),
+                s3_endpoint: grgconf.s3_endpoint.clone(),
+                aws_access_key_id: grgconf.aws_access_key_id.clone(),
+                aws_secret_access_key: grgconf.aws_secret_access_key.clone(),
+                bucket: grgconf.bucket.clone(),
+            }),
         };
 
         let k2v_client = storage.row_store()?;

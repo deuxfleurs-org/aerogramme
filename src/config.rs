@@ -31,7 +31,7 @@ pub struct StaticGarageConfig {
 
     pub aws_access_key_id: String,
     pub aws_secret_access_key: String,
-    pub bucket: Option<String>,
+    pub bucket: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
