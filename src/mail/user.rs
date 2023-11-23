@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
 use crate::cryptoblob::{open_deserialize, seal_serialize};
-use crate::login::{Credentials, StorageCredentials};
+use crate::login::Credentials;
 use crate::mail::incoming::incoming_mail_watch_process;
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::ImapUidvalidity;
@@ -309,7 +309,7 @@ impl User {
             Some(x) => self.k2v.from_orphan(x).expect("Source & target must be same storage"),
             None => self.k2v.row(MAILBOX_LIST_PK, MAILBOX_LIST_SK),
         };
-        rref.set_value(list_blob).push().await?;
+        rref.set_value(&list_blob).push().await?;
         Ok(())
     }
 }
