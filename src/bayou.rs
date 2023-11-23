@@ -265,7 +265,7 @@ impl<S: BayouState> Bayou<S> {
         );
         self.k2v
             .row(&self.path, &ts.to_string())
-            .set_value(seal_serialize(&op, &self.key)?)
+            .set_value(&seal_serialize(&op, &self.key)?)
             .push()
             .await?;
 
@@ -500,7 +500,7 @@ impl K2vWatch {
                 }
                 _ = this.notify.notified() => {
                     let rand = u128::to_be_bytes(thread_rng().gen()).to_vec();
-                    if let Err(e) = row.set_value(rand).push().await
+                    if let Err(e) = row.set_value(&rand).push().await
                     {
                         error!("Error in bayou k2v watch updater loop: {}", e);
                         tokio::time::sleep(Duration::from_secs(30)).await;

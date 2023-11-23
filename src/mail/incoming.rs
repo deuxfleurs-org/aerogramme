@@ -361,7 +361,7 @@ async fn k2v_lock_loop_internal(
                 Some(orphan) => k2v.from_orphan(orphan).expect("Source & target must be storage compatible"),
                 None => k2v.row(pk, sk),
             };
-            if let Err(e) = row.set_value(lock).push().await {
+            if let Err(e) = row.set_value(&lock).push().await {
                 error!("Could not take lock: {}", e);
                 tokio::time::sleep(Duration::from_secs(30)).await;
             }
@@ -432,7 +432,7 @@ impl EncryptedMessage {
         send.push().await?;
 
         // Update watch key to signal new mail
-        watch_ct.set_value(gen_ident().0.to_vec()).push().await?;
+        watch_ct.set_value(gen_ident().0.as_ref()).push().await?;
 
         Ok(())
     }

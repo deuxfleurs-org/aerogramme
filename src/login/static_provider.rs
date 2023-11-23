@@ -104,11 +104,11 @@ impl LoginProvider for StaticLoginProvider {
             bucket,
         };*/
         let storage: storage::Builders = match user.storage {
-            StaticStorage::InMemory => X,
-            StaticStorage::Garage => Y,
+            StaticStorage::InMemory => Box::new(storage::in_memory::FullMem {}),
+            StaticStorage::Garage(c) => Box::new(storage::garage::GrgCreds {}),
         };
 
-        let k2v_client = storage.k2v_client()?;
+        let k2v_client = storage.row_store()?;
         let (_, public_key) = CryptoKeys::load_salt_and_public(&k2v_client).await?;
 
         Ok(PublicCredentials {

@@ -282,7 +282,7 @@ impl MailboxInternal {
                     rfc822_size: mail.raw.len(),
                 };
                 let meta_blob = seal_serialize(&meta, &self.encryption_key)?;
-                self.k2v.row(&self.mail_path, &ident.to_string()).set_value(meta_blob).push().await?;
+                self.k2v.row(&self.mail_path, &ident.to_string()).set_value(&meta_blob).push().await?;
                 Ok::<_, anyhow::Error>(())
             },
             self.uid_index.opportunistic_sync()
@@ -326,7 +326,7 @@ impl MailboxInternal {
                     rfc822_size: mail.raw.len(),
                 };
                 let meta_blob = seal_serialize(&meta, &self.encryption_key)?;
-                self.k2v.row(&self.mail_path, &ident.to_string()).set_value(meta_blob).push().await?;
+                self.k2v.row(&self.mail_path, &ident.to_string()).set_value(&meta_blob).push().await?;
                 Ok::<_, anyhow::Error>(())
             },
             self.uid_index.opportunistic_sync()
@@ -410,7 +410,7 @@ impl MailboxInternal {
                 // Copy mail meta in K2V
                 let meta = &from.fetch_meta(&[source_id]).await?[0];
                 let meta_blob = seal_serialize(meta, &self.encryption_key)?;
-                self.k2v.row(&self.mail_path, &new_id.to_string()).set_value(meta_blob).push().await?;
+                self.k2v.row(&self.mail_path, &new_id.to_string()).set_value(&meta_blob).push().await?;
                 Ok::<_, anyhow::Error>(())
             },
             self.uid_index.opportunistic_sync(),
