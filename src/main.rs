@@ -33,7 +33,8 @@ enum Command {
     Server {
         #[clap(short, long, env = "CONFIG_FILE", default_value = "aerogramme.toml")]
         config_file: PathBuf,
-    }
+    },
+    Test,
 }
 
 #[derive(Parser, Debug)]
@@ -69,6 +70,33 @@ async fn main() -> Result<()> {
 
             let server = Server::new(config).await?;
             server.run().await?;
+        }
+        Command::Test => {
+            use std::collections::HashMap;
+            use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+            println!("--- toml ---\n{}\n--- end  ---\n", toml::to_string(&Config {
+                lmtp: None,
+                imap: Some(ImapConfig { bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 8080) }),
+                login_ldap: None,
+                login_static: Some(HashMap::from([
+                    ("alice".into(), LoginStaticUser {
+                        password: "hash".into(),
+                        user_secret: "hello".into(),
+                        alternate_user_secrets: vec![],
+                        email_addresses: vec![],
+                        master_key: None,
+                        secret_key: None,
+                        storage: StaticStorage::Garage(StaticGarageConfig {
+                            s3_endpoint: "http://".into(),
+                            k2v_endpoint: "http://".into(),
+                            aws_region: "garage".into(),
+                            aws_access_key_id: "GK...".into(),
+                            aws_secret_access_key: "xxx".into(),
+                            bucket: "aerogramme".into(),
+                        }),
+                    })
+                ])),
+            }).unwrap()); 
         }
     }
 

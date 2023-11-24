@@ -18,6 +18,7 @@ pub struct Config {
 pub type LoginStaticConfig = HashMap<String, LoginStaticUser>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "storage_driver")]
 pub enum StaticStorage {
     Garage(StaticGarageConfig),
     InMemory,
@@ -47,10 +48,12 @@ pub struct LoginStaticUser {
     pub master_key: Option<String>,
     pub secret_key: Option<String>,
 
+    #[serde(flatten)]
     pub storage: StaticStorage,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "storage_driver")]
 pub enum LdapStorage {
     Garage(LdapGarageConfig),
     InMemory,
@@ -86,6 +89,7 @@ pub struct LoginLdapConfig {
     pub alternate_user_secrets_attr: Option<String>,
 
     // Storage related thing
+    #[serde(flatten)]
     pub storage: LdapStorage,
 }
 
