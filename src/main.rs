@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
         Command::Test => {
             use std::collections::HashMap;
             use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-            println!("--- toml ---\n{}\n--- end  ---\n", toml::to_string(&Config {
+            println!("--- message pack ---\n{:?}\n--- end  ---\n", rmp_serde::to_vec(&Config {
                 lmtp: None,
                 imap: Some(ImapConfig { bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 8080) }),
                 login_ldap: None,

@@ -7,49 +7,43 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Config {
-    pub login_static: Option<LoginStaticConfig>,
-    pub login_ldap: Option<LoginLdapConfig>,
+pub struct CompanionConfig {
+    pub pid: Option<String>,
+    pub imap: ImapConfig,
 
-    pub lmtp: Option<LmtpConfig>,
-    pub imap: Option<ImapConfig>,
-}
-
-pub type LoginStaticConfig = HashMap<String, LoginStaticUser>;
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(tag = "storage_driver")]
-pub enum StaticStorage {
-    Garage(StaticGarageConfig),
-    InMemory,
+    #[serde(flatten)]
+    pub users: LoginStaticUser,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct StaticGarageConfig {
-    pub s3_endpoint: String,
-    pub k2v_endpoint: String,
-    pub aws_region: String,
+pub struct ProviderConfig {
+    pub pid: Option<String>,
+    pub imap: ImapConfig,
+    pub lmtp: LmtpConfig,
+    pub users: UserManagement,
+}
 
-    pub aws_access_key_id: String,
-    pub aws_secret_access_key: String,
-    pub bucket: String,
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "user_driver")]
+pub enum UserManagement {
+    Static(LoginStaticUser),
+    Ldap(LoginLdapConfig),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LmtpConfig {
+    pub bind_addr: SocketAddr,
+    pub hostname: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ImapConfig {
+    pub bind_addr: SocketAddr,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LoginStaticUser {
-    #[serde(default)]
-    pub email_addresses: Vec<String>,
-    pub password: String,
-
-    pub user_secret: String,
-    #[serde(default)]
-    pub alternate_user_secrets: Vec<String>,
-
-    pub master_key: Option<String>,
-    pub secret_key: Option<String>,
-
-    #[serde(flatten)]
-    pub storage: StaticStorage,
+    pub user_list: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -93,17 +87,40 @@ pub struct LoginLdapConfig {
     pub storage: LdapStorage,
 }
 
+// ----
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct LmtpConfig {
-    pub bind_addr: SocketAddr,
-    pub hostname: String,
+#[serde(tag = "storage_driver")]
+pub enum StaticStorage {
+    Garage(StaticGarageConfig),
+    InMemory,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ImapConfig {
-    pub bind_addr: SocketAddr,
+pub struct StaticGarageConfig {
+    pub s3_endpoint: String,
+    pub k2v_endpoint: String,
+    pub aws_region: String,
+
+    pub aws_access_key_id: String,
+    pub aws_secret_access_key: String,
+    pub bucket: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct UserEntry {
+    #[serde(default)]
+    pub email_addresses: Vec<String>,
+    pub password: String,
+
+    pub master_key: Option<String>,
+    pub secret_key: Option<String>,
+
+    #[serde(flatten)]
+    pub storage: StaticStorage,
+}
+
+// ---
 pub fn read_config(config_file: PathBuf) -> Result<Config> {
     let mut file = std::fs::OpenOptions::new()
         .read(true)
