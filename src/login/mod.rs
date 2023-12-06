@@ -45,6 +45,7 @@ pub struct PublicCredentials {
     pub public_key: PublicKey,
 }
 
+/*
 /// The struct UserSecrets represents intermediary secrets that are mixed in with the user's
 /// password when decrypting the cryptographic keys that are stored in their bucket.
 /// These secrets should be stored somewhere else (e.g. in the LDAP server or in the
@@ -57,6 +58,7 @@ pub struct UserSecrets {
     /// with old passwords
     pub alternate_user_secrets: Vec<String>,
 }
+*/
 
 /// The struct CryptoKeys contains the cryptographic keys used to encrypt and decrypt
 /// data in a user's mailbox.
@@ -85,7 +87,6 @@ impl Credentials {
 impl CryptoKeys {
     pub async fn init(
         storage: &Builders,
-        user_secrets: &UserSecrets,
         password: &str,
     ) -> Result<Self> {
         // Check that salt and public don't exist already
@@ -113,7 +114,7 @@ impl CryptoKeys {
         thread_rng().fill(&mut kdf_salt);
 
         // Calculate key for password secret box
-        let password_key = user_secrets.derive_password_key(&kdf_salt, password)?;
+        let password_key = derive_password_key(&kdf_salt, password)?;
 
         // Seal a secret box that contains our crypto keys
         let password_sealed = seal(&keys.serialize(), &password_key)?;
@@ -169,7 +170,6 @@ impl CryptoKeys {
 
     pub async fn open(
         storage: &Builders,
-        user_secrets: &UserSecrets,
         password: &str,
     ) -> Result<Self> {
         let k2v = storage.row_store()?;
@@ -200,8 +200,7 @@ impl CryptoKeys {
 
         // Try to open blob
         let kdf_salt = &password_blob[..32];
-        let password_openned =
-            user_secrets.try_open_encrypted_keys(kdf_salt, password, &password_blob[32..])?;
+        let password_openned = try_open_encrypted_keys(kdf_salt, password, &password_blob[32..])?;
 
         let keys = Self::deserialize(&password_openned)?;
         if keys.public != expected_public {
@@ -238,7 +237,6 @@ impl CryptoKeys {
     pub async fn add_password(
         &self,
         storage: &Builders,
-        user_secrets: &UserSecrets,
         password: &str,
     ) -> Result<()> {
         let k2v = storage.row_store()?;
@@ -252,7 +250,7 @@ impl CryptoKeys {
         thread_rng().fill(&mut kdf_salt);
 
         // Calculate key for password secret box
-        let password_key = user_secrets.derive_password_key(&kdf_salt, password)?;
+        let password_key = derive_password_key(&kdf_salt, password)?;
 
         // Seal a secret box that contains our crypto keys
         let password_sealed = seal(&self.serialize(), &password_key)?;
@@ -418,32 +416,13 @@ impl CryptoKeys {
     }
 }
 
-impl UserSecrets {
-    fn derive_password_key_with(user_secret: &str, kdf_salt: &[u8], password: &str) -> Result<Key> {
-        let tmp = format!("{}\n\n{}", user_secret, password);
-        Ok(Key::from_slice(&argon2_kdf(kdf_salt, tmp.as_bytes(), 32)?).unwrap())
-    }
+fn derive_password_key(kdf_salt: &[u8], password: &str) -> Result<Key> {
+    Ok(Key::from_slice(&argon2_kdf(kdf_salt, password.as_bytes(), 32)?).unwrap())
+}
 
-    fn derive_password_key(&self, kdf_salt: &[u8], password: &str) -> Result<Key> {
-        Self::derive_password_key_with(&self.user_secret, kdf_salt, password)
-    }
-
-    fn try_open_encrypted_keys(
-        &self,
-        kdf_salt: &[u8],
-        password: &str,
-        encrypted_keys: &[u8],
-    ) -> Result<Vec<u8>> {
-        let secrets_to_try =
-            std::iter::once(&self.user_secret).chain(self.alternate_user_secrets.iter());
-        for user_secret in secrets_to_try {
-            let password_key = Self::derive_password_key_with(user_secret, kdf_salt, password)?;
-            if let Ok(res) = open(encrypted_keys, &password_key) {
-                return Ok(res);
-            }
-        }
-        bail!("Unable to decrypt password blob.");
-    }
+fn try_open_encrypted_keys(kdf_salt: &[u8], password: &str, encrypted_keys: &[u8]) -> Result<Vec<u8>> {
+    let password_key = derive_password_key(kdf_salt, password)?;
+    open(encrypted_keys, &password_key)
 }
 
 // ---- UTIL ----

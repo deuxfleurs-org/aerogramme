@@ -12,7 +12,7 @@ pub struct CompanionConfig {
     pub imap: ImapConfig,
 
     #[serde(flatten)]
-    pub users: LoginStaticUser,
+    pub users: LoginStaticConfig,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -26,7 +26,7 @@ pub struct ProviderConfig {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "user_driver")]
 pub enum UserManagement {
-    Static(LoginStaticUser),
+    Static(LoginStaticConfig),
     Ldap(LoginLdapConfig),
 }
 
@@ -42,8 +42,8 @@ pub struct ImapConfig {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct LoginStaticUser {
-    pub user_list: String,
+pub struct LoginStaticConfig {
+    pub user_list: PathBuf,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -107,21 +107,40 @@ pub struct StaticGarageConfig {
     pub bucket: String,
 }
 
+pub type UserList = HashMap<String, UserEntry>;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "crypto_root")]
+pub enum CryptographyRoot {
+    PasswordProtected,
+    Keyring,
+    InPlace {
+        master_key: String,
+        secret_key: String,
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UserEntry {
     #[serde(default)]
     pub email_addresses: Vec<String>,
     pub password: String,
 
-    pub master_key: Option<String>,
-    pub secret_key: Option<String>,
+    pub crypto_root: CryptographyRoot,
 
     #[serde(flatten)]
     pub storage: StaticStorage,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "role")]
+pub enum AnyConfig {
+    Companion(CompanionConfig),
+    Provider(ProviderConfig),
+}
+
 // ---
-pub fn read_config(config_file: PathBuf) -> Result<Config> {
+pub fn read_config<'a, T: Deserialize<'a>>(config_file: PathBuf) -> Result<T> {
     let mut file = std::fs::OpenOptions::new()
         .read(true)
         .open(config_file.as_path())?;

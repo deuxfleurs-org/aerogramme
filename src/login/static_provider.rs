@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::path::PathBuf;
 
 use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
@@ -10,13 +11,28 @@ use crate::login::*;
 use crate::storage;
 
 pub struct StaticLoginProvider {
-    users: HashMap<String, Arc<LoginStaticUser>>,
-    users_by_email: HashMap<String, Arc<LoginStaticUser>>,
+    user_list: PathBuf,
+    users: HashMap<String, Arc<UserEntry>>,
+    users_by_email: HashMap<String, Arc<UserEntry>>,
 }
 
 impl StaticLoginProvider {
     pub fn new(config: LoginStaticConfig) -> Result<Self> {
-        let users = config
+        let mut lp = Self {
+            user_list: config.user_list,
+            users: HashMap::new(),
+            users_by_email: HashMap::new(),
+        };
+
+        lp.update_user_list();
+
+        Ok(lp)
+    }
+
+    pub fn update_user_list(&mut self) -> Result<()> {
+        let ulist: UserList = read_config(self.user_list)?;
+
+        let users = ulist
             .into_iter()
             .map(|(k, v)| (k, Arc::new(v)))
             .collect::<HashMap<_, _>>();
@@ -29,11 +45,7 @@ impl StaticLoginProvider {
                 users_by_email.insert(m.clone(), u.clone());
             }
         }
-
-        Ok(Self {
-            users,
-            users_by_email,
-        })
+        Ok(())
     }
 }
 
@@ -64,24 +76,18 @@ impl LoginProvider for StaticLoginProvider {
             }),
         };
 
-        let keys = match (&user.master_key, &user.secret_key) {
-            (Some(m), Some(s)) => {
+        let keys = match user.crypto_root { /*(&user.master_key, &user.secret_key) {*/
+            CryptographyRoot::InPlace { master_key: m, secret_key: s } => {
                 let master_key =
                     Key::from_slice(&base64::decode(m)?).ok_or(anyhow!("Invalid master key"))?;
                 let secret_key = SecretKey::from_slice(&base64::decode(s)?)
                     .ok_or(anyhow!("Invalid secret key"))?;
                 CryptoKeys::open_without_password(&storage, &master_key, &secret_key).await?
             }
-            (None, None) => {
-                let user_secrets = UserSecrets {
-                    user_secret: user.user_secret.clone(),
-                    alternate_user_secrets: user.alternate_user_secrets.clone(),
-                };
-                CryptoKeys::open(&storage, &user_secrets, password).await?
+            CryptographyRoot::PasswordProtected => {
+                CryptoKeys::open(&storage, password).await?
             }
-            _ => bail!(
-                "Either both master and secret key or none of them must be specified for user"
-            ),
+            CryptographyRoot::Keyring => unimplemented!(),
         };
 
         tracing::debug!(user=%username, "logged");

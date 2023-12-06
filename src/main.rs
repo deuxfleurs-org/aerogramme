@@ -25,26 +25,59 @@ use server::Server;
 struct Args {
     #[clap(subcommand)]
     command: Command,
+
+    #[clap(short, long, env = "CONFIG_FILE", default_value = "aerogramme.toml")]
+    config_file: PathBuf,
 }
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Runs the IMAP+LMTP server daemon
-    Server {
-        #[clap(short, long, env = "CONFIG_FILE", default_value = "aerogramme.toml")]
-        config_file: PathBuf,
-    },
-    Test,
+    #[clap(subcommand)]
+    Companion(CompanionCommand),
+
+    #[clap(subcommand)]
+    Provider(ProviderCommand),
+    //Test,
 }
 
-#[derive(Parser, Debug)]
-struct UserSecretsArgs {
-    /// User secret
-    #[clap(short = 'U', long, env = "USER_SECRET")]
-    user_secret: String,
-    /// Alternate user secrets (comma-separated list of strings)
-    #[clap(long, env = "ALTERNATE_USER_SECRETS", default_value = "")]
-    alternate_user_secrets: String,
+#[derive(Subcommand, Debug)]
+enum CompanionCommand {
+    /// Runs the IMAP proxy
+    Daemon,
+    Reload {
+        #[clap(short, long, env = "AEROGRAMME_PID")]
+        pid: Option<u64>,
+    },
+    Wizard,
+    #[clap(subcommand)]
+    Account(AccountManagement),
+}
+
+#[derive(Subcommand, Debug)]
+enum ProviderCommand {
+    /// Runs the IMAP+LMTP server daemon
+    Daemon,
+    Reload,
+    #[clap(subcommand)]
+    Account(AccountManagement),
+}
+
+#[derive(Subcommand, Debug)]
+enum AccountManagement {
+    Add {
+        #[clap(short, long)]
+        login: String,
+        #[clap(short, long)]
+        setup: PathBuf,
+    },
+    Delete {
+        #[clap(short, long)]
+        login: String,
+    },
+    ChangePassword {
+        #[clap(short, long)]
+        login: String
+    },
 }
 
 #[tokio::main]
@@ -63,43 +96,62 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let args = Args::parse();
+    let any_config = read_config(args.config_file)?;
 
-    match args.command {
-        Command::Server { config_file } => {
-            let config = read_config(config_file)?;
-
-            let server = Server::new(config).await?;
-            server.run().await?;
-        }
-        Command::Test => {
-            use std::collections::HashMap;
-            use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-            println!("--- message pack ---\n{:?}\n--- end  ---\n", rmp_serde::to_vec(&Config {
-                lmtp: None,
-                imap: Some(ImapConfig { bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 8080) }),
-                login_ldap: None,
-                login_static: Some(HashMap::from([
-                    ("alice".into(), LoginStaticUser {
-                        password: "hash".into(),
-                        user_secret: "hello".into(),
-                        alternate_user_secrets: vec![],
-                        email_addresses: vec![],
-                        master_key: None,
-                        secret_key: None,
-                        storage: StaticStorage::Garage(StaticGarageConfig {
-                            s3_endpoint: "http://".into(),
-                            k2v_endpoint: "http://".into(),
-                            aws_region: "garage".into(),
-                            aws_access_key_id: "GK...".into(),
-                            aws_secret_access_key: "xxx".into(),
-                            bucket: "aerogramme".into(),
-                        }),
-                    })
-                ])),
-            }).unwrap()); 
-        }
+    match (args.command, any_config) {
+        (Command::Companion(subcommand), AnyConfig::Companion(config)) => match subcommand {
+            CompanionCommand::Daemon => {
+                let server = Server::from_companion_config(config).await?;
+                server.run().await?;
+            },
+            CompanionCommand::Reload { pid } => {
+                unimplemented!();
+            },
+            CompanionCommand::Wizard => {
+                unimplemented!();
+            },
+            CompanionCommand::Account(cmd) => {
+                let user_file = config.users.user_list;
+                account_management(cmd, user_file);
+            }
+        },
+        (Command::Provider(subcommand), AnyConfig::Provider(config)) => match subcommand {
+            ProviderCommand::Daemon => {
+                let server = Server::from_provider_config(config).await?;
+                server.run().await?;
+            },
+            ProviderCommand::Reload => {
+                unimplemented!();
+            },
+            ProviderCommand::Account(cmd) => {
+                let user_file = match config.users {
+                    UserManagement::Static(conf) => conf.user_list,
+                    UserManagement::Ldap(_) => panic!("LDAP account management is not supported from Aerogramme.")
+                };
+                account_management(cmd, user_file);
+            }
+        },
+        (Command::Provider(_), AnyConfig::Companion(_)) => {
+            panic!("Your want to run a 'Provider' command but your configuration file has role 'Companion'.");
+        },
+        (Command::Companion(_), AnyConfig::Provider(_)) => {
+            panic!("Your want to run a 'Companion' command but your configuration file has role 'Provider'.");
+        },
     }
 
     Ok(())
 }
 
+fn account_management(cmd: AccountManagement, users: PathBuf) {
+    match cmd {
+        Add => {
+            unimplemented!();
+        },
+        Delete => {
+            unimplemented!();
+        },
+        ChangePassword => {
+            unimplemented!();
+        },
+    }
+}

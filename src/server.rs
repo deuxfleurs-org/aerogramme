@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use futures::try_join;
 use log::*;
 use tokio::sync::watch;
@@ -17,19 +17,24 @@ pub struct Server {
 }
 
 impl Server {
-    pub async fn new(config: Config) -> Result<Self> {
-        let (login, lmtp_conf, imap_conf) = build(config)?;
+    pub async fn from_companion_config(config: CompanionConfig) -> Result<Self> {
+        let login = Arc::new(StaticLoginProvider::new(config.users)?);
 
-        let lmtp_server = lmtp_conf.map(|cfg| LmtpServer::new(cfg, login.clone()));
-        let imap_server = match imap_conf {
-            Some(cfg) => Some(imap::new(cfg, login.clone()).await?),
-            None => None,
+        let lmtp_server = None;
+        let imap_server = Some(imap::new(config.imap, login).await?);
+        Ok(Self { lmtp_server, imap_server })
+    }
+
+    pub async fn from_provider_config(config: ProviderConfig) -> Result<Self> {
+        let login: ArcLoginProvider = match config.users {
+            UserManagement::Static(x) => Arc::new(StaticLoginProvider::new(x)?),
+            UserManagement::Ldap(x) => Arc::new(LdapLoginProvider::new(x)?),
         };
 
-        Ok(Self {
-            lmtp_server,
-            imap_server,
-        })
+        let lmtp_server = Some(LmtpServer::new(config.lmtp, login.clone()));
+        let imap_server = Some(imap::new(config.imap, login).await?);
+
+        Ok(Self { lmtp_server, imap_server })
     }
 
     pub async fn run(self) -> Result<()> {
@@ -58,19 +63,6 @@ impl Server {
 
         Ok(())
     }
-}
-
-fn build(config: Config) -> Result<(ArcLoginProvider, Option<LmtpConfig>, Option<ImapConfig>)> {
-    let lp: ArcLoginProvider = match (config.login_static, config.login_ldap) {
-        (Some(st), None) => Arc::new(StaticLoginProvider::new(st)?),
-        (None, Some(ld)) => Arc::new(LdapLoginProvider::new(ld)?),
-        (Some(_), Some(_)) => {
-            bail!("A single login provider must be set up in config file")
-        }
-        (None, None) => bail!("No login provider is set up in config file"),
-    };
-
-    Ok((lp, config.lmtp, config.imap))
 }
 
 pub fn watch_ctrl_c() -> (watch::Receiver<bool>, Arc<watch::Sender<bool>>) {
