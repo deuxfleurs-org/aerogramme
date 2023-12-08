@@ -19,8 +19,6 @@ pub struct LdapLoginProvider {
     mail_attr: String,
 
     storage_specific: StorageSpecific,
-    user_secret_attr: String,
-    alternate_user_secrets_attr: Option<String>,
 }
 
 enum BucketSource {
@@ -50,12 +48,7 @@ impl LdapLoginProvider {
         let mut attrs_to_retrieve = vec![
             config.username_attr.clone(),
             config.mail_attr.clone(),
-            config.user_secret_attr.clone(),
         ];
-
-        if let Some(a) = &config.alternate_user_secrets_attr {
-            attrs_to_retrieve.push(a.clone());
-        }
 
         // storage specific
         let specific = match config.storage {
@@ -86,8 +79,6 @@ impl LdapLoginProvider {
             username_attr: config.username_attr,
             mail_attr: config.mail_attr,
             storage_specific: specific,
-            user_secret_attr: config.user_secret_attr,
-            alternate_user_secrets_attr: config.alternate_user_secrets_attr,
         })
     }
 
@@ -165,20 +156,9 @@ impl LoginProvider for LdapLoginProvider {
         debug!("Ldap login with user name {} successfull", username);
 
         let storage = self.storage_creds_from_ldap_user(&user)?;
-
-        let user_secret = get_attr(&user, &self.user_secret_attr)?;
-        let alternate_user_secrets = match &self.alternate_user_secrets_attr {
-            None => vec![],
-            Some(a) => user.attrs.get(a).cloned().unwrap_or_default(),
-        };
-        let user_secrets = UserSecrets {
-            user_secret,
-            alternate_user_secrets,
-        };
-
         drop(ldap);
 
-        let keys = CryptoKeys::open(&storage, &user_secrets, password).await?;
+        let keys = CryptoKeys::open(&storage, password).await?;
 
         Ok(Credentials { storage, keys })
     }

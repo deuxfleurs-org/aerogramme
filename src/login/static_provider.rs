@@ -30,7 +30,7 @@ impl StaticLoginProvider {
     }
 
     pub fn update_user_list(&mut self) -> Result<()> {
-        let ulist: UserList = read_config(self.user_list)?;
+        let ulist: UserList = read_config(self.user_list.clone())?;
 
         let users = ulist
             .into_iter()
@@ -76,7 +76,7 @@ impl LoginProvider for StaticLoginProvider {
             }),
         };
 
-        let keys = match user.crypto_root { /*(&user.master_key, &user.secret_key) {*/
+        let keys = match &user.crypto_root { /*(&user.master_key, &user.secret_key) {*/
             CryptographyRoot::InPlace { master_key: m, secret_key: s } => {
                 let master_key =
                     Key::from_slice(&base64::decode(m)?).ok_or(anyhow!("Invalid master key"))?;

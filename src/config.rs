@@ -79,8 +79,6 @@ pub struct LoginLdapConfig {
     pub username_attr: String,
     #[serde(default = "default_mail_attr")]
     pub mail_attr: String,
-    pub user_secret_attr: String,
-    pub alternate_user_secrets_attr: Option<String>,
 
     // Storage related thing
     #[serde(flatten)]
@@ -140,7 +138,7 @@ pub enum AnyConfig {
 }
 
 // ---
-pub fn read_config<'a, T: Deserialize<'a>>(config_file: PathBuf) -> Result<T> {
+pub fn read_config<T: serde::de::DeserializeOwned>(config_file: PathBuf) -> Result<T> {
     let mut file = std::fs::OpenOptions::new()
         .read(true)
         .open(config_file.as_path())?;
