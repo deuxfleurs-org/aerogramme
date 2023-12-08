@@ -19,12 +19,17 @@ pub struct StaticLoginProvider {
 impl StaticLoginProvider {
     pub fn new(config: LoginStaticConfig) -> Result<Self> {
         let mut lp = Self {
-            user_list: config.user_list,
+            user_list: config.user_list.clone(),
             users: HashMap::new(),
             users_by_email: HashMap::new(),
         };
 
-        lp.update_user_list();
+        lp
+            .update_user_list()
+            .context(
+                format!(
+                    "failed to read {:?}, make sure it exists and it's correctly formatted", 
+                    config.user_list))?;
 
         Ok(lp)
     }
@@ -32,17 +37,18 @@ impl StaticLoginProvider {
     pub fn update_user_list(&mut self) -> Result<()> {
         let ulist: UserList = read_config(self.user_list.clone())?;
 
-        let users = ulist
+        self.users = ulist
             .into_iter()
             .map(|(k, v)| (k, Arc::new(v)))
             .collect::<HashMap<_, _>>();
-        let mut users_by_email = HashMap::new();
-        for (_, u) in users.iter() {
+
+        self.users_by_email.clear();
+        for (_, u) in self.users.iter() {
             for m in u.email_addresses.iter() {
-                if users_by_email.contains_key(m) {
+                if self.users_by_email.contains_key(m) {
                     bail!("Several users have same email address: {}", m);
                 }
-                users_by_email.insert(m.clone(), u.clone());
+                self.users_by_email.insert(m.clone(), u.clone());
             }
         }
         Ok(())

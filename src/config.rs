@@ -124,6 +124,7 @@ pub struct UserEntry {
     pub email_addresses: Vec<String>,
     pub password: String,
 
+    #[serde(flatten)]
     pub crypto_root: CryptographyRoot,
 
     #[serde(flatten)]
