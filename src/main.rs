@@ -14,11 +14,12 @@ mod storage;
 
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{bail, Result, Context};
 use clap::{Parser, Subcommand};
 
 use config::*;
 use server::Server;
+use login::{static_provider::*, *};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -57,23 +58,28 @@ enum CompanionCommand {
 enum ProviderCommand {
     /// Runs the IMAP+LMTP server daemon
     Daemon,
+    /// Reload the daemon
     Reload,
+    /// Manage static accounts
     #[clap(subcommand)]
     Account(AccountManagement),
 }
 
 #[derive(Subcommand, Debug)]
 enum AccountManagement {
+    /// Add an account
     Add {
         #[clap(short, long)]
         login: String,
         #[clap(short, long)]
         setup: PathBuf,
     },
+    /// Delete an account
     Delete {
         #[clap(short, long)]
         login: String,
     },
+    /// Change password for a given account
     ChangePassword {
         #[clap(short, long)]
         login: String
@@ -98,7 +104,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
     let any_config = read_config(args.config_file)?;
 
-    match (args.command, any_config) {
+    match (&args.command, any_config) {
         (Command::Companion(subcommand), AnyConfig::Companion(config)) => match subcommand {
             CompanionCommand::Daemon => {
                 let server = Server::from_companion_config(config).await?;
@@ -112,7 +118,7 @@ async fn main() -> Result<()> {
             },
             CompanionCommand::Account(cmd) => {
                 let user_file = config.users.user_list;
-                account_management(cmd, user_file);
+                account_management(&args.command, cmd, user_file)?;
             }
         },
         (Command::Provider(subcommand), AnyConfig::Provider(config)) => match subcommand {
@@ -128,7 +134,7 @@ async fn main() -> Result<()> {
                     UserManagement::Static(conf) => conf.user_list,
                     UserManagement::Ldap(_) => panic!("LDAP account management is not supported from Aerogramme.")
                 };
-                account_management(cmd, user_file);
+                account_management(&args.command, cmd, user_file)?;
             }
         },
         (Command::Provider(_), AnyConfig::Companion(_)) => {
@@ -142,16 +148,55 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn account_management(cmd: AccountManagement, users: PathBuf) {
+fn account_management(root: &Command, cmd: &AccountManagement, users: PathBuf) -> Result<()> {
+    let mut ulist: UserList = read_config(users.clone())?;
+
     match cmd {
-        Add => {
+        AccountManagement::Add { login, setup } => {
+            tracing::debug!(user=login, "will-create");
+            let stp: SetupEntry = read_config(setup.clone())?;
+            tracing::debug!(user=login, "loaded setup entry");
+            let crypto_root = match root {
+                Command::Provider(_) => CryptographyRoot::PasswordProtected,
+                Command::Companion(_) => {
+                    // @TODO use keyring by default instead of inplace in the future
+                    // @TODO generate keys
+                    CryptographyRoot::InPlace {
+                        master_key: "".to_string(),
+                        secret_key: "".to_string(),
+                    }
+                }
+            };
+
+            let password = match stp.clear_password {
+                Some(pwd) => pwd,
+                None => {
+                    let password = rpassword::prompt_password("Enter password: ")?;
+                    let password_confirm = rpassword::prompt_password("Confirm password: ")?;
+                    if password != password_confirm {
+                        bail!("Passwords don't match.");
+                    }
+                    password
+                }
+            };
+            let hash = hash_password(password.as_str()).context("unable to hash password")?;
+
+            ulist.insert(login.clone(), UserEntry {
+                email_addresses: stp.email_addresses,
+                password: hash,
+                crypto_root,
+                storage: stp.storage,
+            });
+
+            write_config(users.clone(), &ulist)?;
+        },
+        AccountManagement::Delete { login } => {
             unimplemented!();
         },
-        Delete => {
+        AccountManagement::ChangePassword { login } => {
             unimplemented!();
         },
-        ChangePassword => {
-            unimplemented!();
-        },
-    }
+    };
+
+    Ok(())
 }

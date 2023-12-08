@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
@@ -132,6 +132,18 @@ pub struct UserEntry {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SetupEntry {
+    #[serde(default)]
+    pub email_addresses: Vec<String>,
+
+    #[serde(default)]
+    pub clear_password: Option<String>,
+
+    #[serde(flatten)]
+    pub storage: StaticStorage,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "role")]
 pub enum AnyConfig {
     Companion(CompanionConfig),
@@ -148,6 +160,16 @@ pub fn read_config<T: serde::de::DeserializeOwned>(config_file: PathBuf) -> Resu
     file.read_to_string(&mut config)?;
 
     Ok(toml::from_str(&config)?)
+}
+
+pub fn write_config<T: Serialize>(config_file: PathBuf, config: &T) -> Result<()> {
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(config_file.as_path())?;
+
+    file.write_all(toml::to_string(config)?.as_bytes())?;
+
+    Ok(())
 }
 
 fn default_mail_attr() -> String {
