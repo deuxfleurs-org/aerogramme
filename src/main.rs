@@ -191,7 +191,9 @@ fn account_management(root: &Command, cmd: &AccountManagement, users: PathBuf) -
             write_config(users.clone(), &ulist)?;
         },
         AccountManagement::Delete { login } => {
-            unimplemented!();
+            tracing::debug!(user=login, "will-delete");
+            ulist.remove(&login);
+            write_config(users.clone(), &ulist)?;
         },
         AccountManagement::ChangePassword { login } => {
             unimplemented!();

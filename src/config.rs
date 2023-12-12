@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer, Deserializer};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CompanionConfig {
@@ -79,6 +79,7 @@ pub struct LoginLdapConfig {
     pub username_attr: String,
     #[serde(default = "default_mail_attr")]
     pub mail_attr: String,
+    pub crypto_root_attr: String,
 
     // Storage related thing
     #[serde(flatten)]
@@ -110,9 +111,11 @@ pub type UserList = HashMap<String, UserEntry>;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "crypto_root")]
 pub enum CryptographyRoot {
-    PasswordProtected,
+    PasswordProtected {
+        root_blob: String,
+    },
     Keyring,
-    InPlace {
+    ClearText {
         master_key: String,
         secret_key: String,
     }
@@ -175,3 +178,19 @@ pub fn write_config<T: Serialize>(config_file: PathBuf, config: &T) -> Result<()
 fn default_mail_attr() -> String {
     "mail".into()
 }
+
+fn as_base64<T, S>(val: &T, serializer: &mut S) -> Result<(), S::Error>
+    where T: AsRef<[u8]>,
+          S: Serializer<Ok = ()>
+{
+    serializer.serialize_str(&base64::encode(val.as_ref()))
+}
+
+fn from_base64<D>(deserializer: &mut D) -> Result<Vec<u8>, D::Error>
+    where D: Deserializer
+{
+    use serde::de::Error;
+    String::deserialize(deserializer)
+        .and_then(|string| base64::decode(&string).map_err(|err| Error::custom(err.to_string())))
+}
+

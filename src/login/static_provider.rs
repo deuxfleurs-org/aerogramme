@@ -83,15 +83,15 @@ impl LoginProvider for StaticLoginProvider {
         };
 
         let keys = match &user.crypto_root { /*(&user.master_key, &user.secret_key) {*/
-            CryptographyRoot::InPlace { master_key: m, secret_key: s } => {
+            CryptographyRoot::ClearText { master_key: m, secret_key: s } => {
                 let master_key =
                     Key::from_slice(&base64::decode(m)?).ok_or(anyhow!("Invalid master key"))?;
                 let secret_key = SecretKey::from_slice(&base64::decode(s)?)
                     .ok_or(anyhow!("Invalid secret key"))?;
                 CryptoKeys::open_without_password(&storage, &master_key, &secret_key).await?
             }
-            CryptographyRoot::PasswordProtected => {
-                CryptoKeys::open(&storage, password).await?
+            CryptographyRoot::PasswordProtected { root_blob } => {
+                CryptoKeys::open(password, root_blob).await?
             }
             CryptographyRoot::Keyring => unimplemented!(),
         };

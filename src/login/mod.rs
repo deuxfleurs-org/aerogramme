@@ -169,9 +169,20 @@ impl CryptoKeys {
     }
 
     pub async fn open(
-        storage: &Builders,
         password: &str,
+        root_blob: &str,
     ) -> Result<Self> {
+        let kdf_salt = &password_blob[..32];
+        let password_openned = try_open_encrypted_keys(kdf_salt, password, &password_blob[32..])?;
+
+        let keys = Self::deserialize(&password_openned)?;
+        if keys.public != expected_public {
+            bail!("Password public key doesn't match stored public key");
+        }
+
+        Ok(keys)
+       
+        /*
         let k2v = storage.row_store()?;
         let (ident_salt, expected_public) = Self::load_salt_and_public(&k2v).await?;
 
@@ -208,6 +219,7 @@ impl CryptoKeys {
         }
 
         Ok(keys)
+        */
     }
 
     pub async fn open_without_password(
