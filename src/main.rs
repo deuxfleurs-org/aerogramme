@@ -34,11 +34,51 @@ struct Args {
 #[derive(Subcommand, Debug)]
 enum Command {
     #[clap(subcommand)]
+    /// A daemon to be run by the end user, on a personal device
     Companion(CompanionCommand),
 
     #[clap(subcommand)]
+    /// A daemon to be run by the service provider, on a server
     Provider(ProviderCommand),
+
+    #[clap(subcommand)]
+    /// Specific tooling, should not be part of a normal workflow, for debug & experimenting only
+    Tools(ToolsCommand),
     //Test,
+}
+
+#[derive(Subcommand, Debug)]
+enum ToolsCommand {
+    /// Manage crypto roots
+    #[clap(subcommand)]
+    CryptoRoot(CryptoRootCommand),
+}
+
+#[derive(Subcommand, Debug)]
+enum CryptoRootCommand {
+    /// Generate a new crypto-root protected with a password
+    New {
+        #[clap(env = "AEROGRAMME_PASSWORD")]
+        maybe_password: Option<String>,
+    },
+    /// Generate a new clear text crypto-root, store it securely!
+    NewClearText,
+    /// Change the password of a crypto key
+    ChangePassword {
+        #[clap(env = "AEROGRAMME_OLD_PASSWORD")]
+        maybe_old_password: Option<String>,
+
+        #[clap(env = "AEROGRAMME_NEW_PASSWORD")]
+        maybe_new_password: Option<String>,
+
+        #[clap(short, long, env = "AEROGRAMME_CRYPTO_ROOT")]
+        crypto_root: String,
+    },
+    /// From a given crypto-key, derive one containing only the public key
+    DeriveIncoming {
+        #[clap(short, long, env = "AEROGRAMME_CRYPTO_ROOT")]
+        crypto_root: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -81,6 +121,12 @@ enum AccountManagement {
     },
     /// Change password for a given account
     ChangePassword {
+        #[clap(env = "AEROGRAMME_OLD_PASSWORD")]
+        maybe_old_password: Option<String>,
+
+        #[clap(env = "AEROGRAMME_NEW_PASSWORD")]
+        maybe_new_password: Option<String>,
+
         #[clap(short, long)]
         login: String
     },
@@ -110,7 +156,7 @@ async fn main() -> Result<()> {
                 let server = Server::from_companion_config(config).await?;
                 server.run().await?;
             },
-            CompanionCommand::Reload { pid } => {
+            CompanionCommand::Reload { pid: _pid } => {
                 unimplemented!();
             },
             CompanionCommand::Wizard => {
@@ -143,18 +189,72 @@ async fn main() -> Result<()> {
         (Command::Companion(_), AnyConfig::Provider(_)) => {
             panic!("Your want to run a 'Companion' command but your configuration file has role 'Provider'.");
         },
+        (Command::Tools(subcommand), _) => match subcommand {
+            ToolsCommand::CryptoRoot(crcommand) => {
+                match crcommand {
+                    CryptoRootCommand::New { maybe_password } => {
+                        let password = match maybe_password {
+                            Some(pwd) => pwd.clone(),
+                            None => {
+                                let password = rpassword::prompt_password("Enter password: ")?;
+                                let password_confirm = rpassword::prompt_password("Confirm password: ")?;
+                                if password != password_confirm {
+                                    bail!("Passwords don't match.");
+                                }
+                                password
+                            }
+                        };
+                        let crypto_keys = CryptoKeys::init();
+                        let cr =  CryptoRoot::create_pass(&password, &crypto_keys)?;
+                        println!("{}", cr.0);
+                    },
+                    CryptoRootCommand::NewClearText => {
+                        let crypto_keys = CryptoKeys::init();
+                        let cr = CryptoRoot::create_cleartext(&crypto_keys);
+                        println!("{}", cr.0);
+                    },
+                    CryptoRootCommand::ChangePassword { maybe_old_password, maybe_new_password, crypto_root } => {
+                        let old_password = match maybe_old_password {
+                            Some(pwd) => pwd.to_string(),
+                            None => rpassword::prompt_password("Enter old password: ")?,
+                        };
+
+                        let new_password = match maybe_new_password {
+                            Some(pwd) => pwd.to_string(),
+                            None => {
+                                let password = rpassword::prompt_password("Enter new password: ")?;
+                                let password_confirm = rpassword::prompt_password("Confirm new password: ")?;
+                                if password != password_confirm {
+                                    bail!("Passwords don't match.");
+                                }
+                                password
+                            }
+                        };
+
+                        let keys = CryptoRoot(crypto_root.to_string()).crypto_keys(&old_password)?;
+                        let cr = CryptoRoot::create_pass(&new_password, &keys)?;
+                        println!("{}", cr.0);
+                    },
+                    CryptoRootCommand::DeriveIncoming { crypto_root } => {
+                        let pubkey = CryptoRoot(crypto_root.to_string()).public_key()?;
+                        let cr = CryptoRoot::create_incoming(&pubkey);
+                        println!("{}", cr.0);
+                    },
+                }
+            },
+        }
     }
 
     Ok(())
 }
 
 fn account_management(root: &Command, cmd: &AccountManagement, users: PathBuf) -> Result<()> {
-    let mut ulist: UserList = read_config(users.clone())?;
+    let mut ulist: UserList = read_config(users.clone()).context(format!("'{:?}' must be a user database", users))?;
 
     match cmd {
         AccountManagement::Add { login, setup } => {
             tracing::debug!(user=login, "will-create");
-            let stp: SetupEntry = read_config(setup.clone())?;
+            let stp: SetupEntry = read_config(setup.clone()).context(format!("'{:?}' must be a setup file", setup))?;
             tracing::debug!(user=login, "loaded setup entry");
 
             let password = match stp.clear_password {
@@ -173,6 +273,7 @@ fn account_management(root: &Command, cmd: &AccountManagement, users: PathBuf) -
             let crypto_root = match root {
                 Command::Provider(_) => CryptoRoot::create_pass(&password, &crypto_keys)?,
                 Command::Companion(_) => CryptoRoot::create_cleartext(&crypto_keys),
+                _ => unreachable!(),
             };
 
             let hash = hash_password(password.as_str()).context("unable to hash password")?;
@@ -191,8 +292,39 @@ fn account_management(root: &Command, cmd: &AccountManagement, users: PathBuf) -
             ulist.remove(login);
             write_config(users.clone(), &ulist)?;
         },
-        AccountManagement::ChangePassword { login } => {
-            unimplemented!();
+        AccountManagement::ChangePassword { maybe_old_password, maybe_new_password, login } => {
+            let mut user = ulist.remove(login).context("user must exist first")?;
+
+            let old_password = match maybe_old_password {
+                Some(pwd) => pwd.to_string(),
+                None => rpassword::prompt_password("Enter old password: ")?,
+            };
+
+            if !verify_password(&old_password, &user.password)? {
+                bail!(format!("invalid password for login {}", login));
+            }
+
+            let crypto_keys = CryptoRoot(user.crypto_root).crypto_keys(&old_password)?;
+
+            let new_password = match maybe_new_password {
+                Some(pwd) => pwd.to_string(),
+                None => {
+                    let password = rpassword::prompt_password("Enter new password: ")?;
+                    let password_confirm = rpassword::prompt_password("Confirm new password: ")?;
+                    if password != password_confirm {
+                        bail!("Passwords don't match.");
+                    }
+                    password
+                }
+            };  
+            let new_hash = hash_password(&new_password)?;
+            let new_crypto_root = CryptoRoot::create_pass(&new_password, &crypto_keys)?;
+            
+            user.password = new_hash;
+            user.crypto_root = new_crypto_root.0;
+
+            ulist.insert(login.clone(), user);
+            write_config(users.clone(), &ulist)?;
         },
     };
 

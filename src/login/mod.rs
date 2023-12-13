@@ -109,16 +109,13 @@ impl CryptoRoot {
         match self.0.splitn(4, ':').collect::<Vec<&str>>()[..] {
             [ "aero", "cryptoroot", "pass", b64blob ] => {
                 let blob = base64::engine::general_purpose::STANDARD_NO_PAD.decode(b64blob)?;
-                if blob.len() < 32 {
-                    bail!("Decoded data is {} bytes long, expect at least 32 bytes", blob.len());
-                }
-                CryptoKeys::password_open(password, &blob[32..])
+                CryptoKeys::password_open(password, &blob)
             },
             [ "aero", "cryptoroot", "cleartext", b64blob ] => {
                 let blob = base64::engine::general_purpose::STANDARD_NO_PAD.decode(b64blob)?;
                 CryptoKeys::deserialize(&blob)
             },
-            [ "aero", "cryptoroot", "incoming", b64blob ] => {
+            [ "aero", "cryptoroot", "incoming", _ ] => {
                 bail!("incoming cryptoroot does not contain a crypto key!")
             },
             [ "aero", "cryptoroot", "keyring", _ ] =>{
@@ -184,8 +181,9 @@ impl CryptoKeys {
 
     // Password sealed keys serialize/deserialize
     pub fn password_open(password: &str, blob: &[u8]) -> Result<Self> {
-        let kdf_salt = &blob[0..32];
-        let password_openned = try_open_encrypted_keys(kdf_salt, password, &blob[32..])?;
+        let _pubkey = &blob[0..32];
+        let kdf_salt = &blob[32..64];
+        let password_openned = try_open_encrypted_keys(kdf_salt, password, &blob[64..])?;
 
         let keys = Self::deserialize(&password_openned)?;
         Ok(keys)

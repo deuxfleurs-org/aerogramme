@@ -81,7 +81,7 @@ impl LoginProvider for StaticLoginProvider {
             }),
         };
 
-        let cr = CryptoRoot(user.crypto_root);
+        let cr = CryptoRoot(user.crypto_root.clone());
         let keys = cr.crypto_keys(password)?;
 
         tracing::debug!(user=%username, "logged");
@@ -106,7 +106,7 @@ impl LoginProvider for StaticLoginProvider {
             }),
         };
 
-        let cr = CryptoRoot(user.crypto_root);
+        let cr = CryptoRoot(user.crypto_root.clone());
         let public_key = cr.public_key()?;
 
         Ok(PublicCredentials {

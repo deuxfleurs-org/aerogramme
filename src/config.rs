@@ -155,6 +155,8 @@ pub fn read_config<T: serde::de::DeserializeOwned>(config_file: PathBuf) -> Resu
 pub fn write_config<T: Serialize>(config_file: PathBuf, config: &T) -> Result<()> {
     let mut file = std::fs::OpenOptions::new()
         .write(true)
+        .create(true)
+        .truncate(true)
         .open(config_file.as_path())?;
 
     file.write_all(toml::to_string(config)?.as_bytes())?;
