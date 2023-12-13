@@ -6,7 +6,6 @@ use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
 
 use crate::config::*;
-use crate::cryptoblob::{Key, SecretKey};
 use crate::login::*;
 use crate::storage;
 
@@ -82,19 +81,8 @@ impl LoginProvider for StaticLoginProvider {
             }),
         };
 
-        let keys = match &user.crypto_root { /*(&user.master_key, &user.secret_key) {*/
-            CryptographyRoot::ClearText { master_key: m, secret_key: s } => {
-                let master_key =
-                    Key::from_slice(&base64::decode(m)?).ok_or(anyhow!("Invalid master key"))?;
-                let secret_key = SecretKey::from_slice(&base64::decode(s)?)
-                    .ok_or(anyhow!("Invalid secret key"))?;
-                CryptoKeys::open_without_password(&storage, &master_key, &secret_key).await?
-            }
-            CryptographyRoot::PasswordProtected { root_blob } => {
-                CryptoKeys::open(password, root_blob).await?
-            }
-            CryptographyRoot::Keyring => unimplemented!(),
-        };
+        let cr = CryptoRoot(user.crypto_root);
+        let keys = cr.crypto_keys(password)?;
 
         tracing::debug!(user=%username, "logged");
         Ok(Credentials { storage, keys })
@@ -118,8 +106,8 @@ impl LoginProvider for StaticLoginProvider {
             }),
         };
 
-        let k2v_client = storage.row_store()?;
-        let (_, public_key) = CryptoKeys::load_salt_and_public(&k2v_client).await?;
+        let cr = CryptoRoot(user.crypto_root);
+        let public_key = cr.public_key()?;
 
         Ok(PublicCredentials {
             storage,

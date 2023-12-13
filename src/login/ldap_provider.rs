@@ -17,6 +17,7 @@ pub struct LdapLoginProvider {
     attrs_to_retrieve: Vec<String>,
     username_attr: String,
     mail_attr: String,
+    crypto_root_attr: String,
 
     storage_specific: StorageSpecific,
 }
@@ -48,6 +49,7 @@ impl LdapLoginProvider {
         let mut attrs_to_retrieve = vec![
             config.username_attr.clone(),
             config.mail_attr.clone(),
+            config.crypto_root_attr.clone(),
         ];
 
         // storage specific
@@ -78,6 +80,7 @@ impl LdapLoginProvider {
             attrs_to_retrieve,
             username_attr: config.username_attr,
             mail_attr: config.mail_attr,
+            crypto_root_attr: config.crypto_root_attr,
             storage_specific: specific,
         })
     }
@@ -155,10 +158,16 @@ impl LoginProvider for LdapLoginProvider {
             .context("Invalid password")?;
         debug!("Ldap login with user name {} successfull", username);
 
+        // cryptography
+        let crstr = get_attr(&user, &self.crypto_root_attr)?;
+        let cr = CryptoRoot(crstr);
+        let keys = cr.crypto_keys(password)?;
+
+        // storage
         let storage = self.storage_creds_from_ldap_user(&user)?;
+
         drop(ldap);
 
-        let keys = CryptoKeys::open(&storage, password).await?;
 
         Ok(Credentials { storage, keys })
     }
@@ -197,11 +206,14 @@ impl LoginProvider for LdapLoginProvider {
         let user = SearchEntry::construct(matches.into_iter().next().unwrap());
         debug!("Found matching LDAP user for email {}: {}", email, user.dn);
 
+        // cryptography
+        let crstr = get_attr(&user, &self.crypto_root_attr)?;
+        let cr = CryptoRoot(crstr);
+        let public_key = cr.public_key()?;
+
+        // storage 
         let storage = self.storage_creds_from_ldap_user(&user)?;
         drop(ldap);
-
-        let k2v_client = storage.row_store()?;
-        let (_, public_key) = CryptoKeys::load_salt_and_public(&k2v_client).await?;
 
         Ok(PublicCredentials {
             storage,

@@ -156,17 +156,6 @@ fn account_management(root: &Command, cmd: &AccountManagement, users: PathBuf) -
             tracing::debug!(user=login, "will-create");
             let stp: SetupEntry = read_config(setup.clone())?;
             tracing::debug!(user=login, "loaded setup entry");
-            let crypto_root = match root {
-                Command::Provider(_) => CryptographyRoot::PasswordProtected,
-                Command::Companion(_) => {
-                    // @TODO use keyring by default instead of inplace in the future
-                    // @TODO generate keys
-                    CryptographyRoot::InPlace {
-                        master_key: "".to_string(),
-                        secret_key: "".to_string(),
-                    }
-                }
-            };
 
             let password = match stp.clear_password {
                 Some(pwd) => pwd,
@@ -179,12 +168,19 @@ fn account_management(root: &Command, cmd: &AccountManagement, users: PathBuf) -
                     password
                 }
             };
+
+            let crypto_keys = CryptoKeys::init();
+            let crypto_root = match root {
+                Command::Provider(_) => CryptoRoot::create_pass(&password, &crypto_keys)?,
+                Command::Companion(_) => CryptoRoot::create_cleartext(&crypto_keys),
+            };
+
             let hash = hash_password(password.as_str()).context("unable to hash password")?;
 
             ulist.insert(login.clone(), UserEntry {
                 email_addresses: stp.email_addresses,
                 password: hash,
-                crypto_root,
+                crypto_root: crypto_root.0,
                 storage: stp.storage,
             });
 
@@ -192,7 +188,7 @@ fn account_management(root: &Command, cmd: &AccountManagement, users: PathBuf) -
         },
         AccountManagement::Delete { login } => {
             tracing::debug!(user=login, "will-delete");
-            ulist.remove(&login);
+            ulist.remove(login);
             write_config(users.clone(), &ulist)?;
         },
         AccountManagement::ChangePassword { login } => {
