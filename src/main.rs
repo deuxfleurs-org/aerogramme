@@ -184,10 +184,10 @@ async fn main() -> Result<()> {
             }
         },
         (Command::Provider(_), AnyConfig::Companion(_)) => {
-            panic!("Your want to run a 'Provider' command but your configuration file has role 'Companion'.");
+            bail!("Your want to run a 'Provider' command but your configuration file has role 'Companion'.");
         },
         (Command::Companion(_), AnyConfig::Provider(_)) => {
-            panic!("Your want to run a 'Companion' command but your configuration file has role 'Provider'.");
+            bail!("Your want to run a 'Companion' command but your configuration file has role 'Provider'.");
         },
         (Command::Tools(subcommand), _) => match subcommand {
             ToolsCommand::CryptoRoot(crcommand) => {
