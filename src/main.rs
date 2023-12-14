@@ -52,6 +52,11 @@ enum ToolsCommand {
     /// Manage crypto roots
     #[clap(subcommand)]
     CryptoRoot(CryptoRootCommand),
+
+    PasswordHash {
+        #[clap(env = "AEROGRAMME_PASSWORD")]
+        maybe_password: Option<String>,
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -190,6 +195,13 @@ async fn main() -> Result<()> {
             bail!("Your want to run a 'Companion' command but your configuration file has role 'Provider'.");
         },
         (Command::Tools(subcommand), _) => match subcommand {
+            ToolsCommand::PasswordHash { maybe_password } => {
+                let password = match maybe_password {
+                    Some(pwd) => pwd.clone(),
+                    None => rpassword::prompt_password("Enter password: ")?,
+                };
+                println!("{}", hash_password(&password)?);
+            },
             ToolsCommand::CryptoRoot(crcommand) => {
                 match crcommand {
                     CryptoRootCommand::New { maybe_password } => {
