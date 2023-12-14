@@ -18,21 +18,21 @@ pub struct Server {
 
 impl Server {
     pub async fn from_companion_config(config: CompanionConfig) -> Result<Self> {
-        let login = Arc::new(StaticLoginProvider::new(config.users)?);
+        let login = Arc::new(StaticLoginProvider::new(config.users).await?);
 
         let lmtp_server = None;
-        let imap_server = Some(imap::new(config.imap, login).await?);
+        let imap_server = Some(imap::new(config.imap, login.clone()).await?);
         Ok(Self { lmtp_server, imap_server })
     }
 
     pub async fn from_provider_config(config: ProviderConfig) -> Result<Self> {
         let login: ArcLoginProvider = match config.users {
-            UserManagement::Static(x) => Arc::new(StaticLoginProvider::new(x)?),
+            UserManagement::Static(x) => Arc::new(StaticLoginProvider::new(x).await?),
             UserManagement::Ldap(x) => Arc::new(LdapLoginProvider::new(x)?),
         };
 
         let lmtp_server = Some(LmtpServer::new(config.lmtp, login.clone()));
-        let imap_server = Some(imap::new(config.imap, login).await?);
+        let imap_server = Some(imap::new(config.imap, login.clone()).await?);
 
         Ok(Self { lmtp_server, imap_server })
     }

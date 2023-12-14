@@ -42,7 +42,7 @@ enum Command {
     Provider(ProviderCommand),
 
     #[clap(subcommand)]
-    /// Specific tooling, should not be part of a normal workflow, for debug & experimenting only
+    /// Specific tooling, should not be part of a normal workflow, for debug & experimentation only
     Tools(ToolsCommand),
     //Test,
 }
