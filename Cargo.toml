@@ -27,6 +27,7 @@ rusoto_credential = "0.48.0"
 rusoto_s3 = { version = "0.48.0", default_features = false, features = ["rustls"] }
 hyper-rustls = { version = "0.24", features = ["http2"] }
 rusoto_signature = "0.48.0"
+nix = { version = "0.27", features = ["signal"] }
 serde = "1.0.137"
 rand = "0.8.5"
 rmp-serde = "0.15"

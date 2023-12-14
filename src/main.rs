@@ -13,9 +13,11 @@ mod server;
 mod storage;
 
 use std::path::PathBuf;
+use std::io::Read;
 
 use anyhow::{bail, Result, Context};
 use clap::{Parser, Subcommand};
+use nix::{unistd::Pid, sys::signal};
 
 use config::*;
 use server::Server;
@@ -92,7 +94,7 @@ enum CompanionCommand {
     Daemon,
     Reload {
         #[clap(short, long, env = "AEROGRAMME_PID")]
-        pid: Option<u64>,
+        pid: Option<i32>,
     },
     Wizard,
     #[clap(subcommand)]
@@ -104,7 +106,10 @@ enum ProviderCommand {
     /// Runs the IMAP+LMTP server daemon
     Daemon,
     /// Reload the daemon
-    Reload,
+    Reload {
+        #[clap(short, long, env = "AEROGRAMME_PID")]
+        pid: Option<i32>,
+    },
     /// Manage static accounts
     #[clap(subcommand)]
     Account(AccountManagement),
@@ -161,9 +166,7 @@ async fn main() -> Result<()> {
                 let server = Server::from_companion_config(config).await?;
                 server.run().await?;
             },
-            CompanionCommand::Reload { pid: _pid } => {
-                unimplemented!();
-            },
+            CompanionCommand::Reload { pid } => reload(*pid, config.pid)?,
             CompanionCommand::Wizard => {
                 unimplemented!();
             },
@@ -177,9 +180,7 @@ async fn main() -> Result<()> {
                 let server = Server::from_provider_config(config).await?;
                 server.run().await?;
             },
-            ProviderCommand::Reload => {
-                unimplemented!();
-            },
+            ProviderCommand::Reload { pid } => reload(*pid, config.pid)?,
             ProviderCommand::Account(cmd) => {
                 let user_file = match config.users {
                     UserManagement::Static(conf) => conf.user_list,
@@ -257,6 +258,22 @@ async fn main() -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn reload(pid: Option<i32>, pid_path: Option<PathBuf>) -> Result<()> {
+    let final_pid = match (pid, pid_path) {
+        (Some(pid), _) => pid,
+        (_, Some(path)) => { 
+            let mut f = std::fs::OpenOptions::new().read(true).open(path)?;
+            let mut pidstr = String::new();
+            f.read_to_string(&mut pidstr)?;
+            pidstr.parse::<i32>()?
+        },
+        _ => bail!("Unable to infer your daemon's PID"),
+    };
+    let pid = Pid::from_raw(final_pid);
+    signal::kill(pid, signal::Signal::SIGUSR1)?;
     Ok(())
 }
 

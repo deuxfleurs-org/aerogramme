@@ -1,4 +1,6 @@
 use std::sync::Arc;
+use std::path::PathBuf;
+use std::io::Write;
 
 use anyhow::Result;
 use futures::try_join;
@@ -14,18 +16,21 @@ use crate::login::{ldap_provider::*, static_provider::*};
 pub struct Server {
     lmtp_server: Option<Arc<LmtpServer>>,
     imap_server: Option<imap::Server>,
+    pid_file: Option<PathBuf>,
 }
 
 impl Server {
     pub async fn from_companion_config(config: CompanionConfig) -> Result<Self> {
+        tracing::info!("Init as companion");
         let login = Arc::new(StaticLoginProvider::new(config.users).await?);
 
         let lmtp_server = None;
         let imap_server = Some(imap::new(config.imap, login.clone()).await?);
-        Ok(Self { lmtp_server, imap_server })
+        Ok(Self { lmtp_server, imap_server, pid_file: config.pid })
     }
 
     pub async fn from_provider_config(config: ProviderConfig) -> Result<Self> {
+        tracing::info!("Init as provider");
         let login: ArcLoginProvider = match config.users {
             UserManagement::Static(x) => Arc::new(StaticLoginProvider::new(x).await?),
             UserManagement::Ldap(x) => Arc::new(LdapLoginProvider::new(x)?),
@@ -34,11 +39,24 @@ impl Server {
         let lmtp_server = Some(LmtpServer::new(config.lmtp, login.clone()));
         let imap_server = Some(imap::new(config.imap, login.clone()).await?);
 
-        Ok(Self { lmtp_server, imap_server })
+        Ok(Self { lmtp_server, imap_server, pid_file: config.pid })
     }
 
     pub async fn run(self) -> Result<()> {
-        tracing::info!("Starting Aerogramme...");
+        let pid = std::process::id();
+        tracing::info!(pid=pid, "Starting main loops");
+
+        // write the pid file
+        if let Some(pid_file) = self.pid_file {
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(pid_file)?;
+            file.write_all(pid.to_string().as_bytes())?;
+            drop(file);
+        }
+
 
         let (exit_signal, provoke_exit) = watch_ctrl_c();
         let _exit_on_err = move |err: anyhow::Error| {

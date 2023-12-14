@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CompanionConfig {
-    pub pid: Option<String>,
+    pub pid: Option<PathBuf>,
     pub imap: ImapConfig,
 
     #[serde(flatten)]
@@ -17,7 +17,7 @@ pub struct CompanionConfig {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ProviderConfig {
-    pub pid: Option<String>,
+    pub pid: Option<PathBuf>,
     pub imap: ImapConfig,
     pub lmtp: LmtpConfig,
     pub users: UserManagement,
