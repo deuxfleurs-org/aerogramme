@@ -8,39 +8,97 @@
  * into the object system so it is not exposed.
  */
 
-use std::hash::{Hash, Hasher};
-use futures::future::BoxFuture;
-
 pub mod in_memory;
 pub mod garage;
 
+use std::hash::{Hash, Hasher};
+use std::collections::HashMap;
+use futures::future::BoxFuture;
+use async_trait::async_trait;
+
+#[derive(Debug, Clone)]
 pub enum Alternative {
     Tombstone,
     Value(Vec<u8>),
 }
 type ConcurrentValues = Vec<Alternative>;
 
+#[derive(Debug)]
+pub enum StorageError {
+    NotFound,
+    Internal,
+}
+
+#[derive(Debug, Clone)]
+pub struct RowUid {
+    shard: String,
+    sort: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct RowRef {
+    uid: RowUid,
+    causality: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RowVal {
+    row_ref: RowRef,
+    value: ConcurrentValues,
+}
+
+#[derive(Debug, Clone)]
+pub struct BlobRef(String);
+
+#[derive(Debug, Clone)]
+pub struct BlobVal {
+    blob_ref: BlobRef,
+    meta: HashMap<String, String>,
+    value: Vec<u8>,
+}
+
+pub enum Selector<'a> {
+    Range { shard: &'a str, sort_begin: &'a str, sort_end: &'a str },
+    List (Vec<RowRef>), // list of (shard_key, sort_key)
+    Prefix { shard: &'a str, sort_prefix: &'a str },
+    Single(RowRef),
+}
+
+#[async_trait]
+pub trait IStore {
+    async fn row_fetch<'a>(&self, select: &Selector<'a>) -> Result<Vec<RowVal>, StorageError>;
+    async fn row_rm<'a>(&self, select: &Selector<'a>) -> Result<(), StorageError>;
+    async fn row_insert(&self, values: Vec<RowVal>) -> Result<(), StorageError>;
+    async fn row_poll(&self, value: RowRef) -> Result<RowVal, StorageError>;
+
+    async fn blob_fetch(&self, blob_ref: &BlobRef) -> Result<BlobVal, StorageError>;
+    async fn blob_copy(&self, src: &BlobRef, dst: &BlobRef) -> Result<BlobVal, StorageError>;
+    async fn blob_list(&self, prefix: &str) -> Result<Vec<BlobRef>, StorageError>;
+    async fn blob_rm(&self, blob_ref: &BlobRef) -> Result<(), StorageError>;
+}
+
+pub trait IBuilder {
+    fn build(&self) -> Box<dyn IStore>;
+}
+
+
+
+
+
+
+/*
 #[derive(Clone, Debug, PartialEq)]
 pub enum OrphanRowRef {
     Garage(garage::GrgOrphanRowRef),
     Memory(in_memory::MemOrphanRowRef),
 }
 
-pub enum Selector<'a> {
-    Range { shard_key: &'a str, begin: &'a str, end: &'a str },
-    List (Vec<(&'a str, &'a str)>), // list of (shard_key, sort_key)
-    Prefix { shard_key: &'a str, prefix: &'a str },
-}
 
-#[derive(Debug)]
-pub enum StorageError {
-    NotFound,
-    Internal,
-    IncompatibleOrphan,
-}
+
+
 impl std::fmt::Display for StorageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Storage Error: ");
+        f.write_str("Storage Error: ")?;
         match self {
             Self::NotFound => f.write_str("Item not found"),
             Self::Internal => f.write_str("An internal error occured"),
@@ -55,6 +113,7 @@ pub type AsyncResult<'a, T> = BoxFuture<'a, Result<T, StorageError>>;
 
 // ----- Builders
 pub trait IBuilders {
+    fn box_clone(&self) -> Builders;
     fn row_store(&self) -> Result<RowStore, StorageError>;
     fn blob_store(&self) -> Result<BlobStore, StorageError>;
     fn url(&self) -> &str;
@@ -62,8 +121,7 @@ pub trait IBuilders {
 pub type Builders = Box<dyn IBuilders + Send + Sync>;
 impl Clone for Builders {
     fn clone(&self) -> Self {
-        // @FIXME write a real implementation with a box_clone function
-        Box::new(in_memory::FullMem{})
+        self.box_clone()
     }
 }
 impl std::fmt::Debug for Builders {
@@ -102,7 +160,7 @@ pub trait IRowRef: std::fmt::Debug
     fn rm(&self) -> AsyncResult<()>;
     fn poll(&self) -> AsyncResult<RowValue>;
 }
-pub type RowRef = Box<dyn IRowRef + Send + Sync>;
+pub type RowRef<'a> = Box<dyn IRowRef + Send + Sync + 'a>;
 
 pub trait IRowValue: std::fmt::Debug
 {
@@ -138,3 +196,4 @@ pub trait IBlobValue {
     fn push(&self) -> AsyncResult<()>;
 }
 pub type BlobValue = Box<dyn IBlobValue + Send + Sync>;
+*/

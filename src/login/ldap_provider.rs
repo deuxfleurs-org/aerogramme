@@ -87,7 +87,9 @@ impl LdapLoginProvider {
 
     fn storage_creds_from_ldap_user(&self, user: &SearchEntry) -> Result<Builders> {
         let storage: Builders = match &self.storage_specific {
-            StorageSpecific::InMemory => Box::new(storage::in_memory::FullMem {}),
+            StorageSpecific::InMemory => Box::new(storage::in_memory::FullMem::new(
+                &get_attr(user, &self.username_attr)?
+            )),
             StorageSpecific::Garage { from_config, bucket_source }  => {
                 let aws_access_key_id = get_attr(user, &from_config.aws_access_key_id_attr)?;
                 let aws_secret_access_key = get_attr(user, &from_config.aws_secret_access_key_attr)?;

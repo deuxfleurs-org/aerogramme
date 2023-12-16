@@ -11,10 +11,15 @@ use crate::config::*;
 use crate::login::*;
 use crate::storage;
 
+pub struct ContextualUserEntry {
+    pub username: String,
+    pub config: UserEntry,
+}
+
 #[derive(Default)]
 pub struct UserDatabase {
-    users: HashMap<String, Arc<UserEntry>>,
-    users_by_email: HashMap<String, Arc<UserEntry>>,
+    users: HashMap<String, Arc<ContextualUserEntry>>,
+    users_by_email: HashMap<String, Arc<ContextualUserEntry>>,
 }
 
 pub struct StaticLoginProvider {
@@ -35,12 +40,12 @@ pub async fn update_user_list(config: PathBuf, up: watch::Sender<UserDatabase>) 
 
         let users = ulist
             .into_iter()
-            .map(|(k, v)| (k, Arc::new(v)))
+            .map(|(username, config)| (username.clone() , Arc::new(ContextualUserEntry { username, config })))
             .collect::<HashMap<_, _>>();
 
         let mut users_by_email = HashMap::new();
         for (_, u) in users.iter() {
-            for m in u.email_addresses.iter() {
+            for m in u.config.email_addresses.iter() {
                 if users_by_email.contains_key(m) {
                     tracing::warn!("Several users have the same email address: {}", m);
                     continue
@@ -78,13 +83,13 @@ impl LoginProvider for StaticLoginProvider {
         };
 
         tracing::debug!(user=%username, "verify password");
-        if !verify_password(password, &user.password)? {
+        if !verify_password(password, &user.config.password)? {
             bail!("Wrong password");
         }
 
         tracing::debug!(user=%username, "fetch keys");
-        let storage: storage::Builders = match &user.storage {
-            StaticStorage::InMemory => Box::new(storage::in_memory::FullMem {}),
+        let storage: storage::Builders = match &user.config.storage {
+            StaticStorage::InMemory => Box::new(storage::in_memory::FullMem::new(username)),
             StaticStorage::Garage(grgconf) => Box::new(storage::garage::GrgCreds {
                 region: grgconf.aws_region.clone(),
                 k2v_endpoint: grgconf.k2v_endpoint.clone(),
@@ -95,7 +100,7 @@ impl LoginProvider for StaticLoginProvider {
             }),
         };
 
-        let cr = CryptoRoot(user.crypto_root.clone());
+        let cr = CryptoRoot(user.config.crypto_root.clone());
         let keys = cr.crypto_keys(password)?;
 
         tracing::debug!(user=%username, "logged");
@@ -109,8 +114,8 @@ impl LoginProvider for StaticLoginProvider {
             Some(u) => u,
         };
 
-        let storage: storage::Builders = match &user.storage {
-            StaticStorage::InMemory => Box::new(storage::in_memory::FullMem {}),
+        let storage: storage::Builders = match &user.config.storage {
+            StaticStorage::InMemory => Box::new(storage::in_memory::FullMem::new(&user.username)),
             StaticStorage::Garage(grgconf) => Box::new(storage::garage::GrgCreds {
                 region: grgconf.aws_region.clone(),
                 k2v_endpoint: grgconf.k2v_endpoint.clone(),
@@ -121,7 +126,7 @@ impl LoginProvider for StaticLoginProvider {
             }),
         };
 
-        let cr = CryptoRoot(user.crypto_root.clone());
+        let cr = CryptoRoot(user.config.crypto_root.clone());
         let public_key = cr.public_key()?;
 
         Ok(PublicCredentials {
