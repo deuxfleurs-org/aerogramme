@@ -88,16 +88,16 @@ impl LoginProvider for StaticLoginProvider {
         }
 
         tracing::debug!(user=%username, "fetch keys");
-        let storage: storage::Builders = match &user.config.storage {
-            StaticStorage::InMemory => Box::new(storage::in_memory::FullMem::new(username)),
-            StaticStorage::Garage(grgconf) => Box::new(storage::garage::GrgCreds {
+        let storage: storage::Builder = match &user.config.storage {
+            StaticStorage::InMemory => storage::in_memory::MemBuilder::new(username),
+            StaticStorage::Garage(grgconf) => storage::garage::GarageBuilder::new(storage::garage::GarageConf {
                 region: grgconf.aws_region.clone(),
                 k2v_endpoint: grgconf.k2v_endpoint.clone(),
                 s3_endpoint: grgconf.s3_endpoint.clone(),
                 aws_access_key_id: grgconf.aws_access_key_id.clone(),
                 aws_secret_access_key: grgconf.aws_secret_access_key.clone(),
                 bucket: grgconf.bucket.clone(),
-            }),
+            })?,
         };
 
         let cr = CryptoRoot(user.config.crypto_root.clone());
@@ -114,16 +114,16 @@ impl LoginProvider for StaticLoginProvider {
             Some(u) => u,
         };
 
-        let storage: storage::Builders = match &user.config.storage {
-            StaticStorage::InMemory => Box::new(storage::in_memory::FullMem::new(&user.username)),
-            StaticStorage::Garage(grgconf) => Box::new(storage::garage::GrgCreds {
+        let storage: storage::Builder = match &user.config.storage {
+            StaticStorage::InMemory => storage::in_memory::MemBuilder::new(&user.username),
+            StaticStorage::Garage(grgconf) => storage::garage::GarageBuilder::new(storage::garage::GarageConf {
                 region: grgconf.aws_region.clone(),
                 k2v_endpoint: grgconf.k2v_endpoint.clone(),
                 s3_endpoint: grgconf.s3_endpoint.clone(),
                 aws_access_key_id: grgconf.aws_access_key_id.clone(),
                 aws_secret_access_key: grgconf.aws_secret_access_key.clone(),
                 bucket: grgconf.bucket.clone(),
-            }),
+            })?,
         };
 
         let cr = CryptoRoot(user.config.crypto_root.clone());

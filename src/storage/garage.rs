@@ -1,7 +1,8 @@
 use crate::storage::*;
+use serde::Serialize;
 
-#[derive(Clone, Debug, Hash)]
-pub struct GarageBuilder {
+#[derive(Clone, Debug, Serialize)]
+pub struct GarageConf {
     pub region: String,
     pub s3_endpoint: String,
     pub k2v_endpoint: String,
@@ -10,9 +11,27 @@ pub struct GarageBuilder {
     pub bucket: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct GarageBuilder {
+    conf: GarageConf,
+    unicity: Vec<u8>,
+}
+
+impl GarageBuilder {
+    pub fn new(conf: GarageConf) -> anyhow::Result<Arc<Self>> {
+        let mut unicity: Vec<u8> = vec![];
+        unicity.extend_from_slice(file!().as_bytes());
+        unicity.append(&mut rmp_serde::to_vec(&conf)?);
+        Ok(Arc::new(Self { conf, unicity }))
+    } 
+}
+
 impl IBuilder for GarageBuilder {
-    fn build(&self) -> Box<dyn IStore> {
+    fn build(&self) -> Result<Store, StorageError> {
         unimplemented!();
+    }
+    fn unique(&self) -> UnicityBuffer {
+        UnicityBuffer(self.unicity.clone())
     }
 }
 
@@ -33,13 +52,16 @@ impl IStore for GarageStore {
         unimplemented!();
 
     }
-    async fn row_poll(&self, value: RowRef) -> Result<RowVal, StorageError> {
+    async fn row_poll(&self, value: &RowRef) -> Result<RowVal, StorageError> {
         unimplemented!();
     }
 
     async fn blob_fetch(&self, blob_ref: &BlobRef) -> Result<BlobVal, StorageError> {
         unimplemented!();
 
+    }
+    async fn blob_insert(&self, blob_val: &BlobVal) -> Result<BlobVal, StorageError> {
+        unimplemented!();
     }
     async fn blob_copy(&self, src: &BlobRef, dst: &BlobRef) -> Result<BlobVal, StorageError> {
         unimplemented!();

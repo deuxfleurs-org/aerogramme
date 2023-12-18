@@ -14,18 +14,36 @@ pub type ArcBlob = Arc<RwLock<HashMap<String, Vec<u8>>>>;
 #[derive(Clone, Debug)]
 pub struct MemBuilder {
     user: String,
-    url: String,
+    unicity: Vec<u8>,
     row: ArcRow,
     blob: ArcBlob,
 }
 
+impl MemBuilder {
+    pub fn new(user: &str) -> Arc<Self> {
+        let mut unicity: Vec<u8> = vec![];
+        unicity.extend_from_slice(file!().as_bytes());
+        unicity.extend_from_slice(user.as_bytes());
+        Arc::new(Self {
+            user: user.to_string(),
+            unicity,
+            row: Arc::new(RwLock::new(HashMap::new())),
+            blob: Arc::new(RwLock::new(HashMap::new())),
+        })
+    }
+}
+
 impl IBuilder for MemBuilder {
-    fn build(&self) -> Box<dyn IStore> {
-        Box::new(MemStore {
+    fn build(&self) -> Result<Store, StorageError> {
+        Ok(Box::new(MemStore {
             row: self.row.clone(),
             blob: self.blob.clone(),
-        })
+        }))
     } 
+
+    fn unique(&self) -> UnicityBuffer {
+        UnicityBuffer(self.unicity.clone())
+    }
 }
 
 pub struct MemStore {
@@ -56,7 +74,7 @@ impl IStore for MemStore {
                     .or(Err(StorageError::Internal))?
                     .get(*shard)
                     .ok_or(StorageError::NotFound)?
-                    .range((Included(sort_begin.to_string()), Included(sort_end.to_string())))
+                    .range((Included(sort_begin.to_string()), Excluded(sort_end.to_string())))
                     .map(|(k, v)| RowVal {
                         row_ref: RowRef { uid: RowUid { shard: shard.to_string(), sort: k.to_string() }, causality: Some("c".to_string()) },
                         value: vec![Alternative::Value(v.clone())],
@@ -100,7 +118,7 @@ impl IStore for MemStore {
             },
             Selector::Single(row_ref) => {
                 let bytes = self.inner_fetch(row_ref)?;
-                Ok(vec![RowVal{ row_ref: row_ref.clone(), value: vec![Alternative::Value(bytes)]}])
+                Ok(vec![RowVal{ row_ref: (*row_ref).clone(), value: vec![Alternative::Value(bytes)]}])
             }
         }
     }
@@ -113,13 +131,16 @@ impl IStore for MemStore {
         unimplemented!();
 
     }
-    async fn row_poll(&self, value: RowRef) -> Result<RowVal, StorageError> {
+    async fn row_poll(&self, value: &RowRef) -> Result<RowVal, StorageError> {
         unimplemented!();
     }
 
     async fn blob_fetch(&self, blob_ref: &BlobRef) -> Result<BlobVal, StorageError> {
         unimplemented!();
 
+    }
+    async fn blob_insert(&self, blob_val: &BlobVal) -> Result<BlobVal, StorageError> {
+        unimplemented!();
     }
     async fn blob_copy(&self, src: &BlobRef, dst: &BlobRef) -> Result<BlobVal, StorageError> {
         unimplemented!();

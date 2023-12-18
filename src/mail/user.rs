@@ -33,7 +33,7 @@ const MAILBOX_LIST_SK: &str = "list";
 pub struct User {
     pub username: String,
     pub creds: Credentials,
-    pub k2v: storage::RowStore,
+    pub storage: storage::Store,
     pub mailboxes: std::sync::Mutex<HashMap<UniqueIdent, Weak<Mailbox>>>,
 
     tx_inbox_id: watch::Sender<Option<(UniqueIdent, ImapUidvalidity)>>,
@@ -41,7 +41,7 @@ pub struct User {
 
 impl User {
     pub async fn new(username: String, creds: Credentials) -> Result<Arc<Self>> {
-        let cache_key = (username.clone(), creds.storage.clone());
+        let cache_key = (username.clone(), creds.storage.unique());
 
         {
             let cache = USER_CACHE.lock().unwrap();
@@ -81,11 +81,7 @@ impl User {
             let mb_uidvalidity = mb.current_uid_index().await.uidvalidity;
             if mb_uidvalidity > uidvalidity {
                 list.update_uidvalidity(name, mb_uidvalidity);
-                let orphan = match ct {
-                    Some(x) => Some(x.to_orphan()),
-                    None => None,
-                };
-                self.save_mailbox_list(&list, orphan).await?;
+                self.save_mailbox_list(&list, ct).await?;
             }
             Ok(Some(mb))
         } else {
@@ -108,11 +104,7 @@ impl User {
         let (mut list, ct) = self.load_mailbox_list().await?;
         match list.create_mailbox(name) {
             CreatedMailbox::Created(_, _) => {
-                let orphan = match ct {
-                    Some(x) => Some(x.to_orphan()),
-                    None => None,
-                };
-                self.save_mailbox_list(&list, orphan).await?;
+                self.save_mailbox_list(&list, ct).await?;
                 Ok(())
             }
             CreatedMailbox::Existed(_, _) => Err(anyhow!("Mailbox {} already exists", name)),
@@ -129,11 +121,7 @@ impl User {
         if list.has_mailbox(name) {
             // TODO: actually delete mailbox contents
             list.set_mailbox(name, None);
-            let orphan = match ct {
-                Some(x) => Some(x.to_orphan()),
-                None => None,
-            };
-            self.save_mailbox_list(&list, orphan).await?;
+            self.save_mailbox_list(&list, ct).await?;
             Ok(())
         } else {
             bail!("Mailbox {} does not exist", name);
@@ -154,11 +142,7 @@ impl User {
         if old_name == INBOX {
             list.rename_mailbox(old_name, new_name)?;
             if !self.ensure_inbox_exists(&mut list, &ct).await? {
-                let orphan = match ct {
-                    Some(x) => Some(x.to_orphan()),
-                    None => None,
-                };
-                self.save_mailbox_list(&list, orphan).await?;
+                self.save_mailbox_list(&list, ct).await?;
             }
         } else {
             let names = list.existing_mailbox_names();
@@ -182,11 +166,7 @@ impl User {
                 }
             }
 
-            let orphan = match ct {
-                Some(x) => Some(x.to_orphan()),
-                None => None,
-            };
-            self.save_mailbox_list(&list, orphan).await?;
+            self.save_mailbox_list(&list, ct).await?;
         }
         Ok(())
     }
@@ -194,14 +174,14 @@ impl User {
     // ---- Internal user & mailbox management ----
 
     async fn open(username: String, creds: Credentials) -> Result<Arc<Self>> {
-        let k2v = creds.row_client()?;
+        let storage = creds.storage.build()?;
 
         let (tx_inbox_id, rx_inbox_id) = watch::channel(None);
 
         let user = Arc::new(Self {
             username,
             creds: creds.clone(),
-            k2v,
+            storage,
             tx_inbox_id,
             mailboxes: std::sync::Mutex::new(HashMap::new()),
         });
@@ -245,19 +225,25 @@ impl User {
     // ---- Mailbox list management ----
 
     async fn load_mailbox_list(&self) -> Result<(MailboxList, Option<storage::RowRef>)> {
-        let (mut list, row) = match self.k2v.row(MAILBOX_LIST_PK, MAILBOX_LIST_SK).fetch().await {
+        let row_ref = storage::RowRef::new(MAILBOX_LIST_PK, MAILBOX_LIST_SK);
+        let (mut list, row) = match self.storage.row_fetch(&storage::Selector::Single(&row_ref)).await {
             Err(storage::StorageError::NotFound) => (MailboxList::new(), None),
             Err(e) => return Err(e.into()),
             Ok(rv) => {
                 let mut list = MailboxList::new();
-                for v in rv.content() {
+                let (row_ref, row_vals) = match rv.into_iter().next() {
+                    Some(row_val) => (row_val.row_ref, row_val.value),
+                    None => (row_ref, vec![]),
+                };
+
+                for v in row_vals {
                     if let storage::Alternative::Value(vbytes) = v {
                         let list2 =
                             open_deserialize::<MailboxList>(&vbytes, &self.creds.keys.master)?;
                         list.merge(list2);
                     }
                 }
-                (list, Some(rv.to_ref()))
+                (list, Some(row_ref))
             }
         };
 
@@ -278,11 +264,7 @@ impl User {
         let saved;
         let (inbox_id, inbox_uidvalidity) = match list.create_mailbox(INBOX) {
             CreatedMailbox::Created(i, v) => {
-                let orphan = match ct {
-                    Some(x) => Some(x.to_orphan()),
-                    None => None,
-                };
-                self.save_mailbox_list(list, orphan).await?;
+                self.save_mailbox_list(list, ct.clone()).await?;
                 saved = true;
                 (i, v)
             }
@@ -302,14 +284,12 @@ impl User {
     async fn save_mailbox_list(
         &self,
         list: &MailboxList,
-        ct: Option<storage::OrphanRowRef>,
+        ct: Option<storage::RowRef>,
     ) -> Result<()> {
         let list_blob = seal_serialize(list, &self.creds.keys.master)?;
-        let rref = match ct {
-            Some(x) => self.k2v.from_orphan(x).expect("Source & target must be same storage"),
-            None => self.k2v.row(MAILBOX_LIST_PK, MAILBOX_LIST_SK),
-        };
-        rref.set_value(&list_blob).push().await?;
+        let rref = ct.unwrap_or(storage::RowRef::new(MAILBOX_LIST_PK, MAILBOX_LIST_SK));
+        let row_val = storage::RowVal::new(rref, list_blob);
+        self.storage.row_insert(vec![row_val]).await?;
         Ok(())
     }
 }
@@ -482,6 +462,6 @@ enum CreatedMailbox {
 // ---- User cache ----
 
 lazy_static! {
-    static ref USER_CACHE: std::sync::Mutex<HashMap<(String, storage::Builders), Weak<User>>> =
+    static ref USER_CACHE: std::sync::Mutex<HashMap<(String, storage::UnicityBuffer), Weak<User>>> =
         std::sync::Mutex::new(HashMap::new());
 }
