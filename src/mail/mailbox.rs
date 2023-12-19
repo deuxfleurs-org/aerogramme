@@ -361,7 +361,12 @@ impl MailboxInternal {
             async {
                 // Delete mail meta from K2V
                 let sk = ident.to_string();
-                self.storage.row_rm(&Selector::Single(&RowRef::new(&self.mail_path, &sk))).await?;
+                let res = self.storage
+                    .row_fetch(&storage::Selector::Single(&RowRef::new(&self.mail_path, &sk)))
+                    .await?;
+                if let Some(row_val) = res.into_iter().next() {
+                    self.storage.row_rm_single(&row_val.row_ref).await?;
+                }
                 Ok::<_, anyhow::Error>(())
             }
         )?;

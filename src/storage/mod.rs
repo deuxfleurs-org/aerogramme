@@ -61,6 +61,10 @@ impl RowRef {
             causality: None,
         }
     }
+    pub fn with_causality(mut self, causality: String) -> Self {
+        self.causality = Some(causality);
+        self
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -118,12 +122,13 @@ pub enum Selector<'a> {
 pub trait IStore {
     async fn row_fetch<'a>(&self, select: &Selector<'a>) -> Result<Vec<RowVal>, StorageError>;
     async fn row_rm<'a>(&self, select: &Selector<'a>) -> Result<(), StorageError>;
+    async fn row_rm_single(&self, entry: &RowRef) -> Result<(), StorageError>;
     async fn row_insert(&self, values: Vec<RowVal>) -> Result<(), StorageError>;
     async fn row_poll(&self, value: &RowRef) -> Result<RowVal, StorageError>;
 
     async fn blob_fetch(&self, blob_ref: &BlobRef) -> Result<BlobVal, StorageError>;
-    async fn blob_insert(&self, blob_val: &BlobVal) -> Result<BlobVal, StorageError>;
-    async fn blob_copy(&self, src: &BlobRef, dst: &BlobRef) -> Result<BlobVal, StorageError>;
+    async fn blob_insert(&self, blob_val: &BlobVal) -> Result<(), StorageError>;
+    async fn blob_copy(&self, src: &BlobRef, dst: &BlobRef) -> Result<(), StorageError>;
     async fn blob_list(&self, prefix: &str) -> Result<Vec<BlobRef>, StorageError>;
     async fn blob_rm(&self, blob_ref: &BlobRef) -> Result<(), StorageError>;
 }

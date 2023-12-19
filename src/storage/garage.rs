@@ -56,14 +56,18 @@ impl IStore for GarageStore {
         unimplemented!();
     }
 
+    async fn row_rm_single(&self, entry: &RowRef) -> Result<(), StorageError> {
+        unimplemented!();
+    }
+
     async fn blob_fetch(&self, blob_ref: &BlobRef) -> Result<BlobVal, StorageError> {
         unimplemented!();
 
     }
-    async fn blob_insert(&self, blob_val: &BlobVal) -> Result<BlobVal, StorageError> {
+    async fn blob_insert(&self, blob_val: &BlobVal) -> Result<(), StorageError> {
         unimplemented!();
     }
-    async fn blob_copy(&self, src: &BlobRef, dst: &BlobRef) -> Result<BlobVal, StorageError> {
+    async fn blob_copy(&self, src: &BlobRef, dst: &BlobRef) -> Result<(), StorageError> {
         unimplemented!();
 
     }
