@@ -23,11 +23,20 @@ impl InternalData {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct InternalRowVal {
     data: Vec<InternalData>,
     version: u64,
     change: Arc<Notify>,
+}
+impl std::default::Default for InternalRowVal {
+    fn default() -> Self {
+        Self {
+            data: vec![],
+            version: 1,
+            change: Arc::new(Notify::new()),
+        }
+    }
 }
 impl InternalRowVal {
     fn concurrent_values(&self) -> Vec<Alternative> {
@@ -227,12 +236,9 @@ impl IStore for MemStore {
         };
 
         let notify_me = {
-            let store = self.row.read().or(Err(StorageError::Internal))?;
-            let intval = store
-                .get(shard)
-                .ok_or(StorageError::NotFound)?
-                .get(sort)
-                .ok_or(StorageError::NotFound)?;
+            let mut store = self.row.write().or(Err(StorageError::Internal))?;
+            let bt = store.entry(shard.to_string()).or_default();
+            let intval = bt.entry(sort.to_string()).or_default();
 
             if intval.version != cauz {
                 return Ok(intval.to_row_val(value.clone()));
