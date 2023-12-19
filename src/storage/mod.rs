@@ -50,6 +50,11 @@ pub struct RowRef {
     pub uid: RowUid,
     pub causality: Option<String>,
 }
+impl std::fmt::Display for RowRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RowRef({}, {}, {:?})", self.uid.shard, self.uid.sort, self.causality)
+    }
+}
 
 impl RowRef {
     pub fn new(shard: &str, sort: &str) -> Self {
@@ -90,6 +95,11 @@ impl BlobRef {
         Self(key.to_string())
     }
 }
+impl std::fmt::Display for BlobRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "BlobRef({})", self.0)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct BlobVal {
@@ -111,11 +121,22 @@ impl BlobVal {
     }
 }
 
+#[derive(Debug)]
 pub enum Selector<'a> {
     Range { shard: &'a str, sort_begin: &'a str, sort_end: &'a str },
     List (Vec<RowRef>), // list of (shard_key, sort_key)
     Prefix { shard: &'a str, sort_prefix: &'a str },
     Single(&'a RowRef),
+}
+impl<'a> std::fmt::Display for Selector<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Range { shard, sort_begin, sort_end } => write!(f, "Range({}, [{}, {}[)", shard, sort_begin, sort_end),
+            Self::List(list) => write!(f, "List({:?})", list),
+            Self::Prefix { shard, sort_prefix } => write!(f, "Prefix({}, {})", shard, sort_prefix),
+            Self::Single(row_ref) => write!(f, "Single({})", row_ref),
+        }
+    }
 }
 
 #[async_trait]
