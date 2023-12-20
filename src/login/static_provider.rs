@@ -24,6 +24,7 @@ pub struct UserDatabase {
 
 pub struct StaticLoginProvider {
     user_db: watch::Receiver<UserDatabase>,
+    in_memory_store: tokio::sync::Mutex<HashMap<String, Arc<storage::in_memory::MemBuilder>>>,
 }
 
 pub async fn update_user_list(config: PathBuf, up: watch::Sender<UserDatabase>) -> Result<()> {
@@ -68,7 +69,7 @@ impl StaticLoginProvider {
         tokio::spawn(update_user_list(config.user_list, tx));
         rx.changed().await?;
 
-        Ok(Self { user_db: rx })
+        Ok(Self { user_db: rx, in_memory_store: tokio::sync::Mutex::new(HashMap::new()) })
     }
 }
 
@@ -76,10 +77,12 @@ impl StaticLoginProvider {
 impl LoginProvider for StaticLoginProvider {
     async fn login(&self, username: &str, password: &str) -> Result<Credentials> {
         tracing::debug!(user=%username, "login");
-        let user_db = self.user_db.borrow();
-        let user = match user_db.users.get(username) {
-            None => bail!("User {} does not exist", username),
-            Some(u) => u,
+        let user = {
+            let user_db = self.user_db.borrow();
+            match user_db.users.get(username) {
+                None => bail!("User {} does not exist", username),
+                Some(u) => u.clone(),
+            }
         };
 
         tracing::debug!(user=%username, "verify password");
@@ -89,7 +92,13 @@ impl LoginProvider for StaticLoginProvider {
 
         tracing::debug!(user=%username, "fetch keys");
         let storage: storage::Builder = match &user.config.storage {
-            StaticStorage::InMemory => storage::in_memory::MemBuilder::new(username),
+            StaticStorage::InMemory => {
+                let mut global_storage = self.in_memory_store.lock().await;
+                global_storage
+                    .entry(username.to_string())
+                    .or_insert(storage::in_memory::MemBuilder::new(username))
+                    .clone()
+            },
             StaticStorage::Garage(grgconf) => storage::garage::GarageBuilder::new(storage::garage::GarageConf {
                 region: grgconf.aws_region.clone(),
                 k2v_endpoint: grgconf.k2v_endpoint.clone(),
@@ -108,14 +117,23 @@ impl LoginProvider for StaticLoginProvider {
     }
 
     async fn public_login(&self, email: &str) -> Result<PublicCredentials> {
-        let user_db = self.user_db.borrow();
-        let user = match user_db.users_by_email.get(email) {
-            None => bail!("No user for email address {}", email),
-            Some(u) => u,
+        let user = {
+            let user_db = self.user_db.borrow();
+            match user_db.users_by_email.get(email) {
+                None => bail!("Email {} does not exist", email),
+                Some(u) => u.clone(),
+            }
         };
+        tracing::debug!(user=%user.username, "public_login");
 
         let storage: storage::Builder = match &user.config.storage {
-            StaticStorage::InMemory => storage::in_memory::MemBuilder::new(&user.username),
+            StaticStorage::InMemory => {
+                let mut global_storage = self.in_memory_store.lock().await;
+                global_storage
+                    .entry(user.username.to_string())
+                    .or_insert(storage::in_memory::MemBuilder::new(&user.username))
+                    .clone()
+            },
             StaticStorage::Garage(grgconf) => storage::garage::GarageBuilder::new(storage::garage::GarageConf {
                 region: grgconf.aws_region.clone(),
                 k2v_endpoint: grgconf.k2v_endpoint.clone(),

@@ -78,6 +78,7 @@ pub struct MemBuilder {
 
 impl MemBuilder {
     pub fn new(user: &str) -> Arc<Self> {
+        tracing::debug!("initialize membuilder for {}", user);
         let mut unicity: Vec<u8> = vec![];
         unicity.extend_from_slice(file!().as_bytes());
         unicity.extend_from_slice(user.as_bytes());
