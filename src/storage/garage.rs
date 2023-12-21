@@ -1,6 +1,10 @@
 use crate::storage::*;
 use serde::Serialize;
-use aws_sdk_s3 as s3;
+use aws_sdk_s3::{
+    self as s3,
+    error::SdkError,
+    operation::get_object::GetObjectError,
+};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct GarageConf {
@@ -46,7 +50,10 @@ impl IBuilder for GarageBuilder {
             .await;
 
         let s3_client = aws_sdk_s3::Client::new(&config);
-        Ok(Box::new(GarageStore { s3: s3_client }))
+        Ok(Box::new(GarageStore { 
+            s3_bucket: self.conf.bucket.clone(),
+            s3: s3_client 
+        }))
     }
     fn unique(&self) -> UnicityBuffer {
         UnicityBuffer(self.unicity.clone())
@@ -54,6 +61,7 @@ impl IBuilder for GarageBuilder {
 }
 
 pub struct GarageStore {
+    s3_bucket: String,
     s3: s3::Client,
 }
 
@@ -79,8 +87,37 @@ impl IStore for GarageStore {
     }
 
     async fn blob_fetch(&self, blob_ref: &BlobRef) -> Result<BlobVal, StorageError> {
-        unimplemented!();
+        let maybe_out =  self.s3
+            .get_object()
+            .bucket(self.s3_bucket.to_string())
+            .key(blob_ref.0.to_string())
+            .send()
+            .await;
 
+        let object_output = match maybe_out {
+            Ok(output) => output,
+            Err(SdkError::ServiceError(x)) => match x.err() {
+                GetObjectError::NoSuchKey(_) => return Err(StorageError::NotFound),
+                e => {
+                    tracing::warn!("Blob Fetch Error, Service Error: {}", e);
+                    return Err(StorageError::Internal);
+                },
+            },
+            Err(e) => {
+                tracing::warn!("Blob Fetch Error, {}", e);
+                return Err(StorageError::Internal);
+            },
+        };
+
+        let buffer = match object_output.body.collect().await {
+            Ok(aggreg) => aggreg.to_vec(),
+            Err(e) => {
+                tracing::warn!("Fetching body failed with {}", e);
+                return Err(StorageError::Internal);
+            }
+        };
+
+        Ok(BlobVal::new(blob_ref.clone(), buffer))
     }
     async fn blob_insert(&self, blob_val: &BlobVal) -> Result<(), StorageError> {
         unimplemented!();
