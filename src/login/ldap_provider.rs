@@ -20,6 +20,7 @@ pub struct LdapLoginProvider {
     crypto_root_attr: String,
 
     storage_specific: StorageSpecific,
+    in_memory_store: storage::in_memory::MemDb,
 }
 
 enum BucketSource {
@@ -82,14 +83,15 @@ impl LdapLoginProvider {
             mail_attr: config.mail_attr,
             crypto_root_attr: config.crypto_root_attr,
             storage_specific: specific,
+            in_memory_store: storage::in_memory::MemDb::new(),
         })
     }
 
-    fn storage_creds_from_ldap_user(&self, user: &SearchEntry) -> Result<Builder> {
+    async fn storage_creds_from_ldap_user(&self, user: &SearchEntry) -> Result<Builder> {
         let storage: Builder = match &self.storage_specific {
-            StorageSpecific::InMemory => storage::in_memory::MemBuilder::new(
+            StorageSpecific::InMemory => self.in_memory_store.builder(
                 &get_attr(user, &self.username_attr)?
-            ),
+            ).await,
             StorageSpecific::Garage { from_config, bucket_source }  => {
                 let aws_access_key_id = get_attr(user, &from_config.aws_access_key_id_attr)?;
                 let aws_secret_access_key = get_attr(user, &from_config.aws_secret_access_key_attr)?;
@@ -166,7 +168,7 @@ impl LoginProvider for LdapLoginProvider {
         let keys = cr.crypto_keys(password)?;
 
         // storage
-        let storage = self.storage_creds_from_ldap_user(&user)?;
+        let storage = self.storage_creds_from_ldap_user(&user).await?;
 
         drop(ldap);
 
@@ -214,7 +216,7 @@ impl LoginProvider for LdapLoginProvider {
         let public_key = cr.public_key()?;
 
         // storage 
-        let storage = self.storage_creds_from_ldap_user(&user)?;
+        let storage = self.storage_creds_from_ldap_user(&user).await?;
         drop(ldap);
 
         Ok(PublicCredentials {
