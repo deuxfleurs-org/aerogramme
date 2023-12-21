@@ -106,8 +106,9 @@ impl MemBuilder {
     }
 }
 
+#[async_trait]
 impl IBuilder for MemBuilder {
-    fn build(&self) -> Result<Store, StorageError> {
+    async fn build(&self) -> Result<Store, StorageError> {
         Ok(Box::new(MemStore {
             row: self.row.clone(),
             blob: self.blob.clone(),

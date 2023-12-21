@@ -58,12 +58,12 @@ pub struct Bayou<S: BayouState> {
 }
 
 impl<S: BayouState> Bayou<S> {
-    pub fn new(creds: &Credentials, path: String) -> Result<Self> {
-        let storage = creds.storage.build()?;
+    pub async fn new(creds: &Credentials, path: String) -> Result<Self> {
+        let storage = creds.storage.build().await?;
 
         //let target = k2v_client.row(&path, WATCH_SK);
         let target = storage::RowRef::new(&path, WATCH_SK);
-        let watch = K2vWatch::new(creds, target.clone())?;
+        let watch = K2vWatch::new(creds, target.clone()).await?;
 
         Ok(Self {
             path,
@@ -418,8 +418,8 @@ impl K2vWatch {
     /// Creates a new watch and launches subordinate threads.
     /// These threads hold Weak pointers to the struct;
     /// they exit when the Arc is dropped.
-    fn new(creds: &Credentials, target: storage::RowRef) -> Result<Arc<Self>> {
-        let storage = creds.storage.build()?;
+    async fn new(creds: &Credentials, target: storage::RowRef) -> Result<Arc<Self>> {
+        let storage = creds.storage.build().await?;
 
         let (tx, rx) = watch::channel::<storage::RowRef>(target.clone());
         let notify = Notify::new();

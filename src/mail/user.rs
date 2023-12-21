@@ -174,7 +174,7 @@ impl User {
     // ---- Internal user & mailbox management ----
 
     async fn open(username: String, creds: Credentials) -> Result<Arc<Self>> {
-        let storage = creds.storage.build()?;
+        let storage = creds.storage.build().await?;
 
         let (tx_inbox_id, rx_inbox_id) = watch::channel(None);
 

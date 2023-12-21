@@ -157,8 +157,9 @@ pub trait IStore {
 #[derive(Clone,Debug,PartialEq,Eq,Hash)]
 pub struct UnicityBuffer(Vec<u8>);
 
+#[async_trait]
 pub trait IBuilder: std::fmt::Debug {
-    fn build(&self) -> Result<Store, StorageError>;
+    async fn build(&self) -> Result<Store, StorageError>;
 
     /// Returns an opaque buffer that uniquely identifies this builder
     fn unique(&self) -> UnicityBuffer;

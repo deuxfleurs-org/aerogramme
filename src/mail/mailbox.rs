@@ -25,7 +25,7 @@ impl Mailbox {
         let index_path = format!("index/{}", id);
         let mail_path = format!("mail/{}", id);
 
-        let mut uid_index = Bayou::<UidIndex>::new(creds, index_path)?;
+        let mut uid_index = Bayou::<UidIndex>::new(creds, index_path).await?;
         uid_index.sync().await?;
 
         let uidvalidity = uid_index.state().uidvalidity;
@@ -44,7 +44,7 @@ impl Mailbox {
         let mbox = RwLock::new(MailboxInternal {
             id,
             encryption_key: creds.keys.master.clone(),
-            storage: creds.storage.build()?,
+            storage: creds.storage.build().await?,
             uid_index,
             mail_path,
         });

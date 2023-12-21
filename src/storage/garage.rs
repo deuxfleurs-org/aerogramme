@@ -1,5 +1,6 @@
 use crate::storage::*;
 use serde::Serialize;
+use aws_sdk_s3 as s3;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct GarageConf {
@@ -26,9 +27,26 @@ impl GarageBuilder {
     } 
 }
 
+#[async_trait]
 impl IBuilder for GarageBuilder {
-    fn build(&self) -> Result<Store, StorageError> {
-        unimplemented!();
+    async fn build(&self) -> Result<Store, StorageError> {
+        let creds = s3::config::Credentials::new(
+            self.conf.aws_access_key_id.clone(), 
+            self.conf.aws_secret_access_key.clone(), 
+            None, 
+            None, 
+            "aerogramme"
+        );
+
+        let config = aws_config::from_env()
+            .region(aws_config::Region::new(self.conf.region.clone()))
+            .credentials_provider(creds)
+            .endpoint_url(self.conf.s3_endpoint.clone())
+            .load()
+            .await;
+
+        let s3_client = aws_sdk_s3::Client::new(&config);
+        Ok(Box::new(GarageStore { s3: s3_client }))
     }
     fn unique(&self) -> UnicityBuffer {
         UnicityBuffer(self.unicity.clone())
@@ -36,7 +54,7 @@ impl IBuilder for GarageBuilder {
 }
 
 pub struct GarageStore {
-    dummy: String,
+    s3: s3::Client,
 }
 
 #[async_trait]
