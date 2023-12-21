@@ -9,6 +9,22 @@ use tokio::sync::Notify;
 /// It means that when a user disconnects, its data are lost.
 /// It's intended only for basic debugging, do not use it for advanced tests...
 
+#[derive(Debug, Default)]
+pub struct MemDb(tokio::sync::Mutex<HashMap<String, Arc<MemBuilder>>>);
+impl MemDb {
+    pub fn new() -> Self {
+        Self(tokio::sync::Mutex::new(HashMap::new()))
+    }
+
+    pub async fn builder(&self, username: &str) ->  Arc<MemBuilder> {
+        let mut global_storage = self.0.lock().await;
+        global_storage
+            .entry(username.to_string())
+            .or_insert(MemBuilder::new(username))
+            .clone()
+    }
+}
+
 #[derive(Debug, Clone)]
 enum InternalData {
     Tombstone,

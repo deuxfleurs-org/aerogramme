@@ -24,7 +24,7 @@ pub struct UserDatabase {
 
 pub struct StaticLoginProvider {
     user_db: watch::Receiver<UserDatabase>,
-    in_memory_store: tokio::sync::Mutex<HashMap<String, Arc<storage::in_memory::MemBuilder>>>,
+    in_memory_store: storage::in_memory::MemDb,
 }
 
 pub async fn update_user_list(config: PathBuf, up: watch::Sender<UserDatabase>) -> Result<()> {
@@ -71,7 +71,7 @@ impl StaticLoginProvider {
         tokio::spawn(update_user_list(config.user_list, tx));
         rx.changed().await?;
 
-        Ok(Self { user_db: rx, in_memory_store: tokio::sync::Mutex::new(HashMap::new()) })
+        Ok(Self { user_db: rx, in_memory_store: storage::in_memory::MemDb::new() })
     }
 }
 
@@ -94,13 +94,7 @@ impl LoginProvider for StaticLoginProvider {
 
         tracing::debug!(user=%username, "fetch keys");
         let storage: storage::Builder = match &user.config.storage {
-            StaticStorage::InMemory => {
-                let mut global_storage = self.in_memory_store.lock().await;
-                global_storage
-                    .entry(username.to_string())
-                    .or_insert(storage::in_memory::MemBuilder::new(username))
-                    .clone()
-            },
+            StaticStorage::InMemory => self.in_memory_store.builder(username).await,
             StaticStorage::Garage(grgconf) => storage::garage::GarageBuilder::new(storage::garage::GarageConf {
                 region: grgconf.aws_region.clone(),
                 k2v_endpoint: grgconf.k2v_endpoint.clone(),
@@ -129,13 +123,7 @@ impl LoginProvider for StaticLoginProvider {
         tracing::debug!(user=%user.username, "public_login");
 
         let storage: storage::Builder = match &user.config.storage {
-            StaticStorage::InMemory => {
-                let mut global_storage = self.in_memory_store.lock().await;
-                global_storage
-                    .entry(user.username.to_string())
-                    .or_insert(storage::in_memory::MemBuilder::new(&user.username))
-                    .clone()
-            },
+            StaticStorage::InMemory => self.in_memory_store.builder(&user.username).await,
             StaticStorage::Garage(grgconf) => storage::garage::GarageBuilder::new(storage::garage::GarageConf {
                 region: grgconf.aws_region.clone(),
                 k2v_endpoint: grgconf.k2v_endpoint.clone(),
