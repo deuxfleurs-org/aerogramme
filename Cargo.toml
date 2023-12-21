@@ -7,8 +7,10 @@ license = "AGPL-3.0"
 description = "Encrypted mail storage over Garage"
 
 [dependencies]
+aws-config = { version = "1.1.1", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1.9.0"
 anyhow = "1.0.28"
-argon2 = "0.3"
+argon2 = "0.5"
 async-trait = "0.1"
 backtrace = "0.3"
 base64 = "0.21"
@@ -22,11 +24,7 @@ itertools = "0.10"
 lazy_static = "1.4"
 ldap3 = { version = "0.10", default-features = false, features = ["tls-rustls"] }
 log = "0.4"
-rusoto_core = { version = "0.48.0", default_features = false, features = ["rustls"] }
-rusoto_credential = "0.48.0"
-rusoto_s3 = { version = "0.48.0", default_features = false, features = ["rustls"] }
 hyper-rustls = { version = "0.24", features = ["http2"] }
-rusoto_signature = "0.48.0"
 nix = { version = "0.27", features = ["signal"] }
 serde = "1.0.137"
 rand = "0.8.5"

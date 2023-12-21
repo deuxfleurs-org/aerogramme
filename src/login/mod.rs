@@ -210,21 +210,18 @@ fn try_open_encrypted_keys(kdf_salt: &[u8], password: &str, encrypted_keys: &[u8
 // ---- UTIL ----
 
 pub fn argon2_kdf(salt: &[u8], password: &[u8], output_len: usize) -> Result<Vec<u8>> {
-    use argon2::{Algorithm, Argon2, ParamsBuilder, PasswordHasher, Version};
+    use argon2::{Algorithm, Argon2, ParamsBuilder, PasswordHasher, Version, password_hash};
 
-    let mut params = ParamsBuilder::new();
-    params
+    let params = ParamsBuilder::new()
         .output_len(output_len)
-        .map_err(|e| anyhow!("Invalid output length: {}", e))?;
-
-    let params = params
-        .params()
+        .build()
         .map_err(|e| anyhow!("Invalid argon2 params: {}", e))?;
     let argon2 = Argon2::new(Algorithm::default(), Version::default(), params);
 
-    let salt = base64::engine::general_purpose::STANDARD_NO_PAD.encode(salt);
+    let b64_salt = base64::engine::general_purpose::STANDARD_NO_PAD.encode(salt);
+    let valid_salt = password_hash::Salt::from_b64(&b64_salt).map_err(|e| anyhow!("Invalid salt, error {}", e))?;
     let hash = argon2
-        .hash_password(password, &salt)
+        .hash_password(password, valid_salt)
         .map_err(|e| anyhow!("Unable to hash: {}", e))?;
 
     let hash = hash.hash.ok_or(anyhow!("Missing output"))?;
