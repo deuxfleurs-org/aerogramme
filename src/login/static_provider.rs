@@ -35,6 +35,7 @@ pub async fn update_user_list(config: PathBuf, up: watch::Sender<UserDatabase>) 
             Ok(x) => x,
             Err(e) => {
                 tracing::warn!(path=%config.as_path().to_string_lossy(), error=%e, "Unable to load config");
+                stream.recv().await;
                 continue;
             }
         };
@@ -49,6 +50,7 @@ pub async fn update_user_list(config: PathBuf, up: watch::Sender<UserDatabase>) 
             for m in u.config.email_addresses.iter() {
                 if users_by_email.contains_key(m) {
                     tracing::warn!("Several users have the same email address: {}", m);
+                    stream.recv().await;
                     continue
                 }
                 users_by_email.insert(m.clone(), u.clone());
