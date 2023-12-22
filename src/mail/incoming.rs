@@ -429,7 +429,7 @@ impl EncryptedMessage {
             storage::BlobRef(format!("incoming/{}", gen_ident())),
             self.encrypted_body.clone().into(),
         ).with_meta(MESSAGE_KEY.to_string(), key_header);
-        storage.blob_insert(&blob_val).await?;
+        storage.blob_insert(blob_val).await?;
 
         // Update watch key to signal new mail
         let watch_val = storage::RowVal::new(

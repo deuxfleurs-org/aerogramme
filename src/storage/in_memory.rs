@@ -278,7 +278,7 @@ impl IStore for MemStore {
         let store = self.blob.read().or(Err(StorageError::Internal))?;
         store.get(&blob_ref.0).ok_or(StorageError::NotFound).map(|v| v.to_blob_val(blob_ref))
     }
-    async fn blob_insert(&self, blob_val: &BlobVal) -> Result<(), StorageError> {
+    async fn blob_insert(&self, blob_val: BlobVal) -> Result<(), StorageError> {
         tracing::trace!(entry=%blob_val.blob_ref, command="blob_insert");
         let mut store = self.blob.write().or(Err(StorageError::Internal))?;
         let entry = store.entry(blob_val.blob_ref.0.clone()).or_default();

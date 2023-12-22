@@ -266,7 +266,7 @@ impl MailboxInternal {
             async {
                 // Encrypt and save mail body
                 let message_blob = cryptoblob::seal(mail.raw, &message_key)?;
-                self.storage.blob_insert(&BlobVal::new(
+                self.storage.blob_insert(BlobVal::new(
                     BlobRef(format!("{}/{}", self.mail_path, ident)),
                     message_blob,
                 )).await?;

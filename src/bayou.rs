@@ -352,7 +352,7 @@ impl<S: BayouState> Bayou<S> {
             storage::BlobRef(format!("{}/checkpoint/{}", self.path, ts_cp.to_string())),
             cryptoblob.into(),
         );
-        self.storage.blob_insert(&blob_val).await?;
+        self.storage.blob_insert(blob_val).await?;
 
         // Drop old checkpoints (but keep at least CHECKPOINTS_TO_KEEP of them)
         let ecp_len = existing_checkpoints.len();
