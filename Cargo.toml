@@ -43,7 +43,7 @@ tower = "0.4"
 imap-codec = { git = "https://github.com/superboum/imap-codec.git", branch = "v0.5.x" }
 chrono = { version = "0.4", default-features = false, features = ["alloc"] }
 
-k2v-client = { git = "https://git.deuxfleurs.fr/Deuxfleurs/garage.git", tag = "v0.8.2" }
+k2v-client = { git = "https://git.deuxfleurs.fr/Deuxfleurs/garage.git", tag = "v0.9.0" }
 boitalettres = { git = "https://git.deuxfleurs.fr/quentin/boitalettres.git", branch = "expose-mydatetime" }
 smtp-message = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
