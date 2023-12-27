@@ -1,3 +1,5 @@
+#![feature(async_fn_in_trait)]
+
 mod bayou;
 mod config;
 mod cryptoblob;
@@ -7,16 +9,17 @@ mod lmtp;
 mod login;
 mod mail;
 mod server;
-mod time;
+mod storage;
+mod timestamp;
 
+use std::io::Read;
 use std::path::PathBuf;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use rand::prelude::*;
+use nix::{sys::signal, unistd::Pid};
 
 use config::*;
-use cryptoblob::*;
 use login::{static_provider::*, *};
 use server::Server;
 
@@ -25,92 +28,118 @@ use server::Server;
 struct Args {
     #[clap(subcommand)]
     command: Command,
+
+    #[clap(short, long, env = "CONFIG_FILE", default_value = "aerogramme.toml")]
+    config_file: PathBuf,
 }
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    #[clap(subcommand)]
+    /// A daemon to be run by the end user, on a personal device
+    Companion(CompanionCommand),
+
+    #[clap(subcommand)]
+    /// A daemon to be run by the service provider, on a server
+    Provider(ProviderCommand),
+
+    #[clap(subcommand)]
+    /// Specific tooling, should not be part of a normal workflow, for debug & experimentation only
+    Tools(ToolsCommand),
+    //Test,
+}
+
+#[derive(Subcommand, Debug)]
+enum ToolsCommand {
+    /// Manage crypto roots
+    #[clap(subcommand)]
+    CryptoRoot(CryptoRootCommand),
+
+    PasswordHash {
+        #[clap(env = "AEROGRAMME_PASSWORD")]
+        maybe_password: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum CryptoRootCommand {
+    /// Generate a new crypto-root protected with a password
+    New {
+        #[clap(env = "AEROGRAMME_PASSWORD")]
+        maybe_password: Option<String>,
+    },
+    /// Generate a new clear text crypto-root, store it securely!
+    NewClearText,
+    /// Change the password of a crypto key
+    ChangePassword {
+        #[clap(env = "AEROGRAMME_OLD_PASSWORD")]
+        maybe_old_password: Option<String>,
+
+        #[clap(env = "AEROGRAMME_NEW_PASSWORD")]
+        maybe_new_password: Option<String>,
+
+        #[clap(short, long, env = "AEROGRAMME_CRYPTO_ROOT")]
+        crypto_root: String,
+    },
+    /// From a given crypto-key, derive one containing only the public key
+    DeriveIncoming {
+        #[clap(short, long, env = "AEROGRAMME_CRYPTO_ROOT")]
+        crypto_root: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum CompanionCommand {
+    /// Runs the IMAP proxy
+    Daemon,
+    Reload {
+        #[clap(short, long, env = "AEROGRAMME_PID")]
+        pid: Option<i32>,
+    },
+    Wizard,
+    #[clap(subcommand)]
+    Account(AccountManagement),
+}
+
+#[derive(Subcommand, Debug)]
+enum ProviderCommand {
     /// Runs the IMAP+LMTP server daemon
-    Server {
-        #[clap(short, long, env = "CONFIG_FILE", default_value = "aerogramme.toml")]
-        config_file: PathBuf,
+    Daemon,
+    /// Reload the daemon
+    Reload {
+        #[clap(short, long, env = "AEROGRAMME_PID")]
+        pid: Option<i32>,
     },
-    /// TEST TEST TEST
-    Test {
-        #[clap(short, long, env = "CONFIG_FILE", default_value = "aerogramme.toml")]
-        config_file: PathBuf,
-    },
-    /// Initializes key pairs for a user and adds a key decryption password
-    FirstLogin {
-        #[clap(flatten)]
-        creds: StorageCredsArgs,
-        #[clap(flatten)]
-        user_secrets: UserSecretsArgs,
-    },
-    /// Initializes key pairs for a user and dumps keys to stdout for usage with static
-    /// login provider
-    InitializeLocalKeys {
-        #[clap(flatten)]
-        creds: StorageCredsArgs,
-    },
-    /// Adds a key decryption password for a user
-    AddPassword {
-        #[clap(flatten)]
-        creds: StorageCredsArgs,
-        #[clap(flatten)]
-        user_secrets: UserSecretsArgs,
-        /// Automatically generate password
+    /// Manage static accounts
+    #[clap(subcommand)]
+    Account(AccountManagement),
+}
+
+#[derive(Subcommand, Debug)]
+enum AccountManagement {
+    /// Add an account
+    Add {
         #[clap(short, long)]
-        gen: bool,
+        login: String,
+        #[clap(short, long)]
+        setup: PathBuf,
     },
-    /// Deletes a key decription password for a user
-    DeletePassword {
-        #[clap(flatten)]
-        creds: StorageCredsArgs,
-        #[clap(flatten)]
-        user_secrets: UserSecretsArgs,
-        /// Allow to delete all passwords
-        #[clap(long)]
-        allow_delete_all: bool,
+    /// Delete an account
+    Delete {
+        #[clap(short, long)]
+        login: String,
     },
-    /// Dumps all encryption keys for user
-    ShowKeys {
-        #[clap(flatten)]
-        creds: StorageCredsArgs,
-        #[clap(flatten)]
-        user_secrets: UserSecretsArgs,
-    },
-}
+    /// Change password for a given account
+    ChangePassword {
+        #[clap(env = "AEROGRAMME_OLD_PASSWORD")]
+        maybe_old_password: Option<String>,
 
-#[derive(Parser, Debug)]
-struct StorageCredsArgs {
-    /// Name of the region to use
-    #[clap(short = 'r', long, env = "AWS_REGION")]
-    region: String,
-    /// Url of the endpoint to connect to for K2V
-    #[clap(short = 'k', long, env = "K2V_ENDPOINT")]
-    k2v_endpoint: String,
-    /// Url of the endpoint to connect to for S3
-    #[clap(short = 's', long, env = "S3_ENDPOINT")]
-    s3_endpoint: String,
-    /// Access key ID
-    #[clap(short = 'A', long, env = "AWS_ACCESS_KEY_ID")]
-    aws_access_key_id: String,
-    /// Access key ID
-    #[clap(short = 'S', long, env = "AWS_SECRET_ACCESS_KEY")]
-    aws_secret_access_key: String,
-    /// Bucket name
-    #[clap(short = 'b', long, env = "BUCKET")]
-    bucket: String,
-}
+        #[clap(env = "AEROGRAMME_NEW_PASSWORD")]
+        maybe_new_password: Option<String>,
 
-#[derive(Parser, Debug)]
-struct UserSecretsArgs {
-    /// User secret
-    #[clap(short = 'U', long, env = "USER_SECRET")]
-    user_secret: String,
-    /// Alternate user secrets (comma-separated list of strings)
-    #[clap(long, env = "ALTERNATE_USER_SECRETS", default_value = "")]
-    alternate_user_secrets: String,
+        #[clap(short, long)]
+        login: String,
+    },
 }
 
 #[tokio::main]
@@ -129,191 +158,219 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let args = Args::parse();
+    let any_config = read_config(args.config_file)?;
 
-    match args.command {
-        Command::Server { config_file } => {
-            let config = read_config(config_file)?;
-
-            let server = Server::new(config).await?;
-            server.run().await?;
-        }
-        Command::Test { config_file } => {
-            let config = read_config(config_file)?;
-
-            let _server = Server::new(config).await?;
-            //server.test().await?;
-        }
-        Command::FirstLogin {
-            creds,
-            user_secrets,
-        } => {
-            let creds = make_storage_creds(creds);
-            let user_secrets = make_user_secrets(user_secrets);
-
-            println!("Please enter your password for key decryption.");
-            println!("If you are using LDAP login, this must be your LDAP password.");
-            println!("If you are using the static login provider, enter any password, and this will also become your password for local IMAP access.");
-            let password = rpassword::prompt_password("Enter password: ")?;
-            let password_confirm = rpassword::prompt_password("Confirm password: ")?;
-            if password != password_confirm {
-                bail!("Passwords don't match.");
+    match (&args.command, any_config) {
+        (Command::Companion(subcommand), AnyConfig::Companion(config)) => match subcommand {
+            CompanionCommand::Daemon => {
+                let server = Server::from_companion_config(config).await?;
+                server.run().await?;
             }
-
-            CryptoKeys::init(&creds, &user_secrets, &password).await?;
-
-            println!("");
-            println!("Cryptographic key setup is complete.");
-            println!("");
-            println!("If you are using the static login provider, add the following section to your .toml configuration file:");
-            println!("");
-            dump_config(&password, &creds);
-        }
-        Command::InitializeLocalKeys { creds } => {
-            let creds = make_storage_creds(creds);
-
-            println!("Please enter a password for local IMAP access.");
-            println!("This password is not used for key decryption, your keys will be printed below (do not lose them!)");
-            println!(
-                "If you plan on using LDAP login, stop right here and use `first-login` instead"
-            );
-            let password = rpassword::prompt_password("Enter password: ")?;
-            let password_confirm = rpassword::prompt_password("Confirm password: ")?;
-            if password != password_confirm {
-                bail!("Passwords don't match.");
+            CompanionCommand::Reload { pid } => reload(*pid, config.pid)?,
+            CompanionCommand::Wizard => {
+                unimplemented!();
             }
-
-            let master = gen_key();
-            let (_, secret) = gen_keypair();
-            let keys = CryptoKeys::init_without_password(&creds, &master, &secret).await?;
-
-            println!("");
-            println!("Cryptographic key setup is complete.");
-            println!("");
-            println!("Add the following section to your .toml configuration file:");
-            println!("");
-            dump_config(&password, &creds);
-            dump_keys(&keys);
+            CompanionCommand::Account(cmd) => {
+                let user_file = config.users.user_list;
+                account_management(&args.command, cmd, user_file)?;
+            }
+        },
+        (Command::Provider(subcommand), AnyConfig::Provider(config)) => match subcommand {
+            ProviderCommand::Daemon => {
+                let server = Server::from_provider_config(config).await?;
+                server.run().await?;
+            }
+            ProviderCommand::Reload { pid } => reload(*pid, config.pid)?,
+            ProviderCommand::Account(cmd) => {
+                let user_file = match config.users {
+                    UserManagement::Static(conf) => conf.user_list,
+                    UserManagement::Ldap(_) => {
+                        panic!("LDAP account management is not supported from Aerogramme.")
+                    }
+                };
+                account_management(&args.command, cmd, user_file)?;
+            }
+        },
+        (Command::Provider(_), AnyConfig::Companion(_)) => {
+            bail!("Your want to run a 'Provider' command but your configuration file has role 'Companion'.");
         }
-        Command::AddPassword {
-            creds,
-            user_secrets,
-            gen,
-        } => {
-            let creds = make_storage_creds(creds);
-            let user_secrets = make_user_secrets(user_secrets);
-
-            let existing_password =
-                rpassword::prompt_password("Enter existing password to decrypt keys: ")?;
-            let new_password = if gen {
-                let password = base64::encode_config(
-                    &u128::to_be_bytes(thread_rng().gen())[..10],
-                    base64::URL_SAFE_NO_PAD,
-                );
-                println!("Your new password: {}", password);
-                println!("Keep it safe!");
-                password
-            } else {
-                let password = rpassword::prompt_password("Enter new password: ")?;
-                let password_confirm = rpassword::prompt_password("Confirm new password: ")?;
-                if password != password_confirm {
-                    bail!("Passwords don't match.");
+        (Command::Companion(_), AnyConfig::Provider(_)) => {
+            bail!("Your want to run a 'Companion' command but your configuration file has role 'Provider'.");
+        }
+        (Command::Tools(subcommand), _) => match subcommand {
+            ToolsCommand::PasswordHash { maybe_password } => {
+                let password = match maybe_password {
+                    Some(pwd) => pwd.clone(),
+                    None => rpassword::prompt_password("Enter password: ")?,
+                };
+                println!("{}", hash_password(&password)?);
+            }
+            ToolsCommand::CryptoRoot(crcommand) => match crcommand {
+                CryptoRootCommand::New { maybe_password } => {
+                    let password = match maybe_password {
+                        Some(pwd) => pwd.clone(),
+                        None => {
+                            let password = rpassword::prompt_password("Enter password: ")?;
+                            let password_confirm =
+                                rpassword::prompt_password("Confirm password: ")?;
+                            if password != password_confirm {
+                                bail!("Passwords don't match.");
+                            }
+                            password
+                        }
+                    };
+                    let crypto_keys = CryptoKeys::init();
+                    let cr = CryptoRoot::create_pass(&password, &crypto_keys)?;
+                    println!("{}", cr.0);
                 }
-                password
-            };
+                CryptoRootCommand::NewClearText => {
+                    let crypto_keys = CryptoKeys::init();
+                    let cr = CryptoRoot::create_cleartext(&crypto_keys);
+                    println!("{}", cr.0);
+                }
+                CryptoRootCommand::ChangePassword {
+                    maybe_old_password,
+                    maybe_new_password,
+                    crypto_root,
+                } => {
+                    let old_password = match maybe_old_password {
+                        Some(pwd) => pwd.to_string(),
+                        None => rpassword::prompt_password("Enter old password: ")?,
+                    };
 
-            let keys = CryptoKeys::open(&creds, &user_secrets, &existing_password).await?;
-            keys.add_password(&creds, &user_secrets, &new_password)
-                .await?;
-            println!("");
-            println!("New password added successfully.");
-        }
-        Command::DeletePassword {
-            creds,
-            user_secrets,
-            allow_delete_all,
-        } => {
-            let creds = make_storage_creds(creds);
-            let user_secrets = make_user_secrets(user_secrets);
+                    let new_password = match maybe_new_password {
+                        Some(pwd) => pwd.to_string(),
+                        None => {
+                            let password = rpassword::prompt_password("Enter new password: ")?;
+                            let password_confirm =
+                                rpassword::prompt_password("Confirm new password: ")?;
+                            if password != password_confirm {
+                                bail!("Passwords don't match.");
+                            }
+                            password
+                        }
+                    };
 
-            let existing_password = rpassword::prompt_password("Enter password to delete: ")?;
-
-            let keys = match allow_delete_all {
-                true => Some(CryptoKeys::open(&creds, &user_secrets, &existing_password).await?),
-                false => None,
-            };
-
-            CryptoKeys::delete_password(&creds, &existing_password, allow_delete_all).await?;
-
-            println!("");
-            println!("Password was deleted successfully.");
-
-            if let Some(keys) = keys {
-                println!("As a reminder, here are your cryptographic keys:");
-                dump_keys(&keys);
-            }
-        }
-        Command::ShowKeys {
-            creds,
-            user_secrets,
-        } => {
-            let creds = make_storage_creds(creds);
-            let user_secrets = make_user_secrets(user_secrets);
-
-            let existing_password = rpassword::prompt_password("Enter key decryption password: ")?;
-
-            let keys = CryptoKeys::open(&creds, &user_secrets, &existing_password).await?;
-            dump_keys(&keys);
-        }
+                    let keys = CryptoRoot(crypto_root.to_string()).crypto_keys(&old_password)?;
+                    let cr = CryptoRoot::create_pass(&new_password, &keys)?;
+                    println!("{}", cr.0);
+                }
+                CryptoRootCommand::DeriveIncoming { crypto_root } => {
+                    let pubkey = CryptoRoot(crypto_root.to_string()).public_key()?;
+                    let cr = CryptoRoot::create_incoming(&pubkey);
+                    println!("{}", cr.0);
+                }
+            },
+        },
     }
 
     Ok(())
 }
 
-fn make_storage_creds(c: StorageCredsArgs) -> StorageCredentials {
-    let s3_region = Region {
-        name: c.region.clone(),
-        endpoint: c.s3_endpoint,
+fn reload(pid: Option<i32>, pid_path: Option<PathBuf>) -> Result<()> {
+    let final_pid = match (pid, pid_path) {
+        (Some(pid), _) => pid,
+        (_, Some(path)) => {
+            let mut f = std::fs::OpenOptions::new().read(true).open(path)?;
+            let mut pidstr = String::new();
+            f.read_to_string(&mut pidstr)?;
+            pidstr.parse::<i32>()?
+        }
+        _ => bail!("Unable to infer your daemon's PID"),
     };
-    let k2v_region = Region {
-        name: c.region,
-        endpoint: c.k2v_endpoint,
+    let pid = Pid::from_raw(final_pid);
+    signal::kill(pid, signal::Signal::SIGUSR1)?;
+    Ok(())
+}
+
+fn account_management(root: &Command, cmd: &AccountManagement, users: PathBuf) -> Result<()> {
+    let mut ulist: UserList =
+        read_config(users.clone()).context(format!("'{:?}' must be a user database", users))?;
+
+    match cmd {
+        AccountManagement::Add { login, setup } => {
+            tracing::debug!(user = login, "will-create");
+            let stp: SetupEntry = read_config(setup.clone())
+                .context(format!("'{:?}' must be a setup file", setup))?;
+            tracing::debug!(user = login, "loaded setup entry");
+
+            let password = match stp.clear_password {
+                Some(pwd) => pwd,
+                None => {
+                    let password = rpassword::prompt_password("Enter password: ")?;
+                    let password_confirm = rpassword::prompt_password("Confirm password: ")?;
+                    if password != password_confirm {
+                        bail!("Passwords don't match.");
+                    }
+                    password
+                }
+            };
+
+            let crypto_keys = CryptoKeys::init();
+            let crypto_root = match root {
+                Command::Provider(_) => CryptoRoot::create_pass(&password, &crypto_keys)?,
+                Command::Companion(_) => CryptoRoot::create_cleartext(&crypto_keys),
+                _ => unreachable!(),
+            };
+
+            let hash = hash_password(password.as_str()).context("unable to hash password")?;
+
+            ulist.insert(
+                login.clone(),
+                UserEntry {
+                    email_addresses: stp.email_addresses,
+                    password: hash,
+                    crypto_root: crypto_root.0,
+                    storage: stp.storage,
+                },
+            );
+
+            write_config(users.clone(), &ulist)?;
+        }
+        AccountManagement::Delete { login } => {
+            tracing::debug!(user = login, "will-delete");
+            ulist.remove(login);
+            write_config(users.clone(), &ulist)?;
+        }
+        AccountManagement::ChangePassword {
+            maybe_old_password,
+            maybe_new_password,
+            login,
+        } => {
+            let mut user = ulist.remove(login).context("user must exist first")?;
+
+            let old_password = match maybe_old_password {
+                Some(pwd) => pwd.to_string(),
+                None => rpassword::prompt_password("Enter old password: ")?,
+            };
+
+            if !verify_password(&old_password, &user.password)? {
+                bail!(format!("invalid password for login {}", login));
+            }
+
+            let crypto_keys = CryptoRoot(user.crypto_root).crypto_keys(&old_password)?;
+
+            let new_password = match maybe_new_password {
+                Some(pwd) => pwd.to_string(),
+                None => {
+                    let password = rpassword::prompt_password("Enter new password: ")?;
+                    let password_confirm = rpassword::prompt_password("Confirm new password: ")?;
+                    if password != password_confirm {
+                        bail!("Passwords don't match.");
+                    }
+                    password
+                }
+            };
+            let new_hash = hash_password(&new_password)?;
+            let new_crypto_root = CryptoRoot::create_pass(&new_password, &crypto_keys)?;
+
+            user.password = new_hash;
+            user.crypto_root = new_crypto_root.0;
+
+            ulist.insert(login.clone(), user);
+            write_config(users.clone(), &ulist)?;
+        }
     };
-    StorageCredentials {
-        k2v_region,
-        s3_region,
-        aws_access_key_id: c.aws_access_key_id,
-        aws_secret_access_key: c.aws_secret_access_key,
-        bucket: c.bucket,
-    }
-}
 
-fn make_user_secrets(c: UserSecretsArgs) -> UserSecrets {
-    UserSecrets {
-        user_secret: c.user_secret,
-        alternate_user_secrets: c
-            .alternate_user_secrets
-            .split(',')
-            .map(|x| x.trim())
-            .filter(|x| !x.is_empty())
-            .map(|x| x.to_string())
-            .collect(),
-    }
-}
-
-fn dump_config(password: &str, creds: &StorageCredentials) {
-    println!("[login_static.users.<username>]");
-    println!(
-        "password = \"{}\"",
-        hash_password(password).expect("unable to hash password")
-    );
-    println!("aws_access_key_id = \"{}\"", creds.aws_access_key_id);
-    println!(
-        "aws_secret_access_key = \"{}\"",
-        creds.aws_secret_access_key
-    );
-}
-
-fn dump_keys(keys: &CryptoKeys) {
-    println!("master_key = \"{}\"", base64::encode(&keys.master));
-    println!("secret_key = \"{}\"", base64::encode(&keys.secret));
+    Ok(())
 }

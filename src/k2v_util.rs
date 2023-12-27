@@ -1,14 +1,10 @@
+/*
 use anyhow::Result;
-
-use k2v_client::{CausalValue, CausalityToken, K2vClient};
-
 // ---- UTIL: function to wait for a value to have changed in K2V ----
 
 pub async fn k2v_wait_value_changed(
-    k2v: &K2vClient,
-    pk: &str,
-    sk: &str,
-    prev_ct: &Option<CausalityToken>,
+    k2v: &storage::RowStore,
+    key: &storage::RowRef,
 ) -> Result<CausalValue> {
     loop {
         if let Some(ct) = prev_ct {
@@ -27,3 +23,4 @@ pub async fn k2v_wait_value_changed(
         }
     }
 }
+*/

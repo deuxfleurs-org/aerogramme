@@ -1,28 +1,25 @@
-use std::collections::HashMap;
+//use std::collections::HashMap;
 use std::convert::TryFrom;
 
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, Result};
+use base64::Engine;
 use futures::{future::BoxFuture, FutureExt};
-use k2v_client::{CausalityToken, K2vClient, K2vValue};
-use rusoto_s3::{
-    DeleteObjectRequest, GetObjectRequest, ListObjectsV2Request, PutObjectRequest, S3Client, S3,
-};
-use tokio::io::AsyncReadExt;
+//use tokio::io::AsyncReadExt;
 use tokio::sync::watch;
 use tracing::{error, info, warn};
 
 use crate::cryptoblob;
-use crate::k2v_util::k2v_wait_value_changed;
 use crate::login::{Credentials, PublicCredentials};
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::ImapUidvalidity;
 use crate::mail::unique_ident::*;
 use crate::mail::user::User;
 use crate::mail::IMF;
-use crate::time::now_msec;
+use crate::storage;
+use crate::timestamp::now_msec;
 
 const INCOMING_PK: &str = "incoming";
 const INCOMING_LOCK_SK: &str = "lock";
@@ -54,24 +51,23 @@ async fn incoming_mail_watch_process_internal(
     creds: Credentials,
     mut rx_inbox_id: watch::Receiver<Option<(UniqueIdent, ImapUidvalidity)>>,
 ) -> Result<()> {
-    let mut lock_held = k2v_lock_loop(creds.k2v_client()?, INCOMING_PK, INCOMING_LOCK_SK);
-
-    let k2v = creds.k2v_client()?;
-    let s3 = creds.s3_client()?;
+    let mut lock_held = k2v_lock_loop(
+        creds.storage.build().await?,
+        storage::RowRef::new(INCOMING_PK, INCOMING_LOCK_SK),
+    );
+    let storage = creds.storage.build().await?;
 
     let mut inbox: Option<Arc<Mailbox>> = None;
-    let mut prev_ct: Option<CausalityToken> = None;
+    let mut incoming_key = storage::RowRef::new(INCOMING_PK, INCOMING_WATCH_SK);
 
     loop {
-        let new_mail = if *lock_held.borrow() {
+        let maybe_updated_incoming_key = if *lock_held.borrow() {
             info!("incoming lock held");
 
             let wait_new_mail = async {
                 loop {
-                    match k2v_wait_value_changed(&k2v, INCOMING_PK, INCOMING_WATCH_SK, &prev_ct)
-                        .await
-                    {
-                        Ok(cv) => break cv,
+                    match storage.row_poll(&incoming_key).await {
+                        Ok(row_val) => break row_val.row_ref,
                         Err(e) => {
                             error!("Error in wait_new_mail: {}", e);
                             tokio::time::sleep(Duration::from_secs(30)).await;
@@ -81,10 +77,10 @@ async fn incoming_mail_watch_process_internal(
             };
 
             tokio::select! {
-                cv = wait_new_mail => Some(cv.causality),
-                _ = tokio::time::sleep(MAIL_CHECK_INTERVAL) => prev_ct.clone(),
-                _ = lock_held.changed() => None,
-                _ = rx_inbox_id.changed() => None,
+                inc_k = wait_new_mail => Some(inc_k),
+                _     = tokio::time::sleep(MAIL_CHECK_INTERVAL) => Some(incoming_key.clone()),
+                _     = lock_held.changed() => None,
+                _     = rx_inbox_id.changed() => None,
             }
         } else {
             info!("incoming lock not held");
@@ -123,10 +119,10 @@ async fn incoming_mail_watch_process_internal(
 
         // If we were able to open INBOX, and we have mail,
         // fetch new mail
-        if let (Some(inbox), Some(new_ct)) = (&inbox, new_mail) {
-            match handle_incoming_mail(&user, &s3, inbox, &lock_held).await {
+        if let (Some(inbox), Some(updated_incoming_key)) = (&inbox, maybe_updated_incoming_key) {
+            match handle_incoming_mail(&user, &storage, inbox, &lock_held).await {
                 Ok(()) => {
-                    prev_ct = Some(new_ct);
+                    incoming_key = updated_incoming_key;
                 }
                 Err(e) => {
                     error!("Could not fetch incoming mail: {}", e);
@@ -141,27 +137,20 @@ async fn incoming_mail_watch_process_internal(
 
 async fn handle_incoming_mail(
     user: &Arc<User>,
-    s3: &S3Client,
+    storage: &storage::Store,
     inbox: &Arc<Mailbox>,
     lock_held: &watch::Receiver<bool>,
 ) -> Result<()> {
-    let lor = ListObjectsV2Request {
-        bucket: user.creds.storage.bucket.clone(),
-        max_keys: Some(1000),
-        prefix: Some("incoming/".into()),
-        ..Default::default()
-    };
-    let mails_res = s3.list_objects_v2(lor).await?;
+    let mails_res = storage.blob_list("incoming/").await?;
 
-    for object in mails_res.contents.unwrap_or_default() {
+    for object in mails_res {
         if !*lock_held.borrow() {
             break;
         }
-        if let Some(key) = object.key {
-            if let Some(mail_id) = key.strip_prefix("incoming/") {
-                if let Ok(mail_id) = mail_id.parse::<UniqueIdent>() {
-                    move_incoming_message(user, s3, inbox, mail_id).await?;
-                }
+        let key = object.0;
+        if let Some(mail_id) = key.strip_prefix("incoming/") {
+            if let Ok(mail_id) = mail_id.parse::<UniqueIdent>() {
+                move_incoming_message(user, storage, inbox, mail_id).await?;
             }
         }
     }
@@ -171,7 +160,7 @@ async fn handle_incoming_mail(
 
 async fn move_incoming_message(
     user: &Arc<User>,
-    s3: &S3Client,
+    storage: &storage::Store,
     inbox: &Arc<Mailbox>,
     id: UniqueIdent,
 ) -> Result<()> {
@@ -180,22 +169,15 @@ async fn move_incoming_message(
     let object_key = format!("incoming/{}", id);
 
     // 1. Fetch message from S3
-    let gor = GetObjectRequest {
-        bucket: user.creds.storage.bucket.clone(),
-        key: object_key.clone(),
-        ..Default::default()
-    };
-    let get_result = s3.get_object(gor).await?;
+    let object = storage.blob_fetch(&storage::BlobRef(object_key)).await?;
 
     // 1.a decrypt message key from headers
-    info!("Object metadata: {:?}", get_result.metadata);
-    let key_encrypted_b64 = get_result
-        .metadata
-        .as_ref()
-        .ok_or(anyhow!("Missing key in metadata"))?
+    //info!("Object metadata: {:?}", get_result.metadata);
+    let key_encrypted_b64 = object
+        .meta
         .get(MESSAGE_KEY)
         .ok_or(anyhow!("Missing key in metadata"))?;
-    let key_encrypted = base64::decode(key_encrypted_b64)?;
+    let key_encrypted = base64::engine::general_purpose::STANDARD.decode(key_encrypted_b64)?;
     let message_key = sodiumoxide::crypto::sealedbox::open(
         &key_encrypted,
         &user.creds.keys.public,
@@ -206,38 +188,28 @@ async fn move_incoming_message(
         cryptoblob::Key::from_slice(&message_key).ok_or(anyhow!("Invalid message key"))?;
 
     // 1.b retrieve message body
-    let obj_body = get_result.body.ok_or(anyhow!("Missing object body"))?;
-    let mut mail_buf = Vec::with_capacity(get_result.content_length.unwrap_or(128) as usize);
-    obj_body
-        .into_async_read()
-        .read_to_end(&mut mail_buf)
-        .await?;
-    let plain_mail = cryptoblob::open(&mail_buf, &message_key)
+    let obj_body = object.value;
+    let plain_mail = cryptoblob::open(&obj_body, &message_key)
         .map_err(|_| anyhow!("Cannot decrypt email content"))?;
 
     // 2 parse mail and add to inbox
     let msg = IMF::try_from(&plain_mail[..]).map_err(|_| anyhow!("Invalid email body"))?;
     inbox
-        .append_from_s3(msg, id, &object_key, message_key)
+        .append_from_s3(msg, id, object.blob_ref.clone(), message_key)
         .await?;
 
     // 3 delete from incoming
-    let dor = DeleteObjectRequest {
-        bucket: user.creds.storage.bucket.clone(),
-        key: object_key.clone(),
-        ..Default::default()
-    };
-    s3.delete_object(dor).await?;
+    storage.blob_rm(&object.blob_ref).await?;
 
     Ok(())
 }
 
 // ---- UTIL: K2V locking loop, use this to try to grab a lock using a K2V entry as a signal ----
 
-fn k2v_lock_loop(k2v: K2vClient, pk: &'static str, sk: &'static str) -> watch::Receiver<bool> {
+fn k2v_lock_loop(storage: storage::Store, row_ref: storage::RowRef) -> watch::Receiver<bool> {
     let (held_tx, held_rx) = watch::channel(false);
 
-    tokio::spawn(k2v_lock_loop_internal(k2v, pk, sk, held_tx));
+    tokio::spawn(k2v_lock_loop_internal(storage, row_ref, held_tx));
 
     held_rx
 }
@@ -246,13 +218,12 @@ fn k2v_lock_loop(k2v: K2vClient, pk: &'static str, sk: &'static str) -> watch::R
 enum LockState {
     Unknown,
     Empty,
-    Held(UniqueIdent, u64, CausalityToken),
+    Held(UniqueIdent, u64, storage::RowRef),
 }
 
 async fn k2v_lock_loop_internal(
-    k2v: K2vClient,
-    pk: &'static str,
-    sk: &'static str,
+    storage: storage::Store,
+    row_ref: storage::RowRef,
     held_tx: watch::Sender<bool>,
 ) {
     let (state_tx, mut state_rx) = watch::channel::<LockState>(LockState::Unknown);
@@ -262,10 +233,10 @@ async fn k2v_lock_loop_internal(
 
     // Loop 1: watch state of lock in K2V, save that in corresponding watch channel
     let watch_lock_loop: BoxFuture<Result<()>> = async {
-        let mut ct = None;
+        let mut ct = row_ref.clone();
         loop {
             info!("k2v watch lock loop iter: ct = {:?}", ct);
-            match k2v_wait_value_changed(&k2v, pk, sk, &ct).await {
+            match storage.row_poll(&ct).await {
                 Err(e) => {
                     error!(
                         "Error in k2v wait value changed: {} ; assuming we no longer hold lock.",
@@ -277,7 +248,7 @@ async fn k2v_lock_loop_internal(
                 Ok(cv) => {
                     let mut lock_state = None;
                     for v in cv.value.iter() {
-                        if let K2vValue::Value(vbytes) = v {
+                        if let storage::Alternative::Value(vbytes) = v {
                             if vbytes.len() == 32 {
                                 let ts = u64::from_be_bytes(vbytes[..8].try_into().unwrap());
                                 let pid = UniqueIdent(vbytes[8..].try_into().unwrap());
@@ -290,16 +261,18 @@ async fn k2v_lock_loop_internal(
                             }
                         }
                     }
+                    let new_ct = cv.row_ref;
+
                     info!(
                         "k2v watch lock loop: changed, old ct = {:?}, new ct = {:?}, v = {:?}",
-                        ct, cv.causality, lock_state
+                        ct, new_ct, lock_state
                     );
                     state_tx.send(
                         lock_state
-                            .map(|(pid, ts)| LockState::Held(pid, ts, cv.causality.clone()))
+                            .map(|(pid, ts)| LockState::Held(pid, ts, new_ct.clone()))
                             .unwrap_or(LockState::Empty),
                     )?;
-                    ct = Some(cv.causality);
+                    ct = new_ct;
                 }
             }
         }
@@ -385,7 +358,14 @@ async fn k2v_lock_loop_internal(
                 now_msec() + LOCK_DURATION.as_millis() as u64,
             ));
             lock[8..].copy_from_slice(&our_pid.0);
-            if let Err(e) = k2v.insert_item(pk, sk, lock, ct).await {
+            let row = match ct {
+                Some(existing) => existing,
+                None => row_ref.clone(),
+            };
+            if let Err(e) = storage
+                .row_insert(vec![storage::RowVal::new(row, lock)])
+                .await
+            {
                 error!("Could not take lock: {}", e);
                 tokio::time::sleep(Duration::from_secs(30)).await;
             }
@@ -401,7 +381,7 @@ async fn k2v_lock_loop_internal(
     info!("lock loop exited, releasing");
 
     if !held_tx.is_closed() {
-        warn!("wierd...");
+        warn!("weird...");
         let _ = held_tx.send(false);
     }
 
@@ -411,7 +391,10 @@ async fn k2v_lock_loop_internal(
         _ => None,
     };
     if let Some(ct) = release {
-        let _ = k2v.delete_item(pk, sk, ct.clone()).await;
+        match storage.row_rm(&storage::Selector::Single(&ct)).await {
+            Err(e) => warn!("Unable to release lock {:?}: {}", ct, e),
+            Ok(_) => (),
+        };
     }
 }
 
@@ -433,43 +416,30 @@ impl EncryptedMessage {
     }
 
     pub async fn deliver_to(self: Arc<Self>, creds: PublicCredentials) -> Result<()> {
-        let s3_client = creds.storage.s3_client()?;
-        let k2v_client = creds.storage.k2v_client()?;
+        let storage = creds.storage.build().await?;
 
         // Get causality token of previous watch key
-        let watch_ct = match k2v_client.read_item(INCOMING_PK, INCOMING_WATCH_SK).await {
-            Err(_) => None,
-            Ok(cv) => Some(cv.causality),
+        let query = storage::RowRef::new(INCOMING_PK, INCOMING_WATCH_SK);
+        let watch_ct = match storage.row_fetch(&storage::Selector::Single(&query)).await {
+            Err(_) => query,
+            Ok(cv) => cv.into_iter().next().map(|v| v.row_ref).unwrap_or(query),
         };
 
         // Write mail to encrypted storage
         let encrypted_key =
             sodiumoxide::crypto::sealedbox::seal(self.key.as_ref(), &creds.public_key);
-        let key_header = base64::encode(&encrypted_key);
+        let key_header = base64::engine::general_purpose::STANDARD.encode(&encrypted_key);
 
-        let por = PutObjectRequest {
-            bucket: creds.storage.bucket.clone(),
-            key: format!("incoming/{}", gen_ident()),
-            metadata: Some(
-                [(MESSAGE_KEY.to_string(), key_header)]
-                    .into_iter()
-                    .collect::<HashMap<_, _>>(),
-            ),
-            body: Some(self.encrypted_body.clone().into()),
-            ..Default::default()
-        };
-        s3_client.put_object(por).await?;
+        let blob_val = storage::BlobVal::new(
+            storage::BlobRef(format!("incoming/{}", gen_ident())),
+            self.encrypted_body.clone().into(),
+        )
+        .with_meta(MESSAGE_KEY.to_string(), key_header);
+        storage.blob_insert(blob_val).await?;
 
         // Update watch key to signal new mail
-        k2v_client
-            .insert_item(
-                INCOMING_PK,
-                INCOMING_WATCH_SK,
-                gen_ident().0.to_vec(),
-                watch_ct,
-            )
-            .await?;
-
+        let watch_val = storage::RowVal::new(watch_ct.clone(), gen_ident().0.to_vec());
+        storage.row_insert(vec![watch_val]).await?;
         Ok(())
     }
 }

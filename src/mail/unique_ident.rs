@@ -5,7 +5,7 @@ use lazy_static::lazy_static;
 use rand::prelude::*;
 use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::time::now_msec;
+use crate::timestamp::now_msec;
 
 /// An internal Mail Identifier is composed of two components:
 /// - a process identifier, 128 bits, itself composed of:

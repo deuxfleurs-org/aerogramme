@@ -5,10 +5,9 @@ use log::debug;
 
 use crate::config::*;
 use crate::login::*;
+use crate::storage;
 
 pub struct LdapLoginProvider {
-    k2v_region: Region,
-    s3_region: Region,
     ldap_server: String,
 
     pre_bind_on_login: bool,
@@ -18,13 +17,10 @@ pub struct LdapLoginProvider {
     attrs_to_retrieve: Vec<String>,
     username_attr: String,
     mail_attr: String,
+    crypto_root_attr: String,
 
-    aws_access_key_id_attr: String,
-    aws_secret_access_key_attr: String,
-    user_secret_attr: String,
-    alternate_user_secrets_attr: Option<String>,
-
-    bucket_source: BucketSource,
+    storage_specific: StorageSpecific,
+    in_memory_store: storage::in_memory::MemDb,
 }
 
 enum BucketSource {
@@ -32,20 +28,22 @@ enum BucketSource {
     Attr(String),
 }
 
+enum StorageSpecific {
+    InMemory,
+    Garage {
+        from_config: LdapGarageConfig,
+        bucket_source: BucketSource,
+    },
+}
+
 impl LdapLoginProvider {
-    pub fn new(config: LoginLdapConfig, k2v_region: Region, s3_region: Region) -> Result<Self> {
+    pub fn new(config: LoginLdapConfig) -> Result<Self> {
         let bind_dn_and_pw = match (config.bind_dn, config.bind_password) {
             (Some(dn), Some(pw)) => Some((dn, pw)),
             (None, None) => None,
             _ => bail!(
                 "If either of `bind_dn` or `bind_password` is set, the other must be set as well."
             ),
-        };
-
-        let bucket_source = match (config.bucket, config.bucket_attr) {
-            (Some(b), None) => BucketSource::Constant(b),
-            (None, Some(a)) => BucketSource::Attr(a),
-            _ => bail!("Must set `bucket` or `bucket_attr`, but not both"),
         };
 
         if config.pre_bind_on_login && bind_dn_and_pw.is_none() {
@@ -55,20 +53,32 @@ impl LdapLoginProvider {
         let mut attrs_to_retrieve = vec![
             config.username_attr.clone(),
             config.mail_attr.clone(),
-            config.aws_access_key_id_attr.clone(),
-            config.aws_secret_access_key_attr.clone(),
-            config.user_secret_attr.clone(),
+            config.crypto_root_attr.clone(),
         ];
-        if let Some(a) = &config.alternate_user_secrets_attr {
-            attrs_to_retrieve.push(a.clone());
-        }
-        if let BucketSource::Attr(a) = &bucket_source {
-            attrs_to_retrieve.push(a.clone());
-        }
+
+        // storage specific
+        let specific = match config.storage {
+            LdapStorage::InMemory => StorageSpecific::InMemory,
+            LdapStorage::Garage(grgconf) => {
+                let bucket_source =
+                    match (grgconf.default_bucket.clone(), grgconf.bucket_attr.clone()) {
+                        (Some(b), None) => BucketSource::Constant(b),
+                        (None, Some(a)) => BucketSource::Attr(a),
+                        _ => bail!("Must set `bucket` or `bucket_attr`, but not both"),
+                    };
+
+                if let BucketSource::Attr(a) = &bucket_source {
+                    attrs_to_retrieve.push(a.clone());
+                }
+
+                StorageSpecific::Garage {
+                    from_config: grgconf,
+                    bucket_source,
+                }
+            }
+        };
 
         Ok(Self {
-            k2v_region,
-            s3_region,
             ldap_server: config.ldap_server,
             pre_bind_on_login: config.pre_bind_on_login,
             bind_dn_and_pw,
@@ -76,29 +86,43 @@ impl LdapLoginProvider {
             attrs_to_retrieve,
             username_attr: config.username_attr,
             mail_attr: config.mail_attr,
-            aws_access_key_id_attr: config.aws_access_key_id_attr,
-            aws_secret_access_key_attr: config.aws_secret_access_key_attr,
-            user_secret_attr: config.user_secret_attr,
-            alternate_user_secrets_attr: config.alternate_user_secrets_attr,
-            bucket_source,
+            crypto_root_attr: config.crypto_root_attr,
+            storage_specific: specific,
+            in_memory_store: storage::in_memory::MemDb::new(),
         })
     }
 
-    fn storage_creds_from_ldap_user(&self, user: &SearchEntry) -> Result<StorageCredentials> {
-        let aws_access_key_id = get_attr(user, &self.aws_access_key_id_attr)?;
-        let aws_secret_access_key = get_attr(user, &self.aws_secret_access_key_attr)?;
-        let bucket = match &self.bucket_source {
-            BucketSource::Constant(b) => b.clone(),
-            BucketSource::Attr(a) => get_attr(user, a)?,
+    async fn storage_creds_from_ldap_user(&self, user: &SearchEntry) -> Result<Builder> {
+        let storage: Builder = match &self.storage_specific {
+            StorageSpecific::InMemory => {
+                self.in_memory_store
+                    .builder(&get_attr(user, &self.username_attr)?)
+                    .await
+            }
+            StorageSpecific::Garage {
+                from_config,
+                bucket_source,
+            } => {
+                let aws_access_key_id = get_attr(user, &from_config.aws_access_key_id_attr)?;
+                let aws_secret_access_key =
+                    get_attr(user, &from_config.aws_secret_access_key_attr)?;
+                let bucket = match bucket_source {
+                    BucketSource::Constant(b) => b.clone(),
+                    BucketSource::Attr(a) => get_attr(user, &a)?,
+                };
+
+                storage::garage::GarageBuilder::new(storage::garage::GarageConf {
+                    region: from_config.aws_region.clone(),
+                    s3_endpoint: from_config.s3_endpoint.clone(),
+                    k2v_endpoint: from_config.k2v_endpoint.clone(),
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    bucket,
+                })?
+            }
         };
 
-        Ok(StorageCredentials {
-            k2v_region: self.k2v_region.clone(),
-            s3_region: self.s3_region.clone(),
-            aws_access_key_id,
-            aws_secret_access_key,
-            bucket,
-        })
+        Ok(storage)
     }
 }
 
@@ -148,21 +172,15 @@ impl LoginProvider for LdapLoginProvider {
             .context("Invalid password")?;
         debug!("Ldap login with user name {} successfull", username);
 
-        let storage = self.storage_creds_from_ldap_user(&user)?;
+        // cryptography
+        let crstr = get_attr(&user, &self.crypto_root_attr)?;
+        let cr = CryptoRoot(crstr);
+        let keys = cr.crypto_keys(password)?;
 
-        let user_secret = get_attr(&user, &self.user_secret_attr)?;
-        let alternate_user_secrets = match &self.alternate_user_secrets_attr {
-            None => vec![],
-            Some(a) => user.attrs.get(a).cloned().unwrap_or_default(),
-        };
-        let user_secrets = UserSecrets {
-            user_secret,
-            alternate_user_secrets,
-        };
+        // storage
+        let storage = self.storage_creds_from_ldap_user(&user).await?;
 
         drop(ldap);
-
-        let keys = CryptoKeys::open(&storage, &user_secrets, password).await?;
 
         Ok(Credentials { storage, keys })
     }
@@ -201,11 +219,14 @@ impl LoginProvider for LdapLoginProvider {
         let user = SearchEntry::construct(matches.into_iter().next().unwrap());
         debug!("Found matching LDAP user for email {}: {}", email, user.dn);
 
-        let storage = self.storage_creds_from_ldap_user(&user)?;
-        drop(ldap);
+        // cryptography
+        let crstr = get_attr(&user, &self.crypto_root_attr)?;
+        let cr = CryptoRoot(crstr);
+        let public_key = cr.public_key()?;
 
-        let k2v_client = storage.k2v_client()?;
-        let (_, public_key) = CryptoKeys::load_salt_and_public(&k2v_client).await?;
+        // storage
+        let storage = self.storage_creds_from_ldap_user(&user).await?;
+        drop(ldap);
 
         Ok(PublicCredentials {
             storage,
