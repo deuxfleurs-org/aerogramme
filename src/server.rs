@@ -11,7 +11,7 @@ use crate::config::*;
 use crate::imap;
 use crate::lmtp::*;
 use crate::login::ArcLoginProvider;
-use crate::login::{ldap_provider::*, static_provider::*};
+use crate::login::{ldap_provider::*, static_provider::*, demo_provider::*};
 
 pub struct Server {
     lmtp_server: Option<Arc<LmtpServer>>,
@@ -36,6 +36,7 @@ impl Server {
     pub async fn from_provider_config(config: ProviderConfig) -> Result<Self> {
         tracing::info!("Init as provider");
         let login: ArcLoginProvider = match config.users {
+            UserManagement::Demo => Arc::new(DemoLoginProvider::new()),
             UserManagement::Static(x) => Arc::new(StaticLoginProvider::new(x).await?),
             UserManagement::Ldap(x) => Arc::new(LdapLoginProvider::new(x)?),
         };

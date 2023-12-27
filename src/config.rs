@@ -26,6 +26,7 @@ pub struct ProviderConfig {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "user_driver")]
 pub enum UserManagement {
+    Demo,
     Static(LoginStaticConfig),
     Ldap(LoginLdapConfig),
 }
