@@ -38,13 +38,18 @@ impl IBuilder for GarageBuilder {
             "aerogramme",
         );
 
-        let s3_config = aws_config::from_env()
+        let sdk_config = aws_config::from_env()
             .region(aws_config::Region::new(self.conf.region.clone()))
             .credentials_provider(s3_creds)
             .endpoint_url(self.conf.s3_endpoint.clone())
             .load()
             .await;
-        let s3_client = aws_sdk_s3::Client::new(&s3_config);
+
+        let s3_config = aws_sdk_s3::config::Builder::from(&sdk_config)
+            .force_path_style(true)
+            .build();
+
+        let s3_client = aws_sdk_s3::Client::from_conf(s3_config);
 
         let k2v_config = k2v_client::K2vClientConfig {
             endpoint: self.conf.k2v_endpoint.clone(),
@@ -152,6 +157,15 @@ impl IStore for GarageStore {
                     .read_item(&row_ref.uid.shard, &row_ref.uid.sort)
                     .await
                 {
+                    Err(k2v_client::Error::NotFound) => {
+                        tracing::debug!(
+                            "K2V item not found  shard={}, sort={}, bucket={}",
+                            row_ref.uid.shard,
+                            row_ref.uid.sort,
+                            self.bucket,
+                        );
+                        return Err(StorageError::NotFound);
+                    }
                     Err(e) => {
                         tracing::error!(
                             "K2V read item shard={}, sort={}, bucket={} failed: {}",
