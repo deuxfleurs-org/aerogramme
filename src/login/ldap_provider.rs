@@ -30,7 +30,10 @@ enum BucketSource {
 
 enum StorageSpecific {
     InMemory,
-    Garage { from_config: LdapGarageConfig, bucket_source: BucketSource },
+    Garage {
+        from_config: LdapGarageConfig,
+        bucket_source: BucketSource,
+    },
 }
 
 impl LdapLoginProvider {
@@ -57,21 +60,23 @@ impl LdapLoginProvider {
         let specific = match config.storage {
             LdapStorage::InMemory => StorageSpecific::InMemory,
             LdapStorage::Garage(grgconf) => {
-                let bucket_source = match (grgconf.default_bucket.clone(), grgconf.bucket_attr.clone()) {
-                    (Some(b), None) => BucketSource::Constant(b),
-                    (None, Some(a)) => BucketSource::Attr(a),
-                    _ => bail!("Must set `bucket` or `bucket_attr`, but not both"),
-                };
+                let bucket_source =
+                    match (grgconf.default_bucket.clone(), grgconf.bucket_attr.clone()) {
+                        (Some(b), None) => BucketSource::Constant(b),
+                        (None, Some(a)) => BucketSource::Attr(a),
+                        _ => bail!("Must set `bucket` or `bucket_attr`, but not both"),
+                    };
 
                 if let BucketSource::Attr(a) = &bucket_source {
                     attrs_to_retrieve.push(a.clone());
                 }
 
-                StorageSpecific::Garage { from_config: grgconf, bucket_source }
-            },
+                StorageSpecific::Garage {
+                    from_config: grgconf,
+                    bucket_source,
+                }
+            }
         };
-
-
 
         Ok(Self {
             ldap_server: config.ldap_server,
@@ -89,27 +94,32 @@ impl LdapLoginProvider {
 
     async fn storage_creds_from_ldap_user(&self, user: &SearchEntry) -> Result<Builder> {
         let storage: Builder = match &self.storage_specific {
-            StorageSpecific::InMemory => self.in_memory_store.builder(
-                &get_attr(user, &self.username_attr)?
-            ).await,
-            StorageSpecific::Garage { from_config, bucket_source }  => {
+            StorageSpecific::InMemory => {
+                self.in_memory_store
+                    .builder(&get_attr(user, &self.username_attr)?)
+                    .await
+            }
+            StorageSpecific::Garage {
+                from_config,
+                bucket_source,
+            } => {
                 let aws_access_key_id = get_attr(user, &from_config.aws_access_key_id_attr)?;
-                let aws_secret_access_key = get_attr(user, &from_config.aws_secret_access_key_attr)?;
+                let aws_secret_access_key =
+                    get_attr(user, &from_config.aws_secret_access_key_attr)?;
                 let bucket = match bucket_source {
                     BucketSource::Constant(b) => b.clone(),
                     BucketSource::Attr(a) => get_attr(user, &a)?,
                 };
 
-
                 storage::garage::GarageBuilder::new(storage::garage::GarageConf {
-                    region: from_config.aws_region.clone(), 
+                    region: from_config.aws_region.clone(),
                     s3_endpoint: from_config.s3_endpoint.clone(),
                     k2v_endpoint: from_config.k2v_endpoint.clone(),
-                    aws_access_key_id, 
-                    aws_secret_access_key, 
+                    aws_access_key_id,
+                    aws_secret_access_key,
                     bucket,
                 })?
-            },
+            }
         };
 
         Ok(storage)
@@ -172,7 +182,6 @@ impl LoginProvider for LdapLoginProvider {
 
         drop(ldap);
 
-
         Ok(Credentials { storage, keys })
     }
 
@@ -215,7 +224,7 @@ impl LoginProvider for LdapLoginProvider {
         let cr = CryptoRoot(crstr);
         let public_key = cr.public_key()?;
 
-        // storage 
+        // storage
         let storage = self.storage_creds_from_ldap_user(&user).await?;
         drop(ldap);
 

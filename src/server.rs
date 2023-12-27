@@ -1,6 +1,6 @@
-use std::sync::Arc;
-use std::path::PathBuf;
 use std::io::Write;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::Result;
 use futures::try_join;
@@ -26,7 +26,11 @@ impl Server {
 
         let lmtp_server = None;
         let imap_server = Some(imap::new(config.imap, login.clone()).await?);
-        Ok(Self { lmtp_server, imap_server, pid_file: config.pid })
+        Ok(Self {
+            lmtp_server,
+            imap_server,
+            pid_file: config.pid,
+        })
     }
 
     pub async fn from_provider_config(config: ProviderConfig) -> Result<Self> {
@@ -39,12 +43,16 @@ impl Server {
         let lmtp_server = Some(LmtpServer::new(config.lmtp, login.clone()));
         let imap_server = Some(imap::new(config.imap, login.clone()).await?);
 
-        Ok(Self { lmtp_server, imap_server, pid_file: config.pid })
+        Ok(Self {
+            lmtp_server,
+            imap_server,
+            pid_file: config.pid,
+        })
     }
 
     pub async fn run(self) -> Result<()> {
         let pid = std::process::id();
-        tracing::info!(pid=pid, "Starting main loops");
+        tracing::info!(pid = pid, "Starting main loops");
 
         // write the pid file
         if let Some(pid_file) = self.pid_file {
@@ -56,7 +64,6 @@ impl Server {
             file.write_all(pid.to_string().as_bytes())?;
             drop(file);
         }
-
 
         let (exit_signal, provoke_exit) = watch_ctrl_c();
         let _exit_on_err = move |err: anyhow::Error| {

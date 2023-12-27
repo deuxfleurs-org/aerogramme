@@ -226,7 +226,11 @@ impl User {
 
     async fn load_mailbox_list(&self) -> Result<(MailboxList, Option<storage::RowRef>)> {
         let row_ref = storage::RowRef::new(MAILBOX_LIST_PK, MAILBOX_LIST_SK);
-        let (mut list, row) = match self.storage.row_fetch(&storage::Selector::Single(&row_ref)).await {
+        let (mut list, row) = match self
+            .storage
+            .row_fetch(&storage::Selector::Single(&row_ref))
+            .await
+        {
             Err(storage::StorageError::NotFound) => (MailboxList::new(), None),
             Err(e) => return Err(e.into()),
             Ok(rv) => {

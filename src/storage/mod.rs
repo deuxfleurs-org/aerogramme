@@ -8,13 +8,13 @@
  * into the object system so it is not exposed.
  */
 
-pub mod in_memory;
 pub mod garage;
+pub mod in_memory;
 
-use std::sync::Arc;
-use std::hash::Hash;
-use std::collections::HashMap;
 use async_trait::async_trait;
+use std::collections::HashMap;
+use std::hash::Hash;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub enum Alternative {
@@ -52,14 +52,18 @@ pub struct RowRef {
 }
 impl std::fmt::Display for RowRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "RowRef({}, {}, {:?})", self.uid.shard, self.uid.sort, self.causality)
+        write!(
+            f,
+            "RowRef({}, {}, {:?})",
+            self.uid.shard, self.uid.sort, self.causality
+        )
     }
 }
 
 impl RowRef {
     pub fn new(shard: &str, sort: &str) -> Self {
         Self {
-            uid: RowUid { 
+            uid: RowUid {
                 shard: shard.to_string(),
                 sort: sort.to_string(),
             },
@@ -87,7 +91,6 @@ impl RowVal {
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub struct BlobRef(pub String);
 impl std::fmt::Display for BlobRef {
@@ -105,7 +108,8 @@ pub struct BlobVal {
 impl BlobVal {
     pub fn new(blob_ref: BlobRef, value: Vec<u8>) -> Self {
         Self {
-            blob_ref, value,
+            blob_ref,
+            value,
             meta: HashMap::new(),
         }
     }
@@ -118,16 +122,27 @@ impl BlobVal {
 
 #[derive(Debug)]
 pub enum Selector<'a> {
-    Range { shard: &'a str, sort_begin: &'a str, sort_end: &'a str },
-    List (Vec<RowRef>), // list of (shard_key, sort_key)
+    Range {
+        shard: &'a str,
+        sort_begin: &'a str,
+        sort_end: &'a str,
+    },
+    List(Vec<RowRef>), // list of (shard_key, sort_key)
     #[allow(dead_code)]
-    Prefix { shard: &'a str, sort_prefix: &'a str },
+    Prefix {
+        shard: &'a str,
+        sort_prefix: &'a str,
+    },
     Single(&'a RowRef),
 }
 impl<'a> std::fmt::Display for Selector<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Range { shard, sort_begin, sort_end } => write!(f, "Range({}, [{}, {}[)", shard, sort_begin, sort_end),
+            Self::Range {
+                shard,
+                sort_begin,
+                sort_end,
+            } => write!(f, "Range({}, [{}, {}[)", shard, sort_begin, sort_end),
             Self::List(list) => write!(f, "List({:?})", list),
             Self::Prefix { shard, sort_prefix } => write!(f, "Prefix({}, {})", shard, sort_prefix),
             Self::Single(row_ref) => write!(f, "Single({})", row_ref),
@@ -149,7 +164,7 @@ pub trait IStore {
     async fn blob_rm(&self, blob_ref: &BlobRef) -> Result<(), StorageError>;
 }
 
-#[derive(Clone,Debug,PartialEq,Eq,Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct UnicityBuffer(Vec<u8>);
 
 #[async_trait]

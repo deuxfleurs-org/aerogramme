@@ -8,7 +8,7 @@ use crate::login::Credentials;
 use crate::mail::uidindex::*;
 use crate::mail::unique_ident::*;
 use crate::mail::IMF;
-use crate::storage::{Store, RowRef, RowVal, BlobRef, BlobVal, Selector, self};
+use crate::storage::{self, BlobRef, BlobVal, RowRef, RowVal, Selector, Store};
 use crate::timestamp::now_msec;
 
 pub struct Mailbox {
@@ -196,7 +196,10 @@ impl MailboxInternal {
 
     async fn fetch_meta(&self, ids: &[UniqueIdent]) -> Result<Vec<MailMeta>> {
         let ids = ids.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        let ops = ids.iter().map(|id| RowRef::new(self.mail_path.as_str(), id.as_str())).collect::<Vec<_>>();
+        let ops = ids
+            .iter()
+            .map(|id| RowRef::new(self.mail_path.as_str(), id.as_str()))
+            .collect::<Vec<_>>();
         let res_vec = self.storage.row_fetch(&Selector::List(ops)).await?;
 
         let mut meta_vec = vec![];
@@ -231,7 +234,10 @@ impl MailboxInternal {
     }
 
     async fn fetch_full(&self, id: UniqueIdent, message_key: &Key) -> Result<Vec<u8>> {
-        let obj_res = self.storage.blob_fetch(&BlobRef(format!("{}/{}", self.mail_path, id))).await?;
+        let obj_res = self
+            .storage
+            .blob_fetch(&BlobRef(format!("{}/{}", self.mail_path, id)))
+            .await?;
         let body = obj_res.value;
         cryptoblob::open(&body, message_key)
     }
@@ -266,10 +272,12 @@ impl MailboxInternal {
             async {
                 // Encrypt and save mail body
                 let message_blob = cryptoblob::seal(mail.raw, &message_key)?;
-                self.storage.blob_insert(BlobVal::new(
-                    BlobRef(format!("{}/{}", self.mail_path, ident)),
-                    message_blob,
-                )).await?;
+                self.storage
+                    .blob_insert(BlobVal::new(
+                        BlobRef(format!("{}/{}", self.mail_path, ident)),
+                        message_blob,
+                    ))
+                    .await?;
                 Ok::<_, anyhow::Error>(())
             },
             async {
@@ -281,10 +289,12 @@ impl MailboxInternal {
                     rfc822_size: mail.raw.len(),
                 };
                 let meta_blob = seal_serialize(&meta, &self.encryption_key)?;
-                self.storage.row_insert(vec![RowVal::new(
-                    RowRef::new(&self.mail_path, &ident.to_string()),
-                    meta_blob,
-                )]).await?;
+                self.storage
+                    .row_insert(vec![RowVal::new(
+                        RowRef::new(&self.mail_path, &ident.to_string()),
+                        meta_blob,
+                    )])
+                    .await?;
                 Ok::<_, anyhow::Error>(())
             },
             self.uid_index.opportunistic_sync()
@@ -328,10 +338,12 @@ impl MailboxInternal {
                     rfc822_size: mail.raw.len(),
                 };
                 let meta_blob = seal_serialize(&meta, &self.encryption_key)?;
-                self.storage.row_insert(vec![RowVal::new(
+                self.storage
+                    .row_insert(vec![RowVal::new(
                         RowRef::new(&self.mail_path, &ident.to_string()),
                         meta_blob,
-                )]).await?;
+                    )])
+                    .await?;
                 Ok::<_, anyhow::Error>(())
             },
             self.uid_index.opportunistic_sync()
@@ -355,17 +367,25 @@ impl MailboxInternal {
         futures::try_join!(
             async {
                 // Delete mail body from S3
-                self.storage.blob_rm(&BlobRef(format!("{}/{}", self.mail_path, ident))).await?;
+                self.storage
+                    .blob_rm(&BlobRef(format!("{}/{}", self.mail_path, ident)))
+                    .await?;
                 Ok::<_, anyhow::Error>(())
             },
             async {
                 // Delete mail meta from K2V
                 let sk = ident.to_string();
-                let res = self.storage
-                    .row_fetch(&storage::Selector::Single(&RowRef::new(&self.mail_path, &sk)))
+                let res = self
+                    .storage
+                    .row_fetch(&storage::Selector::Single(&RowRef::new(
+                        &self.mail_path,
+                        &sk,
+                    )))
                     .await?;
                 if let Some(row_val) = res.into_iter().next() {
-                    self.storage.row_rm(&storage::Selector::Single(&row_val.row_ref)).await?;
+                    self.storage
+                        .row_rm(&storage::Selector::Single(&row_val.row_ref))
+                        .await?;
                 }
                 Ok::<_, anyhow::Error>(())
             }
@@ -421,10 +441,12 @@ impl MailboxInternal {
                 // Copy mail meta in K2V
                 let meta = &from.fetch_meta(&[source_id]).await?[0];
                 let meta_blob = seal_serialize(meta, &self.encryption_key)?;
-                self.storage.row_insert(vec![RowVal::new(
-                    RowRef::new(&self.mail_path, &new_id.to_string()),
-                    meta_blob,
-                )]).await?;
+                self.storage
+                    .row_insert(vec![RowVal::new(
+                        RowRef::new(&self.mail_path, &new_id.to_string()),
+                        meta_blob,
+                    )])
+                    .await?;
                 Ok::<_, anyhow::Error>(())
             },
             self.uid_index.opportunistic_sync(),

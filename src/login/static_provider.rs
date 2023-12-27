@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::path::PathBuf;
-use tokio::sync::watch;
+use std::sync::Arc;
 use tokio::signal::unix::{signal, SignalKind};
+use tokio::sync::watch;
 
 use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
@@ -28,7 +28,8 @@ pub struct StaticLoginProvider {
 }
 
 pub async fn update_user_list(config: PathBuf, up: watch::Sender<UserDatabase>) -> Result<()> {
-    let mut stream = signal(SignalKind::user_defined1()).expect("failed to install SIGUSR1 signal hander for reload");
+    let mut stream = signal(SignalKind::user_defined1())
+        .expect("failed to install SIGUSR1 signal hander for reload");
 
     loop {
         let ulist: UserList = match read_config(config.clone()) {
@@ -42,7 +43,12 @@ pub async fn update_user_list(config: PathBuf, up: watch::Sender<UserDatabase>) 
 
         let users = ulist
             .into_iter()
-            .map(|(username, config)| (username.clone() , Arc::new(ContextualUserEntry { username, config })))
+            .map(|(username, config)| {
+                (
+                    username.clone(),
+                    Arc::new(ContextualUserEntry { username, config }),
+                )
+            })
             .collect::<HashMap<_, _>>();
 
         let mut users_by_email = HashMap::new();
@@ -51,14 +57,18 @@ pub async fn update_user_list(config: PathBuf, up: watch::Sender<UserDatabase>) 
                 if users_by_email.contains_key(m) {
                     tracing::warn!("Several users have the same email address: {}", m);
                     stream.recv().await;
-                    continue
+                    continue;
                 }
                 users_by_email.insert(m.clone(), u.clone());
             }
         }
 
         tracing::info!("{} users loaded", users.len());
-        up.send(UserDatabase { users, users_by_email }).context("update user db config")?;
+        up.send(UserDatabase {
+            users,
+            users_by_email,
+        })
+        .context("update user db config")?;
         stream.recv().await;
         tracing::info!("Received SIGUSR1, reloading");
     }
@@ -71,7 +81,10 @@ impl StaticLoginProvider {
         tokio::spawn(update_user_list(config.user_list, tx));
         rx.changed().await?;
 
-        Ok(Self { user_db: rx, in_memory_store: storage::in_memory::MemDb::new() })
+        Ok(Self {
+            user_db: rx,
+            in_memory_store: storage::in_memory::MemDb::new(),
+        })
     }
 }
 
@@ -95,14 +108,16 @@ impl LoginProvider for StaticLoginProvider {
         tracing::debug!(user=%username, "fetch keys");
         let storage: storage::Builder = match &user.config.storage {
             StaticStorage::InMemory => self.in_memory_store.builder(username).await,
-            StaticStorage::Garage(grgconf) => storage::garage::GarageBuilder::new(storage::garage::GarageConf {
-                region: grgconf.aws_region.clone(),
-                k2v_endpoint: grgconf.k2v_endpoint.clone(),
-                s3_endpoint: grgconf.s3_endpoint.clone(),
-                aws_access_key_id: grgconf.aws_access_key_id.clone(),
-                aws_secret_access_key: grgconf.aws_secret_access_key.clone(),
-                bucket: grgconf.bucket.clone(),
-            })?,
+            StaticStorage::Garage(grgconf) => {
+                storage::garage::GarageBuilder::new(storage::garage::GarageConf {
+                    region: grgconf.aws_region.clone(),
+                    k2v_endpoint: grgconf.k2v_endpoint.clone(),
+                    s3_endpoint: grgconf.s3_endpoint.clone(),
+                    aws_access_key_id: grgconf.aws_access_key_id.clone(),
+                    aws_secret_access_key: grgconf.aws_secret_access_key.clone(),
+                    bucket: grgconf.bucket.clone(),
+                })?
+            }
         };
 
         let cr = CryptoRoot(user.config.crypto_root.clone());
@@ -124,14 +139,16 @@ impl LoginProvider for StaticLoginProvider {
 
         let storage: storage::Builder = match &user.config.storage {
             StaticStorage::InMemory => self.in_memory_store.builder(&user.username).await,
-            StaticStorage::Garage(grgconf) => storage::garage::GarageBuilder::new(storage::garage::GarageConf {
-                region: grgconf.aws_region.clone(),
-                k2v_endpoint: grgconf.k2v_endpoint.clone(),
-                s3_endpoint: grgconf.s3_endpoint.clone(),
-                aws_access_key_id: grgconf.aws_access_key_id.clone(),
-                aws_secret_access_key: grgconf.aws_secret_access_key.clone(),
-                bucket: grgconf.bucket.clone(),
-            })?,
+            StaticStorage::Garage(grgconf) => {
+                storage::garage::GarageBuilder::new(storage::garage::GarageConf {
+                    region: grgconf.aws_region.clone(),
+                    k2v_endpoint: grgconf.k2v_endpoint.clone(),
+                    s3_endpoint: grgconf.s3_endpoint.clone(),
+                    aws_access_key_id: grgconf.aws_access_key_id.clone(),
+                    aws_secret_access_key: grgconf.aws_secret_access_key.clone(),
+                    bucket: grgconf.bucket.clone(),
+                })?
+            }
         };
 
         let cr = CryptoRoot(user.config.crypto_root.clone());

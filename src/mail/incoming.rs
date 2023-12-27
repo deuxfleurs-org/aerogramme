@@ -51,7 +51,10 @@ async fn incoming_mail_watch_process_internal(
     creds: Credentials,
     mut rx_inbox_id: watch::Receiver<Option<(UniqueIdent, ImapUidvalidity)>>,
 ) -> Result<()> {
-    let mut lock_held = k2v_lock_loop(creds.storage.build().await?, storage::RowRef::new(INCOMING_PK, INCOMING_LOCK_SK));
+    let mut lock_held = k2v_lock_loop(
+        creds.storage.build().await?,
+        storage::RowRef::new(INCOMING_PK, INCOMING_LOCK_SK),
+    );
     let storage = creds.storage.build().await?;
 
     let mut inbox: Option<Arc<Mailbox>> = None;
@@ -63,8 +66,7 @@ async fn incoming_mail_watch_process_internal(
 
             let wait_new_mail = async {
                 loop {
-                    match storage.row_poll(&incoming_key).await
-                    {
+                    match storage.row_poll(&incoming_key).await {
                         Ok(row_val) => break row_val.row_ref,
                         Err(e) => {
                             error!("Error in wait_new_mail: {}", e);
@@ -360,7 +362,10 @@ async fn k2v_lock_loop_internal(
                 Some(existing) => existing,
                 None => row_ref.clone(),
             };
-            if let Err(e) = storage.row_insert(vec![storage::RowVal::new(row, lock)]).await {
+            if let Err(e) = storage
+                .row_insert(vec![storage::RowVal::new(row, lock)])
+                .await
+            {
                 error!("Could not take lock: {}", e);
                 tokio::time::sleep(Duration::from_secs(30)).await;
             }
@@ -428,14 +433,12 @@ impl EncryptedMessage {
         let blob_val = storage::BlobVal::new(
             storage::BlobRef(format!("incoming/{}", gen_ident())),
             self.encrypted_body.clone().into(),
-        ).with_meta(MESSAGE_KEY.to_string(), key_header);
+        )
+        .with_meta(MESSAGE_KEY.to_string(), key_header);
         storage.blob_insert(blob_val).await?;
 
         // Update watch key to signal new mail
-        let watch_val = storage::RowVal::new(
-            watch_ct.clone(),
-            gen_ident().0.to_vec(),
-        );
+        let watch_val = storage::RowVal::new(watch_ct.clone(), gen_ident().0.to_vec());
         storage.row_insert(vec![watch_val]).await?;
         Ok(())
     }

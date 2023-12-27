@@ -1,8 +1,8 @@
 pub mod ldap_provider;
 pub mod static_provider;
 
-use std::sync::Arc;
 use base64::Engine;
+use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Context, Result};
 use async_trait::async_trait;
@@ -45,7 +45,7 @@ pub struct PublicCredentials {
     pub public_key: PublicKey,
 }
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CryptoRoot(pub String);
 
@@ -73,47 +73,59 @@ impl CryptoRoot {
 
     pub fn public_key(&self) -> Result<PublicKey> {
         match self.0.splitn(4, ':').collect::<Vec<&str>>()[..] {
-            [ "aero", "cryptoroot", "pass", b64blob ] => {
+            ["aero", "cryptoroot", "pass", b64blob] => {
                 let blob = base64::engine::general_purpose::STANDARD_NO_PAD.decode(b64blob)?;
                 if blob.len() < 32 {
-                    bail!("Decoded data is {} bytes long, expect at least 32 bytes", blob.len());
+                    bail!(
+                        "Decoded data is {} bytes long, expect at least 32 bytes",
+                        blob.len()
+                    );
                 }
                 PublicKey::from_slice(&blob[..32]).context("must be a valid public key")
-            },
-            [ "aero", "cryptoroot", "cleartext", b64blob ] => {
+            }
+            ["aero", "cryptoroot", "cleartext", b64blob] => {
                 let blob = base64::engine::general_purpose::STANDARD_NO_PAD.decode(b64blob)?;
                 Ok(CryptoKeys::deserialize(&blob)?.public)
-            },
-            [ "aero", "cryptoroot", "incoming", b64blob ] => {
+            }
+            ["aero", "cryptoroot", "incoming", b64blob] => {
                 let blob = base64::engine::general_purpose::STANDARD_NO_PAD.decode(b64blob)?;
                 if blob.len() < 32 {
-                    bail!("Decoded data is {} bytes long, expect at least 32 bytes", blob.len());
+                    bail!(
+                        "Decoded data is {} bytes long, expect at least 32 bytes",
+                        blob.len()
+                    );
                 }
                 PublicKey::from_slice(&blob[..32]).context("must be a valid public key")
-            },
-            [ "aero", "cryptoroot", "keyring", _ ] => {
+            }
+            ["aero", "cryptoroot", "keyring", _] => {
                 bail!("keyring is not yet implemented!")
-            },
-            _ => bail!(format!("passed string '{}' is not a valid cryptoroot", self.0)),
+            }
+            _ => bail!(format!(
+                "passed string '{}' is not a valid cryptoroot",
+                self.0
+            )),
         }
     }
     pub fn crypto_keys(&self, password: &str) -> Result<CryptoKeys> {
         match self.0.splitn(4, ':').collect::<Vec<&str>>()[..] {
-            [ "aero", "cryptoroot", "pass", b64blob ] => {
+            ["aero", "cryptoroot", "pass", b64blob] => {
                 let blob = base64::engine::general_purpose::STANDARD_NO_PAD.decode(b64blob)?;
                 CryptoKeys::password_open(password, &blob)
-            },
-            [ "aero", "cryptoroot", "cleartext", b64blob ] => {
+            }
+            ["aero", "cryptoroot", "cleartext", b64blob] => {
                 let blob = base64::engine::general_purpose::STANDARD_NO_PAD.decode(b64blob)?;
                 CryptoKeys::deserialize(&blob)
-            },
-            [ "aero", "cryptoroot", "incoming", _ ] => {
+            }
+            ["aero", "cryptoroot", "incoming", _] => {
                 bail!("incoming cryptoroot does not contain a crypto key!")
-            },
-            [ "aero", "cryptoroot", "keyring", _ ] =>{
+            }
+            ["aero", "cryptoroot", "keyring", _] => {
                 bail!("keyring is not yet implemented!")
-            },
-            _ => bail!(format!("passed string '{}' is not a valid cryptoroot", self.0)),
+            }
+            _ => bail!(format!(
+                "passed string '{}' is not a valid cryptoroot",
+                self.0
+            )),
         }
     }
 }
@@ -131,9 +143,6 @@ pub struct CryptoKeys {
 }
 
 // ----
-
-
-
 
 impl CryptoKeys {
     /// Initialize a new cryptography root
@@ -202,7 +211,11 @@ fn derive_password_key(kdf_salt: &[u8], password: &str) -> Result<Key> {
     Ok(Key::from_slice(&argon2_kdf(kdf_salt, password.as_bytes(), 32)?).unwrap())
 }
 
-fn try_open_encrypted_keys(kdf_salt: &[u8], password: &str, encrypted_keys: &[u8]) -> Result<Vec<u8>> {
+fn try_open_encrypted_keys(
+    kdf_salt: &[u8],
+    password: &str,
+    encrypted_keys: &[u8],
+) -> Result<Vec<u8>> {
     let password_key = derive_password_key(kdf_salt, password)?;
     open(encrypted_keys, &password_key)
 }
@@ -210,7 +223,7 @@ fn try_open_encrypted_keys(kdf_salt: &[u8], password: &str, encrypted_keys: &[u8
 // ---- UTIL ----
 
 pub fn argon2_kdf(salt: &[u8], password: &[u8], output_len: usize) -> Result<Vec<u8>> {
-    use argon2::{Algorithm, Argon2, ParamsBuilder, PasswordHasher, Version, password_hash};
+    use argon2::{password_hash, Algorithm, Argon2, ParamsBuilder, PasswordHasher, Version};
 
     let params = ParamsBuilder::new()
         .output_len(output_len)
@@ -219,7 +232,8 @@ pub fn argon2_kdf(salt: &[u8], password: &[u8], output_len: usize) -> Result<Vec
     let argon2 = Argon2::new(Algorithm::default(), Version::default(), params);
 
     let b64_salt = base64::engine::general_purpose::STANDARD_NO_PAD.encode(salt);
-    let valid_salt = password_hash::Salt::from_b64(&b64_salt).map_err(|e| anyhow!("Invalid salt, error {}", e))?;
+    let valid_salt = password_hash::Salt::from_b64(&b64_salt)
+        .map_err(|e| anyhow!("Invalid salt, error {}", e))?;
     let hash = argon2
         .hash_password(password, valid_salt)
         .map_err(|e| anyhow!("Unable to hash: {}", e))?;
