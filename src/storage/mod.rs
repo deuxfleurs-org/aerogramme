@@ -90,11 +90,6 @@ impl RowVal {
 
 #[derive(Debug, Clone)]
 pub struct BlobRef(pub String);
-impl BlobRef {
-    pub fn new(key: &str) -> Self {
-        Self(key.to_string())
-    }
-}
 impl std::fmt::Display for BlobRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "BlobRef({})", self.0)
@@ -125,6 +120,7 @@ impl BlobVal {
 pub enum Selector<'a> {
     Range { shard: &'a str, sort_begin: &'a str, sort_end: &'a str },
     List (Vec<RowRef>), // list of (shard_key, sort_key)
+    #[allow(dead_code)]
     Prefix { shard: &'a str, sort_prefix: &'a str },
     Single(&'a RowRef),
 }
@@ -143,7 +139,6 @@ impl<'a> std::fmt::Display for Selector<'a> {
 pub trait IStore {
     async fn row_fetch<'a>(&self, select: &Selector<'a>) -> Result<Vec<RowVal>, StorageError>;
     async fn row_rm<'a>(&self, select: &Selector<'a>) -> Result<(), StorageError>;
-    async fn row_rm_single(&self, entry: &RowRef) -> Result<(), StorageError>;
     async fn row_insert(&self, values: Vec<RowVal>) -> Result<(), StorageError>;
     async fn row_poll(&self, value: &RowRef) -> Result<RowVal, StorageError>;
 

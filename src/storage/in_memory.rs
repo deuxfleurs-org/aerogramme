@@ -137,6 +137,32 @@ fn prefix_last_bound(prefix: &str) -> Bound<String> {
     }
 }
 
+impl MemStore {
+    fn row_rm_single(&self, entry: &RowRef) -> Result<(), StorageError> {
+        tracing::trace!(entry=%entry, command="row_rm_single");
+        let mut store = self.row.write().or(Err(StorageError::Internal))?;
+        let shard = &entry.uid.shard;
+        let sort = &entry.uid.sort;
+
+        let cauz = match entry.causality.as_ref().map(|v| v.parse::<u64>()) {
+            Some(Ok(v)) => v,
+            _ => 0,
+        };
+
+        let bt = store.entry(shard.to_string()).or_default();
+        let intval = bt.entry(sort.to_string()).or_default();
+
+        if cauz == intval.version {
+            intval.data.clear();
+        }
+        intval.data.push(InternalData::Tombstone);
+        intval.version += 1;
+        intval.change.notify_waiters();
+
+        Ok(())
+    }
+}
+
 #[async_trait]
 impl IStore for MemStore {
     async fn row_fetch<'a>(&self, select: &Selector<'a>) -> Result<Vec<RowVal>, StorageError> {
@@ -183,37 +209,17 @@ impl IStore for MemStore {
         }
     }
 
-    async fn row_rm_single(&self, entry: &RowRef) -> Result<(), StorageError> {
-        tracing::trace!(entry=%entry, command="row_rm_single");
-        let mut store = self.row.write().or(Err(StorageError::Internal))?;
-        let shard = &entry.uid.shard;
-        let sort = &entry.uid.sort;
-
-        let cauz = match entry.causality.as_ref().map(|v| v.parse::<u64>()) {
-            Some(Ok(v)) => v,
-            _ => 0,
-        };
-
-        let bt = store.entry(shard.to_string()).or_default();
-        let intval = bt.entry(sort.to_string()).or_default();
-
-        if cauz == intval.version {
-            intval.data.clear();
-        }
-        intval.data.push(InternalData::Tombstone);
-        intval.version += 1;
-        intval.change.notify_waiters();
-
-        Ok(())
-    }
-
     async fn row_rm<'a>(&self, select: &Selector<'a>) -> Result<(), StorageError> {
         tracing::trace!(select=%select, command="row_rm");
-        //@FIXME not efficient at all...
-        let values = self.row_fetch(select).await?;
+
+        let values = match select {
+            Selector::Range { .. } | Selector::Prefix { .. } => self.row_fetch(select).await?.into_iter().map(|rv| rv.row_ref).collect::<Vec<_>>(),
+            Selector::List(rlist) => rlist.clone(),
+            Selector::Single(row_ref) => vec![(*row_ref).clone()],
+        };
 
         for v in values.into_iter() {
-            self.row_rm_single(&v.row_ref).await?;
+            self.row_rm_single(&v)?;
         }
         Ok(())
     }

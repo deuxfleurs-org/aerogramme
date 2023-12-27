@@ -386,7 +386,7 @@ async fn k2v_lock_loop_internal(
         _ => None,
     };
     if let Some(ct) = release {
-        match storage.row_rm_single(&ct).await {
+        match storage.row_rm(&storage::Selector::Single(&ct)).await {
             Err(e) => warn!("Unable to release lock {:?}: {}", ct, e),
             Ok(_) => (),
         };

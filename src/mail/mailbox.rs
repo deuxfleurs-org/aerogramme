@@ -365,7 +365,7 @@ impl MailboxInternal {
                     .row_fetch(&storage::Selector::Single(&RowRef::new(&self.mail_path, &sk)))
                     .await?;
                 if let Some(row_val) = res.into_iter().next() {
-                    self.storage.row_rm_single(&row_val.row_ref).await?;
+                    self.storage.row_rm(&storage::Selector::Single(&row_val.row_ref)).await?;
                 }
                 Ok::<_, anyhow::Error>(())
             }
