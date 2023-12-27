@@ -374,8 +374,12 @@ impl IStore for GarageStore {
             }
         };
 
+        let mut bv = BlobVal::new(blob_ref.clone(), buffer);
+        if let Some(meta) = object_output.metadata {
+            bv.meta = meta;
+        }
         tracing::debug!("Fetched {}/{}", self.bucket, blob_ref.0);
-        Ok(BlobVal::new(blob_ref.clone(), buffer))
+        Ok(bv)
     }
     async fn blob_insert(&self, blob_val: BlobVal) -> Result<(), StorageError> {
         let streamable_value = s3::primitives::ByteStream::from(blob_val.value);
@@ -385,6 +389,7 @@ impl IStore for GarageStore {
             .put_object()
             .bucket(self.bucket.to_string())
             .key(blob_val.blob_ref.0.to_string())
+            .set_metadata(Some(blob_val.meta))
             .body(streamable_value)
             .send()
             .await;
