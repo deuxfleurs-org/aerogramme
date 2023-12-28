@@ -49,6 +49,12 @@ smtp-message = { git = "http://github.com/Alexis211/kannader", branch = "feature
 smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 
 #k2v-client = { path = "../garage/src/k2v-client" }
+#imap-flow = { git = "https://github.com/duesee/imap-flow.git", commit = "e45ce7bb6ab6bda3c71a0c7b05e9b558a5902e90" }
 
 [dev-dependencies]
+serial_test = "*"
 
+[[test]]
+name = "imap_features"
+path = "tests/imap_features.rs"
+harness = false
