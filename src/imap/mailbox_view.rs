@@ -174,7 +174,7 @@ impl<'a> MailView<'a> {
         Ok(MessageAttribute::Rfc822(NString(
             self.content
                 .as_full()?
-                .raw_body
+                .raw_part
                 .clone()
                 .try_into()
                 .ok()
