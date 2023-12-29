@@ -1,14 +1,14 @@
 use crate::login::*;
 use crate::storage::*;
 
-pub struct DemoLoginProvider{
+pub struct DemoLoginProvider {
     keys: CryptoKeys,
     in_memory_store: in_memory::MemDb,
 }
 
 impl DemoLoginProvider {
     pub fn new() -> Self {
-        Self { 
+        Self {
             keys: CryptoKeys::init(),
             in_memory_store: in_memory::MemDb::new(),
         }
@@ -26,8 +26,8 @@ impl LoginProvider for DemoLoginProvider {
 
         if password != "hunter2" {
             bail!("wrong password");
-        } 
-        
+        }
+
         let storage = self.in_memory_store.builder("alice").await;
         let keys = self.keys.clone();
 
@@ -43,6 +43,9 @@ impl LoginProvider for DemoLoginProvider {
         let storage = self.in_memory_store.builder("alice").await;
         let public_key = self.keys.public.clone();
 
-        Ok(PublicCredentials { storage, public_key })
+        Ok(PublicCredentials {
+            storage,
+            public_key,
+        })
     }
 }

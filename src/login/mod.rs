@@ -1,6 +1,6 @@
+pub mod demo_provider;
 pub mod ldap_provider;
 pub mod static_provider;
-pub mod demo_provider;
 
 use base64::Engine;
 use std::sync::Arc;

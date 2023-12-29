@@ -11,7 +11,7 @@ use crate::config::*;
 use crate::imap;
 use crate::lmtp::*;
 use crate::login::ArcLoginProvider;
-use crate::login::{ldap_provider::*, static_provider::*, demo_provider::*};
+use crate::login::{demo_provider::*, ldap_provider::*, static_provider::*};
 
 pub struct Server {
     lmtp_server: Option<Arc<LmtpServer>>,

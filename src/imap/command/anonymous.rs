@@ -21,7 +21,10 @@ pub async fn dispatch(ctx: AnonymousContext<'_>) -> Result<(Response, flow::Tran
         CommandBody::Capability => ctx.capability().await,
         CommandBody::Logout => ctx.logout().await,
         CommandBody::Login { username, password } => ctx.login(username, password).await,
-        _ => Ok((Response::no("Command unavailable")?, flow::Transition::None)),
+        cmd => {
+            tracing::warn!("Unknown command {:?}", cmd);
+            Ok((Response::no("Command unavailable")?, flow::Transition::None))
+        }
     }
 }
 

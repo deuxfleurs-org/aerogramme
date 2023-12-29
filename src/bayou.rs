@@ -450,10 +450,7 @@ impl K2vWatch {
     ) {
         let mut row = match Weak::upgrade(&self_weak) {
             Some(this) => this.target.clone(),
-            None => {
-                error!("can't start loop");
-                return;
-            }
+            None => return,
         };
 
         while let Some(this) = Weak::upgrade(&self_weak) {
