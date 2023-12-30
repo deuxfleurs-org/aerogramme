@@ -7,51 +7,65 @@ license = "AGPL-3.0"
 description = "Encrypted mail storage over Garage"
 
 [dependencies]
-aws-config = { version = "1.1.1", features = ["behavior-version-latest"] }
-aws-sdk-s3 = "1.9.0"
-anyhow = "1.0.28"
-argon2 = "0.5"
-async-trait = "0.1"
-backtrace = "0.3"
-base64 = "0.21"
-clap = { version = "3.1.18", features = ["derive", "env"] }
-duplexify = "1.1.0"
-eml-codec = { git = "https://git.deuxfleurs.fr/Deuxfleurs/eml-codec.git", branch = "main" }
-hex = "0.4"
-futures = "0.3"
-im = "15"
-itertools = "0.10"
-lazy_static = "1.4"
-ldap3 = { version = "0.10", default-features = false, features = ["tls-rustls"] }
-log = "0.4"
-hyper-rustls = { version = "0.24", features = ["http2"] }
-nix = { version = "0.27", features = ["signal"] }
-serde = "1.0.137"
-rand = "0.8.5"
-rmp-serde = "0.15"
-rpassword = "7.0"
-sodiumoxide = "0.2"
+# async runtime
 tokio = { version = "1.18", default-features = false, features = ["rt", "rt-multi-thread", "io-util", "net", "time", "macros", "sync", "signal", "fs"] }
 tokio-util = { version = "0.7", features = [ "compat" ]  }
-toml = "0.5"
-zstd = { version = "0.9", default-features = false }
+futures = "0.3"
 
+# debug
+log = "0.4"
+backtrace = "0.3"
 tracing-subscriber = "0.3"
 tracing = "0.1"
-tower = "0.4"
 
-imap-codec = { git = "https://github.com/superboum/imap-codec.git", branch = "v0.5.x" }
+# language extensions
+lazy_static = "1.4"
+duplexify = "1.1.0"
+im = "15"
+anyhow = "1.0.28"
+async-trait = "0.1"
+itertools = "0.10"
 chrono = { version = "0.4", default-features = false, features = ["alloc"] }
 
+# process related
+nix = { version = "0.27", features = ["signal"] }
+clap = { version = "3.1.18", features = ["derive", "env"] }
+
+# serialization
+serde = "1.0.137"
+rmp-serde = "0.15"
+toml = "0.5"
+base64 = "0.21"
+hex = "0.4"
+zstd = { version = "0.9", default-features = false }
+
+# cryptography & security
+sodiumoxide = "0.2"
+argon2 = "0.5"
+rand = "0.8.5"
+hyper-rustls = { version = "0.24", features = ["http2"] }
+rpassword = "7.0"
+
+# login
+ldap3 = { version = "0.10", default-features = false, features = ["tls-rustls"] }
+
+# storage
 k2v-client = { git = "https://git.deuxfleurs.fr/Deuxfleurs/garage.git", tag = "v0.9.0" }
-boitalettres = { git = "https://git.deuxfleurs.fr/quentin/boitalettres.git", branch = "expose-mydatetime" }
+aws-config = { version = "1.1.1", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1.9.0"
+
+# email protocols
+eml-codec = { git = "https://git.deuxfleurs.fr/Deuxfleurs/eml-codec.git", branch = "main" }
 smtp-message = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
-
-#k2v-client = { path = "../garage/src/k2v-client" }
-#imap-flow = { git = "https://github.com/duesee/imap-flow.git", commit = "e45ce7bb6ab6bda3c71a0c7b05e9b558a5902e90" }
+imap-codec = { version = "1.0.0", features = ["quirk_crlf_relaxed", "bounded-static"] }
+imap-flow = { git = "https://github.com/duesee/imap-flow.git", rev = "e45ce7bb6ab6bda3c71a0c7b05e9b558a5902e90" }
 
 [dev-dependencies]
+
+[patch.crates-io]
+imap-types = { git = "https://github.com/duesee/imap-codec", branch = "v2" }
+imap-codec = { git = "https://github.com/duesee/imap-codec", branch = "v2" }
 
 [[test]]
 name = "imap_features"
