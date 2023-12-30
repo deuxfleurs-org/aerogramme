@@ -52,7 +52,6 @@ smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/
 #imap-flow = { git = "https://github.com/duesee/imap-flow.git", commit = "e45ce7bb6ab6bda3c71a0c7b05e9b558a5902e90" }
 
 [dev-dependencies]
-serial_test = "*"
 
 [[test]]
 name = "imap_features"

@@ -97,7 +97,7 @@ fn generic_test(imap_socket: &mut TcpStream, lmtp_socket: &mut TcpStream) -> Res
     select_inbox(imap_socket).context("select inbox")?;
     // CHECK IS NOT IMPLEMENTED YET
     //check(...)
-    status_mailbox(imap_socket).context("status inbox")?;
+    status_mailbox(imap_socket).context("status of archive from inbox")?;
     lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
     lmtp_deliver_email(lmtp_socket, EMAIL).context("mail delivered successfully")?;
     noop_exists(imap_socket).context("noop loop must detect a new email")?;
@@ -187,6 +187,9 @@ fn select_inbox(imap: &mut TcpStream) -> Result<()> {
 }
 
 fn status_mailbox(imap: &mut TcpStream) -> Result<()> {
+    imap.write(&b"25 STATUS archive (UIDNEXT MESSAGES)\r\n"[..])?; 
+    let mut buffer: [u8; 6000] = [0; 6000];
+    let _read = read_lines(imap, &mut buffer, Some(&b"25 OK"[..]))?;
 
     Ok(())
 }
