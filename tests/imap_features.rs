@@ -95,6 +95,9 @@ fn generic_test(imap_socket: &mut TcpStream, lmtp_socket: &mut TcpStream) -> Res
     // UNSUBSCRIBE IS NOT IMPLEMENTED YET
     //unsubscribe_mailbox(imap_socket).context("unsubscribe from archive")?;
     select_inbox(imap_socket).context("select inbox")?;
+    // CHECK IS NOT IMPLEMENTED YET
+    //check(...)
+    status_mailbox(imap_socket).context("status inbox")?;
     lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
     lmtp_deliver_email(lmtp_socket, EMAIL).context("mail delivered successfully")?;
     noop_exists(imap_socket).context("noop loop must detect a new email")?;
@@ -179,6 +182,11 @@ fn select_inbox(imap: &mut TcpStream) -> Result<()> {
 
     imap.write(&b"20 select inbox\r\n"[..])?;
     let _read = read_lines(imap, &mut buffer, Some(&b"20 OK"[..]))?;
+
+    Ok(())
+}
+
+fn status_mailbox(imap: &mut TcpStream) -> Result<()> {
 
     Ok(())
 }
