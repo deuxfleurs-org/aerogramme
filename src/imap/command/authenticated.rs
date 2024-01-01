@@ -2,37 +2,35 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Result};
-use boitalettres::proto::res::body::Data as Body;
-use boitalettres::proto::{Request, Response};
-use imap_codec::imap_types::command::{CommandBody, StatusAttribute};
-use imap_codec::imap_types::core::NonZeroBytes;
-use imap_codec::imap_types::datetime::MyDateTime;
+use imap_codec::imap_types::command::{Command, CommandBody};
+use imap_codec::imap_types::core::{Atom, Literal, QuotedChar};
+use imap_codec::imap_types::datetime::DateTime;
 use imap_codec::imap_types::flag::{Flag, FlagNameAttribute};
 use imap_codec::imap_types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
-use imap_codec::imap_types::response::{Code, Data, StatusAttributeValue};
+use imap_codec::imap_types::response::{Code, CodeOther, Data};
+use imap_codec::imap_types::status::{StatusDataItem, StatusDataItemName};
 
-use crate::imap::command::anonymous;
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
+use crate::imap::response::Response;
 
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::*;
-use crate::mail::user::{User, INBOX, MAILBOX_HIERARCHY_DELIMITER};
+use crate::mail::user::{User, INBOX, MAILBOX_HIERARCHY_DELIMITER as MBX_HIER_DELIM_RAW};
 use crate::mail::IMF;
 
+static MAILBOX_HIERARCHY_DELIMITER: QuotedChar = QuotedChar::unvalidated(MBX_HIER_DELIM_RAW);
+
 pub struct AuthenticatedContext<'a> {
-    pub req: &'a Request,
+    pub req: &'a Command<'static>,
     pub user: &'a Arc<User>,
 }
 
 pub async fn dispatch(ctx: AuthenticatedContext<'_>) -> Result<(Response, flow::Transition)> {
-    match &ctx.req.command.body {
+    match &ctx.req.body {
         CommandBody::Create { mailbox } => ctx.create(mailbox).await,
         CommandBody::Delete { mailbox } => ctx.delete(mailbox).await,
-        CommandBody::Rename {
-            mailbox,
-            new_mailbox,
-        } => ctx.rename(mailbox, new_mailbox).await,
+        CommandBody::Rename { from, to } => ctx.rename(from, to).await,
         CommandBody::Lsub {
             reference,
             mailbox_wildcard,
@@ -43,8 +41,8 @@ pub async fn dispatch(ctx: AuthenticatedContext<'_>) -> Result<(Response, flow::
         } => ctx.list(reference, mailbox_wildcard, false).await,
         CommandBody::Status {
             mailbox,
-            attributes,
-        } => ctx.status(mailbox, attributes).await,
+            item_names,
+        } => ctx.status(mailbox, item_names).await,
         CommandBody::Subscribe { mailbox } => ctx.subscribe(mailbox).await,
         CommandBody::Unsubscribe { mailbox } => ctx.unsubscribe(mailbox).await,
         CommandBody::Select { mailbox } => ctx.select(mailbox).await,
@@ -55,90 +53,161 @@ pub async fn dispatch(ctx: AuthenticatedContext<'_>) -> Result<(Response, flow::
             date,
             message,
         } => ctx.append(mailbox, flags, date, message).await,
-        _ => {
-            let ctx = anonymous::AnonymousContext {
-                req: ctx.req,
-                login_provider: None,
-            };
-            anonymous::dispatch(ctx).await
+        cmd => {
+            tracing::warn!("Unknown command for the authenticated state {:?}", cmd);
+            Ok((
+                Response::bad()
+                    .to_req(ctx.req)
+                    .message("Command unavailable")
+                    .build()?,
+                flow::Transition::None,
+            ))
         }
     }
 }
 
 // --- PRIVATE ---
 
-impl<'a> AuthenticatedContext<'a> {
-    async fn create(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
-        let name = String::try_from(mailbox.clone())?;
-
-        if name == INBOX {
-            return Ok((
-                Response::bad("Cannot create INBOX")?,
-                flow::Transition::None,
-            ));
+/// Convert an IMAP mailbox name/identifier representation
+/// to an utf-8 string that is used internally in Aerogramme
+struct MailboxName<'a>(&'a MailboxCodec<'a>);
+impl<'a> TryInto<&'a str> for MailboxName<'a> {
+    type Error = std::str::Utf8Error;
+    fn try_into(self) -> Result<&'a str, Self::Error> {
+        match self.0 {
+            MailboxCodec::Inbox => Ok(INBOX),
+            MailboxCodec::Other(aname) => Ok(std::str::from_utf8(aname.as_ref())?),
         }
+    }
+}
+
+impl<'a> AuthenticatedContext<'a> {
+    async fn create(self, mailbox: &MailboxCodec<'a>) -> Result<(Response, flow::Transition)> {
+        let name = match mailbox {
+            MailboxCodec::Inbox => {
+                return Ok((
+                    Response::bad()
+                        .to_req(self.req)
+                        .message("Cannot create INBOX")
+                        .build()?,
+                    flow::Transition::None,
+                ));
+            }
+            MailboxCodec::Other(aname) => std::str::from_utf8(aname.as_ref())?,
+        };
 
         match self.user.create_mailbox(&name).await {
-            Ok(()) => Ok((Response::ok("CREATE complete")?, flow::Transition::None)),
-            Err(e) => Ok((Response::no(&e.to_string())?, flow::Transition::None)),
+            Ok(()) => Ok((
+                Response::ok()
+                    .to_req(self.req)
+                    .message("CREATE complete")
+                    .build()?,
+                flow::Transition::None,
+            )),
+            Err(e) => Ok((
+                Response::no()
+                    .to_req(self.req)
+                    .message(&e.to_string())
+                    .build()?,
+                flow::Transition::None,
+            )),
         }
     }
 
-    async fn delete(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
-        let name = String::try_from(mailbox.clone())?;
+    async fn delete(self, mailbox: &MailboxCodec<'a>) -> Result<(Response, flow::Transition)> {
+        let name: &str = MailboxName(mailbox).try_into()?;
 
         match self.user.delete_mailbox(&name).await {
-            Ok(()) => Ok((Response::ok("DELETE complete")?, flow::Transition::None)),
-            Err(e) => Ok((Response::no(&e.to_string())?, flow::Transition::None)),
+            Ok(()) => Ok((
+                Response::ok()
+                    .to_req(self.req)
+                    .message("DELETE complete")
+                    .build()?,
+                flow::Transition::None,
+            )),
+            Err(e) => Ok((
+                Response::no()
+                    .to_req(self.req)
+                    .message(e.to_string())
+                    .build()?,
+                flow::Transition::None,
+            )),
         }
     }
 
     async fn rename(
         self,
-        mailbox: &MailboxCodec,
-        new_mailbox: &MailboxCodec,
+        from: &MailboxCodec<'a>,
+        to: &MailboxCodec<'a>,
     ) -> Result<(Response, flow::Transition)> {
-        let name = String::try_from(mailbox.clone())?;
-        let new_name = String::try_from(new_mailbox.clone())?;
+        let name: &str = MailboxName(from).try_into()?;
+        let new_name: &str = MailboxName(to).try_into()?;
 
         match self.user.rename_mailbox(&name, &new_name).await {
-            Ok(()) => Ok((Response::ok("RENAME complete")?, flow::Transition::None)),
-            Err(e) => Ok((Response::no(&e.to_string())?, flow::Transition::None)),
+            Ok(()) => Ok((
+                Response::ok()
+                    .to_req(self.req)
+                    .message("RENAME complete")
+                    .build()?,
+                flow::Transition::None,
+            )),
+            Err(e) => Ok((
+                Response::no()
+                    .to_req(self.req)
+                    .message(e.to_string())
+                    .build()?,
+                flow::Transition::None,
+            )),
         }
     }
 
     async fn list(
         self,
-        reference: &MailboxCodec,
-        mailbox_wildcard: &ListMailbox,
+        reference: &MailboxCodec<'a>,
+        mailbox_wildcard: &ListMailbox<'a>,
         is_lsub: bool,
     ) -> Result<(Response, flow::Transition)> {
-        let reference = String::try_from(reference.clone())?;
+        let reference: &str = MailboxName(reference).try_into()?;
         if !reference.is_empty() {
             return Ok((
-                Response::bad("References not supported")?,
+                Response::bad()
+                    .to_req(self.req)
+                    .message("References not supported")
+                    .build()?,
                 flow::Transition::None,
             ));
         }
 
-        let wildcard = String::try_from(mailbox_wildcard.clone())?;
+        // @FIXME would probably need a rewrite to better use the imap_codec library
+        let wildcard = match mailbox_wildcard {
+            ListMailbox::Token(v) => std::str::from_utf8(v.as_ref())?,
+            ListMailbox::String(v) => std::str::from_utf8(v.as_ref())?,
+        };
         if wildcard.is_empty() {
             if is_lsub {
                 return Ok((
-                    Response::ok("LSUB complete")?.with_body(vec![Data::Lsub {
-                        items: vec![],
-                        delimiter: Some(MAILBOX_HIERARCHY_DELIMITER),
-                        mailbox: "".try_into().unwrap(),
-                    }]),
+                    Response::ok()
+                        .to_req(self.req)
+                        .message("LSUB complete")
+                        .data(Data::Lsub {
+                            items: vec![],
+                            delimiter: Some(MAILBOX_HIERARCHY_DELIMITER),
+                            mailbox: "".try_into().unwrap(),
+                        })
+                        .build()?,
                     flow::Transition::None,
                 ));
             } else {
                 return Ok((
-                    Response::ok("LIST complete")?.with_body(vec![Data::List {
-                        items: vec![],
-                        delimiter: Some(MAILBOX_HIERARCHY_DELIMITER),
-                        mailbox: "".try_into().unwrap(),
-                    }]),
+                    Response::ok()
+                        .to_req(self.req)
+                        .message("LIST complete")
+                        .data(Data::List {
+                            items: vec![],
+                            delimiter: Some(MAILBOX_HIERARCHY_DELIMITER),
+                            mailbox: "".try_into().unwrap(),
+                        })
+                        .build()?,
                     flow::Transition::None,
                 ));
             }
@@ -147,7 +216,7 @@ impl<'a> AuthenticatedContext<'a> {
         let mailboxes = self.user.list_mailboxes().await?;
         let mut vmailboxes = BTreeMap::new();
         for mb in mailboxes.iter() {
-            for (i, _) in mb.match_indices(MAILBOX_HIERARCHY_DELIMITER) {
+            for (i, _) in mb.match_indices(MBX_HIER_DELIM_RAW) {
                 if i > 0 {
                     let smb = &mb[..i];
                     vmailboxes.entry(smb).or_insert(false);
@@ -163,9 +232,9 @@ impl<'a> AuthenticatedContext<'a> {
                     .to_string()
                     .try_into()
                     .map_err(|_| anyhow!("invalid mailbox name"))?;
-                let mut items = vec![FlagNameAttribute::Extension(
-                    "Subscribed".try_into().unwrap(),
-                )];
+                let mut items = vec![FlagNameAttribute::try_from(Atom::unvalidated(
+                    "Subscribed",
+                ))?];
                 if !*is_real {
                     items.push(FlagNameAttribute::Noselect);
                 }
@@ -190,21 +259,31 @@ impl<'a> AuthenticatedContext<'a> {
         } else {
             "LIST completed"
         };
-        Ok((Response::ok(msg)?.with_body(ret), flow::Transition::None))
+        Ok((
+            Response::ok()
+                .to_req(self.req)
+                .message(msg)
+                .set_data(ret)
+                .build()?,
+            flow::Transition::None,
+        ))
     }
 
     async fn status(
         self,
-        mailbox: &MailboxCodec,
-        attributes: &[StatusAttribute],
+        mailbox: &MailboxCodec<'a>,
+        attributes: &[StatusDataItemName],
     ) -> Result<(Response, flow::Transition)> {
-        let name = String::try_from(mailbox.clone())?;
-        let mb_opt = self.user.open_mailbox(&name).await?;
+        let name: &str = MailboxName(mailbox).try_into()?;
+        let mb_opt = self.user.open_mailbox(name).await?;
         let mb = match mb_opt {
             Some(mb) => mb,
             None => {
                 return Ok((
-                    Response::no("Mailbox does not exist")?,
+                    Response::no()
+                        .to_req(self.req)
+                        .message("Mailbox does not exist")
+                        .build()?,
                     flow::Transition::None,
                 ))
             }
@@ -215,54 +294,79 @@ impl<'a> AuthenticatedContext<'a> {
         let mut ret_attrs = vec![];
         for attr in attributes.iter() {
             ret_attrs.push(match attr {
-                StatusAttribute::Messages => StatusAttributeValue::Messages(view.exists()?),
-                StatusAttribute::Unseen => StatusAttributeValue::Unseen(view.unseen_count() as u32),
-                StatusAttribute::Recent => StatusAttributeValue::Recent(view.recent()?),
-                StatusAttribute::UidNext => StatusAttributeValue::UidNext(view.uidnext()),
-                StatusAttribute::UidValidity => {
-                    StatusAttributeValue::UidValidity(view.uidvalidity())
+                StatusDataItemName::Messages => StatusDataItem::Messages(view.exists()?),
+                StatusDataItemName::Unseen => StatusDataItem::Unseen(view.unseen_count() as u32),
+                StatusDataItemName::Recent => StatusDataItem::Recent(view.recent()?),
+                StatusDataItemName::UidNext => StatusDataItem::UidNext(view.uidnext()),
+                StatusDataItemName::UidValidity => {
+                    StatusDataItem::UidValidity(view.uidvalidity())
                 }
+                StatusDataItemName::Deleted => {
+                    bail!("quota not implemented, can't return deleted elements waiting for EXPUNGE");
+                },
+                StatusDataItemName::DeletedStorage => {
+                    bail!("quota not implemented, can't return freed storage after EXPUNGE will be run");
+                },
             });
         }
 
-        let data = vec![Body::Data(Data::Status {
+        let data = Data::Status {
             mailbox: mailbox.clone(),
-            attributes: ret_attrs,
-        })];
+            items: ret_attrs.into(),
+        };
 
         Ok((
-            Response::ok("STATUS completed")?.with_body(data),
+            Response::ok()
+                .to_req(self.req)
+                .message("STATUS completed")
+                .data(data)
+                .build()?,
             flow::Transition::None,
         ))
     }
 
-    async fn subscribe(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
-        let name = String::try_from(mailbox.clone())?;
+    async fn subscribe(self, mailbox: &MailboxCodec<'a>) -> Result<(Response, flow::Transition)> {
+        let name: &str = MailboxName(mailbox).try_into()?;
 
         if self.user.has_mailbox(&name).await? {
-            Ok((Response::ok("SUBSCRIBE complete")?, flow::Transition::None))
+            Ok((
+                Response::ok()
+                    .to_req(self.req)
+                    .message("SUBSCRIBE complete")
+                    .build()?,
+                flow::Transition::None,
+            ))
         } else {
             Ok((
-                Response::bad(&format!("Mailbox {} does not exist", name))?,
+                Response::bad()
+                    .to_req(self.req)
+                    .message(format!("Mailbox {} does not exist", name))
+                    .build()?,
                 flow::Transition::None,
             ))
         }
     }
 
-    async fn unsubscribe(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
-        let name = String::try_from(mailbox.clone())?;
+    async fn unsubscribe(self, mailbox: &MailboxCodec<'a>) -> Result<(Response, flow::Transition)> {
+        let name: &str = MailboxName(mailbox).try_into()?;
 
         if self.user.has_mailbox(&name).await? {
             Ok((
-                Response::bad(&format!(
-                    "Cannot unsubscribe from mailbox {}: not supported by Aerogramme",
-                    name
-                ))?,
+                Response::bad()
+                    .to_req(self.req)
+                    .message(format!(
+                        "Cannot unsubscribe from mailbox {}: not supported by Aerogramme",
+                        name
+                    ))
+                    .build()?,
                 flow::Transition::None,
             ))
         } else {
             Ok((
-                Response::bad(&format!("Mailbox {} does not exist", name))?,
+                Response::no()
+                    .to_req(self.req)
+                    .message(format!("Mailbox {} does not exist", name))
+                    .build()?,
                 flow::Transition::None,
             ))
         }
@@ -301,15 +405,18 @@ impl<'a> AuthenticatedContext<'a> {
 
     * TRACE END ---
     */
-    async fn select(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
-        let name = String::try_from(mailbox.clone())?;
+    async fn select(self, mailbox: &MailboxCodec<'a>) -> Result<(Response, flow::Transition)> {
+        let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
         let mb = match mb_opt {
             Some(mb) => mb,
             None => {
                 return Ok((
-                    Response::no("Mailbox does not exist")?,
+                    Response::no()
+                        .to_req(self.req)
+                        .message("Mailbox does not exist")
+                        .build()?,
                     flow::Transition::None,
                 ))
             }
@@ -319,22 +426,27 @@ impl<'a> AuthenticatedContext<'a> {
         let (mb, data) = MailboxView::new(mb).await?;
 
         Ok((
-            Response::ok("Select completed")?
-                .with_extra_code(Code::ReadWrite)
-                .with_body(data),
+            Response::ok()
+                .message("Select completed")
+                .code(Code::ReadWrite)
+                .data(data)
+                .build()?,
             flow::Transition::Select(mb),
         ))
     }
 
-    async fn examine(self, mailbox: &MailboxCodec) -> Result<(Response, flow::Transition)> {
-        let name = String::try_from(mailbox.clone())?;
+    async fn examine(self, mailbox: &MailboxCodec<'a>) -> Result<(Response, flow::Transition)> {
+        let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
         let mb = match mb_opt {
             Some(mb) => mb,
             None => {
                 return Ok((
-                    Response::no("Mailbox does not exist")?,
+                    Response::no()
+                        .to_req(self.req)
+                        .message("Mailbox does not exist")
+                        .build()?,
                     flow::Transition::None,
                 ))
             }
@@ -344,40 +456,53 @@ impl<'a> AuthenticatedContext<'a> {
         let (mb, data) = MailboxView::new(mb).await?;
 
         Ok((
-            Response::ok("Examine completed")?
-                .with_extra_code(Code::ReadOnly)
-                .with_body(data),
+            Response::ok()
+                .to_req(self.req)
+                .message("Examine completed")
+                .code(Code::ReadOnly)
+                .data(data)
+                .build()?,
             flow::Transition::Examine(mb),
         ))
     }
 
     async fn append(
         self,
-        mailbox: &MailboxCodec,
-        flags: &[Flag],
-        date: &Option<MyDateTime>,
-        message: &NonZeroBytes,
+        mailbox: &MailboxCodec<'a>,
+        flags: &[Flag<'a>],
+        date: &Option<DateTime>,
+        message: &Literal<'a>,
     ) -> Result<(Response, flow::Transition)> {
+        let append_tag = self.req.tag.clone();
         match self.append_internal(mailbox, flags, date, message).await {
             Ok((_mb, uidvalidity, uid)) => Ok((
-                Response::ok("APPEND completed")?.with_extra_code(Code::Other(
-                    "APPENDUID".try_into().unwrap(),
-                    Some(format!("{} {}", uidvalidity, uid)),
-                )),
+                Response::ok()
+                    .tag(append_tag)
+                    .message("APPEND completed")
+                    .code(Code::Other(CodeOther::unvalidated(
+                        format!("APPENDUID {} {}", uidvalidity, uid).into_bytes(),
+                    )))
+                    .build()?,
                 flow::Transition::None,
             )),
-            Err(e) => Ok((Response::no(&e.to_string())?, flow::Transition::None)),
+            Err(e) => Ok((
+                Response::no()
+                    .tag(append_tag)
+                    .message(e.to_string())
+                    .build()?,
+                flow::Transition::None,
+            )),
         }
     }
 
     pub(crate) async fn append_internal(
         self,
-        mailbox: &MailboxCodec,
-        flags: &[Flag],
-        date: &Option<MyDateTime>,
-        message: &NonZeroBytes,
+        mailbox: &MailboxCodec<'a>,
+        flags: &[Flag<'a>],
+        date: &Option<DateTime>,
+        message: &Literal<'a>,
     ) -> Result<(Arc<Mailbox>, ImapUidvalidity, ImapUidvalidity)> {
-        let name = String::try_from(mailbox.clone())?;
+        let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
         let mb = match mb_opt {
@@ -389,8 +514,8 @@ impl<'a> AuthenticatedContext<'a> {
             bail!("Cannot set date when appending message");
         }
 
-        let msg = IMF::try_from(message.as_slice())
-            .map_err(|_| anyhow!("Could not parse e-mail message"))?;
+        let msg =
+            IMF::try_from(message.data()).map_err(|_| anyhow!("Could not parse e-mail message"))?;
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         // TODO: filter allowed flags? ping @Quentin
 
@@ -422,7 +547,7 @@ fn matches_wildcard(wildcard: &str, name: &str) -> bool {
                     && j > 0
                     && matches[i - 1][j]
                     && (wildcard[j - 1] == '*'
-                        || (wildcard[j - 1] == '%' && name[i - 1] != MAILBOX_HIERARCHY_DELIMITER)));
+                        || (wildcard[j - 1] == '%' && name[i - 1] != MBX_HIER_DELIM_RAW)));
         }
     }
 

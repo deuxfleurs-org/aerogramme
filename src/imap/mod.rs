@@ -1,6 +1,7 @@
 mod command;
 mod flow;
 mod mailbox_view;
+mod response;
 mod session;
 
 use std::task::{Context, Poll};
@@ -19,7 +20,7 @@ use crate::config::ImapConfig;
 use crate::login::ArcLoginProvider;
 
 /// Server is a thin wrapper to register our Services in BàL
-pub struct Server{}
+pub struct Server {}
 
 pub async fn new(config: ImapConfig, login: ArcLoginProvider) -> Result<Server> {
     unimplemented!();

@@ -187,7 +187,7 @@ fn select_inbox(imap: &mut TcpStream) -> Result<()> {
 }
 
 fn status_mailbox(imap: &mut TcpStream) -> Result<()> {
-    imap.write(&b"25 STATUS archive (UIDNEXT MESSAGES)\r\n"[..])?; 
+    imap.write(&b"25 STATUS archive (UIDNEXT MESSAGES)\r\n"[..])?;
     let mut buffer: [u8; 6000] = [0; 6000];
     let _read = read_lines(imap, &mut buffer, Some(&b"25 OK"[..]))?;
 
