@@ -4,6 +4,7 @@ use imap_codec::imap_types::core::{AString, NonEmptyVec};
 use imap_codec::imap_types::response::{Capability, Data};
 use imap_codec::imap_types::secret::Secret;
 
+use crate::imap::command::anystate;
 use crate::imap::flow;
 use crate::imap::response::Response;
 use crate::login::ArcLoginProvider;
@@ -18,26 +19,20 @@ pub struct AnonymousContext<'a> {
 
 pub async fn dispatch(ctx: AnonymousContext<'_>) -> Result<(Response, flow::Transition)> {
     match &ctx.req.body {
-        CommandBody::Noop => Ok((
-            Response::ok()
-                .to_req(ctx.req)
-                .message("Noop completed.")
-                .build()?,
-            flow::Transition::None,
-        )),
-        CommandBody::Capability => ctx.capability().await,
-        CommandBody::Logout => ctx.logout().await,
+        // Any State
+        CommandBody::Noop => anystate::noop_nothing(ctx.req.tag.clone()),
+        CommandBody::Capability => anystate::capability(ctx.req.tag.clone()),
+        CommandBody::Logout => Ok((Response::bye()?, flow::Transition::Logout)),
+
+        // Specific to anonymous context (3 commands)
         CommandBody::Login { username, password } => ctx.login(username, password).await,
-        cmd => {
-            tracing::warn!("Unknown command for the anonymous state {:?}", cmd);
-            Ok((
-                Response::bad()
-                    .to_req(ctx.req)
-                    .message("Command unavailable")
-                    .build()?,
-                flow::Transition::None,
-            ))
+        CommandBody::Authenticate { .. } => {
+            anystate::not_implemented(ctx.req.tag.clone(), "authenticate")
         }
+        //StartTLS is not implemented for now, we will probably go full TLS.
+
+        // Collect other commands
+        _ => anystate::wrong_state(ctx.req.tag.clone()),
     }
 }
 
@@ -90,14 +85,5 @@ impl<'a> AnonymousContext<'a> {
                 .build()?,
             flow::Transition::Authenticate(user),
         ))
-    }
-
-    // C: 10 logout
-    // S: * BYE Logging out
-    // S: 10 OK Logout completed.
-    async fn logout(self) -> Result<(Response, flow::Transition)> {
-        // @FIXME we should implement  From<Vec<Status>> and From<Vec<ImapStatus>> in
-        // boitalettres/src/proto/res/body.rs
-        Ok((Response::bye()?, flow::Transition::Logout))
     }
 }

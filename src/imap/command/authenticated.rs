@@ -10,13 +10,14 @@ use imap_codec::imap_types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
 use imap_codec::imap_types::response::{Code, CodeOther, Data};
 use imap_codec::imap_types::status::{StatusDataItem, StatusDataItemName};
 
+use crate::imap::command::{anystate, MailboxName};
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
 use crate::imap::response::Response;
 
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::*;
-use crate::mail::user::{User, INBOX, MAILBOX_HIERARCHY_DELIMITER as MBX_HIER_DELIM_RAW};
+use crate::mail::user::{User, MAILBOX_HIERARCHY_DELIMITER as MBX_HIER_DELIM_RAW};
 use crate::mail::IMF;
 
 static MAILBOX_HIERARCHY_DELIMITER: QuotedChar = QuotedChar::unvalidated(MBX_HIER_DELIM_RAW);
@@ -28,6 +29,12 @@ pub struct AuthenticatedContext<'a> {
 
 pub async fn dispatch(ctx: AuthenticatedContext<'_>) -> Result<(Response, flow::Transition)> {
     match &ctx.req.body {
+        // Any state
+        CommandBody::Noop => anystate::noop_nothing(ctx.req.tag.clone()),
+        CommandBody::Capability => anystate::capability(ctx.req.tag.clone()),
+        CommandBody::Logout => Ok((Response::bye()?, flow::Transition::Logout)),
+
+        // Specific to this state (11 commands)
         CommandBody::Create { mailbox } => ctx.create(mailbox).await,
         CommandBody::Delete { mailbox } => ctx.delete(mailbox).await,
         CommandBody::Rename { from, to } => ctx.rename(from, to).await,
@@ -53,34 +60,13 @@ pub async fn dispatch(ctx: AuthenticatedContext<'_>) -> Result<(Response, flow::
             date,
             message,
         } => ctx.append(mailbox, flags, date, message).await,
-        cmd => {
-            tracing::warn!("Unknown command for the authenticated state {:?}", cmd);
-            Ok((
-                Response::bad()
-                    .to_req(ctx.req)
-                    .message("Command unavailable")
-                    .build()?,
-                flow::Transition::None,
-            ))
-        }
+
+        // Collect other commands
+        _ => anystate::wrong_state(ctx.req.tag.clone()),
     }
 }
 
 // --- PRIVATE ---
-
-/// Convert an IMAP mailbox name/identifier representation
-/// to an utf-8 string that is used internally in Aerogramme
-struct MailboxName<'a>(&'a MailboxCodec<'a>);
-impl<'a> TryInto<&'a str> for MailboxName<'a> {
-    type Error = std::str::Utf8Error;
-    fn try_into(self) -> Result<&'a str, Self::Error> {
-        match self.0 {
-            MailboxCodec::Inbox => Ok(INBOX),
-            MailboxCodec::Other(aname) => Ok(std::str::from_utf8(aname.as_ref())?),
-        }
-    }
-}
-
 impl<'a> AuthenticatedContext<'a> {
     async fn create(self, mailbox: &MailboxCodec<'a>) -> Result<(Response, flow::Transition)> {
         let name = match mailbox {
