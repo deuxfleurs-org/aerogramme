@@ -4,12 +4,12 @@ use std::sync::Arc;
 use anyhow::{anyhow, bail, Result};
 use boitalettres::proto::res::body::Data as Body;
 use boitalettres::proto::{Request, Response};
-use imap_codec::types::command::{CommandBody, StatusAttribute};
-use imap_codec::types::core::NonZeroBytes;
-use imap_codec::types::datetime::MyDateTime;
-use imap_codec::types::flag::{Flag, FlagNameAttribute};
-use imap_codec::types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
-use imap_codec::types::response::{Code, Data, StatusAttributeValue};
+use imap_codec::imap_types::command::{CommandBody, StatusAttribute};
+use imap_codec::imap_types::core::NonZeroBytes;
+use imap_codec::imap_types::datetime::MyDateTime;
+use imap_codec::imap_types::flag::{Flag, FlagNameAttribute};
+use imap_codec::imap_types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
+use imap_codec::imap_types::response::{Code, Data, StatusAttributeValue};
 
 use crate::imap::command::anonymous;
 use crate::imap::flow;

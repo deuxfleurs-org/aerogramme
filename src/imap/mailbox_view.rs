@@ -9,17 +9,17 @@ use chrono::{Offset, TimeZone, Utc};
 
 use futures::stream::{FuturesOrdered, StreamExt};
 
-use imap_codec::types::address::Address;
-use imap_codec::types::body::{BasicFields, Body as FetchBody, BodyStructure, SpecificFields};
-use imap_codec::types::core::{AString, Atom, IString, NString};
-use imap_codec::types::datetime::MyDateTime;
-use imap_codec::types::envelope::Envelope;
-use imap_codec::types::fetch_attributes::{
+use imap_codec::imap_types::address::Address;
+use imap_codec::imap_types::body::{BasicFields, Body as FetchBody, BodyStructure, SpecificFields};
+use imap_codec::imap_types::core::{AString, Atom, IString, NString};
+use imap_codec::imap_types::datetime::MyDateTime;
+use imap_codec::imap_types::envelope::Envelope;
+use imap_codec::imap_types::fetch_attributes::{
     FetchAttribute, MacroOrFetchAttributes, Section as FetchSection,
 };
-use imap_codec::types::flag::{Flag, StoreResponse, StoreType};
-use imap_codec::types::response::{Code, Data, MessageAttribute, Status};
-use imap_codec::types::sequence::{self, SequenceSet};
+use imap_codec::imap_types::flag::{Flag, StoreResponse, StoreType};
+use imap_codec::imap_types::response::{Code, Data, MessageAttribute, Status};
+use imap_codec::imap_types::sequence::{self, SequenceSet};
 
 use eml_codec::{
     header, imf, mime,
@@ -1246,7 +1246,7 @@ mod tests {
     use crate::cryptoblob;
     use crate::mail::unique_ident;
     use imap_codec::codec::Encode;
-    use imap_codec::types::fetch_attributes::Section;
+    use imap_codec::imap_types::fetch_attributes::Section;
     use std::fs;
 
     #[test]

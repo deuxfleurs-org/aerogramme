@@ -1,6 +1,6 @@
 use anyhow::Error;
-use boitalettres::errors::Error as BalError;
-use boitalettres::proto::{Request, Response};
+//use boitalettres::errors::Error as BalError;
+//use boitalettres::proto::{Request, Response};
 use futures::future::BoxFuture;
 use futures::future::FutureExt;
 
@@ -11,6 +11,7 @@ use crate::imap::command::{anonymous, authenticated, examined, selected};
 use crate::imap::flow;
 use crate::login::ArcLoginProvider;
 
+/*
 /* This constant configures backpressure in the system,
  * or more specifically, how many pipelined messages are allowed
  * before refusing them
@@ -69,9 +70,9 @@ impl Manager {
         .boxed()
     }
 }
-
+*/
 //-----
-
+/*
 pub struct Instance {
     rx: mpsc::Receiver<Message>,
 
@@ -178,3 +179,4 @@ impl Instance {
         tracing::debug!("exiting runner");
     }
 }
+*/

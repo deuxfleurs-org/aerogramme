@@ -1,8 +1,7 @@
 use anyhow::{Error, Result};
-use boitalettres::proto::{res::body::Data as Body, Request, Response};
-use imap_codec::types::command::CommandBody;
-use imap_codec::types::core::AString;
-use imap_codec::types::response::{Capability, Data, Status};
+use imap_codec::imap_types::command::{Command, CommandBody};
+use imap_codec::imap_types::core::AString;
+use imap_codec::imap_types::response::{Capability, Data, Status, CommandContinuationRequest};
 
 use crate::imap::flow;
 use crate::login::ArcLoginProvider;
@@ -11,12 +10,12 @@ use crate::mail::user::User;
 //--- dispatching
 
 pub struct AnonymousContext<'a> {
-    pub req: &'a Request,
+    pub req: &'a Command<'static>,
     pub login_provider: Option<&'a ArcLoginProvider>,
 }
 
-pub async fn dispatch(ctx: AnonymousContext<'_>) -> Result<(Response, flow::Transition)> {
-    match &ctx.req.command.body {
+pub async fn dispatch(ctx: AnonymousContext<'_>) -> Result<(Status, flow::Transition)> {
+    match &ctx.req.body {
         CommandBody::Noop => Ok((Response::ok("Noop completed.")?, flow::Transition::None)),
         CommandBody::Capability => ctx.capability().await,
         CommandBody::Logout => ctx.logout().await,
@@ -31,7 +30,7 @@ pub async fn dispatch(ctx: AnonymousContext<'_>) -> Result<(Response, flow::Tran
 //--- Command controllers, private
 
 impl<'a> AnonymousContext<'a> {
-    async fn capability(self) -> Result<(Response, flow::Transition)> {
+    async fn capability(self) -> Result<(Status, flow::Transition)> {
         let capabilities = vec![Capability::Imap4Rev1, Capability::Idle];
         let res = Response::ok("Server capabilities")?.with_body(Data::Capability(capabilities));
         Ok((res, flow::Transition::None))
@@ -41,7 +40,7 @@ impl<'a> AnonymousContext<'a> {
         self,
         username: &AString,
         password: &AString,
-    ) -> Result<(Response, flow::Transition)> {
+    ) -> Result<(Status, flow::Transition)> {
         let (u, p) = (
             String::try_from(username.clone())?,
             String::try_from(password.clone())?,
@@ -81,7 +80,7 @@ impl<'a> AnonymousContext<'a> {
     // C: 10 logout
     // S: * BYE Logging out
     // S: 10 OK Logout completed.
-    async fn logout(self) -> Result<(Response, flow::Transition)> {
+    async fn logout(self) -> Result<(Status, flow::Transition)> {
         // @FIXME we should implement  From<Vec<Status>> and From<Vec<ImapStatus>> in
         // boitalettres/src/proto/res/body.rs
         Ok((

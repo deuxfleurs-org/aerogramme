@@ -6,45 +6,45 @@ mod session;
 use std::task::{Context, Poll};
 
 use anyhow::Result;
-use boitalettres::errors::Error as BalError;
-use boitalettres::proto::{Request, Response};
-use boitalettres::server::accept::addr::AddrIncoming;
-use boitalettres::server::accept::addr::AddrStream;
-use boitalettres::server::Server as ImapServer;
+//use boitalettres::errors::Error as BalError;
+//use boitalettres::proto::{Request, Response};
+//use boitalettres::server::accept::addr::AddrIncoming;
+//use boitalettres::server::accept::addr::AddrStream;
+//use boitalettres::server::Server as ImapServer;
 use futures::future::BoxFuture;
 use futures::future::FutureExt;
 use tokio::sync::watch;
-use tower::Service;
 
 use crate::config::ImapConfig;
 use crate::login::ArcLoginProvider;
 
 /// Server is a thin wrapper to register our Services in BàL
-pub struct Server(ImapServer<AddrIncoming, Instance>);
+pub struct Server{}
 
 pub async fn new(config: ImapConfig, login: ArcLoginProvider) -> Result<Server> {
-    //@FIXME add a configuration parameter
-    let incoming = AddrIncoming::new(config.bind_addr).await?;
+    unimplemented!();
+    /*    let incoming = AddrIncoming::new(config.bind_addr).await?;
     tracing::info!("IMAP activated, will listen on {:#}", incoming.local_addr);
 
     let imap = ImapServer::new(incoming).serve(Instance::new(login.clone()));
-    Ok(Server(imap))
+    Ok(Server(imap))*/
 }
 
 impl Server {
     pub async fn run(self, mut must_exit: watch::Receiver<bool>) -> Result<()> {
         tracing::info!("IMAP started!");
-        tokio::select! {
+        unimplemented!();
+        /*tokio::select! {
             s = self.0 => s?,
             _ = must_exit.changed() => tracing::info!("Stopped IMAP server"),
         }
 
-        Ok(())
+        Ok(())*/
     }
 }
 
 //---
-
+/*
 /// Instance is the main Tokio Tower service that we register in BàL.
 /// It receives new connection demands and spawn a dedicated service.
 struct Instance {
@@ -103,3 +103,4 @@ impl Service<Request> for Connection {
         self.session.process(req)
     }
 }
+*/

@@ -3,11 +3,11 @@ use std::sync::Arc;
 use anyhow::Result;
 use boitalettres::proto::Request;
 use boitalettres::proto::Response;
-use imap_codec::types::command::CommandBody;
-use imap_codec::types::flag::{Flag, StoreResponse, StoreType};
-use imap_codec::types::mailbox::Mailbox as MailboxCodec;
-use imap_codec::types::response::Code;
-use imap_codec::types::sequence::SequenceSet;
+use imap_codec::imap_types::command::CommandBody;
+use imap_codec::imap_types::flag::{Flag, StoreResponse, StoreType};
+use imap_codec::imap_types::mailbox::Mailbox as MailboxCodec;
+use imap_codec::imap_types::response::Code;
+use imap_codec::imap_types::sequence::SequenceSet;
 
 use crate::imap::command::examined;
 use crate::imap::flow;
