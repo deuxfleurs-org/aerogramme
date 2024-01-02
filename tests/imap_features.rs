@@ -5,7 +5,7 @@ use std::process::Command;
 use std::{thread, time};
 
 static SMALL_DELAY: time::Duration = time::Duration::from_millis(200);
-static EMAIL: &[u8] = b"Date: Sat, 8 Jul 2023 07:14:29 +0200\r
+static EMAIL1: &[u8] = b"Date: Sat, 8 Jul 2023 07:14:29 +0200\r
 From: Bob Robert <bob@example.tld>\r
 To: Alice Malice <alice@example.tld>\r
 CC: =?ISO-8859-1?Q?Andr=E9?= Pirard <PIRARD@vm1.ulg.ac.be>\r
@@ -47,6 +47,13 @@ OoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoO<br />\r
 </div>\r
 \r
 --b1_e376dc71bafc953c0b0fdeb9983a9956--\r
+";
+
+static EMAIL2: &[u8] = b"From: alice@example.com\r
+To: alice@example.tld\r
+Subject: Test\r
+\r
+Hello world!\r
 ";
 
 fn main() {
@@ -95,14 +102,14 @@ fn generic_test(imap_socket: &mut TcpStream, lmtp_socket: &mut TcpStream) -> Res
     // UNSUBSCRIBE IS NOT IMPLEMENTED YET
     //unsubscribe_mailbox(imap_socket).context("unsubscribe from archive")?;
     select_inbox(imap_socket).context("select inbox")?;
-    // CHECK IS NOT IMPLEMENTED YET
-    //check(...)
+    check(imap_socket).context("check must run")?;
     status_mailbox(imap_socket).context("status of archive from inbox")?;
     lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
-    lmtp_deliver_email(lmtp_socket, EMAIL).context("mail delivered successfully")?;
+    lmtp_deliver_email(lmtp_socket, EMAIL1).context("mail delivered successfully")?;
     noop_exists(imap_socket).context("noop loop must detect a new email")?;
-    fetch_rfc822(imap_socket, EMAIL).context("fetch rfc822 message")?;
+    fetch_rfc822(imap_socket, EMAIL1).context("fetch rfc822 message")?;
     copy_email(imap_socket).context("copy message to the archive mailbox")?;
+    append_email(imap_socket, EMAIL2).context("insert email in INBOX")?;
     // SEARCH IS NOT IMPLEMENTED YET
     //search(imap_socket).expect("search should return something");
     add_flags_email(imap_socket).context("should add delete and important flags to the email")?;
@@ -182,6 +189,15 @@ fn select_inbox(imap: &mut TcpStream) -> Result<()> {
 
     imap.write(&b"20 select inbox\r\n"[..])?;
     let _read = read_lines(imap, &mut buffer, Some(&b"20 OK"[..]))?;
+
+    Ok(())
+}
+
+fn check(imap: &mut TcpStream) -> Result<()> {
+    let mut buffer: [u8; 1500] = [0; 1500];
+
+    imap.write(&b"21 check\r\n"[..])?;
+    let _read = read_lines(imap, &mut buffer, Some(&b"21 OK"[..]))?;
 
     Ok(())
 }
@@ -268,9 +284,41 @@ fn copy_email(imap: &mut TcpStream) -> Result<()> {
     Ok(())
 }
 
+fn append_email(imap: &mut TcpStream, ref_mail: &[u8]) -> Result<()> {
+    let mut buffer: [u8; 6000] = [0; 6000];
+    assert_ne!(ref_mail.len(), 0);
+    let append_cmd = format!("47 append inbox (\\Seen) {{{}}}\r\n", ref_mail.len());
+    println!("append cmd: {}", append_cmd);
+    imap.write(append_cmd.as_bytes())?;
+
+    // wait for continuation
+    let read = read_lines(imap, &mut buffer, None)?;
+    assert_eq!(read[0], b'+');
+
+    // write our stuff
+    imap.write(ref_mail)?;
+    imap.write(&b"\r\n"[..])?;
+    let read = read_lines(imap, &mut buffer, None)?;
+    assert_eq!(&read[..5], &b"47 OK"[..]);
+
+    // noop to force a sync
+    imap.write(&b"48 NOOP\r\n"[..])?;
+    let _read = read_lines(imap, &mut buffer, Some(&b"48 OK NOOP"[..]))?;
+
+    // check it is stored successfully
+    imap.write(&b"49 fetch 2 rfc822.size\r\n"[..])?;
+    println!("sent fetch size");
+    let read = read_lines(imap, &mut buffer, Some(&b"49 OK"[..]))?;
+    let expected = format!("* 2 FETCH (RFC822.SIZE {})", ref_mail.len());
+    let expbytes = expected.as_bytes();
+    assert_eq!(&read[..expbytes.len()], expbytes);
+
+    Ok(())
+}
+
 fn add_flags_email(imap: &mut TcpStream) -> Result<()> {
-    imap.write(&b"50 store 1 +FLAGS (\\Deleted \\Important)\r\n"[..])?;
     let mut buffer: [u8; 1500] = [0; 1500];
+    imap.write(&b"50 store 1 +FLAGS (\\Deleted \\Important)\r\n"[..])?;
     let _read = read_lines(imap, &mut buffer, Some(&b"50 OK STORE"[..]))?;
 
     Ok(())
@@ -333,6 +381,7 @@ fn read_lines<'a, F: Read>(
     let mut nbytes = 0;
     loop {
         nbytes += reader.read(&mut buffer[nbytes..])?;
+        println!("partial read: {}", std::str::from_utf8(&buffer[..nbytes])?);
         let pre_condition = match stop_marker {
             None => true,
             Some(mark) => buffer[..nbytes].windows(mark.len()).any(|w| w == mark),
