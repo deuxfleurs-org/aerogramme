@@ -307,7 +307,6 @@ fn append_email(imap: &mut TcpStream, ref_mail: &[u8]) -> Result<()> {
 
     // check it is stored successfully
     imap.write(&b"49 fetch 2 rfc822.size\r\n"[..])?;
-    println!("sent fetch size");
     let read = read_lines(imap, &mut buffer, Some(&b"49 OK"[..]))?;
     let expected = format!("* 2 FETCH (RFC822.SIZE {})", ref_mail.len());
     let expbytes = expected.as_bytes();
@@ -381,7 +380,7 @@ fn read_lines<'a, F: Read>(
     let mut nbytes = 0;
     loop {
         nbytes += reader.read(&mut buffer[nbytes..])?;
-        println!("partial read: {}", std::str::from_utf8(&buffer[..nbytes])?);
+        //println!("partial read: {}", std::str::from_utf8(&buffer[..nbytes])?);
         let pre_condition = match stop_marker {
             None => true,
             Some(mark) => buffer[..nbytes].windows(mark.len()).any(|w| w == mark),
