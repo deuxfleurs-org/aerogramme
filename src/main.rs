@@ -29,7 +29,12 @@ struct Args {
     #[clap(subcommand)]
     command: Command,
 
+    /// A special mode dedicated to developers, NOT INTENDED FOR PRODUCTION
+    #[clap(long)]
+    dev: bool,
+
     #[clap(short, long, env = "CONFIG_FILE", default_value = "aerogramme.toml")]
+    /// Path to the main Aerogramme configuration file
     config_file: PathBuf,
 }
 
@@ -158,7 +163,22 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let args = Args::parse();
-    let any_config = read_config(args.config_file)?;
+    let any_config = if args.dev {
+        use std::net::*;
+        AnyConfig::Provider(ProviderConfig {
+            pid: None,
+            imap: ImapConfig {
+                bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 1143),
+            },
+            lmtp: LmtpConfig {
+                bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 1025),
+                hostname: "example.tld".to_string(),
+            },
+            users: UserManagement::Demo,
+        })
+    } else {
+        read_config(args.config_file)?
+    };
 
     match (&args.command, any_config) {
         (Command::Companion(subcommand), AnyConfig::Companion(config)) => match subcommand {
@@ -184,8 +204,8 @@ async fn main() -> Result<()> {
             ProviderCommand::Account(cmd) => {
                 let user_file = match config.users {
                     UserManagement::Static(conf) => conf.user_list,
-                    UserManagement::Ldap(_) => {
-                        panic!("LDAP account management is not supported from Aerogramme.")
+                    _ => {
+                        panic!("Only static account management is supported from Aerogramme.")
                     }
                 };
                 account_management(&args.command, cmd, user_file)?;

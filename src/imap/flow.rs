@@ -37,23 +37,27 @@ pub enum Transition {
 // See RFC3501 section 3.
 // https://datatracker.ietf.org/doc/html/rfc3501#page-13
 impl State {
-    pub fn apply(self, tr: Transition) -> Result<Self, Error> {
-        match (self, tr) {
-            (s, Transition::None) => Ok(s),
-            (State::NotAuthenticated, Transition::Authenticate(u)) => Ok(State::Authenticated(u)),
+    pub fn apply(&mut self, tr: Transition) -> Result<(), Error> {
+        let new_state = match (&self, tr) {
+            (_s, Transition::None) => return Ok(()),
+            (State::NotAuthenticated, Transition::Authenticate(u)) => State::Authenticated(u),
             (
                 State::Authenticated(u) | State::Selected(u, _) | State::Examined(u, _),
                 Transition::Select(m),
-            ) => Ok(State::Selected(u, m)),
+            ) => State::Selected(u.clone(), m),
             (
                 State::Authenticated(u) | State::Selected(u, _) | State::Examined(u, _),
                 Transition::Examine(m),
-            ) => Ok(State::Examined(u, m)),
+            ) => State::Examined(u.clone(), m),
             (State::Selected(u, _) | State::Examined(u, _), Transition::Unselect) => {
-                Ok(State::Authenticated(u))
+                State::Authenticated(u.clone())
             }
-            (_, Transition::Logout) => Ok(State::Logout),
-            _ => Err(Error::ForbiddenTransition),
-        }
+            (_, Transition::Logout) => State::Logout,
+            _ => return Err(Error::ForbiddenTransition),
+        };
+
+        *self = new_state;
+
+        Ok(())
     }
 }

@@ -11,7 +11,7 @@ use crate::config::*;
 use crate::imap;
 use crate::lmtp::*;
 use crate::login::ArcLoginProvider;
-use crate::login::{ldap_provider::*, static_provider::*};
+use crate::login::{demo_provider::*, ldap_provider::*, static_provider::*};
 
 pub struct Server {
     lmtp_server: Option<Arc<LmtpServer>>,
@@ -25,7 +25,7 @@ impl Server {
         let login = Arc::new(StaticLoginProvider::new(config.users).await?);
 
         let lmtp_server = None;
-        let imap_server = Some(imap::new(config.imap, login.clone()).await?);
+        let imap_server = Some(imap::new(config.imap, login.clone()));
         Ok(Self {
             lmtp_server,
             imap_server,
@@ -36,12 +36,13 @@ impl Server {
     pub async fn from_provider_config(config: ProviderConfig) -> Result<Self> {
         tracing::info!("Init as provider");
         let login: ArcLoginProvider = match config.users {
+            UserManagement::Demo => Arc::new(DemoLoginProvider::new()),
             UserManagement::Static(x) => Arc::new(StaticLoginProvider::new(x).await?),
             UserManagement::Ldap(x) => Arc::new(LdapLoginProvider::new(x)?),
         };
 
         let lmtp_server = Some(LmtpServer::new(config.lmtp, login.clone()));
-        let imap_server = Some(imap::new(config.imap, login.clone()).await?);
+        let imap_server = Some(imap::new(config.imap, login.clone()));
 
         Ok(Self {
             lmtp_server,
