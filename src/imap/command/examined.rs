@@ -14,17 +14,17 @@ use crate::imap::response::Response;
 use crate::mail::user::User;
 
 pub struct ExaminedContext<'a> {
-    pub req: &'a Command<'a>,
+    pub req: &'a Command<'static>,
     pub user: &'a Arc<User>,
     pub mailbox: &'a mut MailboxView,
 }
 
-pub async fn dispatch<'a>(ctx: ExaminedContext<'a>) -> Result<(Response<'a>, flow::Transition)> {
+pub async fn dispatch(ctx: ExaminedContext<'_>) -> Result<(Response<'static>, flow::Transition)> {
     match &ctx.req.body {
         // Any State
         // noop is specific to this state
         CommandBody::Capability => anystate::capability(ctx.req.tag.clone()),
-        CommandBody::Logout => Ok((Response::bye()?, flow::Transition::Logout)),
+        CommandBody::Logout => anystate::logout(),
 
         // Specific to the EXAMINE state (specialization of the SELECTED state)
         // ~3 commands -> close, fetch, search + NOOP
@@ -58,7 +58,7 @@ pub async fn dispatch<'a>(ctx: ExaminedContext<'a>) -> Result<(Response<'a>, flo
 impl<'a> ExaminedContext<'a> {
     /// CLOSE in examined state is not the same as in selected state
     /// (in selected state it also does an EXPUNGE, here it doesn't)
-    async fn close(self) -> Result<(Response<'a>, flow::Transition)> {
+    async fn close(self) -> Result<(Response<'static>, flow::Transition)> {
         Ok((
             Response::build()
                 .to_req(self.req)
@@ -71,9 +71,9 @@ impl<'a> ExaminedContext<'a> {
     pub async fn fetch(
         self,
         sequence_set: &SequenceSet,
-        attributes: &'a MacroOrMessageDataItemNames<'a>,
+        attributes: &'a MacroOrMessageDataItemNames<'static>,
         uid: &bool,
-    ) -> Result<(Response<'a>, flow::Transition)> {
+    ) -> Result<(Response<'static>, flow::Transition)> {
         match self.mailbox.fetch(sequence_set, attributes, uid).await {
             Ok(resp) => Ok((
                 Response::build()
@@ -98,7 +98,7 @@ impl<'a> ExaminedContext<'a> {
         _charset: &Option<Charset<'a>>,
         _criteria: &SearchKey<'a>,
         _uid: &bool,
-    ) -> Result<(Response<'a>, flow::Transition)> {
+    ) -> Result<(Response<'static>, flow::Transition)> {
         Ok((
             Response::build()
                 .to_req(self.req)
@@ -108,7 +108,7 @@ impl<'a> ExaminedContext<'a> {
         ))
     }
 
-    pub async fn noop(self) -> Result<(Response<'a>, flow::Transition)> {
+    pub async fn noop(self) -> Result<(Response<'static>, flow::Transition)> {
         self.mailbox.mailbox.force_sync().await?;
 
         let updates = self.mailbox.update().await?;

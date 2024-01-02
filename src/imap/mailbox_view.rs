@@ -75,14 +75,26 @@ impl<'a> FetchedMail<'a> {
     }
 }
 
-pub struct AttributesProxy<'a> {
-    attrs: Vec<MessageDataItemName<'a>>,
+pub struct AttributesProxy {
+    attrs: Vec<MessageDataItemName<'static>>,
 }
-impl<'a> AttributesProxy<'a> {
-    fn new(attrs: &'a MacroOrMessageDataItemNames<'a>, is_uid_fetch: bool) -> Self {
+impl AttributesProxy {
+    fn new(attrs: &MacroOrMessageDataItemNames<'static>, is_uid_fetch: bool) -> Self {
         // Expand macros
         let mut fetch_attrs = match attrs {
-            MacroOrMessageDataItemNames::Macro(m) => m.expand(),
+            MacroOrMessageDataItemNames::Macro(m) => {
+                use imap_codec::imap_types::fetch::Macro;
+                use MessageDataItemName::*;
+                match m {
+                    Macro::All => vec![Flags, InternalDate, Rfc822Size, Envelope],
+                    Macro::Fast => vec![Flags, InternalDate, Rfc822Size],
+                    Macro::Full => vec![Flags, InternalDate, Rfc822Size, Envelope, Body],
+                    _ => {
+                        tracing::error!("unimplemented macro");
+                        vec![]
+                    }
+                }
+            }
             MacroOrMessageDataItemNames::MessageDataItemNames(a) => a.clone(),
         };
 
@@ -248,7 +260,7 @@ impl<'a> MailView<'a> {
         Ok(MessageDataItem::InternalDate(DateTime::unvalidated(dt)))
     }
 
-    fn filter<'b>(&self, ap: &AttributesProxy<'b>) -> Result<(Body<'b>, SeenFlag)> {
+    fn filter<'b>(&self, ap: &AttributesProxy) -> Result<(Body<'static>, SeenFlag)> {
         let mut seen = SeenFlag::DoNothing;
         let res_attrs = ap
             .attrs
@@ -593,9 +605,9 @@ impl MailboxView {
     pub async fn fetch<'b>(
         &self,
         sequence_set: &SequenceSet,
-        attributes: &'b MacroOrMessageDataItemNames<'b>,
+        attributes: &'b MacroOrMessageDataItemNames<'static>,
         is_uid_fetch: &bool,
-    ) -> Result<Vec<Body<'b>>> {
+    ) -> Result<Vec<Body<'static>>> {
         let ap = AttributesProxy::new(attributes, *is_uid_fetch);
 
         // Prepare data

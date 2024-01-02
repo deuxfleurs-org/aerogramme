@@ -21,18 +21,18 @@ use crate::mail::user::{User, MAILBOX_HIERARCHY_DELIMITER as MBX_HIER_DELIM_RAW}
 use crate::mail::IMF;
 
 pub struct AuthenticatedContext<'a> {
-    pub req: &'a Command<'a>,
+    pub req: &'a Command<'static>,
     pub user: &'a Arc<User>,
 }
 
 pub async fn dispatch<'a>(
     ctx: AuthenticatedContext<'a>,
-) -> Result<(Response<'a>, flow::Transition)> {
+) -> Result<(Response<'static>, flow::Transition)> {
     match &ctx.req.body {
         // Any state
         CommandBody::Noop => anystate::noop_nothing(ctx.req.tag.clone()),
         CommandBody::Capability => anystate::capability(ctx.req.tag.clone()),
-        CommandBody::Logout => Ok((Response::bye()?, flow::Transition::Logout)),
+        CommandBody::Logout => anystate::logout(),
 
         // Specific to this state (11 commands)
         CommandBody::Create { mailbox } => ctx.create(mailbox).await,
@@ -68,7 +68,10 @@ pub async fn dispatch<'a>(
 
 // --- PRIVATE ---
 impl<'a> AuthenticatedContext<'a> {
-    async fn create(self, mailbox: &MailboxCodec<'a>) -> Result<(Response<'a>, flow::Transition)> {
+    async fn create(
+        self,
+        mailbox: &MailboxCodec<'a>,
+    ) -> Result<(Response<'static>, flow::Transition)> {
         let name = match mailbox {
             MailboxCodec::Inbox => {
                 return Ok((
@@ -100,7 +103,10 @@ impl<'a> AuthenticatedContext<'a> {
         }
     }
 
-    async fn delete(self, mailbox: &MailboxCodec<'a>) -> Result<(Response<'a>, flow::Transition)> {
+    async fn delete(
+        self,
+        mailbox: &MailboxCodec<'a>,
+    ) -> Result<(Response<'static>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         match self.user.delete_mailbox(&name).await {
@@ -125,7 +131,7 @@ impl<'a> AuthenticatedContext<'a> {
         self,
         from: &MailboxCodec<'a>,
         to: &MailboxCodec<'a>,
-    ) -> Result<(Response<'a>, flow::Transition)> {
+    ) -> Result<(Response<'static>, flow::Transition)> {
         let name: &str = MailboxName(from).try_into()?;
         let new_name: &str = MailboxName(to).try_into()?;
 
@@ -152,7 +158,7 @@ impl<'a> AuthenticatedContext<'a> {
         reference: &MailboxCodec<'a>,
         mailbox_wildcard: &ListMailbox<'a>,
         is_lsub: bool,
-    ) -> Result<(Response<'a>, flow::Transition)> {
+    ) -> Result<(Response<'static>, flow::Transition)> {
         let mbx_hier_delim: QuotedChar = QuotedChar::unvalidated(MBX_HIER_DELIM_RAW);
 
         let reference: &str = MailboxName(reference).try_into()?;
@@ -259,9 +265,9 @@ impl<'a> AuthenticatedContext<'a> {
 
     async fn status(
         self,
-        mailbox: &MailboxCodec<'a>,
+        mailbox: &MailboxCodec<'static>,
         attributes: &[StatusDataItemName],
-    ) -> Result<(Response<'a>, flow::Transition)> {
+    ) -> Result<(Response<'static>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
         let mb_opt = self.user.open_mailbox(name).await?;
         let mb = match mb_opt {
@@ -316,7 +322,7 @@ impl<'a> AuthenticatedContext<'a> {
     async fn subscribe(
         self,
         mailbox: &MailboxCodec<'a>,
-    ) -> Result<(Response<'a>, flow::Transition)> {
+    ) -> Result<(Response<'static>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         if self.user.has_mailbox(&name).await? {
@@ -341,7 +347,7 @@ impl<'a> AuthenticatedContext<'a> {
     async fn unsubscribe(
         self,
         mailbox: &MailboxCodec<'a>,
-    ) -> Result<(Response<'a>, flow::Transition)> {
+    ) -> Result<(Response<'static>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         if self.user.has_mailbox(&name).await? {
@@ -399,7 +405,10 @@ impl<'a> AuthenticatedContext<'a> {
 
     * TRACE END ---
     */
-    async fn select(self, mailbox: &MailboxCodec<'a>) -> Result<(Response<'a>, flow::Transition)> {
+    async fn select(
+        self,
+        mailbox: &MailboxCodec<'a>,
+    ) -> Result<(Response<'static>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
@@ -430,7 +439,10 @@ impl<'a> AuthenticatedContext<'a> {
         ))
     }
 
-    async fn examine(self, mailbox: &MailboxCodec<'a>) -> Result<(Response<'a>, flow::Transition)> {
+    async fn examine(
+        self,
+        mailbox: &MailboxCodec<'a>,
+    ) -> Result<(Response<'static>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
@@ -468,7 +480,7 @@ impl<'a> AuthenticatedContext<'a> {
         flags: &[Flag<'a>],
         date: &Option<DateTime>,
         message: &Literal<'a>,
-    ) -> Result<(Response<'a>, flow::Transition)> {
+    ) -> Result<(Response<'static>, flow::Transition)> {
         let append_tag = self.req.tag.clone();
         match self.append_internal(mailbox, flags, date, message).await {
             Ok((_mb, uidvalidity, uid)) => Ok((

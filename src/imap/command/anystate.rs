@@ -5,7 +5,7 @@ use imap_codec::imap_types::response::{Capability, Data};
 use crate::imap::flow;
 use crate::imap::response::Response;
 
-pub(crate) fn capability<'a>(tag: Tag<'a>) -> Result<(Response<'a>, flow::Transition)> {
+pub(crate) fn capability(tag: Tag<'static>) -> Result<(Response<'static>, flow::Transition)> {
     let capabilities: NonEmptyVec<Capability> =
         (vec![Capability::Imap4Rev1, Capability::Idle]).try_into()?;
     let res = Response::build()
@@ -17,7 +17,7 @@ pub(crate) fn capability<'a>(tag: Tag<'a>) -> Result<(Response<'a>, flow::Transi
     Ok((res, flow::Transition::None))
 }
 
-pub(crate) fn noop_nothing<'a>(tag: Tag<'a>) -> Result<(Response<'a>, flow::Transition)> {
+pub(crate) fn noop_nothing(tag: Tag<'static>) -> Result<(Response<'static>, flow::Transition)> {
     Ok((
         Response::build().tag(tag).message("Noop completed.").ok()?,
         flow::Transition::None,
@@ -41,7 +41,7 @@ pub(crate) fn not_implemented<'a>(
     ))
 }
 
-pub(crate) fn wrong_state<'a>(tag: Tag<'a>) -> Result<(Response<'a>, flow::Transition)> {
+pub(crate) fn wrong_state(tag: Tag<'static>) -> Result<(Response<'static>, flow::Transition)> {
     Ok((
         Response::build()
             .tag(tag)

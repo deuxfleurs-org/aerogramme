@@ -1,7 +1,6 @@
 use anyhow::Result;
 use imap_codec::imap_types::command::{Command, CommandBody};
-use imap_codec::imap_types::core::{AString, NonEmptyVec};
-use imap_codec::imap_types::response::{Capability, Data};
+use imap_codec::imap_types::core::AString;
 use imap_codec::imap_types::secret::Secret;
 
 use crate::imap::command::anystate;
@@ -13,16 +12,16 @@ use crate::mail::user::User;
 //--- dispatching
 
 pub struct AnonymousContext<'a> {
-    pub req: &'a Command<'a>,
+    pub req: &'a Command<'static>,
     pub login_provider: &'a ArcLoginProvider,
 }
 
-pub async fn dispatch<'a>(ctx: AnonymousContext<'a>) -> Result<(Response<'a>, flow::Transition)> {
+pub async fn dispatch(ctx: AnonymousContext<'_>) -> Result<(Response<'static>, flow::Transition)> {
     match &ctx.req.body {
         // Any State
         CommandBody::Noop => anystate::noop_nothing(ctx.req.tag.clone()),
         CommandBody::Capability => anystate::capability(ctx.req.tag.clone()),
-        CommandBody::Logout => Ok((Response::bye()?, flow::Transition::Logout)),
+        CommandBody::Logout => anystate::logout(),
 
         // Specific to anonymous context (3 commands)
         CommandBody::Login { username, password } => ctx.login(username, password).await,
@@ -39,22 +38,11 @@ pub async fn dispatch<'a>(ctx: AnonymousContext<'a>) -> Result<(Response<'a>, fl
 //--- Command controllers, private
 
 impl<'a> AnonymousContext<'a> {
-    async fn capability(self) -> Result<(Response<'a>, flow::Transition)> {
-        let capabilities: NonEmptyVec<Capability> =
-            (vec![Capability::Imap4Rev1, Capability::Idle]).try_into()?;
-        let res = Response::build()
-            .to_req(self.req)
-            .message("Server capabilities")
-            .data(Data::Capability(capabilities))
-            .ok()?;
-        Ok((res, flow::Transition::None))
-    }
-
     async fn login(
         self,
         username: &AString<'a>,
         password: &Secret<AString<'a>>,
-    ) -> Result<(Response<'a>, flow::Transition)> {
+    ) -> Result<(Response<'static>, flow::Transition)> {
         let (u, p) = (
             std::str::from_utf8(username.as_ref())?,
             std::str::from_utf8(password.declassify().as_ref())?,

@@ -47,11 +47,13 @@ impl<'a> ResponseBuilder<'a> {
         self
     }
 
+    #[allow(dead_code)]
     pub fn info(mut self, status: Status<'a>) -> Self {
         self.body.push(Body::Status(status));
         self
     }
 
+    #[allow(dead_code)]
     pub fn many_info(mut self, status: Vec<Status<'a>>) -> Self {
         for d in status.into_iter() {
             self = self.info(d);
@@ -87,8 +89,8 @@ impl<'a> ResponseBuilder<'a> {
 }
 
 pub struct Response<'a> {
-    body: Vec<Body<'a>>,
-    completion: Status<'a>,
+    pub body: Vec<Body<'a>>,
+    pub completion: Status<'a>,
 }
 
 impl<'a> Response<'a> {

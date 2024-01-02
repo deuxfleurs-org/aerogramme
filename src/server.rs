@@ -25,7 +25,7 @@ impl Server {
         let login = Arc::new(StaticLoginProvider::new(config.users).await?);
 
         let lmtp_server = None;
-        let imap_server = Some(imap::new(config.imap, login.clone()).await?);
+        let imap_server = Some(imap::new(config.imap, login.clone()));
         Ok(Self {
             lmtp_server,
             imap_server,
@@ -42,7 +42,7 @@ impl Server {
         };
 
         let lmtp_server = Some(LmtpServer::new(config.lmtp, login.clone()));
-        let imap_server = Some(imap::new(config.imap, login.clone()).await?);
+        let imap_server = Some(imap::new(config.imap, login.clone()));
 
         Ok(Self {
             lmtp_server,

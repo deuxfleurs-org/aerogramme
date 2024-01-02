@@ -18,17 +18,19 @@ use crate::imap::response::Response;
 use crate::mail::user::User;
 
 pub struct SelectedContext<'a> {
-    pub req: &'a Command<'a>,
+    pub req: &'a Command<'static>,
     pub user: &'a Arc<User>,
     pub mailbox: &'a mut MailboxView,
 }
 
-pub async fn dispatch<'a>(ctx: SelectedContext<'a>) -> Result<(Response<'a>, flow::Transition)> {
+pub async fn dispatch<'a>(
+    ctx: SelectedContext<'a>,
+) -> Result<(Response<'static>, flow::Transition)> {
     match &ctx.req.body {
         // Any State
         // noop is specific to this state
         CommandBody::Capability => anystate::capability(ctx.req.tag.clone()),
-        CommandBody::Logout => Ok((Response::bye()?, flow::Transition::Logout)),
+        CommandBody::Logout => anystate::logout(),
 
         // Specific to this state (7 commands + NOOP)
         CommandBody::Close => ctx.close().await,
@@ -65,7 +67,7 @@ pub async fn dispatch<'a>(ctx: SelectedContext<'a>) -> Result<(Response<'a>, flo
 // --- PRIVATE ---
 
 impl<'a> SelectedContext<'a> {
-    async fn close(self) -> Result<(Response<'a>, flow::Transition)> {
+    async fn close(self) -> Result<(Response<'static>, flow::Transition)> {
         // We expunge messages,
         // but we don't send the untagged EXPUNGE responses
         let tag = self.req.tag.clone();
@@ -79,9 +81,9 @@ impl<'a> SelectedContext<'a> {
     pub async fn fetch(
         self,
         sequence_set: &SequenceSet,
-        attributes: &'a MacroOrMessageDataItemNames<'a>,
+        attributes: &'a MacroOrMessageDataItemNames<'static>,
         uid: &bool,
-    ) -> Result<(Response<'a>, flow::Transition)> {
+    ) -> Result<(Response<'static>, flow::Transition)> {
         match self.mailbox.fetch(sequence_set, attributes, uid).await {
             Ok(resp) => Ok((
                 Response::build()
@@ -106,7 +108,7 @@ impl<'a> SelectedContext<'a> {
         _charset: &Option<Charset<'a>>,
         _criteria: &SearchKey<'a>,
         _uid: &bool,
-    ) -> Result<(Response<'a>, flow::Transition)> {
+    ) -> Result<(Response<'static>, flow::Transition)> {
         Ok((
             Response::build()
                 .to_req(self.req)
@@ -116,7 +118,7 @@ impl<'a> SelectedContext<'a> {
         ))
     }
 
-    pub async fn noop(self) -> Result<(Response<'a>, flow::Transition)> {
+    pub async fn noop(self) -> Result<(Response<'static>, flow::Transition)> {
         self.mailbox.mailbox.force_sync().await?;
 
         let updates = self.mailbox.update().await?;
@@ -130,7 +132,7 @@ impl<'a> SelectedContext<'a> {
         ))
     }
 
-    async fn expunge(self) -> Result<(Response<'a>, flow::Transition)> {
+    async fn expunge(self) -> Result<(Response<'static>, flow::Transition)> {
         let tag = self.req.tag.clone();
         let data = self.mailbox.expunge().await?;
 
@@ -151,7 +153,7 @@ impl<'a> SelectedContext<'a> {
         response: &StoreResponse,
         flags: &[Flag<'a>],
         uid: &bool,
-    ) -> Result<(Response<'a>, flow::Transition)> {
+    ) -> Result<(Response<'static>, flow::Transition)> {
         let data = self
             .mailbox
             .store(sequence_set, kind, response, flags, uid)
@@ -172,7 +174,7 @@ impl<'a> SelectedContext<'a> {
         sequence_set: &SequenceSet,
         mailbox: &MailboxCodec<'a>,
         uid: &bool,
-    ) -> Result<(Response<'a>, flow::Transition)> {
+    ) -> Result<(Response<'static>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
