@@ -432,6 +432,7 @@ impl<'a> AuthenticatedContext<'a> {
         Ok((
             Response::build()
                 .message("Select completed")
+                .to_req(self.req)
                 .code(Code::ReadWrite)
                 .set_body(data)
                 .ok()?,

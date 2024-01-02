@@ -10,7 +10,7 @@ use imap_codec::imap_types::response::{Code, CodeOther};
 use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::SequenceSet;
 
-use crate::imap::command::{anystate, MailboxName};
+use crate::imap::command::{anystate, authenticated, MailboxName};
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
 use crate::imap::response::Response;
@@ -59,8 +59,14 @@ pub async fn dispatch<'a>(
             uid,
         } => ctx.copy(sequence_set, mailbox, uid).await,
 
-        // The command does not belong to this state
-        _ => anystate::wrong_state(ctx.req.tag.clone()),
+        // In selected mode, we fallback to authenticated when needed
+        _ => {
+            authenticated::dispatch(authenticated::AuthenticatedContext {
+                req: ctx.req,
+                user: ctx.user,
+            })
+            .await
+        }
     }
 }
 
