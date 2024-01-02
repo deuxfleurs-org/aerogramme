@@ -1309,18 +1309,22 @@ mod tests {
     use super::*;
     use crate::cryptoblob;
     use crate::mail::unique_ident;
-    use imap_codec::codec::Encode;
+    use imap_codec::encode::Encoder;
     use imap_codec::imap_types::fetch::Section;
+    use imap_codec::imap_types::response::Response;
+    use imap_codec::ResponseCodec;
     use std::fs;
 
     #[test]
     fn mailview_body_ext() -> Result<()> {
         let ap = AttributesProxy::new(
-            &MacroOrMessageDataItemNames::FetchAttributes(vec![MessageDataItemName::BodyExt {
-                section: Some(Section::Header(None)),
-                partial: None,
-                peek: false,
-            }]),
+            &MacroOrMessageDataItemNames::MessageDataItemNames(vec![
+                MessageDataItemName::BodyExt {
+                    section: Some(Section::Header(None)),
+                    partial: None,
+                    peek: false,
+                },
+            ]),
             false,
         );
 
@@ -1340,13 +1344,13 @@ mod tests {
         let rfc822 = b"Subject: hello\r\nFrom: a@a.a\r\nTo: b@b.b\r\nDate: Thu, 12 Oct 2023 08:45:28 +0000\r\n\r\nhello world";
         let content = FetchedMail::new_from_message(eml_codec::parse_message(rfc822)?.1);
 
-        let mut mv = MailView {
+        let mv = MailView {
             ids: &ids,
             content,
             meta: &meta,
             flags: &flags,
         };
-        let res_body = mv.filter(&ap)?;
+        let (res_body, _seen) = mv.filter(&ap)?;
 
         let fattr = match res_body {
             Body::Data(Data::Fetch {
@@ -1356,10 +1360,10 @@ mod tests {
             _ => Err(anyhow!("Not a fetch body")),
         }?;
 
-        assert_eq!(fattr.len(), 1);
+        assert_eq!(fattr.as_ref().len(), 1);
 
-        let (sec, _orig, _data) = match &fattr[0] {
-            MessageDataItemName::BodyExt {
+        let (sec, _orig, _data) = match &fattr.as_ref()[0] {
+            MessageDataItem::BodyExt {
                 section,
                 origin,
                 data,
@@ -1408,22 +1412,24 @@ mod tests {
         for pref in prefixes.iter() {
             println!("{}", pref);
             let txt = fs::read(format!("{}.eml", pref))?;
-            let exp = fs::read(format!("{}.dovecot.body", pref))?;
+            let oracle = fs::read(format!("{}.dovecot.body", pref))?;
             let message = eml_codec::parse_message(&txt).unwrap().1;
 
-            let mut resp = Vec::new();
-            MessageDataItemName::Body(build_imap_email_struct(&message.child)?)
-                .encode(&mut resp)
-                .unwrap();
+            let test_repr = Response::Data(Data::Fetch {
+                seq: NonZeroU32::new(1).unwrap(),
+                items: NonEmptyVec::from(MessageDataItem::Body(build_imap_email_struct(
+                    &message.child,
+                )?)),
+            });
+            let test_bytes = ResponseCodec::new().encode(&test_repr).dump();
+            let test_str = String::from_utf8_lossy(&test_bytes).to_lowercase();
 
-            let resp_str = String::from_utf8_lossy(&resp).to_lowercase();
+            let oracle_str =
+                format!("* 1 FETCH {}\r\n", String::from_utf8_lossy(&oracle)).to_lowercase();
 
-            let exp_no_parenthesis = &exp[1..exp.len() - 1];
-            let exp_str = String::from_utf8_lossy(exp_no_parenthesis).to_lowercase();
-
-            println!("aerogramme: {}\n\ndovecot:    {}\n\n", resp_str, exp_str);
+            println!("aerogramme: {}\n\ndovecot:    {}\n\n", test_str, oracle_str);
             //println!("\n\n {} \n\n", String::from_utf8_lossy(&resp));
-            assert_eq!(resp_str, exp_str);
+            assert_eq!(test_str, oracle_str);
         }
 
         Ok(())
