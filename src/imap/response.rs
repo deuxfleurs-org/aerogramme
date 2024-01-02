@@ -1,34 +1,26 @@
 use anyhow::Result;
 use imap_codec::imap_types::command::Command;
 use imap_codec::imap_types::core::Tag;
-use imap_codec::imap_types::response::{Code, Data, Status, StatusKind};
+use imap_codec::imap_types::response::{Code, Data, Status};
 
-pub struct ResponseBuilder {
-    status: StatusKind,
-    tag: Option<Tag<'static>>,
-    code: Option<Code<'static>>,
+pub enum Body<'a> {
+    Data(Data<'a>),
+    Status(Status<'a>),
+}
+
+pub struct ResponseBuilder<'a> {
+    tag: Option<Tag<'a>>,
+    code: Option<Code<'a>>,
     text: String,
-    data: Vec<Data<'static>>,
+    body: Vec<Body<'a>>,
 }
 
-impl<'a> Default for ResponseBuilder {
-    fn default() -> ResponseBuilder {
-        ResponseBuilder {
-            status: StatusKind::Bad,
-            tag: None,
-            code: None,
-            text: "".to_string(),
-            data: vec![],
-        }
-    }
-}
-
-impl ResponseBuilder {
-    pub fn to_req(mut self, cmd: &Command) -> Self {
-        self.tag = Some(cmd.tag);
+impl<'a> ResponseBuilder<'a> {
+    pub fn to_req(mut self, cmd: &Command<'a>) -> Self {
+        self.tag = Some(cmd.tag.clone());
         self
     }
-    pub fn tag(mut self, tag: Tag) -> Self {
+    pub fn tag(mut self, tag: Tag<'a>) -> Self {
         self.tag = Some(tag);
         self
     }
@@ -38,60 +30,81 @@ impl ResponseBuilder {
         self
     }
 
-    pub fn code(mut self, code: Code) -> Self {
+    pub fn code(mut self, code: Code<'a>) -> Self {
         self.code = Some(code);
         self
     }
 
-    pub fn data(mut self, data: Data) -> Self {
-        self.data.push(data);
+    pub fn data(mut self, data: Data<'a>) -> Self {
+        self.body.push(Body::Data(data));
         self
     }
 
-    pub fn set_data(mut self, data: Vec<Data>) -> Self {
-        self.data = data;
+    pub fn many_data(mut self, data: Vec<Data<'a>>) -> Self {
+        for d in data.into_iter() {
+            self = self.data(d);
+        }
         self
     }
 
-    pub fn build(self) -> Result<Response> {
+    pub fn info(mut self, status: Status<'a>) -> Self {
+        self.body.push(Body::Status(status));
+        self
+    }
+
+    pub fn many_info(mut self, status: Vec<Status<'a>>) -> Self {
+        for d in status.into_iter() {
+            self = self.info(d);
+        }
+        self
+    }
+
+    pub fn set_body(mut self, body: Vec<Body<'a>>) -> Self {
+        self.body = body;
+        self
+    }
+
+    pub fn ok(self) -> Result<Response<'a>> {
         Ok(Response {
-            status: Status::new(self.tag, self.status, self.code, self.text)?,
-            data: self.data,
+            completion: Status::ok(self.tag, self.code, self.text)?,
+            body: self.body,
+        })
+    }
+
+    pub fn no(self) -> Result<Response<'a>> {
+        Ok(Response {
+            completion: Status::no(self.tag, self.code, self.text)?,
+            body: self.body,
+        })
+    }
+
+    pub fn bad(self) -> Result<Response<'a>> {
+        Ok(Response {
+            completion: Status::bad(self.tag, self.code, self.text)?,
+            body: self.body,
         })
     }
 }
 
-pub struct Response {
-    data: Vec<Data<'static>>,
-    status: Status<'static>,
+pub struct Response<'a> {
+    body: Vec<Body<'a>>,
+    completion: Status<'a>,
 }
 
-impl Response {
-    pub fn ok() -> ResponseBuilder {
+impl<'a> Response<'a> {
+    pub fn build() -> ResponseBuilder<'a> {
         ResponseBuilder {
-            status: StatusKind::Ok,
-            ..ResponseBuilder::default()
+            tag: None,
+            code: None,
+            text: "".to_string(),
+            body: vec![],
         }
     }
 
-    pub fn no() -> ResponseBuilder {
-        ResponseBuilder {
-            status: StatusKind::No,
-            ..ResponseBuilder::default()
-        }
-    }
-
-    pub fn bad() -> ResponseBuilder {
-        ResponseBuilder {
-            status: StatusKind::Bad,
-            ..ResponseBuilder::default()
-        }
-    }
-
-    pub fn bye() -> Result<Response> {
+    pub fn bye() -> Result<Response<'a>> {
         Ok(Response {
-            status: Status::bye(None, "bye")?,
-            data: vec![],
+            completion: Status::bye(None, "bye")?,
+            body: vec![],
         })
     }
 }

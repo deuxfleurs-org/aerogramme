@@ -23,7 +23,7 @@ pub struct SelectedContext<'a> {
     pub mailbox: &'a mut MailboxView,
 }
 
-pub async fn dispatch(ctx: SelectedContext<'_>) -> Result<(Response, flow::Transition)> {
+pub async fn dispatch<'a>(ctx: SelectedContext<'a>) -> Result<(Response<'a>, flow::Transition)> {
     match &ctx.req.body {
         // Any State
         // noop is specific to this state
@@ -65,13 +65,13 @@ pub async fn dispatch(ctx: SelectedContext<'_>) -> Result<(Response, flow::Trans
 // --- PRIVATE ---
 
 impl<'a> SelectedContext<'a> {
-    async fn close(self) -> Result<(Response, flow::Transition)> {
+    async fn close(self) -> Result<(Response<'a>, flow::Transition)> {
         // We expunge messages,
         // but we don't send the untagged EXPUNGE responses
         let tag = self.req.tag.clone();
         self.expunge().await?;
         Ok((
-            Response::ok().tag(tag).message("CLOSE completed").build()?,
+            Response::build().tag(tag).message("CLOSE completed").ok()?,
             flow::Transition::Unselect,
         ))
     }
@@ -79,23 +79,23 @@ impl<'a> SelectedContext<'a> {
     pub async fn fetch(
         self,
         sequence_set: &SequenceSet,
-        attributes: &MacroOrMessageDataItemNames<'a>,
+        attributes: &'a MacroOrMessageDataItemNames<'a>,
         uid: &bool,
-    ) -> Result<(Response, flow::Transition)> {
+    ) -> Result<(Response<'a>, flow::Transition)> {
         match self.mailbox.fetch(sequence_set, attributes, uid).await {
             Ok(resp) => Ok((
-                Response::ok()
+                Response::build()
                     .to_req(self.req)
                     .message("FETCH completed")
-                    .set_data(resp)
-                    .build()?,
+                    .set_body(resp)
+                    .ok()?,
                 flow::Transition::None,
             )),
             Err(e) => Ok((
-                Response::no()
+                Response::build()
                     .to_req(self.req)
                     .message(e.to_string())
-                    .build()?,
+                    .no()?,
                 flow::Transition::None,
             )),
         }
@@ -106,40 +106,40 @@ impl<'a> SelectedContext<'a> {
         _charset: &Option<Charset<'a>>,
         _criteria: &SearchKey<'a>,
         _uid: &bool,
-    ) -> Result<(Response, flow::Transition)> {
+    ) -> Result<(Response<'a>, flow::Transition)> {
         Ok((
-            Response::bad()
+            Response::build()
                 .to_req(self.req)
                 .message("Not implemented")
-                .build()?,
+                .bad()?,
             flow::Transition::None,
         ))
     }
 
-    pub async fn noop(self) -> Result<(Response, flow::Transition)> {
+    pub async fn noop(self) -> Result<(Response<'a>, flow::Transition)> {
         self.mailbox.mailbox.force_sync().await?;
 
         let updates = self.mailbox.update().await?;
         Ok((
-            Response::ok()
+            Response::build()
                 .to_req(self.req)
                 .message("NOOP completed.")
-                .set_data(updates)
-                .build()?,
+                .set_body(updates)
+                .ok()?,
             flow::Transition::None,
         ))
     }
 
-    async fn expunge(self) -> Result<(Response, flow::Transition)> {
+    async fn expunge(self) -> Result<(Response<'a>, flow::Transition)> {
         let tag = self.req.tag.clone();
         let data = self.mailbox.expunge().await?;
 
         Ok((
-            Response::ok()
+            Response::build()
                 .tag(tag)
                 .message("EXPUNGE completed")
-                .data(data)
-                .build()?,
+                .set_body(data)
+                .ok()?,
             flow::Transition::None,
         ))
     }
@@ -151,18 +151,18 @@ impl<'a> SelectedContext<'a> {
         response: &StoreResponse,
         flags: &[Flag<'a>],
         uid: &bool,
-    ) -> Result<(Response, flow::Transition)> {
+    ) -> Result<(Response<'a>, flow::Transition)> {
         let data = self
             .mailbox
             .store(sequence_set, kind, response, flags, uid)
             .await?;
 
         Ok((
-            Response::ok()
+            Response::build()
                 .to_req(self.req)
                 .message("STORE completed")
-                .set_data(data)
-                .build()?,
+                .set_body(data)
+                .ok()?,
             flow::Transition::None,
         ))
     }
@@ -172,7 +172,7 @@ impl<'a> SelectedContext<'a> {
         sequence_set: &SequenceSet,
         mailbox: &MailboxCodec<'a>,
         uid: &bool,
-    ) -> Result<(Response, flow::Transition)> {
+    ) -> Result<(Response<'a>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
@@ -180,11 +180,11 @@ impl<'a> SelectedContext<'a> {
             Some(mb) => mb,
             None => {
                 return Ok((
-                    Response::no()
+                    Response::build()
                         .to_req(self.req)
                         .message("Destination mailbox does not exist")
                         .code(Code::TryCreate)
-                        .build()?,
+                        .no()?,
                     flow::Transition::None,
                 ))
             }
@@ -208,13 +208,13 @@ impl<'a> SelectedContext<'a> {
         );
 
         Ok((
-            Response::ok()
+            Response::build()
                 .to_req(self.req)
                 .message("COPY completed")
                 .code(Code::Other(CodeOther::unvalidated(
                     format!("COPYUID {}", copyuid_str).into_bytes(),
                 )))
-                .build()?,
+                .ok()?,
             flow::Transition::None,
         ))
     }

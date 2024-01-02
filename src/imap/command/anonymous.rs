@@ -13,11 +13,11 @@ use crate::mail::user::User;
 //--- dispatching
 
 pub struct AnonymousContext<'a> {
-    pub req: &'a Command<'static>,
+    pub req: &'a Command<'a>,
     pub login_provider: &'a ArcLoginProvider,
 }
 
-pub async fn dispatch(ctx: AnonymousContext<'_>) -> Result<(Response, flow::Transition)> {
+pub async fn dispatch<'a>(ctx: AnonymousContext<'a>) -> Result<(Response<'a>, flow::Transition)> {
     match &ctx.req.body {
         // Any State
         CommandBody::Noop => anystate::noop_nothing(ctx.req.tag.clone()),
@@ -39,14 +39,14 @@ pub async fn dispatch(ctx: AnonymousContext<'_>) -> Result<(Response, flow::Tran
 //--- Command controllers, private
 
 impl<'a> AnonymousContext<'a> {
-    async fn capability(self) -> Result<(Response, flow::Transition)> {
+    async fn capability(self) -> Result<(Response<'a>, flow::Transition)> {
         let capabilities: NonEmptyVec<Capability> =
             (vec![Capability::Imap4Rev1, Capability::Idle]).try_into()?;
-        let res = Response::ok()
+        let res = Response::build()
             .to_req(self.req)
             .message("Server capabilities")
             .data(Data::Capability(capabilities))
-            .build()?;
+            .ok()?;
         Ok((res, flow::Transition::None))
     }
 
@@ -54,7 +54,7 @@ impl<'a> AnonymousContext<'a> {
         self,
         username: &AString<'a>,
         password: &Secret<AString<'a>>,
-    ) -> Result<(Response, flow::Transition)> {
+    ) -> Result<(Response<'a>, flow::Transition)> {
         let (u, p) = (
             std::str::from_utf8(username.as_ref())?,
             std::str::from_utf8(password.declassify().as_ref())?,
@@ -65,10 +65,10 @@ impl<'a> AnonymousContext<'a> {
             Err(e) => {
                 tracing::debug!(error=%e, "authentication failed");
                 return Ok((
-                    Response::no()
+                    Response::build()
                         .to_req(self.req)
                         .message("Authentication failed")
-                        .build()?,
+                        .no()?,
                     flow::Transition::None,
                 ));
             }
@@ -79,10 +79,10 @@ impl<'a> AnonymousContext<'a> {
 
         tracing::info!(username=%u, "connected");
         Ok((
-            Response::ok()
+            Response::build()
                 .to_req(self.req)
                 .message("Completed")
-                .build()?,
+                .ok()?,
             flow::Transition::Authenticate(user),
         ))
     }

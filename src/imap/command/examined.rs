@@ -19,7 +19,7 @@ pub struct ExaminedContext<'a> {
     pub mailbox: &'a mut MailboxView,
 }
 
-pub async fn dispatch(ctx: ExaminedContext<'_>) -> Result<(Response, flow::Transition)> {
+pub async fn dispatch<'a>(ctx: ExaminedContext<'a>) -> Result<(Response<'a>, flow::Transition)> {
     match &ctx.req.body {
         // Any State
         // noop is specific to this state
@@ -41,10 +41,10 @@ pub async fn dispatch(ctx: ExaminedContext<'_>) -> Result<(Response, flow::Trans
         } => ctx.search(charset, criteria, uid).await,
         CommandBody::Noop | CommandBody::Check => ctx.noop().await,
         CommandBody::Expunge { .. } | CommandBody::Store { .. } => Ok((
-            Response::bad()
+            Response::build()
                 .to_req(ctx.req)
                 .message("Forbidden command: can't write in read-only mode (EXAMINE)")
-                .build()?,
+                .bad()?,
             flow::Transition::None,
         )),
 
@@ -58,12 +58,12 @@ pub async fn dispatch(ctx: ExaminedContext<'_>) -> Result<(Response, flow::Trans
 impl<'a> ExaminedContext<'a> {
     /// CLOSE in examined state is not the same as in selected state
     /// (in selected state it also does an EXPUNGE, here it doesn't)
-    async fn close(self) -> Result<(Response, flow::Transition)> {
+    async fn close(self) -> Result<(Response<'a>, flow::Transition)> {
         Ok((
-            Response::ok()
+            Response::build()
                 .to_req(self.req)
                 .message("CLOSE completed")
-                .build()?,
+                .ok()?,
             flow::Transition::Unselect,
         ))
     }
@@ -71,23 +71,23 @@ impl<'a> ExaminedContext<'a> {
     pub async fn fetch(
         self,
         sequence_set: &SequenceSet,
-        attributes: &MacroOrMessageDataItemNames<'a>,
+        attributes: &'a MacroOrMessageDataItemNames<'a>,
         uid: &bool,
-    ) -> Result<(Response, flow::Transition)> {
+    ) -> Result<(Response<'a>, flow::Transition)> {
         match self.mailbox.fetch(sequence_set, attributes, uid).await {
             Ok(resp) => Ok((
-                Response::ok()
+                Response::build()
                     .to_req(self.req)
                     .message("FETCH completed")
-                    .set_data(resp)
-                    .build()?,
+                    .set_body(resp)
+                    .ok()?,
                 flow::Transition::None,
             )),
             Err(e) => Ok((
-                Response::no()
+                Response::build()
                     .to_req(self.req)
                     .message(e.to_string())
-                    .build()?,
+                    .no()?,
                 flow::Transition::None,
             )),
         }
@@ -98,26 +98,26 @@ impl<'a> ExaminedContext<'a> {
         _charset: &Option<Charset<'a>>,
         _criteria: &SearchKey<'a>,
         _uid: &bool,
-    ) -> Result<(Response, flow::Transition)> {
+    ) -> Result<(Response<'a>, flow::Transition)> {
         Ok((
-            Response::bad()
+            Response::build()
                 .to_req(self.req)
                 .message("Not implemented")
-                .build()?,
+                .bad()?,
             flow::Transition::None,
         ))
     }
 
-    pub async fn noop(self) -> Result<(Response, flow::Transition)> {
+    pub async fn noop(self) -> Result<(Response<'a>, flow::Transition)> {
         self.mailbox.mailbox.force_sync().await?;
 
         let updates = self.mailbox.update().await?;
         Ok((
-            Response::ok()
+            Response::build()
                 .to_req(self.req)
                 .message("NOOP completed.")
-                .set_data(updates)
-                .build()?,
+                .set_body(updates)
+                .ok()?,
             flow::Transition::None,
         ))
     }

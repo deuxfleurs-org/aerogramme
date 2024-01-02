@@ -20,14 +20,14 @@ use crate::mail::uidindex::*;
 use crate::mail::user::{User, MAILBOX_HIERARCHY_DELIMITER as MBX_HIER_DELIM_RAW};
 use crate::mail::IMF;
 
-static MAILBOX_HIERARCHY_DELIMITER: QuotedChar = QuotedChar::unvalidated(MBX_HIER_DELIM_RAW);
-
 pub struct AuthenticatedContext<'a> {
-    pub req: &'a Command<'static>,
+    pub req: &'a Command<'a>,
     pub user: &'a Arc<User>,
 }
 
-pub async fn dispatch(ctx: AuthenticatedContext<'_>) -> Result<(Response, flow::Transition)> {
+pub async fn dispatch<'a>(
+    ctx: AuthenticatedContext<'a>,
+) -> Result<(Response<'a>, flow::Transition)> {
     match &ctx.req.body {
         // Any state
         CommandBody::Noop => anystate::noop_nothing(ctx.req.tag.clone()),
@@ -68,14 +68,14 @@ pub async fn dispatch(ctx: AuthenticatedContext<'_>) -> Result<(Response, flow::
 
 // --- PRIVATE ---
 impl<'a> AuthenticatedContext<'a> {
-    async fn create(self, mailbox: &MailboxCodec<'a>) -> Result<(Response, flow::Transition)> {
+    async fn create(self, mailbox: &MailboxCodec<'a>) -> Result<(Response<'a>, flow::Transition)> {
         let name = match mailbox {
             MailboxCodec::Inbox => {
                 return Ok((
-                    Response::bad()
+                    Response::build()
                         .to_req(self.req)
                         .message("Cannot create INBOX")
-                        .build()?,
+                        .bad()?,
                     flow::Transition::None,
                 ));
             }
@@ -84,38 +84,38 @@ impl<'a> AuthenticatedContext<'a> {
 
         match self.user.create_mailbox(&name).await {
             Ok(()) => Ok((
-                Response::ok()
+                Response::build()
                     .to_req(self.req)
                     .message("CREATE complete")
-                    .build()?,
+                    .ok()?,
                 flow::Transition::None,
             )),
             Err(e) => Ok((
-                Response::no()
+                Response::build()
                     .to_req(self.req)
                     .message(&e.to_string())
-                    .build()?,
+                    .no()?,
                 flow::Transition::None,
             )),
         }
     }
 
-    async fn delete(self, mailbox: &MailboxCodec<'a>) -> Result<(Response, flow::Transition)> {
+    async fn delete(self, mailbox: &MailboxCodec<'a>) -> Result<(Response<'a>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         match self.user.delete_mailbox(&name).await {
             Ok(()) => Ok((
-                Response::ok()
+                Response::build()
                     .to_req(self.req)
                     .message("DELETE complete")
-                    .build()?,
+                    .ok()?,
                 flow::Transition::None,
             )),
             Err(e) => Ok((
-                Response::no()
+                Response::build()
                     .to_req(self.req)
                     .message(e.to_string())
-                    .build()?,
+                    .no()?,
                 flow::Transition::None,
             )),
         }
@@ -125,23 +125,23 @@ impl<'a> AuthenticatedContext<'a> {
         self,
         from: &MailboxCodec<'a>,
         to: &MailboxCodec<'a>,
-    ) -> Result<(Response, flow::Transition)> {
+    ) -> Result<(Response<'a>, flow::Transition)> {
         let name: &str = MailboxName(from).try_into()?;
         let new_name: &str = MailboxName(to).try_into()?;
 
         match self.user.rename_mailbox(&name, &new_name).await {
             Ok(()) => Ok((
-                Response::ok()
+                Response::build()
                     .to_req(self.req)
                     .message("RENAME complete")
-                    .build()?,
+                    .ok()?,
                 flow::Transition::None,
             )),
             Err(e) => Ok((
-                Response::no()
+                Response::build()
                     .to_req(self.req)
                     .message(e.to_string())
-                    .build()?,
+                    .no()?,
                 flow::Transition::None,
             )),
         }
@@ -152,14 +152,16 @@ impl<'a> AuthenticatedContext<'a> {
         reference: &MailboxCodec<'a>,
         mailbox_wildcard: &ListMailbox<'a>,
         is_lsub: bool,
-    ) -> Result<(Response, flow::Transition)> {
+    ) -> Result<(Response<'a>, flow::Transition)> {
+        let mbx_hier_delim: QuotedChar = QuotedChar::unvalidated(MBX_HIER_DELIM_RAW);
+
         let reference: &str = MailboxName(reference).try_into()?;
         if !reference.is_empty() {
             return Ok((
-                Response::bad()
+                Response::build()
                     .to_req(self.req)
                     .message("References not supported")
-                    .build()?,
+                    .bad()?,
                 flow::Transition::None,
             ));
         }
@@ -172,28 +174,28 @@ impl<'a> AuthenticatedContext<'a> {
         if wildcard.is_empty() {
             if is_lsub {
                 return Ok((
-                    Response::ok()
+                    Response::build()
                         .to_req(self.req)
                         .message("LSUB complete")
                         .data(Data::Lsub {
                             items: vec![],
-                            delimiter: Some(MAILBOX_HIERARCHY_DELIMITER),
+                            delimiter: Some(mbx_hier_delim),
                             mailbox: "".try_into().unwrap(),
                         })
-                        .build()?,
+                        .ok()?,
                     flow::Transition::None,
                 ));
             } else {
                 return Ok((
-                    Response::ok()
+                    Response::build()
                         .to_req(self.req)
                         .message("LIST complete")
                         .data(Data::List {
                             items: vec![],
-                            delimiter: Some(MAILBOX_HIERARCHY_DELIMITER),
+                            delimiter: Some(mbx_hier_delim),
                             mailbox: "".try_into().unwrap(),
                         })
-                        .build()?,
+                        .ok()?,
                     flow::Transition::None,
                 ));
             }
@@ -227,13 +229,13 @@ impl<'a> AuthenticatedContext<'a> {
                 if is_lsub {
                     ret.push(Data::Lsub {
                         items,
-                        delimiter: Some(MAILBOX_HIERARCHY_DELIMITER),
+                        delimiter: Some(mbx_hier_delim),
                         mailbox,
                     });
                 } else {
                     ret.push(Data::List {
                         items,
-                        delimiter: Some(MAILBOX_HIERARCHY_DELIMITER),
+                        delimiter: Some(mbx_hier_delim),
                         mailbox,
                     });
                 }
@@ -246,11 +248,11 @@ impl<'a> AuthenticatedContext<'a> {
             "LIST completed"
         };
         Ok((
-            Response::ok()
+            Response::build()
                 .to_req(self.req)
                 .message(msg)
-                .set_data(ret)
-                .build()?,
+                .many_data(ret)
+                .ok()?,
             flow::Transition::None,
         ))
     }
@@ -259,23 +261,23 @@ impl<'a> AuthenticatedContext<'a> {
         self,
         mailbox: &MailboxCodec<'a>,
         attributes: &[StatusDataItemName],
-    ) -> Result<(Response, flow::Transition)> {
+    ) -> Result<(Response<'a>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
         let mb_opt = self.user.open_mailbox(name).await?;
         let mb = match mb_opt {
             Some(mb) => mb,
             None => {
                 return Ok((
-                    Response::no()
+                    Response::build()
                         .to_req(self.req)
                         .message("Mailbox does not exist")
-                        .build()?,
+                        .no()?,
                     flow::Transition::None,
                 ))
             }
         };
 
-        let (view, _data) = MailboxView::new(mb).await?;
+        let view = MailboxView::new(mb).await;
 
         let mut ret_attrs = vec![];
         for attr in attributes.iter() {
@@ -302,57 +304,63 @@ impl<'a> AuthenticatedContext<'a> {
         };
 
         Ok((
-            Response::ok()
+            Response::build()
                 .to_req(self.req)
                 .message("STATUS completed")
                 .data(data)
-                .build()?,
+                .ok()?,
             flow::Transition::None,
         ))
     }
 
-    async fn subscribe(self, mailbox: &MailboxCodec<'a>) -> Result<(Response, flow::Transition)> {
+    async fn subscribe(
+        self,
+        mailbox: &MailboxCodec<'a>,
+    ) -> Result<(Response<'a>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         if self.user.has_mailbox(&name).await? {
             Ok((
-                Response::ok()
+                Response::build()
                     .to_req(self.req)
                     .message("SUBSCRIBE complete")
-                    .build()?,
+                    .ok()?,
                 flow::Transition::None,
             ))
         } else {
             Ok((
-                Response::bad()
+                Response::build()
                     .to_req(self.req)
                     .message(format!("Mailbox {} does not exist", name))
-                    .build()?,
+                    .bad()?,
                 flow::Transition::None,
             ))
         }
     }
 
-    async fn unsubscribe(self, mailbox: &MailboxCodec<'a>) -> Result<(Response, flow::Transition)> {
+    async fn unsubscribe(
+        self,
+        mailbox: &MailboxCodec<'a>,
+    ) -> Result<(Response<'a>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         if self.user.has_mailbox(&name).await? {
             Ok((
-                Response::bad()
+                Response::build()
                     .to_req(self.req)
                     .message(format!(
                         "Cannot unsubscribe from mailbox {}: not supported by Aerogramme",
                         name
                     ))
-                    .build()?,
+                    .bad()?,
                 flow::Transition::None,
             ))
         } else {
             Ok((
-                Response::no()
+                Response::build()
                     .to_req(self.req)
                     .message(format!("Mailbox {} does not exist", name))
-                    .build()?,
+                    .no()?,
                 flow::Transition::None,
             ))
         }
@@ -391,7 +399,7 @@ impl<'a> AuthenticatedContext<'a> {
 
     * TRACE END ---
     */
-    async fn select(self, mailbox: &MailboxCodec<'a>) -> Result<(Response, flow::Transition)> {
+    async fn select(self, mailbox: &MailboxCodec<'a>) -> Result<(Response<'a>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
@@ -399,29 +407,30 @@ impl<'a> AuthenticatedContext<'a> {
             Some(mb) => mb,
             None => {
                 return Ok((
-                    Response::no()
+                    Response::build()
                         .to_req(self.req)
                         .message("Mailbox does not exist")
-                        .build()?,
+                        .no()?,
                     flow::Transition::None,
                 ))
             }
         };
         tracing::info!(username=%self.user.username, mailbox=%name, "mailbox.selected");
 
-        let (mb, data) = MailboxView::new(mb).await?;
+        let mb = MailboxView::new(mb).await;
+        let data = mb.summary()?;
 
         Ok((
-            Response::ok()
+            Response::build()
                 .message("Select completed")
                 .code(Code::ReadWrite)
-                .data(data)
-                .build()?,
+                .set_body(data)
+                .ok()?,
             flow::Transition::Select(mb),
         ))
     }
 
-    async fn examine(self, mailbox: &MailboxCodec<'a>) -> Result<(Response, flow::Transition)> {
+    async fn examine(self, mailbox: &MailboxCodec<'a>) -> Result<(Response<'a>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
@@ -429,25 +438,26 @@ impl<'a> AuthenticatedContext<'a> {
             Some(mb) => mb,
             None => {
                 return Ok((
-                    Response::no()
+                    Response::build()
                         .to_req(self.req)
                         .message("Mailbox does not exist")
-                        .build()?,
+                        .no()?,
                     flow::Transition::None,
                 ))
             }
         };
         tracing::info!(username=%self.user.username, mailbox=%name, "mailbox.examined");
 
-        let (mb, data) = MailboxView::new(mb).await?;
+        let mb = MailboxView::new(mb).await;
+        let data = mb.summary()?;
 
         Ok((
-            Response::ok()
+            Response::build()
                 .to_req(self.req)
                 .message("Examine completed")
                 .code(Code::ReadOnly)
-                .data(data)
-                .build()?,
+                .set_body(data)
+                .ok()?,
             flow::Transition::Examine(mb),
         ))
     }
@@ -458,24 +468,24 @@ impl<'a> AuthenticatedContext<'a> {
         flags: &[Flag<'a>],
         date: &Option<DateTime>,
         message: &Literal<'a>,
-    ) -> Result<(Response, flow::Transition)> {
+    ) -> Result<(Response<'a>, flow::Transition)> {
         let append_tag = self.req.tag.clone();
         match self.append_internal(mailbox, flags, date, message).await {
             Ok((_mb, uidvalidity, uid)) => Ok((
-                Response::ok()
+                Response::build()
                     .tag(append_tag)
                     .message("APPEND completed")
                     .code(Code::Other(CodeOther::unvalidated(
                         format!("APPENDUID {} {}", uidvalidity, uid).into_bytes(),
                     )))
-                    .build()?,
+                    .ok()?,
                 flow::Transition::None,
             )),
             Err(e) => Ok((
-                Response::no()
+                Response::build()
                     .tag(append_tag)
                     .message(e.to_string())
-                    .build()?,
+                    .no()?,
                 flow::Transition::None,
             )),
         }

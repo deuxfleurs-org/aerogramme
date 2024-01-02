@@ -4,21 +4,19 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Error, Result};
-use boitalettres::proto::res::body::Data as Body;
 use chrono::{Offset, TimeZone, Utc};
 
 use futures::stream::{FuturesOrdered, StreamExt};
 
-use imap_codec::imap_types::address::Address;
 use imap_codec::imap_types::body::{BasicFields, Body as FetchBody, BodyStructure, SpecificFields};
-use imap_codec::imap_types::core::{AString, Atom, IString, NString};
-use imap_codec::imap_types::datetime::MyDateTime;
-use imap_codec::imap_types::envelope::Envelope;
-use imap_codec::imap_types::fetch_attributes::{
-    FetchAttribute, MacroOrFetchAttributes, Section as FetchSection,
+use imap_codec::imap_types::core::{AString, Atom, IString, NString, NonEmptyVec};
+use imap_codec::imap_types::datetime::DateTime;
+use imap_codec::imap_types::envelope::{Address, Envelope};
+use imap_codec::imap_types::fetch::{
+    MacroOrMessageDataItemNames, MessageDataItem, MessageDataItemName, Section as FetchSection,
 };
-use imap_codec::imap_types::flag::{Flag, StoreResponse, StoreType};
-use imap_codec::imap_types::response::{Code, Data, MessageAttribute, Status};
+use imap_codec::imap_types::flag::{Flag, FlagFetch, FlagPerm, StoreResponse, StoreType};
+use imap_codec::imap_types::response::{Code, Data, Status};
 use imap_codec::imap_types::sequence::{self, SequenceSet};
 
 use eml_codec::{
@@ -28,6 +26,7 @@ use eml_codec::{
 };
 
 use crate::cryptoblob::Key;
+use crate::imap::response::Body;
 use crate::mail::mailbox::{MailMeta, Mailbox};
 use crate::mail::uidindex::{ImapUid, ImapUidvalidity, UidIndex};
 use crate::mail::unique_ident::UniqueIdent;
@@ -76,20 +75,20 @@ impl<'a> FetchedMail<'a> {
     }
 }
 
-pub struct AttributesProxy {
-    attrs: Vec<FetchAttribute>,
+pub struct AttributesProxy<'a> {
+    attrs: Vec<MessageDataItemName<'a>>,
 }
-impl AttributesProxy {
-    fn new(attrs: &MacroOrFetchAttributes, is_uid_fetch: bool) -> Self {
+impl<'a> AttributesProxy<'a> {
+    fn new(attrs: &'a MacroOrMessageDataItemNames<'a>, is_uid_fetch: bool) -> Self {
         // Expand macros
         let mut fetch_attrs = match attrs {
-            MacroOrFetchAttributes::Macro(m) => m.expand(),
-            MacroOrFetchAttributes::FetchAttributes(a) => a.clone(),
+            MacroOrMessageDataItemNames::Macro(m) => m.expand(),
+            MacroOrMessageDataItemNames::MessageDataItemNames(a) => a.clone(),
         };
 
         // Handle uids
-        if is_uid_fetch && !fetch_attrs.contains(&FetchAttribute::Uid) {
-            fetch_attrs.push(FetchAttribute::Uid);
+        if is_uid_fetch && !fetch_attrs.contains(&MessageDataItemName::Uid) {
+            fetch_attrs.push(MessageDataItemName::Uid);
         }
 
         Self { attrs: fetch_attrs }
@@ -99,11 +98,11 @@ impl AttributesProxy {
         self.attrs.iter().any(|x| {
             matches!(
                 x,
-                FetchAttribute::Body
-                    | FetchAttribute::BodyExt { .. }
-                    | FetchAttribute::Rfc822
-                    | FetchAttribute::Rfc822Text
-                    | FetchAttribute::BodyStructure
+                MessageDataItemName::Body
+                    | MessageDataItemName::BodyExt { .. }
+                    | MessageDataItemName::Rfc822
+                    | MessageDataItemName::Rfc822Text
+                    | MessageDataItemName::BodyStructure
             )
         })
     }
@@ -127,16 +126,20 @@ pub struct MailView<'a> {
     meta: &'a MailMeta,
     flags: &'a Vec<String>,
     content: FetchedMail<'a>,
-    add_seen: bool,
+}
+
+enum SeenFlag {
+    DoNothing,
+    MustAdd,
 }
 
 impl<'a> MailView<'a> {
-    fn uid(&self) -> MessageAttribute {
-        MessageAttribute::Uid(self.ids.uid)
+    fn uid(&self) -> MessageDataItem<'static> {
+        MessageDataItem::Uid(self.ids.uid.clone())
     }
 
-    fn flags(&self) -> MessageAttribute {
-        MessageAttribute::Flags(
+    fn flags(&self) -> MessageDataItem<'static> {
+        MessageDataItem::Flags(
             self.flags
                 .iter()
                 .filter_map(|f| string_to_flag(f))
@@ -144,12 +147,12 @@ impl<'a> MailView<'a> {
         )
     }
 
-    fn rfc_822_size(&self) -> MessageAttribute {
-        MessageAttribute::Rfc822Size(self.meta.rfc822_size as u32)
+    fn rfc_822_size(&self) -> MessageDataItem<'static> {
+        MessageDataItem::Rfc822Size(self.meta.rfc822_size as u32)
     }
 
-    fn rfc_822_header(&self) -> MessageAttribute {
-        MessageAttribute::Rfc822Header(NString(
+    fn rfc_822_header(&self) -> MessageDataItem<'static> {
+        MessageDataItem::Rfc822Header(NString(
             self.meta
                 .headers
                 .to_vec()
@@ -159,41 +162,42 @@ impl<'a> MailView<'a> {
         ))
     }
 
-    fn rfc_822_text(&self) -> Result<MessageAttribute> {
-        Ok(MessageAttribute::Rfc822Text(NString(
+    fn rfc_822_text(&self) -> Result<MessageDataItem<'static>> {
+        Ok(MessageDataItem::Rfc822Text(NString(
             self.content
                 .as_full()?
                 .raw_body
+                .to_vec()
                 .try_into()
                 .ok()
                 .map(IString::Literal),
         )))
     }
 
-    fn rfc822(&self) -> Result<MessageAttribute> {
-        Ok(MessageAttribute::Rfc822(NString(
+    fn rfc822(&self) -> Result<MessageDataItem<'static>> {
+        Ok(MessageDataItem::Rfc822(NString(
             self.content
                 .as_full()?
                 .raw_part
-                .clone()
+                .to_vec()
                 .try_into()
                 .ok()
                 .map(IString::Literal),
         )))
     }
 
-    fn envelope(&self) -> MessageAttribute {
-        MessageAttribute::Envelope(message_envelope(self.content.imf()))
+    fn envelope(&self) -> MessageDataItem<'static> {
+        MessageDataItem::Envelope(message_envelope(self.content.imf().clone()))
     }
 
-    fn body(&self) -> Result<MessageAttribute> {
-        Ok(MessageAttribute::Body(build_imap_email_struct(
+    fn body(&self) -> Result<MessageDataItem<'static>> {
+        Ok(MessageDataItem::Body(build_imap_email_struct(
             self.content.as_full()?.child.as_ref(),
         )?))
     }
 
-    fn body_structure(&self) -> Result<MessageAttribute> {
-        Ok(MessageAttribute::Body(build_imap_email_struct(
+    fn body_structure(&self) -> Result<MessageDataItem<'static>> {
+        Ok(MessageDataItem::Body(build_imap_email_struct(
             self.content.as_full()?.child.as_ref(),
         )?))
     }
@@ -202,12 +206,14 @@ impl<'a> MailView<'a> {
     /// peek does not implicitly set the \Seen flag
     /// eg. BODY[HEADER.FIELDS (DATE FROM)]
     /// eg. BODY[]<0.2048>
-    fn body_ext(
-        &mut self,
-        section: &Option<FetchSection>,
+    fn body_ext<'b>(
+        &self,
+        section: &Option<FetchSection<'b>>,
         partial: &Option<(u32, NonZeroU32)>,
         peek: &bool,
-    ) -> Result<MessageAttribute> {
+    ) -> Result<(MessageDataItem<'b>, SeenFlag)> {
+        let mut seen = SeenFlag::DoNothing;
+
         // Extract message section
         let text = get_message_section(self.content.as_anypart()?, section)?;
 
@@ -215,7 +221,7 @@ impl<'a> MailView<'a> {
         if !peek && !self.flags.iter().any(|x| *x == seen_flag) {
             // Add \Seen flag
             //self.mailbox.add_flags(uuid, &[seen_flag]).await?;
-            self.add_seen = true;
+            seen = SeenFlag::MustAdd;
         }
 
         // Handle <<partial>> which cut the message bytes
@@ -223,49 +229,60 @@ impl<'a> MailView<'a> {
 
         let data = NString(text.to_vec().try_into().ok().map(IString::Literal));
 
-        return Ok(MessageAttribute::BodyExt {
-            section: section.clone(),
-            origin,
-            data,
-        });
+        return Ok((
+            MessageDataItem::BodyExt {
+                section: section.as_ref().map(|fs| fs.clone()),
+                origin,
+                data,
+            },
+            seen,
+        ));
     }
 
-    fn internal_date(&self) -> Result<MessageAttribute> {
+    fn internal_date(&self) -> Result<MessageDataItem<'static>> {
         let dt = Utc
             .fix()
             .timestamp_opt(i64::try_from(self.meta.internaldate / 1000)?, 0)
             .earliest()
             .ok_or(anyhow!("Unable to parse internal date"))?;
-        Ok(MessageAttribute::InternalDate(MyDateTime(dt)))
+        Ok(MessageDataItem::InternalDate(DateTime::unvalidated(dt)))
     }
 
-    fn filter(&mut self, ap: &AttributesProxy) -> Result<Body> {
+    fn filter<'b>(&self, ap: &AttributesProxy<'b>) -> Result<(Body<'b>, SeenFlag)> {
+        let mut seen = SeenFlag::DoNothing;
         let res_attrs = ap
             .attrs
             .iter()
             .map(|attr| match attr {
-                FetchAttribute::Uid => Ok(self.uid()),
-                FetchAttribute::Flags => Ok(self.flags()),
-                FetchAttribute::Rfc822Size => Ok(self.rfc_822_size()),
-                FetchAttribute::Rfc822Header => Ok(self.rfc_822_header()),
-                FetchAttribute::Rfc822Text => self.rfc_822_text(),
-                FetchAttribute::Rfc822 => self.rfc822(),
-                FetchAttribute::Envelope => Ok(self.envelope()),
-                FetchAttribute::Body => self.body(),
-                FetchAttribute::BodyStructure => self.body_structure(),
-                FetchAttribute::BodyExt {
+                MessageDataItemName::Uid => Ok(self.uid()),
+                MessageDataItemName::Flags => Ok(self.flags()),
+                MessageDataItemName::Rfc822Size => Ok(self.rfc_822_size()),
+                MessageDataItemName::Rfc822Header => Ok(self.rfc_822_header()),
+                MessageDataItemName::Rfc822Text => self.rfc_822_text(),
+                MessageDataItemName::Rfc822 => self.rfc822(),
+                MessageDataItemName::Envelope => Ok(self.envelope()),
+                MessageDataItemName::Body => self.body(),
+                MessageDataItemName::BodyStructure => self.body_structure(),
+                MessageDataItemName::BodyExt {
                     section,
                     partial,
                     peek,
-                } => self.body_ext(section, partial, peek),
-                FetchAttribute::InternalDate => self.internal_date(),
+                } => {
+                    let (body, has_seen) = self.body_ext(section, partial, peek)?;
+                    seen = has_seen;
+                    Ok(body)
+                }
+                MessageDataItemName::InternalDate => self.internal_date(),
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Body::Data(Data::Fetch {
-            seq_or_uid: self.ids.i,
-            attributes: res_attrs,
-        }))
+        Ok((
+            Body::Data(Data::Fetch {
+                seq: self.ids.i,
+                items: res_attrs.try_into()?,
+            }),
+            seen,
+        ))
     }
 }
 
@@ -376,7 +393,6 @@ impl<'a> MailSelectionBuilder<'a> {
                 meta,
                 flags,
                 content,
-                add_seen: false,
             })
             .collect())
     }
@@ -396,35 +412,26 @@ pub struct MailboxView {
 
 impl MailboxView {
     /// Creates a new IMAP view into a mailbox.
-    /// Generates the necessary IMAP messages so that the client
-    /// has a satisfactory summary of the current mailbox's state.
-    /// These are the messages that are sent in response to a SELECT command.
-    pub async fn new(mailbox: Arc<Mailbox>) -> Result<(Self, Vec<Body>)> {
+    pub async fn new(mailbox: Arc<Mailbox>) -> Self {
         let state = mailbox.current_uid_index().await;
 
-        let new_view = Self {
+        Self {
             mailbox,
             known_state: state,
-        };
-
-        let mut data = Vec::<Body>::new();
-        data.push(new_view.exists_status()?);
-        data.push(new_view.recent_status()?);
-        data.extend(new_view.flags_status()?.into_iter());
-        data.push(new_view.uidvalidity_status()?);
-        data.push(new_view.uidnext_status()?);
-
-        Ok((new_view, data))
+        }
     }
 
+    /// Create an updated view, useful to make a diff
+    /// between what the client knows and new stuff
     /// Produces a set of IMAP responses describing the change between
     /// what the client knows and what is actually in the mailbox.
     /// This does NOT trigger a sync, it bases itself on what is currently
     /// loaded in RAM by Bayou.
-    pub async fn update(&mut self) -> Result<Vec<Body>> {
-        let new_view = MailboxView {
-            mailbox: self.mailbox.clone(),
-            known_state: self.mailbox.current_uid_index().await,
+    pub async fn update(&mut self) -> Result<Vec<Body<'static>>> {
+        let old_view: &mut Self = self;
+        let new_view = Self {
+            mailbox: old_view.mailbox.clone(),
+            known_state: old_view.mailbox.current_uid_index().await,
         };
 
         let mut data = Vec::<Body>::new();
@@ -446,7 +453,7 @@ impl MailboxView {
 
         // - notify client of expunged mails
         let mut n_expunge = 0;
-        for (i, (_uid, uuid)) in self.known_state.idx_by_uid.iter().enumerate() {
+        for (i, (_uid, uuid)) in old_view.known_state.idx_by_uid.iter().enumerate() {
             if !new_view.known_state.table.contains_key(uuid) {
                 data.push(Body::Data(Data::Expunge(
                     NonZeroU32::try_from((i + 1 - n_expunge) as u32).unwrap(),
@@ -456,49 +463,63 @@ impl MailboxView {
         }
 
         // - if new mails arrived, notify client of number of existing mails
-        if new_view.known_state.table.len() != self.known_state.table.len() - n_expunge
-            || new_view.known_state.uidvalidity != self.known_state.uidvalidity
+        if new_view.known_state.table.len() != old_view.known_state.table.len() - n_expunge
+            || new_view.known_state.uidvalidity != old_view.known_state.uidvalidity
         {
             data.push(new_view.exists_status()?);
         }
 
-        if new_view.known_state.uidvalidity != self.known_state.uidvalidity {
+        if new_view.known_state.uidvalidity != old_view.known_state.uidvalidity {
             // TODO: do we want to push less/more info than this?
             data.push(new_view.uidvalidity_status()?);
             data.push(new_view.uidnext_status()?);
         } else {
             // - if flags changed for existing mails, tell client
             for (i, (_uid, uuid)) in new_view.known_state.idx_by_uid.iter().enumerate() {
-                let old_mail = self.known_state.table.get(uuid);
+                let old_mail = old_view.known_state.table.get(uuid);
                 let new_mail = new_view.known_state.table.get(uuid);
                 if old_mail.is_some() && old_mail != new_mail {
                     if let Some((uid, flags)) = new_mail {
                         data.push(Body::Data(Data::Fetch {
-                            seq_or_uid: NonZeroU32::try_from((i + 1) as u32).unwrap(),
-                            attributes: vec![
-                                MessageAttribute::Uid(*uid),
-                                MessageAttribute::Flags(
+                            seq: NonZeroU32::try_from((i + 1) as u32).unwrap(),
+                            items: vec![
+                                MessageDataItem::Uid(*uid),
+                                MessageDataItem::Flags(
                                     flags.iter().filter_map(|f| string_to_flag(f)).collect(),
                                 ),
-                            ],
+                            ]
+                            .try_into()?,
                         }));
                     }
                 }
             }
         }
-
-        *self = new_view;
+        *old_view = new_view;
         Ok(data)
     }
 
-    pub async fn store(
+    /// Generates the necessary IMAP messages so that the client
+    /// has a satisfactory summary of the current mailbox's state.
+    /// These are the messages that are sent in response to a SELECT command.
+    pub fn summary(&self) -> Result<Vec<Body<'static>>> {
+        let mut data = Vec::<Body>::new();
+        data.push(self.exists_status()?);
+        data.push(self.recent_status()?);
+        data.extend(self.flags_status()?.into_iter());
+        data.push(self.uidvalidity_status()?);
+        data.push(self.uidnext_status()?);
+
+        Ok(data)
+    }
+
+    pub async fn store<'a>(
         &mut self,
         sequence_set: &SequenceSet,
         kind: &StoreType,
         _response: &StoreResponse,
-        flags: &[Flag],
+        flags: &[Flag<'a>],
         is_uid_store: &bool,
-    ) -> Result<Vec<Body>> {
+    ) -> Result<Vec<Body<'static>>> {
         self.mailbox.opportunistic_sync().await?;
 
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
@@ -522,7 +543,7 @@ impl MailboxView {
         self.update().await
     }
 
-    pub async fn expunge(&mut self) -> Result<Vec<Body>> {
+    pub async fn expunge(&mut self) -> Result<Vec<Body<'static>>> {
         self.mailbox.opportunistic_sync().await?;
 
         let deleted_flag = Flag::Deleted.to_string();
@@ -569,12 +590,12 @@ impl MailboxView {
 
     /// Looks up state changes in the mailbox and produces a set of IMAP
     /// responses describing the new state.
-    pub async fn fetch(
+    pub async fn fetch<'b>(
         &self,
         sequence_set: &SequenceSet,
-        attributes: &MacroOrFetchAttributes,
+        attributes: &'b MacroOrMessageDataItemNames<'b>,
         is_uid_fetch: &bool,
-    ) -> Result<Vec<Body>> {
+    ) -> Result<Vec<Body<'b>>> {
         let ap = AttributesProxy::new(attributes, *is_uid_fetch);
 
         // Prepare data
@@ -619,31 +640,37 @@ impl MailboxView {
         selection.with_bodies(bodies.as_slice());
 
         // Build mail selection views
-        let mut views = selection.build()?;
+        let views = selection.build()?;
 
         // Filter views to build the result
-        let ret = views
-            .iter_mut()
-            .filter_map(|mv| mv.filter(&ap).ok())
-            .collect::<Vec<_>>();
-
-        // Register seen flags
-        let future_flags = views
+        // Also identify what must be put as seen
+        let filtered_view = views
             .iter()
-            .filter(|mv| mv.add_seen)
-            .map(|mv| async move {
+            .filter_map(|mv| mv.filter(&ap).ok().map(|(body, seen)| (mv, body, seen)))
+            .collect::<Vec<_>>();
+        // Register seen flags
+        let future_flags = filtered_view
+            .iter()
+            .filter(|(_mv, _body, seen)| matches!(seen, SeenFlag::MustAdd))
+            .map(|(mv, _body, _seen)| async move {
                 let seen_flag = Flag::Seen.to_string();
                 self.mailbox.add_flags(mv.ids.uuid, &[seen_flag]).await?;
                 Ok::<_, anyhow::Error>(())
             })
             .collect::<FuturesOrdered<_>>();
+
         future_flags
             .collect::<Vec<_>>()
             .await
             .into_iter()
             .collect::<Result<_, _>>()?;
 
-        Ok(ret)
+        let command_body = filtered_view
+            .into_iter()
+            .map(|(_mv, body, _seen)| body)
+            .collect::<Vec<_>>();
+
+        Ok(command_body)
     }
 
     // ----
@@ -717,7 +744,7 @@ impl MailboxView {
     // ----
 
     /// Produce an OK [UIDVALIDITY _] message corresponding to `known_state`
-    fn uidvalidity_status(&self) -> Result<Body> {
+    fn uidvalidity_status(&self) -> Result<Body<'static>> {
         let uid_validity = Status::ok(
             None,
             Some(Code::UidValidity(self.uidvalidity())),
@@ -732,7 +759,7 @@ impl MailboxView {
     }
 
     /// Produce an OK [UIDNEXT _] message corresponding to `known_state`
-    fn uidnext_status(&self) -> Result<Body> {
+    fn uidnext_status(&self) -> Result<Body<'static>> {
         let next_uid = Status::ok(
             None,
             Some(Code::UidNext(self.uidnext())),
@@ -748,7 +775,7 @@ impl MailboxView {
 
     /// Produce an EXISTS message corresponding to the number of mails
     /// in `known_state`
-    fn exists_status(&self) -> Result<Body> {
+    fn exists_status(&self) -> Result<Body<'static>> {
         Ok(Body::Data(Data::Exists(self.exists()?)))
     }
 
@@ -758,7 +785,7 @@ impl MailboxView {
 
     /// Produce a RECENT message corresponding to the number of
     /// recent mails in `known_state`
-    fn recent_status(&self) -> Result<Body> {
+    fn recent_status(&self) -> Result<Body<'static>> {
         Ok(Body::Data(Data::Recent(self.recent()?)))
     }
 
@@ -774,27 +801,48 @@ impl MailboxView {
 
     /// Produce a FLAGS and a PERMANENTFLAGS message that indicates
     /// the flags that are in `known_state` + default flags
-    fn flags_status(&self) -> Result<Vec<Body>> {
-        let mut flags: Vec<Flag> = self
+    fn flags_status(&self) -> Result<Vec<Body<'static>>> {
+        let mut body = vec![];
+
+        // 1. Collecting all the possible flags in the mailbox
+        // 1.a Fetch them from our index
+        let mut known_flags: Vec<Flag> = self
             .known_state
             .idx_by_flag
             .flags()
-            .filter_map(|f| string_to_flag(f))
+            .filter_map(|f| match string_to_flag(f) {
+                Some(FlagFetch::Flag(fl)) => Some(fl),
+                _ => None,
+            })
             .collect();
+        // 1.b Merge it with our default flags list
         for f in DEFAULT_FLAGS.iter() {
-            if !flags.contains(f) {
-                flags.push(f.clone());
+            if !known_flags.contains(f) {
+                known_flags.push(f.clone());
             }
         }
-        let mut ret = vec![Body::Data(Data::Flags(flags.clone()))];
+        // 1.c Create the IMAP message
+        body.push(Body::Data(Data::Flags(known_flags.clone())));
 
-        flags.push(Flag::Permanent);
-        let permanent_flags =
-            Status::ok(None, Some(Code::PermanentFlags(flags)), "Flags permitted")
-                .map_err(Error::msg)?;
-        ret.push(Body::Status(permanent_flags));
+        // 2. Returning flags that are persisted
+        // 2.a Always advertise our default flags
+        let mut permanent = DEFAULT_FLAGS
+            .iter()
+            .map(|f| FlagPerm::Flag(f.clone()))
+            .collect::<Vec<_>>();
+        // 2.b Say that we support any keyword flag
+        permanent.push(FlagPerm::Asterisk);
+        // 2.c Create the IMAP message
+        let permanent_flags = Status::ok(
+            None,
+            Some(Code::PermanentFlags(permanent)),
+            "Flags permitted",
+        )
+        .map_err(Error::msg)?;
+        body.push(Body::Status(permanent_flags));
 
-        Ok(ret)
+        // Done!
+        Ok(body)
     }
 
     pub(crate) fn unseen_count(&self) -> usize {
@@ -809,21 +857,21 @@ impl MailboxView {
     }
 }
 
-fn string_to_flag(f: &str) -> Option<Flag> {
+fn string_to_flag(f: &str) -> Option<FlagFetch<'static>> {
     match f.chars().next() {
         Some('\\') => match f {
-            "\\Seen" => Some(Flag::Seen),
-            "\\Answered" => Some(Flag::Answered),
-            "\\Flagged" => Some(Flag::Flagged),
-            "\\Deleted" => Some(Flag::Deleted),
-            "\\Draft" => Some(Flag::Draft),
-            "\\Recent" => Some(Flag::Recent),
+            "\\Seen" => Some(FlagFetch::Flag(Flag::Seen)),
+            "\\Answered" => Some(FlagFetch::Flag(Flag::Answered)),
+            "\\Flagged" => Some(FlagFetch::Flag(Flag::Flagged)),
+            "\\Deleted" => Some(FlagFetch::Flag(Flag::Deleted)),
+            "\\Draft" => Some(FlagFetch::Flag(Flag::Draft)),
+            "\\Recent" => Some(FlagFetch::Recent),
             _ => match Atom::try_from(f.strip_prefix('\\').unwrap().to_string()) {
                 Err(_) => {
                     tracing::error!(flag=%f, "Unable to encode flag as IMAP atom");
                     None
                 }
-                Ok(a) => Some(Flag::Extension(a)),
+                Ok(a) => Some(FlagFetch::Flag(Flag::system(a))),
             },
         },
         Some(_) => match Atom::try_from(f.to_string()) {
@@ -831,7 +879,7 @@ fn string_to_flag(f: &str) -> Option<Flag> {
                 tracing::error!(flag=%f, "Unable to encode flag as IMAP atom");
                 None
             }
-            Ok(a) => Some(Flag::Keyword(a)),
+            Ok(a) => Some(FlagFetch::Flag(Flag::keyword(a))),
         },
         None => None,
     }
@@ -858,7 +906,7 @@ fn string_to_flag(f: &str) -> Option<Flag> {
 
 //@FIXME return an error if the envelope is invalid instead of panicking
 //@FIXME some fields must be defaulted if there are not set.
-fn message_envelope(msg: &imf::Imf) -> Envelope {
+fn message_envelope(msg: &imf::Imf) -> Envelope<'static> {
     let from = msg.from.iter().map(convert_mbx).collect::<Vec<_>>();
 
     Envelope {
@@ -900,7 +948,7 @@ fn message_envelope(msg: &imf::Imf) -> Envelope {
     }
 }
 
-fn convert_addresses(addrlist: &Vec<imf::address::AddressRef>) -> Vec<Address> {
+fn convert_addresses(addrlist: &Vec<imf::address::AddressRef>) -> Vec<Address<'static>> {
     let mut acc = vec![];
     for item in addrlist {
         match item {
@@ -911,23 +959,23 @@ fn convert_addresses(addrlist: &Vec<imf::address::AddressRef>) -> Vec<Address> {
     return acc;
 }
 
-fn convert_mbx(addr: &imf::mailbox::MailboxRef) -> Address {
-    Address::new(
-        NString(
+fn convert_mbx(addr: &imf::mailbox::MailboxRef) -> Address<'static> {
+    Address {
+        name: NString(
             addr.name
                 .as_ref()
                 .map(|x| IString::try_from(x.to_string()).unwrap()),
         ),
         // SMTP at-domain-list (source route) seems obsolete since at least 1991
         // https://www.mhonarc.org/archive/html/ietf-822/1991-06/msg00060.html
-        NString(None),
-        NString(Some(
+        adl: NString(None),
+        mailbox: NString(Some(
             IString::try_from(addr.addrspec.local_part.to_string()).unwrap(),
         )),
-        NString(Some(
+        host: NString(Some(
             IString::try_from(addr.addrspec.domain.to_string()).unwrap(),
         )),
-    )
+    }
 }
 
 /*
@@ -945,19 +993,23 @@ b fetch 29878:29879 (BODY)
 b OK Fetch completed (0.001 + 0.000 secs).
 */
 
-fn build_imap_email_struct<'a>(part: &AnyPart<'a>) -> Result<BodyStructure> {
+fn build_imap_email_struct<'a>(part: &AnyPart<'a>) -> Result<BodyStructure<'static>> {
     match part {
         AnyPart::Mult(x) => {
             let itype = &x.mime.interpreted_type;
             let subtype = IString::try_from(itype.subtype.to_string())
                 .unwrap_or(unchecked_istring("alternative"));
 
+            let inner_bodies = x
+                .children
+                .iter()
+                .filter_map(|inner| build_imap_email_struct(&inner).ok())
+                .collect::<Vec<_>>();
+            NonEmptyVec::validate(&inner_bodies)?;
+            let bodies = NonEmptyVec::unvalidated(inner_bodies);
+
             Ok(BodyStructure::Multi {
-                bodies: x
-                    .children
-                    .iter()
-                    .filter_map(|inner| build_imap_email_struct(&inner).ok())
-                    .collect(),
+                bodies,
                 subtype,
                 extension_data: None,
                 /*Some(MultipartExtensionData {
@@ -996,7 +1048,7 @@ fn build_imap_email_struct<'a>(part: &AnyPart<'a>) -> Result<BodyStructure> {
                         number_of_lines: nol(x.body),
                     },
                 },
-                extension: None,
+                extension_data: None,
             })
         }
         AnyPart::Bin(x) => {
@@ -1009,9 +1061,10 @@ fn build_imap_email_struct<'a>(part: &AnyPart<'a>) -> Result<BodyStructure> {
             };
             let ct = x.mime.fields.ctype.as_ref().unwrap_or(&default);
 
-            let type_ = IString::try_from(String::from_utf8_lossy(ct.main).to_string()).or(Err(
-                anyhow!("Unable to build IString from given Content-Type type given"),
-            ))?;
+            let r#type =
+                IString::try_from(String::from_utf8_lossy(ct.main).to_string()).or(Err(
+                    anyhow!("Unable to build IString from given Content-Type type given"),
+                ))?;
 
             let subtype =
                 IString::try_from(String::from_utf8_lossy(ct.sub).to_string()).or(Err(anyhow!(
@@ -1021,9 +1074,9 @@ fn build_imap_email_struct<'a>(part: &AnyPart<'a>) -> Result<BodyStructure> {
             Ok(BodyStructure::Single {
                 body: FetchBody {
                     basic,
-                    specific: SpecificFields::Basic { type_, subtype },
+                    specific: SpecificFields::Basic { r#type, subtype },
                 },
-                extension: None,
+                extension_data: None,
             })
         }
         AnyPart::Msg(x) => {
@@ -1033,12 +1086,12 @@ fn build_imap_email_struct<'a>(part: &AnyPart<'a>) -> Result<BodyStructure> {
                 body: FetchBody {
                     basic,
                     specific: SpecificFields::Message {
-                        envelope: message_envelope(&x.imf),
+                        envelope: Box::new(message_envelope(&x.imf)),
                         body_structure: Box::new(build_imap_email_struct(x.child.as_ref())?),
                         number_of_lines: nol(x.raw_part),
                     },
                 },
-                extension: None,
+                extension_data: None,
             })
         }
     }
@@ -1059,7 +1112,7 @@ fn unchecked_istring(s: &'static str) -> IString {
     IString::try_from(s).expect("this value is expected to be a valid imap-codec::IString")
 }
 
-fn basic_fields(m: &mime::NaiveMIME, sz: usize) -> Result<BasicFields> {
+fn basic_fields(m: &mime::NaiveMIME, sz: usize) -> Result<BasicFields<'static>> {
     let parameter_list = m
         .ctype
         .as_ref()
@@ -1136,20 +1189,18 @@ fn get_message_section<'a>(
         .ok_or(anyhow!("Part must be a message"))?;
     match section {
         Some(FetchSection::Text(None)) => Ok(msg.raw_body.into()),
-        Some(FetchSection::Text(Some(part))) => {
-            map_subpart(parsed, part.0.as_slice(), |part_msg| {
-                Ok(part_msg
-                    .as_message()
-                    .ok_or(Error::msg(
-                        "Not a message/rfc822 part while expected by request (TEXT)",
-                    ))?
-                    .raw_body
-                    .into())
-            })
-        }
+        Some(FetchSection::Text(Some(part))) => map_subpart(parsed, part.0.as_ref(), |part_msg| {
+            Ok(part_msg
+                .as_message()
+                .ok_or(Error::msg(
+                    "Not a message/rfc822 part while expected by request (TEXT)",
+                ))?
+                .raw_body
+                .into())
+        }),
         Some(FetchSection::Header(part)) => map_subpart(
             parsed,
-            part.as_ref().map(|p| p.0.as_slice()).unwrap_or(&[]),
+            part.as_ref().map(|p| p.0.as_ref()).unwrap_or(&[]),
             |part_msg| {
                 Ok(part_msg
                     .as_message()
@@ -1165,17 +1216,18 @@ fn get_message_section<'a>(
         ) => {
             let invert = matches!(section, Some(FetchSection::HeaderFieldsNot(_, _)));
             let fields = fields
+                .as_ref()
                 .iter()
                 .map(|x| match x {
-                    AString::Atom(a) => a.as_bytes(),
-                    AString::String(IString::Literal(l)) => l.as_slice(),
-                    AString::String(IString::Quoted(q)) => q.as_bytes(),
+                    AString::Atom(a) => a.inner().as_bytes(),
+                    AString::String(IString::Literal(l)) => l.as_ref(),
+                    AString::String(IString::Quoted(q)) => q.inner().as_bytes(),
                 })
                 .collect::<Vec<_>>();
 
             map_subpart(
                 parsed,
-                part.as_ref().map(|p| p.0.as_slice()).unwrap_or(&[]),
+                part.as_ref().map(|p| p.0.as_ref()).unwrap_or(&[]),
                 |part_msg| {
                     let mut ret = vec![];
                     for f in &part_msg.mime().kv {
@@ -1195,7 +1247,7 @@ fn get_message_section<'a>(
                 },
             )
         }
-        Some(FetchSection::Part(part)) => map_subpart(parsed, part.0.as_slice(), |part| {
+        Some(FetchSection::Part(part)) => map_subpart(parsed, part.0.as_ref(), |part| {
             let bytes = match &part {
                 AnyPart::Txt(p) => p.body,
                 AnyPart::Bin(p) => p.body,
@@ -1204,7 +1256,7 @@ fn get_message_section<'a>(
             };
             Ok(bytes.to_vec().into())
         }),
-        Some(FetchSection::Mime(part)) => map_subpart(parsed, part.0.as_slice(), |part| {
+        Some(FetchSection::Mime(part)) => map_subpart(parsed, part.0.as_ref(), |part| {
             let bytes = match &part {
                 AnyPart::Txt(p) => p.mime.fields.raw,
                 AnyPart::Bin(p) => p.mime.fields.raw,
@@ -1246,13 +1298,13 @@ mod tests {
     use crate::cryptoblob;
     use crate::mail::unique_ident;
     use imap_codec::codec::Encode;
-    use imap_codec::imap_types::fetch_attributes::Section;
+    use imap_codec::imap_types::fetch::Section;
     use std::fs;
 
     #[test]
     fn mailview_body_ext() -> Result<()> {
         let ap = AttributesProxy::new(
-            &MacroOrFetchAttributes::FetchAttributes(vec![FetchAttribute::BodyExt {
+            &MacroOrMessageDataItemNames::FetchAttributes(vec![MessageDataItemName::BodyExt {
                 section: Some(Section::Header(None)),
                 partial: None,
                 peek: false,
@@ -1281,14 +1333,13 @@ mod tests {
             content,
             meta: &meta,
             flags: &flags,
-            add_seen: false,
         };
         let res_body = mv.filter(&ap)?;
 
         let fattr = match res_body {
             Body::Data(Data::Fetch {
-                seq_or_uid: _seq,
-                attributes: attr,
+                seq: _seq,
+                items: attr,
             }) => Ok(attr),
             _ => Err(anyhow!("Not a fetch body")),
         }?;
@@ -1296,7 +1347,7 @@ mod tests {
         assert_eq!(fattr.len(), 1);
 
         let (sec, _orig, _data) = match &fattr[0] {
-            MessageAttribute::BodyExt {
+            MessageDataItemName::BodyExt {
                 section,
                 origin,
                 data,
@@ -1349,7 +1400,7 @@ mod tests {
             let message = eml_codec::parse_message(&txt).unwrap().1;
 
             let mut resp = Vec::new();
-            MessageAttribute::Body(build_imap_email_struct(&message.child)?)
+            MessageDataItemName::Body(build_imap_email_struct(&message.child)?)
                 .encode(&mut resp)
                 .unwrap();
 

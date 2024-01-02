@@ -5,45 +5,48 @@ use imap_codec::imap_types::response::{Capability, Data};
 use crate::imap::flow;
 use crate::imap::response::Response;
 
-pub(crate) fn capability(tag: Tag) -> Result<(Response, flow::Transition)> {
+pub(crate) fn capability<'a>(tag: Tag<'a>) -> Result<(Response<'a>, flow::Transition)> {
     let capabilities: NonEmptyVec<Capability> =
         (vec![Capability::Imap4Rev1, Capability::Idle]).try_into()?;
-    let res = Response::ok()
+    let res = Response::build()
         .tag(tag)
         .message("Server capabilities")
         .data(Data::Capability(capabilities))
-        .build()?;
+        .ok()?;
 
     Ok((res, flow::Transition::None))
 }
 
-pub(crate) fn noop_nothing(tag: Tag) -> Result<(Response, flow::Transition)> {
+pub(crate) fn noop_nothing<'a>(tag: Tag<'a>) -> Result<(Response<'a>, flow::Transition)> {
     Ok((
-        Response::ok().tag(tag).message("Noop completed.").build()?,
+        Response::build().tag(tag).message("Noop completed.").ok()?,
         flow::Transition::None,
     ))
 }
 
-pub(crate) fn logout() -> Result<(Response, flow::Transition)> {
+pub(crate) fn logout() -> Result<(Response<'static>, flow::Transition)> {
     Ok((Response::bye()?, flow::Transition::Logout))
 }
 
-pub(crate) fn not_implemented(tag: Tag, what: &str) -> Result<(Response, flow::Transition)> {
+pub(crate) fn not_implemented<'a>(
+    tag: Tag<'a>,
+    what: &str,
+) -> Result<(Response<'a>, flow::Transition)> {
     Ok((
-        Response::bad()
+        Response::build()
             .tag(tag)
             .message(format!("Command not implemented {}", what))
-            .build()?,
+            .bad()?,
         flow::Transition::None,
     ))
 }
 
-pub(crate) fn wrong_state(tag: Tag) -> Result<(Response, flow::Transition)> {
+pub(crate) fn wrong_state<'a>(tag: Tag<'a>) -> Result<(Response<'a>, flow::Transition)> {
     Ok((
-        Response::bad()
+        Response::build()
             .tag(tag)
             .message("Command not authorized in this state")
-            .build()?,
+            .bad()?,
         flow::Transition::None,
     ))
 }
