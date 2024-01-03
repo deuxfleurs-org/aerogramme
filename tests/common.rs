@@ -1,11 +1,14 @@
 use anyhow::{bail, Context, Result};
+use std::io::Read;
 use std::net::{Shutdown, TcpStream};
 use std::process::Command;
 use std::{thread, time};
 
 static SMALL_DELAY: time::Duration = time::Duration::from_millis(200);
 
-pub fn aerogramme_provider_daemon_dev(mut fx: impl FnMut(&mut TcpStream, &mut TcpStream) -> Result<()>) -> Result<()> {
+pub fn aerogramme_provider_daemon_dev(
+    mut fx: impl FnMut(&mut TcpStream, &mut TcpStream) -> Result<()>,
+) -> Result<()> {
     let mut daemon = Command::new(env!("CARGO_BIN_EXE_aerogramme"))
         .arg("--dev")
         .arg("provider")
@@ -25,7 +28,8 @@ pub fn aerogramme_provider_daemon_dev(mut fx: impl FnMut(&mut TcpStream, &mut Tc
         thread::sleep(SMALL_DELAY);
     };
 
-    let mut lmtp_socket = TcpStream::connect("[::1]:1025").context("lmtp socket must be connected")?;
+    let mut lmtp_socket =
+        TcpStream::connect("[::1]:1025").context("lmtp socket must be connected")?;
 
     println!("-- ready to test imap features --");
     let result = fx(&mut imap_socket, &mut lmtp_socket);
@@ -40,4 +44,25 @@ pub fn aerogramme_provider_daemon_dev(mut fx: impl FnMut(&mut TcpStream, &mut Tc
     daemon.kill().context("daemon should be killed")?;
 
     result.context("all tests passed")
+}
+
+pub fn read_lines<'a, F: Read>(
+    reader: &mut F,
+    buffer: &'a mut [u8],
+    stop_marker: Option<&[u8]>,
+) -> Result<&'a [u8]> {
+    let mut nbytes = 0;
+    loop {
+        nbytes += reader.read(&mut buffer[nbytes..])?;
+        //println!("partial read: {}", std::str::from_utf8(&buffer[..nbytes])?);
+        let pre_condition = match stop_marker {
+            None => true,
+            Some(mark) => buffer[..nbytes].windows(mark.len()).any(|w| w == mark),
+        };
+        if pre_condition && &buffer[nbytes - 2..nbytes] == &b"\r\n"[..] {
+            break;
+        }
+    }
+    println!("read: {}", std::str::from_utf8(&buffer[..nbytes])?);
+    Ok(&buffer[..nbytes])
 }

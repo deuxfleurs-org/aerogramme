@@ -1,61 +1,12 @@
 use anyhow::{bail, Context, Result};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::net::TcpStream;
 use std::{thread, time};
 
 mod common;
+use crate::common::read_lines;
 
 static SMALL_DELAY: time::Duration = time::Duration::from_millis(200);
-static EMAIL1: &[u8] = b"Date: Sat, 8 Jul 2023 07:14:29 +0200\r
-From: Bob Robert <bob@example.tld>\r
-To: Alice Malice <alice@example.tld>\r
-CC: =?ISO-8859-1?Q?Andr=E9?= Pirard <PIRARD@vm1.ulg.ac.be>\r
-Subject: =?ISO-8859-1?B?SWYgeW91IGNhbiByZWFkIHRoaXMgeW8=?=\r
-    =?ISO-8859-2?B?dSB1bmRlcnN0YW5kIHRoZSBleGFtcGxlLg==?=\r
-X-Unknown: something something\r
-Bad entry\r
-  on multiple lines\r
-Message-ID: <NTAxNzA2AC47634Y366BAMTY4ODc5MzQyODY0ODY5@www.grrrndzero.org>\r
-MIME-Version: 1.0\r
-Content-Type: multipart/alternative;\r
- boundary=\"b1_e376dc71bafc953c0b0fdeb9983a9956\"\r
-Content-Transfer-Encoding: 7bit\r
-\r
-This is a multi-part message in MIME format.\r
-\r
---b1_e376dc71bafc953c0b0fdeb9983a9956\r
-Content-Type: text/plain; charset=utf-8\r
-Content-Transfer-Encoding: quoted-printable\r
-\r
-GZ\r
-OoOoO\r
-oOoOoOoOo\r
-oOoOoOoOoOoOoOoOo\r
-oOoOoOoOoOoOoOoOoOoOoOo\r
-oOoOoOoOoOoOoOoOoOoOoOoOoOoOo\r
-OoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoO\r
-\r
---b1_e376dc71bafc953c0b0fdeb9983a9956\r
-Content-Type: text/html; charset=us-ascii\r
-\r
-<div style=\"text-align: center;\"><strong>GZ</strong><br />\r
-OoOoO<br />\r
-oOoOoOoOo<br />\r
-oOoOoOoOoOoOoOoOo<br />\r
-oOoOoOoOoOoOoOoOoOoOoOo<br />\r
-oOoOoOoOoOoOoOoOoOoOoOoOoOoOo<br />\r
-OoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoO<br />\r
-</div>\r
-\r
---b1_e376dc71bafc953c0b0fdeb9983a9956--\r
-";
-
-static EMAIL2: &[u8] = b"From: alice@example.com\r
-To: alice@example.tld\r
-Subject: Test\r
-\r
-Hello world!\r
-";
 
 fn main() {
     common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {
@@ -76,12 +27,14 @@ fn main() {
         append_email(imap_socket, EMAIL2).context("insert email in INBOX")?;
         // SEARCH IS NOT IMPLEMENTED YET
         //search(imap_socket).expect("search should return something");
-        add_flags_email(imap_socket).context("should add delete and important flags to the email")?;
+        add_flags_email(imap_socket)
+            .context("should add delete and important flags to the email")?;
         expunge(imap_socket).context("expunge emails")?;
         rename_mailbox(imap_socket).context("archive mailbox is renamed my-archives")?;
         delete_mailbox(imap_socket).context("my-archives mailbox is deleted")?;
         Ok(())
-    }).expect("test fully run");
+    })
+    .expect("test fully run");
 }
 
 fn connect(imap: &mut TcpStream) -> Result<()> {
@@ -336,23 +289,53 @@ fn delete_mailbox(imap: &mut TcpStream) -> Result<()> {
     Ok(())
 }
 
-fn read_lines<'a, F: Read>(
-    reader: &mut F,
-    buffer: &'a mut [u8],
-    stop_marker: Option<&[u8]>,
-) -> Result<&'a [u8]> {
-    let mut nbytes = 0;
-    loop {
-        nbytes += reader.read(&mut buffer[nbytes..])?;
-        //println!("partial read: {}", std::str::from_utf8(&buffer[..nbytes])?);
-        let pre_condition = match stop_marker {
-            None => true,
-            Some(mark) => buffer[..nbytes].windows(mark.len()).any(|w| w == mark),
-        };
-        if pre_condition && &buffer[nbytes - 2..nbytes] == &b"\r\n"[..] {
-            break;
-        }
-    }
-    println!("read: {}", std::str::from_utf8(&buffer[..nbytes])?);
-    Ok(&buffer[..nbytes])
-}
+static EMAIL1: &[u8] = b"Date: Sat, 8 Jul 2023 07:14:29 +0200\r
+From: Bob Robert <bob@example.tld>\r
+To: Alice Malice <alice@example.tld>\r
+CC: =?ISO-8859-1?Q?Andr=E9?= Pirard <PIRARD@vm1.ulg.ac.be>\r
+Subject: =?ISO-8859-1?B?SWYgeW91IGNhbiByZWFkIHRoaXMgeW8=?=\r
+    =?ISO-8859-2?B?dSB1bmRlcnN0YW5kIHRoZSBleGFtcGxlLg==?=\r
+X-Unknown: something something\r
+Bad entry\r
+  on multiple lines\r
+Message-ID: <NTAxNzA2AC47634Y366BAMTY4ODc5MzQyODY0ODY5@www.grrrndzero.org>\r
+MIME-Version: 1.0\r
+Content-Type: multipart/alternative;\r
+ boundary=\"b1_e376dc71bafc953c0b0fdeb9983a9956\"\r
+Content-Transfer-Encoding: 7bit\r
+\r
+This is a multi-part message in MIME format.\r
+\r
+--b1_e376dc71bafc953c0b0fdeb9983a9956\r
+Content-Type: text/plain; charset=utf-8\r
+Content-Transfer-Encoding: quoted-printable\r
+\r
+GZ\r
+OoOoO\r
+oOoOoOoOo\r
+oOoOoOoOoOoOoOoOo\r
+oOoOoOoOoOoOoOoOoOoOoOo\r
+oOoOoOoOoOoOoOoOoOoOoOoOoOoOo\r
+OoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoO\r
+\r
+--b1_e376dc71bafc953c0b0fdeb9983a9956\r
+Content-Type: text/html; charset=us-ascii\r
+\r
+<div style=\"text-align: center;\"><strong>GZ</strong><br />\r
+OoOoO<br />\r
+oOoOoOoOo<br />\r
+oOoOoOoOoOoOoOoOo<br />\r
+oOoOoOoOoOoOoOoOoOoOoOo<br />\r
+oOoOoOoOoOoOoOoOoOoOoOoOoOoOo<br />\r
+OoOoOoOoOoOoOoOoOoOoOoOoOoOoOoOoO<br />\r
+</div>\r
+\r
+--b1_e376dc71bafc953c0b0fdeb9983a9956--\r
+";
+
+static EMAIL2: &[u8] = b"From: alice@example.com\r
+To: alice@example.tld\r
+Subject: Test\r
+\r
+Hello world!\r
+";

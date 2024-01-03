@@ -71,3 +71,8 @@ imap-codec = { git = "https://github.com/duesee/imap-codec", branch = "v2" }
 name = "rfc3501_imap4rev1_base"
 path = "tests/rfc3501_imap4rev1_base.rs"
 harness = false
+
+[[test]]
+name = "rfc3691_imapext_unselect"
+path = "tests/rfc3691_imapext_unselect.rs"
+harness = false
