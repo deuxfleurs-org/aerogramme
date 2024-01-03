@@ -23,6 +23,7 @@ impl Default for ServerCapability {
         Self(HashSet::from([
             Capability::Imap4Rev1,
             Capability::Move,
+            Capability::LiteralPlus,
             capability_unselect(),
             //capability_condstore(),
             //capability_qresync(),
