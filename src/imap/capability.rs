@@ -1,6 +1,6 @@
 use imap_codec::imap_types::core::NonEmptyVec;
-use imap_codec::imap_types::response::Capability;
 use imap_codec::imap_types::extensions::enable::{CapabilityEnable, Utf8Kind};
+use imap_codec::imap_types::response::Capability;
 use std::collections::HashSet;
 
 fn capability_unselect() -> Capability<'static> {
@@ -32,7 +32,12 @@ impl Default for ServerCapability {
 
 impl ServerCapability {
     pub fn to_vec(&self) -> NonEmptyVec<Capability<'static>> {
-        self.0.iter().map(|v| v.clone()).collect::<Vec<_>>().try_into().unwrap()
+        self.0
+            .iter()
+            .map(|v| v.clone())
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap()
     }
 
     #[allow(dead_code)]
