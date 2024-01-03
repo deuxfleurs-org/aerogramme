@@ -89,7 +89,7 @@ async fn client_wrapper(ctx: ClientContext) {
     let addr = ctx.addr.clone();
     match client(ctx).await {
         Ok(()) => {
-            tracing::info!("closing successful session for {:?}", addr);
+            tracing::debug!("closing successful session for {:?}", addr);
         }
         Err(e) => {
             tracing::error!("closing errored session for {:?}: {}", addr, e);
@@ -127,7 +127,9 @@ async fn client(mut ctx: ClientContext) -> Result<()> {
                 Some(cmd_recv) => cmd_recv,
             };
 
+            tracing::debug!(cmd=?cmd, sock=%ctx.addr, "command");
             let maybe_response = session.command(cmd).await;
+            tracing::debug!(cmd=?maybe_response.completion, sock=%ctx.addr, "response");
 
             match resp_tx.send(maybe_response) {
                 Err(_) => break,

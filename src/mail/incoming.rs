@@ -9,7 +9,7 @@ use base64::Engine;
 use futures::{future::BoxFuture, FutureExt};
 //use tokio::io::AsyncReadExt;
 use tokio::sync::watch;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::cryptoblob;
 use crate::login::{Credentials, PublicCredentials};
@@ -62,7 +62,7 @@ async fn incoming_mail_watch_process_internal(
 
     loop {
         let maybe_updated_incoming_key = if *lock_held.borrow() {
-            info!("incoming lock held");
+            debug!("incoming lock held");
 
             let wait_new_mail = async {
                 loop {
@@ -83,7 +83,7 @@ async fn incoming_mail_watch_process_internal(
                 _     = rx_inbox_id.changed() => None,
             }
         } else {
-            info!("incoming lock not held");
+            debug!("incoming lock not held");
             tokio::select! {
                 _ = lock_held.changed() => None,
                 _ = rx_inbox_id.changed() => None,
@@ -93,11 +93,11 @@ async fn incoming_mail_watch_process_internal(
         let user = match Weak::upgrade(&user) {
             Some(user) => user,
             None => {
-                info!("User no longer available, exiting incoming loop.");
+                debug!("User no longer available, exiting incoming loop.");
                 break;
             }
         };
-        info!("User still available");
+        debug!("User still available");
 
         // If INBOX no longer is same mailbox, open new mailbox
         let inbox_id = *rx_inbox_id.borrow();
@@ -235,7 +235,7 @@ async fn k2v_lock_loop_internal(
     let watch_lock_loop: BoxFuture<Result<()>> = async {
         let mut ct = row_ref.clone();
         loop {
-            info!("k2v watch lock loop iter: ct = {:?}", ct);
+            debug!("k2v watch lock loop iter: ct = {:?}", ct);
             match storage.row_poll(&ct).await {
                 Err(e) => {
                     error!(
@@ -263,7 +263,7 @@ async fn k2v_lock_loop_internal(
                     }
                     let new_ct = cv.row_ref;
 
-                    info!(
+                    debug!(
                         "k2v watch lock loop: changed, old ct = {:?}, new ct = {:?}, v = {:?}",
                         ct, new_ct, lock_state
                     );
@@ -378,7 +378,7 @@ async fn k2v_lock_loop_internal(
 
     let _ = futures::try_join!(watch_lock_loop, lock_notify_loop, take_lock_loop);
 
-    info!("lock loop exited, releasing");
+    debug!("lock loop exited, releasing");
 
     if !held_tx.is_closed() {
         warn!("weird...");

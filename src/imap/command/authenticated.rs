@@ -305,6 +305,9 @@ impl<'a> AuthenticatedContext<'a> {
                 StatusDataItemName::DeletedStorage => {
                     bail!("quota not implemented, can't return freed storage after EXPUNGE will be run");
                 },
+                StatusDataItemName::HighestModSeq => {
+                    bail!("highestmodseq not yet implemented");
+                }
             });
         }
 
@@ -524,7 +527,7 @@ impl<'a> AuthenticatedContext<'a> {
         };
 
         if date.is_some() {
-            bail!("Cannot set date when appending message");
+            tracing::warn!("Cannot set date when appending message");
         }
 
         let msg =
