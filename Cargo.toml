@@ -76,3 +76,8 @@ harness = false
 name = "rfc3691_imapext_unselect"
 path = "tests/rfc3691_imapext_unselect.rs"
 harness = false
+
+[[test]]
+name = "rfc6851_imapext_move"
+path = "tests/rfc6851_imapext_move.rs"
+harness = false
