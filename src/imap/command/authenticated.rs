@@ -3,14 +3,15 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Result};
 use imap_codec::imap_types::command::{Command, CommandBody};
-use imap_codec::imap_types::core::{Atom, Literal, QuotedChar};
+use imap_codec::imap_types::core::{Atom, Literal, QuotedChar, NonEmptyVec};
 use imap_codec::imap_types::datetime::DateTime;
 use imap_codec::imap_types::flag::{Flag, FlagNameAttribute};
 use imap_codec::imap_types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
 use imap_codec::imap_types::response::{Code, CodeOther, Data};
 use imap_codec::imap_types::status::{StatusDataItem, StatusDataItemName};
+use imap_codec::imap_types::extensions::enable::CapabilityEnable;
 
-use crate::imap::capability::ServerCapability;
+use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anystate, MailboxName};
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
@@ -24,6 +25,7 @@ use crate::mail::IMF;
 pub struct AuthenticatedContext<'a> {
     pub req: &'a Command<'static>,
     pub server_capabilities: &'a ServerCapability,
+    pub client_capabilities: &'a mut ClientCapability,
     pub user: &'a Arc<User>,
 }
 
@@ -64,6 +66,11 @@ pub async fn dispatch<'a>(
             date,
             message,
         } => ctx.append(mailbox, flags, date, message).await,
+
+        // rfc5161 ENABLE
+        CommandBody::Enable { capabilities } => {
+            ctx.enable(capabilities)
+        },
 
         // Collect other commands
         _ => anystate::wrong_state(ctx.req.tag.clone()),
@@ -509,6 +516,20 @@ impl<'a> AuthenticatedContext<'a> {
                 flow::Transition::None,
             )),
         }
+    }
+
+    fn enable(self, cap_enable: &NonEmptyVec<CapabilityEnable<'static>>) -> Result<(Response<'static>, flow::Transition)> {
+        let mut response_builder = Response::build().to_req(self.req);
+        let capabilities = self.client_capabilities.try_enable(cap_enable.as_ref());
+        if capabilities.len() > 0 {
+            response_builder = response_builder.data(Data::Enabled { capabilities });
+        }
+        Ok((
+            response_builder
+                .message("ENABLE completed")
+                .ok()?,
+            flow::Transition::None,
+        ))
     }
 
     pub(crate) async fn append_internal(

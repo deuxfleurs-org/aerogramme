@@ -1,4 +1,4 @@
-use crate::imap::capability::ServerCapability;
+use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anonymous, authenticated, examined, selected};
 use crate::imap::flow;
 use crate::imap::response::Response;
@@ -9,14 +9,17 @@ use imap_codec::imap_types::command::Command;
 pub struct Instance {
     pub login_provider: ArcLoginProvider,
     pub server_capabilities: ServerCapability,
+    pub client_capabilities: ClientCapability,
     pub state: flow::State,
 }
 impl Instance {
     pub fn new(login_provider: ArcLoginProvider, cap: ServerCapability) -> Self {
+        let client_cap = ClientCapability::new(&cap);
         Self {
             login_provider,
             state: flow::State::NotAuthenticated,
             server_capabilities: cap,
+            client_capabilities: client_cap,
         }
     }
 
@@ -36,6 +39,7 @@ impl Instance {
                 let ctx = authenticated::AuthenticatedContext {
                     req: &cmd,
                     server_capabilities: &self.server_capabilities,
+                    client_capabilities: &mut self.client_capabilities,
                     user,
                 };
                 authenticated::dispatch(ctx).await
@@ -44,6 +48,7 @@ impl Instance {
                 let ctx = selected::SelectedContext {
                     req: &cmd,
                     server_capabilities: &self.server_capabilities,
+                    client_capabilities: &mut self.client_capabilities,
                     user,
                     mailbox,
                 };
@@ -53,6 +58,7 @@ impl Instance {
                 let ctx = examined::ExaminedContext {
                     req: &cmd,
                     server_capabilities: &self.server_capabilities,
+                    client_capabilities: &mut self.client_capabilities,
                     user,
                     mailbox,
                 };

@@ -10,7 +10,7 @@ use imap_codec::imap_types::response::{Code, CodeOther};
 use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::SequenceSet;
 
-use crate::imap::capability::ServerCapability;
+use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anystate, authenticated, MailboxName};
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
@@ -23,6 +23,7 @@ pub struct SelectedContext<'a> {
     pub user: &'a Arc<User>,
     pub mailbox: &'a mut MailboxView,
     pub server_capabilities: &'a ServerCapability,
+    pub client_capabilities: &'a mut ClientCapability,
 }
 
 pub async fn dispatch<'a>(
@@ -76,6 +77,7 @@ pub async fn dispatch<'a>(
             authenticated::dispatch(authenticated::AuthenticatedContext {
                 req: ctx.req,
                 server_capabilities: ctx.server_capabilities,
+                client_capabilities: ctx.client_capabilities,
                 user: ctx.user,
             })
             .await

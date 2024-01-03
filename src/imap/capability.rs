@@ -1,5 +1,7 @@
 use imap_codec::imap_types::core::NonEmptyVec;
 use imap_codec::imap_types::response::Capability;
+use imap_codec::imap_types::extensions::enable::{CapabilityEnable, Utf8Kind};
+use std::collections::HashSet;
 
 fn capability_unselect() -> Capability<'static> {
     Capability::try_from("UNSELECT").unwrap()
@@ -14,84 +16,67 @@ fn capability_qresync() -> Capability<'static> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ServerCapability {
-    r#move: bool,
-    unselect: bool,
-    condstore: bool,
-    qresync: bool,
-}
+pub struct ServerCapability(HashSet<Capability<'static>>);
 
 impl Default for ServerCapability {
     fn default() -> Self {
-        Self {
-            r#move: true,
-            unselect: true,
-            condstore: false,
-            qresync: false,
-        }
+        Self(HashSet::from([
+            Capability::Imap4Rev1,
+            Capability::Move,
+            capability_unselect(),
+            //capability_condstore(),
+            //capability_qresync(),
+        ]))
     }
 }
 
 impl ServerCapability {
     pub fn to_vec(&self) -> NonEmptyVec<Capability<'static>> {
-        let mut acc = vec![Capability::Imap4Rev1];
-        if self.r#move {
-            acc.push(Capability::Move);
-        }
-        if self.unselect {
-            acc.push(capability_unselect());
-        }
-        if self.condstore {
-            acc.push(capability_condstore());
-        }
-        if self.qresync {
-            acc.push(capability_qresync());
-        }
-        acc.try_into().unwrap()
+        self.0.iter().map(|v| v.clone()).collect::<Vec<_>>().try_into().unwrap()
     }
 
+    #[allow(dead_code)]
     pub fn support(&self, cap: &Capability<'static>) -> bool {
-        match cap {
-            Capability::Imap4Rev1 => true,
-            Capability::Move => self.r#move,
-            x if *x == capability_condstore() => self.condstore,
-            x if *x == capability_qresync() => self.qresync,
-            x if *x == capability_unselect() => self.unselect,
-            _ => false,
-        }
+        self.0.contains(cap)
     }
+}
+
+enum ClientStatus {
+    NotSupportedByServer,
+    Disabled,
+    Enabled,
 }
 
 pub struct ClientCapability {
-    condstore: bool,
-    qresync: bool,
-}
-
-impl Default for ClientCapability {
-    fn default() -> Self {
-        Self {
-            condstore: false,
-            qresync: false,
-        }
-    }
+    condstore: ClientStatus,
+    utf8kind: Option<Utf8Kind>,
 }
 
 impl ClientCapability {
+    pub fn new(sc: &ServerCapability) -> Self {
+        Self {
+            condstore: match sc.0.contains(&capability_condstore()) {
+                true => ClientStatus::Disabled,
+                _ => ClientStatus::NotSupportedByServer,
+            },
+            utf8kind: None,
+        }
+    }
+
     pub fn try_enable(
         &mut self,
-        srv: &ServerCapability,
-        caps: &[Capability<'static>],
-    ) -> Vec<Capability<'static>> {
+        caps: &[CapabilityEnable<'static>],
+    ) -> Vec<CapabilityEnable<'static>> {
         let mut enabled = vec![];
         for cap in caps {
             match cap {
-                x if *x == capability_condstore() && srv.condstore && !self.condstore => {
-                    self.condstore = true;
-                    enabled.push(x.clone());
+                CapabilityEnable::CondStore if matches!(self.condstore, ClientStatus::Disabled) => {
+                    self.condstore = ClientStatus::Enabled;
+                    enabled.push(cap.clone());
                 }
-                x if *x == capability_qresync() && srv.qresync && !self.qresync => {
-                    self.qresync = true;
-                    enabled.push(x.clone());
+                CapabilityEnable::Utf8(kind) if Some(kind) != self.utf8kind.as_ref() => {
+                    self.utf8kind = Some(kind.clone());
+                    enabled.push(cap.clone());
                 }
                 _ => (),
             }
