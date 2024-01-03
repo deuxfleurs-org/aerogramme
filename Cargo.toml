@@ -68,6 +68,6 @@ imap-types = { git = "https://github.com/duesee/imap-codec", branch = "v2" }
 imap-codec = { git = "https://github.com/duesee/imap-codec", branch = "v2" }
 
 [[test]]
-name = "imap_features"
-path = "tests/imap_features.rs"
+name = "rfc3501_imap4rev1_base"
+path = "tests/rfc3501_imap4rev1_base.rs"
 harness = false

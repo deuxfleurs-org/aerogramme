@@ -1,8 +1,9 @@
 use anyhow::{bail, Context, Result};
 use std::io::{Read, Write};
-use std::net::{Shutdown, TcpStream};
-use std::process::Command;
+use std::net::TcpStream;
 use std::{thread, time};
+
+mod common;
 
 static SMALL_DELAY: time::Duration = time::Duration::from_millis(200);
 static EMAIL1: &[u8] = b"Date: Sat, 8 Jul 2023 07:14:29 +0200\r
@@ -57,66 +58,30 @@ Hello world!\r
 ";
 
 fn main() {
-    let mut daemon = Command::new(env!("CARGO_BIN_EXE_aerogramme"))
-        .arg("--dev")
-        .arg("provider")
-        .arg("daemon")
-        .spawn()
-        .expect("daemon should be started");
-
-    let mut max_retry = 20;
-    let mut imap_socket = loop {
-        max_retry -= 1;
-        match (TcpStream::connect("[::1]:1143"), max_retry) {
-            (Err(e), 0) => panic!("no more retry, last error is: {}", e),
-            (Err(e), _) => {
-                println!("unable to connect: {} ; will retry in 1 sec", e);
-            }
-            (Ok(v), _) => break v,
-        }
-        thread::sleep(SMALL_DELAY);
-    };
-
-    let mut lmtp_socket = TcpStream::connect("[::1]:1025").expect("lmtp socket must be connected");
-
-    println!("-- ready to test imap features --");
-    let result = generic_test(&mut imap_socket, &mut lmtp_socket);
-    println!("-- test teardown --");
-
-    imap_socket
-        .shutdown(Shutdown::Both)
-        .expect("closing imap socket at the end of the test");
-    lmtp_socket
-        .shutdown(Shutdown::Both)
-        .expect("closing lmtp socket at the end of the test");
-    daemon.kill().expect("daemon should be killed");
-
-    result.expect("all tests passed");
-}
-
-fn generic_test(imap_socket: &mut TcpStream, lmtp_socket: &mut TcpStream) -> Result<()> {
-    connect(imap_socket).context("server says hello")?;
-    capability(imap_socket).context("check server capabilities")?;
-    login(imap_socket).context("login test")?;
-    create_mailbox(imap_socket).context("created mailbox archive")?;
-    // UNSUBSCRIBE IS NOT IMPLEMENTED YET
-    //unsubscribe_mailbox(imap_socket).context("unsubscribe from archive")?;
-    select_inbox(imap_socket).context("select inbox")?;
-    check(imap_socket).context("check must run")?;
-    status_mailbox(imap_socket).context("status of archive from inbox")?;
-    lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
-    lmtp_deliver_email(lmtp_socket, EMAIL1).context("mail delivered successfully")?;
-    noop_exists(imap_socket).context("noop loop must detect a new email")?;
-    fetch_rfc822(imap_socket, EMAIL1).context("fetch rfc822 message")?;
-    copy_email(imap_socket).context("copy message to the archive mailbox")?;
-    append_email(imap_socket, EMAIL2).context("insert email in INBOX")?;
-    // SEARCH IS NOT IMPLEMENTED YET
-    //search(imap_socket).expect("search should return something");
-    add_flags_email(imap_socket).context("should add delete and important flags to the email")?;
-    expunge(imap_socket).context("expunge emails")?;
-    rename_mailbox(imap_socket).context("archive mailbox is renamed my-archives")?;
-    delete_mailbox(imap_socket).context("my-archives mailbox is deleted")?;
-    Ok(())
+    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {
+        connect(imap_socket).context("server says hello")?;
+        capability(imap_socket).context("check server capabilities")?;
+        login(imap_socket).context("login test")?;
+        create_mailbox(imap_socket).context("created mailbox archive")?;
+        // UNSUBSCRIBE IS NOT IMPLEMENTED YET
+        //unsubscribe_mailbox(imap_socket).context("unsubscribe from archive")?;
+        select_inbox(imap_socket).context("select inbox")?;
+        check(imap_socket).context("check must run")?;
+        status_mailbox(imap_socket).context("status of archive from inbox")?;
+        lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
+        lmtp_deliver_email(lmtp_socket, EMAIL1).context("mail delivered successfully")?;
+        noop_exists(imap_socket).context("noop loop must detect a new email")?;
+        fetch_rfc822(imap_socket, EMAIL1).context("fetch rfc822 message")?;
+        copy_email(imap_socket).context("copy message to the archive mailbox")?;
+        append_email(imap_socket, EMAIL2).context("insert email in INBOX")?;
+        // SEARCH IS NOT IMPLEMENTED YET
+        //search(imap_socket).expect("search should return something");
+        add_flags_email(imap_socket).context("should add delete and important flags to the email")?;
+        expunge(imap_socket).context("expunge emails")?;
+        rename_mailbox(imap_socket).context("archive mailbox is renamed my-archives")?;
+        delete_mailbox(imap_socket).context("my-archives mailbox is deleted")?;
+        Ok(())
+    }).expect("test fully run");
 }
 
 fn connect(imap: &mut TcpStream) -> Result<()> {
@@ -135,7 +100,6 @@ fn capability(imap: &mut TcpStream) -> Result<()> {
     let read = read_lines(imap, &mut buffer, Some(&b"5 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
     assert!(srv_msg.contains("IMAP4REV1"));
-    assert!(srv_msg.contains("IDLE"));
 
     Ok(())
 }
