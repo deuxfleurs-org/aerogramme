@@ -1,9 +1,9 @@
+mod capability;
 mod command;
 mod flow;
 mod mailbox_view;
 mod response;
 mod session;
-mod capability;
 
 use std::net::SocketAddr;
 
@@ -102,14 +102,18 @@ async fn client(mut ctx: ClientContext) -> Result<()> {
     let (mut server, _) = ServerFlow::send_greeting(
         ctx.stream,
         ServerFlowOptions::default(),
-        Greeting::ok(Some(Code::Capability(ctx.server_capabilities.to_vec())), "Aerogramme").unwrap(),
+        Greeting::ok(
+            Some(Code::Capability(ctx.server_capabilities.to_vec())),
+            "Aerogramme",
+        )
+        .unwrap(),
     )
     .await?;
 
     use crate::imap::response::{Body, Response as MyResponse};
     use crate::imap::session::Instance;
     use imap_codec::imap_types::command::Command;
-    use imap_codec::imap_types::response::{Response, Code, Status};
+    use imap_codec::imap_types::response::{Code, Response, Status};
 
     use tokio::sync::mpsc;
     let (cmd_tx, mut cmd_rx) = mpsc::channel::<Command<'static>>(10);

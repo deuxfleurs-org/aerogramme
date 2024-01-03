@@ -10,11 +10,11 @@ use imap_codec::imap_types::response::{Code, CodeOther};
 use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::SequenceSet;
 
+use crate::imap::capability::ServerCapability;
 use crate::imap::command::{anystate, authenticated, MailboxName};
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
 use crate::imap::response::Response;
-use crate::imap::capability::ServerCapability;
 
 use crate::mail::user::User;
 
@@ -31,10 +31,9 @@ pub async fn dispatch<'a>(
     match &ctx.req.body {
         // Any State
         // noop is specific to this state
-        CommandBody::Capability => anystate::capability(
-            ctx.req.tag.clone(),
-            ctx.server_capabilities,
-        ),
+        CommandBody::Capability => {
+            anystate::capability(ctx.req.tag.clone(), ctx.server_capabilities)
+        }
         CommandBody::Logout => anystate::logout(),
 
         // Specific to this state (7 commands + NOOP)
@@ -63,6 +62,11 @@ pub async fn dispatch<'a>(
             mailbox,
             uid,
         } => ctx.copy(sequence_set, mailbox, uid).await,
+        CommandBody::Move {
+            sequence_set,
+            mailbox,
+            uid,
+        } => ctx.r#move(sequence_set, mailbox, uid).await,
 
         // UNSELECT extension (rfc3691)
         CommandBody::Unselect => ctx.unselect().await,
@@ -241,6 +245,60 @@ impl<'a> SelectedContext<'a> {
                 .code(Code::Other(CodeOther::unvalidated(
                     format!("COPYUID {}", copyuid_str).into_bytes(),
                 )))
+                .ok()?,
+            flow::Transition::None,
+        ))
+    }
+
+    async fn r#move(
+        self,
+        sequence_set: &SequenceSet,
+        mailbox: &MailboxCodec<'a>,
+        uid: &bool,
+    ) -> Result<(Response<'static>, flow::Transition)> {
+        let name: &str = MailboxName(mailbox).try_into()?;
+
+        let mb_opt = self.user.open_mailbox(&name).await?;
+        let mb = match mb_opt {
+            Some(mb) => mb,
+            None => {
+                return Ok((
+                    Response::build()
+                        .to_req(self.req)
+                        .message("Destination mailbox does not exist")
+                        .code(Code::TryCreate)
+                        .no()?,
+                    flow::Transition::None,
+                ))
+            }
+        };
+
+        let (uidval, uid_map, data) = self.mailbox.r#move(sequence_set, mb, uid).await?;
+
+        // compute code
+        let copyuid_str = format!(
+            "{} {} {}",
+            uidval,
+            uid_map
+                .iter()
+                .map(|(sid, _)| format!("{}", sid))
+                .collect::<Vec<_>>()
+                .join(","),
+            uid_map
+                .iter()
+                .map(|(_, tuid)| format!("{}", tuid))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+
+        Ok((
+            Response::build()
+                .to_req(self.req)
+                .message("COPY completed")
+                .code(Code::Other(CodeOther::unvalidated(
+                    format!("COPYUID {}", copyuid_str).into_bytes(),
+                )))
+                .set_body(data)
                 .ok()?,
             flow::Transition::None,
         ))

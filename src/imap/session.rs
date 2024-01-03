@@ -1,7 +1,7 @@
+use crate::imap::capability::ServerCapability;
 use crate::imap::command::{anonymous, authenticated, examined, selected};
 use crate::imap::flow;
 use crate::imap::response::Response;
-use crate::imap::capability::ServerCapability;
 use crate::login::ArcLoginProvider;
 use imap_codec::imap_types::command::Command;
 
@@ -33,10 +33,11 @@ impl Instance {
                 anonymous::dispatch(ctx).await
             }
             flow::State::Authenticated(ref user) => {
-                let ctx = authenticated::AuthenticatedContext { 
-                    req: &cmd, 
+                let ctx = authenticated::AuthenticatedContext {
+                    req: &cmd,
                     server_capabilities: &self.server_capabilities,
-                    user };
+                    user,
+                };
                 authenticated::dispatch(ctx).await
             }
             flow::State::Selected(ref user, ref mut mailbox) => {

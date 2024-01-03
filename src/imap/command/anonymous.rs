@@ -4,9 +4,9 @@ use imap_codec::imap_types::core::AString;
 use imap_codec::imap_types::response::Code;
 use imap_codec::imap_types::secret::Secret;
 
+use crate::imap::capability::ServerCapability;
 use crate::imap::command::anystate;
 use crate::imap::flow;
-use crate::imap::capability::ServerCapability;
 use crate::imap::response::Response;
 use crate::login::ArcLoginProvider;
 use crate::mail::user::User;
@@ -23,9 +23,9 @@ pub async fn dispatch(ctx: AnonymousContext<'_>) -> Result<(Response<'static>, f
     match &ctx.req.body {
         // Any State
         CommandBody::Noop => anystate::noop_nothing(ctx.req.tag.clone()),
-        CommandBody::Capability => anystate::capability(
-            ctx.req.tag.clone(), 
-            ctx.server_capabilities),
+        CommandBody::Capability => {
+            anystate::capability(ctx.req.tag.clone(), ctx.server_capabilities)
+        }
         CommandBody::Logout => anystate::logout(),
 
         // Specific to anonymous context (3 commands)

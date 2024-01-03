@@ -600,6 +600,37 @@ impl MailboxView {
         Ok((to_state.uidvalidity, ret))
     }
 
+    pub async fn r#move(
+        &mut self,
+        sequence_set: &SequenceSet,
+        to: Arc<Mailbox>,
+        is_uid_copy: &bool,
+    ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>, Vec<Body<'static>>)> {
+        let mails = self.get_mail_ids(sequence_set, *is_uid_copy)?;
+
+        let mut new_uuids = vec![];
+        for mi in mails.iter() {
+            let copy_action = to.copy_from(&self.mailbox, mi.uuid).await?;
+            new_uuids.push(copy_action);
+            self.mailbox.delete(mi.uuid).await?
+        }
+
+        let mut ret = vec![];
+        let to_state = to.current_uid_index().await;
+        for (mi, new_uuid) in mails.iter().zip(new_uuids.iter()) {
+            let dest_uid = to_state
+                .table
+                .get(new_uuid)
+                .ok_or(anyhow!("moved mail not in destination mailbox"))?
+                .0;
+            ret.push((mi.uid, dest_uid));
+        }
+
+        let update = self.update().await?;
+
+        Ok((to_state.uidvalidity, ret, update))
+    }
+
     /// Looks up state changes in the mailbox and produces a set of IMAP
     /// responses describing the new state.
     pub async fn fetch<'b>(

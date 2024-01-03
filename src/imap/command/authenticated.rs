@@ -10,11 +10,11 @@ use imap_codec::imap_types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
 use imap_codec::imap_types::response::{Code, CodeOther, Data};
 use imap_codec::imap_types::status::{StatusDataItem, StatusDataItemName};
 
+use crate::imap::capability::ServerCapability;
 use crate::imap::command::{anystate, MailboxName};
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
 use crate::imap::response::Response;
-use crate::imap::capability::ServerCapability;
 
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::*;
@@ -33,9 +33,9 @@ pub async fn dispatch<'a>(
     match &ctx.req.body {
         // Any state
         CommandBody::Noop => anystate::noop_nothing(ctx.req.tag.clone()),
-        CommandBody::Capability => anystate::capability(
-            ctx.req.tag.clone(),
-            ctx.server_capabilities),
+        CommandBody::Capability => {
+            anystate::capability(ctx.req.tag.clone(), ctx.server_capabilities)
+        }
         CommandBody::Logout => anystate::logout(),
 
         // Specific to this state (11 commands)

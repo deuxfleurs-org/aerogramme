@@ -7,11 +7,11 @@ use imap_codec::imap_types::fetch::MacroOrMessageDataItemNames;
 use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::SequenceSet;
 
+use crate::imap::capability::ServerCapability;
 use crate::imap::command::{anystate, authenticated};
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
 use crate::imap::response::Response;
-use crate::imap::capability::ServerCapability;
 use crate::mail::user::User;
 
 pub struct ExaminedContext<'a> {
@@ -25,10 +25,9 @@ pub async fn dispatch(ctx: ExaminedContext<'_>) -> Result<(Response<'static>, fl
     match &ctx.req.body {
         // Any State
         // noop is specific to this state
-        CommandBody::Capability => anystate::capability(
-            ctx.req.tag.clone(),
-            ctx.server_capabilities,
-        ),
+        CommandBody::Capability => {
+            anystate::capability(ctx.req.tag.clone(), ctx.server_capabilities)
+        }
         CommandBody::Logout => anystate::logout(),
 
         // Specific to the EXAMINE state (specialization of the SELECTED state)
