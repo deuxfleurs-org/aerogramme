@@ -28,7 +28,7 @@ pub async fn dispatch(ctx: ExaminedContext<'_>) -> Result<(Response<'static>, fl
 
         // Specific to the EXAMINE state (specialization of the SELECTED state)
         // ~3 commands -> close, fetch, search + NOOP
-        CommandBody::Close => ctx.close().await,
+        CommandBody::Close => ctx.close("CLOSE").await,
         CommandBody::Fetch {
             sequence_set,
             macro_or_item_names,
@@ -44,9 +44,12 @@ pub async fn dispatch(ctx: ExaminedContext<'_>) -> Result<(Response<'static>, fl
             Response::build()
                 .to_req(ctx.req)
                 .message("Forbidden command: can't write in read-only mode (EXAMINE)")
-                .bad()?,
+                .no()?,
             flow::Transition::None,
         )),
+
+        // UNSELECT extension (rfc3691)
+        CommandBody::Unselect => ctx.close("UNSELECT").await,
 
         // In examined mode, we fallback to authenticated when needed
         _ => {
@@ -64,11 +67,11 @@ pub async fn dispatch(ctx: ExaminedContext<'_>) -> Result<(Response<'static>, fl
 impl<'a> ExaminedContext<'a> {
     /// CLOSE in examined state is not the same as in selected state
     /// (in selected state it also does an EXPUNGE, here it doesn't)
-    async fn close(self) -> Result<(Response<'static>, flow::Transition)> {
+    async fn close(self, kind: &str) -> Result<(Response<'static>, flow::Transition)> {
         Ok((
             Response::build()
                 .to_req(self.req)
-                .message("CLOSE completed")
+                .message(format!("{} completed", kind))
                 .ok()?,
             flow::Transition::Unselect,
         ))

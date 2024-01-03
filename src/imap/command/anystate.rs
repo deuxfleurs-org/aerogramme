@@ -6,8 +6,11 @@ use crate::imap::flow;
 use crate::imap::response::Response;
 
 pub(crate) fn capability(tag: Tag<'static>) -> Result<(Response<'static>, flow::Transition)> {
-    let capabilities: NonEmptyVec<Capability> =
-        (vec![Capability::Imap4Rev1, Capability::Idle]).try_into()?;
+    let capabilities: NonEmptyVec<Capability> = (vec![
+        Capability::Imap4Rev1,
+        Capability::try_from("UNSELECT").unwrap(),
+    ])
+    .try_into()?;
     let res = Response::build()
         .tag(tag)
         .message("Server capabilities")

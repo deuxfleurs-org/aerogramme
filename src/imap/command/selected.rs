@@ -59,6 +59,9 @@ pub async fn dispatch<'a>(
             uid,
         } => ctx.copy(sequence_set, mailbox, uid).await,
 
+        // UNSELECT extension (rfc3691)
+        CommandBody::Unselect => ctx.unselect().await,
+
         // In selected mode, we fallback to authenticated when needed
         _ => {
             authenticated::dispatch(authenticated::AuthenticatedContext {
@@ -80,6 +83,16 @@ impl<'a> SelectedContext<'a> {
         self.expunge().await?;
         Ok((
             Response::build().tag(tag).message("CLOSE completed").ok()?,
+            flow::Transition::Unselect,
+        ))
+    }
+
+    async fn unselect(self) -> Result<(Response<'static>, flow::Transition)> {
+        Ok((
+            Response::build()
+                .to_req(self.req)
+                .message("UNSELECT completed")
+                .ok()?,
             flow::Transition::Unselect,
         ))
     }
