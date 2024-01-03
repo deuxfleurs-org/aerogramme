@@ -1,20 +1,16 @@
 use anyhow::Result;
-use imap_codec::imap_types::core::{NonEmptyVec, Tag};
-use imap_codec::imap_types::response::{Capability, Data};
+use imap_codec::imap_types::core::Tag;
+use imap_codec::imap_types::response::Data;
 
 use crate::imap::flow;
+use crate::imap::capability::ServerCapability;
 use crate::imap::response::Response;
 
-pub(crate) fn capability(tag: Tag<'static>) -> Result<(Response<'static>, flow::Transition)> {
-    let capabilities: NonEmptyVec<Capability> = (vec![
-        Capability::Imap4Rev1,
-        Capability::try_from("UNSELECT").unwrap(),
-    ])
-    .try_into()?;
+pub(crate) fn capability(tag: Tag<'static>, cap: &ServerCapability) -> Result<(Response<'static>, flow::Transition)> {
     let res = Response::build()
         .tag(tag)
         .message("Server capabilities")
-        .data(Data::Capability(capabilities))
+        .data(Data::Capability(cap.to_vec()))
         .ok()?;
 
     Ok((res, flow::Transition::None))

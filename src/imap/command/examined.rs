@@ -11,19 +11,24 @@ use crate::imap::command::{anystate, authenticated};
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
 use crate::imap::response::Response;
+use crate::imap::capability::ServerCapability;
 use crate::mail::user::User;
 
 pub struct ExaminedContext<'a> {
     pub req: &'a Command<'static>,
     pub user: &'a Arc<User>,
     pub mailbox: &'a mut MailboxView,
+    pub server_capabilities: &'a ServerCapability,
 }
 
 pub async fn dispatch(ctx: ExaminedContext<'_>) -> Result<(Response<'static>, flow::Transition)> {
     match &ctx.req.body {
         // Any State
         // noop is specific to this state
-        CommandBody::Capability => anystate::capability(ctx.req.tag.clone()),
+        CommandBody::Capability => anystate::capability(
+            ctx.req.tag.clone(),
+            ctx.server_capabilities,
+        ),
         CommandBody::Logout => anystate::logout(),
 
         // Specific to the EXAMINE state (specialization of the SELECTED state)
@@ -55,6 +60,7 @@ pub async fn dispatch(ctx: ExaminedContext<'_>) -> Result<(Response<'static>, fl
         _ => {
             authenticated::dispatch(authenticated::AuthenticatedContext {
                 req: ctx.req,
+                server_capabilities: ctx.server_capabilities,
                 user: ctx.user,
             })
             .await

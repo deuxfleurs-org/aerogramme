@@ -14,6 +14,7 @@ use crate::imap::command::{anystate, authenticated, MailboxName};
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
 use crate::imap::response::Response;
+use crate::imap::capability::ServerCapability;
 
 use crate::mail::user::User;
 
@@ -21,6 +22,7 @@ pub struct SelectedContext<'a> {
     pub req: &'a Command<'static>,
     pub user: &'a Arc<User>,
     pub mailbox: &'a mut MailboxView,
+    pub server_capabilities: &'a ServerCapability,
 }
 
 pub async fn dispatch<'a>(
@@ -29,7 +31,10 @@ pub async fn dispatch<'a>(
     match &ctx.req.body {
         // Any State
         // noop is specific to this state
-        CommandBody::Capability => anystate::capability(ctx.req.tag.clone()),
+        CommandBody::Capability => anystate::capability(
+            ctx.req.tag.clone(),
+            ctx.server_capabilities,
+        ),
         CommandBody::Logout => anystate::logout(),
 
         // Specific to this state (7 commands + NOOP)
@@ -66,6 +71,7 @@ pub async fn dispatch<'a>(
         _ => {
             authenticated::dispatch(authenticated::AuthenticatedContext {
                 req: ctx.req,
+                server_capabilities: ctx.server_capabilities,
                 user: ctx.user,
             })
             .await
