@@ -1273,7 +1273,11 @@ fn get_message_section<'a>(
                 part.as_ref().map(|p| p.0.as_ref()).unwrap_or(&[]),
                 |part_msg| {
                     let mut ret = vec![];
-                    for f in &part_msg.mime().kv {
+                    let mime = match &part_msg {
+                        AnyPart::Msg(msg) => msg.child.mime(),
+                        other => other.mime(),
+                    };
+                    for f in mime.kv.iter() {
                         let (k, v) = match f {
                             header::Field::Good(header::Kv2(k, v)) => (k, v),
                             _ => continue,
@@ -1303,7 +1307,7 @@ fn get_message_section<'a>(
             let bytes = match &part {
                 AnyPart::Txt(p) => p.mime.fields.raw,
                 AnyPart::Bin(p) => p.mime.fields.raw,
-                AnyPart::Msg(p) => p.mime.fields.raw,
+                AnyPart::Msg(p) => p.child.mime().raw,
                 AnyPart::Mult(p) => p.mime.fields.raw,
             };
             Ok(bytes.to_vec().into())
