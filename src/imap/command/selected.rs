@@ -10,6 +10,7 @@ use imap_codec::imap_types::response::{Code, CodeOther};
 use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::SequenceSet;
 
+use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anystate, authenticated, MailboxName};
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
@@ -21,6 +22,8 @@ pub struct SelectedContext<'a> {
     pub req: &'a Command<'static>,
     pub user: &'a Arc<User>,
     pub mailbox: &'a mut MailboxView,
+    pub server_capabilities: &'a ServerCapability,
+    pub client_capabilities: &'a mut ClientCapability,
 }
 
 pub async fn dispatch<'a>(
@@ -29,7 +32,9 @@ pub async fn dispatch<'a>(
     match &ctx.req.body {
         // Any State
         // noop is specific to this state
-        CommandBody::Capability => anystate::capability(ctx.req.tag.clone()),
+        CommandBody::Capability => {
+            anystate::capability(ctx.req.tag.clone(), ctx.server_capabilities)
+        }
         CommandBody::Logout => anystate::logout(),
 
         // Specific to this state (7 commands + NOOP)
@@ -58,11 +63,21 @@ pub async fn dispatch<'a>(
             mailbox,
             uid,
         } => ctx.copy(sequence_set, mailbox, uid).await,
+        CommandBody::Move {
+            sequence_set,
+            mailbox,
+            uid,
+        } => ctx.r#move(sequence_set, mailbox, uid).await,
+
+        // UNSELECT extension (rfc3691)
+        CommandBody::Unselect => ctx.unselect().await,
 
         // In selected mode, we fallback to authenticated when needed
         _ => {
             authenticated::dispatch(authenticated::AuthenticatedContext {
                 req: ctx.req,
+                server_capabilities: ctx.server_capabilities,
+                client_capabilities: ctx.client_capabilities,
                 user: ctx.user,
             })
             .await
@@ -80,6 +95,16 @@ impl<'a> SelectedContext<'a> {
         self.expunge().await?;
         Ok((
             Response::build().tag(tag).message("CLOSE completed").ok()?,
+            flow::Transition::Unselect,
+        ))
+    }
+
+    async fn unselect(self) -> Result<(Response<'static>, flow::Transition)> {
+        Ok((
+            Response::build()
+                .to_req(self.req)
+                .message("UNSELECT completed")
+                .ok()?,
             flow::Transition::Unselect,
         ))
     }
@@ -222,6 +247,60 @@ impl<'a> SelectedContext<'a> {
                 .code(Code::Other(CodeOther::unvalidated(
                     format!("COPYUID {}", copyuid_str).into_bytes(),
                 )))
+                .ok()?,
+            flow::Transition::None,
+        ))
+    }
+
+    async fn r#move(
+        self,
+        sequence_set: &SequenceSet,
+        mailbox: &MailboxCodec<'a>,
+        uid: &bool,
+    ) -> Result<(Response<'static>, flow::Transition)> {
+        let name: &str = MailboxName(mailbox).try_into()?;
+
+        let mb_opt = self.user.open_mailbox(&name).await?;
+        let mb = match mb_opt {
+            Some(mb) => mb,
+            None => {
+                return Ok((
+                    Response::build()
+                        .to_req(self.req)
+                        .message("Destination mailbox does not exist")
+                        .code(Code::TryCreate)
+                        .no()?,
+                    flow::Transition::None,
+                ))
+            }
+        };
+
+        let (uidval, uid_map, data) = self.mailbox.r#move(sequence_set, mb, uid).await?;
+
+        // compute code
+        let copyuid_str = format!(
+            "{} {} {}",
+            uidval,
+            uid_map
+                .iter()
+                .map(|(sid, _)| format!("{}", sid))
+                .collect::<Vec<_>>()
+                .join(","),
+            uid_map
+                .iter()
+                .map(|(_, tuid)| format!("{}", tuid))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+
+        Ok((
+            Response::build()
+                .to_req(self.req)
+                .message("COPY completed")
+                .code(Code::Other(CodeOther::unvalidated(
+                    format!("COPYUID {}", copyuid_str).into_bytes(),
+                )))
+                .set_body(data)
                 .ok()?,
             flow::Transition::None,
         ))

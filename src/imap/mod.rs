@@ -1,3 +1,4 @@
+mod capability;
 mod command;
 mod flow;
 mod mailbox_view;
@@ -17,12 +18,14 @@ use imap_flow::server::{ServerFlow, ServerFlowEvent, ServerFlowOptions};
 use imap_flow::stream::AnyStream;
 
 use crate::config::ImapConfig;
+use crate::imap::capability::ServerCapability;
 use crate::login::ArcLoginProvider;
 
 /// Server is a thin wrapper to register our Services in BàL
 pub struct Server {
     bind_addr: SocketAddr,
     login_provider: ArcLoginProvider,
+    capabilities: ServerCapability,
 }
 
 struct ClientContext {
@@ -30,12 +33,14 @@ struct ClientContext {
     addr: SocketAddr,
     login_provider: ArcLoginProvider,
     must_exit: watch::Receiver<bool>,
+    server_capabilities: ServerCapability,
 }
 
 pub fn new(config: ImapConfig, login: ArcLoginProvider) -> Server {
     Server {
         bind_addr: config.bind_addr,
         login_provider: login,
+        capabilities: ServerCapability::default(),
     }
 }
 
@@ -66,6 +71,7 @@ impl Server {
                 addr: remote_addr.clone(),
                 login_provider: self.login_provider.clone(),
                 must_exit: must_exit.clone(),
+                server_capabilities: self.capabilities.clone(),
             };
             let conn = tokio::spawn(client_wrapper(client));
             connections.push(conn);
@@ -83,7 +89,7 @@ async fn client_wrapper(ctx: ClientContext) {
     let addr = ctx.addr.clone();
     match client(ctx).await {
         Ok(()) => {
-            tracing::info!("closing successful session for {:?}", addr);
+            tracing::debug!("closing successful session for {:?}", addr);
         }
         Err(e) => {
             tracing::error!("closing errored session for {:?}: {}", addr, e);
@@ -96,28 +102,34 @@ async fn client(mut ctx: ClientContext) -> Result<()> {
     let (mut server, _) = ServerFlow::send_greeting(
         ctx.stream,
         ServerFlowOptions::default(),
-        Greeting::ok(None, "Aerogramme").unwrap(),
+        Greeting::ok(
+            Some(Code::Capability(ctx.server_capabilities.to_vec())),
+            "Aerogramme",
+        )
+        .unwrap(),
     )
     .await?;
 
     use crate::imap::response::{Body, Response as MyResponse};
     use crate::imap::session::Instance;
     use imap_codec::imap_types::command::Command;
-    use imap_codec::imap_types::response::{Response, Status};
+    use imap_codec::imap_types::response::{Code, Response, Status};
 
     use tokio::sync::mpsc;
     let (cmd_tx, mut cmd_rx) = mpsc::channel::<Command<'static>>(10);
     let (resp_tx, mut resp_rx) = mpsc::unbounded_channel::<MyResponse<'static>>();
 
     let bckgrnd = tokio::spawn(async move {
-        let mut session = Instance::new(ctx.login_provider);
+        let mut session = Instance::new(ctx.login_provider, ctx.server_capabilities);
         loop {
             let cmd = match cmd_rx.recv().await {
                 None => break,
                 Some(cmd_recv) => cmd_recv,
             };
 
+            tracing::debug!(cmd=?cmd, sock=%ctx.addr, "command");
             let maybe_response = session.command(cmd).await;
+            tracing::debug!(cmd=?maybe_response.completion, sock=%ctx.addr, "response");
 
             match resp_tx.send(maybe_response) {
                 Err(_) => break,
