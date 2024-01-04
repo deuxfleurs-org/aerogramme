@@ -81,7 +81,7 @@ pub fn read_lines<'a, F: Read>(
             None => true,
             Some(mark) => buffer[..nbytes].windows(mark.len()).any(|w| w == mark),
         };
-        if pre_condition && &buffer[nbytes - 2..nbytes] == &b"\r\n"[..] {
+        if pre_condition && nbytes >= 2 && &buffer[nbytes - 2..nbytes] == &b"\r\n"[..] {
             break;
         }
     }

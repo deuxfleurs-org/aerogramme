@@ -35,6 +35,7 @@ pub enum Extension {
     Unselect,
     Move,
     CondStore,
+    LiteralPlus,
 }
 
 pub enum Enable {
@@ -72,9 +73,10 @@ pub fn capability(imap: &mut TcpStream, ext: Extension) -> Result<()> {
         Extension::Unselect => Some("UNSELECT"),
         Extension::Move => Some("MOVE"),
         Extension::CondStore => Some("CONDSTORE"),
+        Extension::LiteralPlus => Some("LITERAL+"),
     };
 
-    let mut buffer: [u8; 1500] = [0; 1500];
+    let mut buffer: [u8; 6000] = [0; 6000];
     let read = read_lines(imap, &mut buffer, Some(&b"5 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
     assert!(srv_msg.contains("IMAP4REV1"));
@@ -94,6 +96,15 @@ pub fn login(imap: &mut TcpStream, account: Account) -> Result<()> {
     let read = read_lines(imap, &mut buffer, None)?;
     assert_eq!(&read[..5], &b"10 OK"[..]);
 
+    Ok(())
+}
+
+pub fn login_with_literal(imap: &mut TcpStream, account: Account) -> Result<()> {
+    let mut buffer: [u8; 1500] = [0; 1500];
+
+    assert!(matches!(account, Account::Alice));
+    imap.write(&b"10 login {5+}\r\nalice {7+}\r\nhunter2\r\n"[..])?;
+    let _read = read_lines(imap, &mut buffer, Some(&b"10 OK"[..]))?;
     Ok(())
 }
 

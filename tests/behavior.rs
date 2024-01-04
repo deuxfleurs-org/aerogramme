@@ -8,6 +8,7 @@ fn main() {
     rfc3691_imapext_unselect();
     rfc5161_imapext_enable();
     rfc6851_imapext_move();
+    rfc7888_imapext_literal();
 }
 
 fn rfc3501_imap4rev1_base() {
@@ -104,4 +105,16 @@ fn rfc6851_imapext_move() {
         Ok(())
     })
     .expect("test fully run");
+}
+
+fn rfc7888_imapext_literal() {
+    println!("rfc7888_imapext_literal");
+    common::aerogramme_provider_daemon_dev(|imap_socket, _lmtp_socket| {
+        connect(imap_socket).context("server says hello")?;
+
+        capability(imap_socket, Extension::LiteralPlus).context("check server capabilities")?;
+        login_with_literal(imap_socket, Account::Alice).context("use literal to connect Alice")?;
+
+        Ok(())
+    }).expect("test fully run");
 }
