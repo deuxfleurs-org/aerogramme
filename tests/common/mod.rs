@@ -1,33 +1,55 @@
+#![allow(dead_code)]
+pub mod constants;
+pub mod fragments;
+
 use anyhow::{bail, Context, Result};
 use std::io::Read;
 use std::net::{Shutdown, TcpStream};
 use std::process::Command;
-use std::{thread, time};
+use std::thread;
 
-static SMALL_DELAY: time::Duration = time::Duration::from_millis(200);
+use constants::SMALL_DELAY;
 
 pub fn aerogramme_provider_daemon_dev(
     mut fx: impl FnMut(&mut TcpStream, &mut TcpStream) -> Result<()>,
 ) -> Result<()> {
+    // Check port is not used (= free) before starting the test
+    let mut max_retry = 20;
+    loop {
+        max_retry -= 1;
+        match (TcpStream::connect("[::1]:1143"), max_retry) {
+            (Ok(_), 0) => bail!("something is listening on [::1]:1143 and prevent the test from starting"),
+            (Ok(_), _) => println!("something is listening on [::1]:1143, maybe a previous daemon quitting, retrying soon..."),
+            (Err(_), _) => {
+                println!("test ready to start, [::1]:1143 is free!");
+                break
+            }
+        }
+        thread::sleep(SMALL_DELAY);
+    }
+
+    // Start daemon
     let mut daemon = Command::new(env!("CARGO_BIN_EXE_aerogramme"))
         .arg("--dev")
         .arg("provider")
         .arg("daemon")
         .spawn()?;
 
+    // Check that our daemon is correctly listening on the free port
     let mut max_retry = 20;
     let mut imap_socket = loop {
         max_retry -= 1;
         match (TcpStream::connect("[::1]:1143"), max_retry) {
             (Err(e), 0) => bail!("no more retry, last error is: {}", e),
             (Err(e), _) => {
-                println!("unable to connect: {} ; will retry in 1 sec", e);
+                println!("unable to connect: {} ; will retry soon...", e);
             }
             (Ok(v), _) => break v,
         }
         thread::sleep(SMALL_DELAY);
     };
 
+    // Assuming now it's safe to open a LMTP socket
     let mut lmtp_socket =
         TcpStream::connect("[::1]:1025").context("lmtp socket must be connected")?;
 
