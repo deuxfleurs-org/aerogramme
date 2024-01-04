@@ -1,33 +1,23 @@
-use std::borrow::Cow;
-use std::iter::zip;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Error, Result};
-use chrono::{Offset, TimeZone, Utc};
 
 use futures::stream::{FuturesOrdered, StreamExt};
 
-use imap_codec::imap_types::body::{BasicFields, Body as FetchBody, BodyStructure, SpecificFields};
-use imap_codec::imap_types::core::{AString, Atom, IString, NString, NonEmptyVec};
-use imap_codec::imap_types::datetime::DateTime;
-use imap_codec::imap_types::envelope::{Address, Envelope};
 use imap_codec::imap_types::fetch::{
-    MacroOrMessageDataItemNames, MessageDataItem, MessageDataItemName, Section as FetchSection,
+    MacroOrMessageDataItemNames, MessageDataItem
 };
 use imap_codec::imap_types::flag::{Flag, FlagFetch, FlagPerm, StoreResponse, StoreType};
 use imap_codec::imap_types::response::{Code, Data, Status};
 use imap_codec::imap_types::sequence::{self, SequenceSet};
 
-use eml_codec::{
-    header, imf, mime,
-    mime::r#type::Deductible,
-    part::{composite::Message, AnyPart},
-};
-
-use crate::cryptoblob::Key;
+use crate::imap::flags;
 use crate::imap::response::Body;
-use crate::mail::mailbox::{MailMeta, Mailbox};
+use crate::imap::attributes::AttributesProxy;
+use crate::imap::selectors::MailSelectionBuilder;
+use crate::imap::mail_view::SeenFlag;
+use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::{ImapUid, ImapUidvalidity, UidIndex};
 use crate::mail::unique_ident::UniqueIdent;
 
@@ -38,377 +28,6 @@ const DEFAULT_FLAGS: [Flag; 5] = [
     Flag::Deleted,
     Flag::Draft,
 ];
-
-enum FetchedMail<'a> {
-    Partial(imf::Imf<'a>),
-    Full(AnyPart<'a>),
-}
-impl<'a> FetchedMail<'a> {
-    fn new_from_message(msg: Message<'a>) -> Self {
-        FetchedMail::Full(AnyPart::Msg(msg))
-    }
-
-    /*fn new_from_header(hdr: imf::Imf<'a>) -> Self {
-        FetchedMail::Partial(hdr)
-    }*/
-
-    fn as_anypart(&self) -> Result<&AnyPart<'a>> {
-        match self {
-            FetchedMail::Full(x) => Ok(&x),
-            _ => bail!("The full message must be fetched, not only its headers"),
-        }
-    }
-
-    fn as_full(&self) -> Result<&Message<'a>> {
-        match self {
-            FetchedMail::Full(AnyPart::Msg(x)) => Ok(&x),
-            _ => bail!("The full message must be fetched, not only its headers AND it must be an AnyPart::Msg."),
-        }
-    }
-
-    fn imf(&self) -> &imf::Imf<'a> {
-        match self {
-            FetchedMail::Full(AnyPart::Msg(x)) => &x.imf,
-            FetchedMail::Partial(x) => &x,
-            _ => panic!("Can't contain AnyPart that is not a message"),
-        }
-    }
-}
-
-pub struct AttributesProxy {
-    attrs: Vec<MessageDataItemName<'static>>,
-}
-impl AttributesProxy {
-    fn new(attrs: &MacroOrMessageDataItemNames<'static>, is_uid_fetch: bool) -> Self {
-        // Expand macros
-        let mut fetch_attrs = match attrs {
-            MacroOrMessageDataItemNames::Macro(m) => {
-                use imap_codec::imap_types::fetch::Macro;
-                use MessageDataItemName::*;
-                match m {
-                    Macro::All => vec![Flags, InternalDate, Rfc822Size, Envelope],
-                    Macro::Fast => vec![Flags, InternalDate, Rfc822Size],
-                    Macro::Full => vec![Flags, InternalDate, Rfc822Size, Envelope, Body],
-                    _ => {
-                        tracing::error!("unimplemented macro");
-                        vec![]
-                    }
-                }
-            }
-            MacroOrMessageDataItemNames::MessageDataItemNames(a) => a.clone(),
-        };
-
-        // Handle uids
-        if is_uid_fetch && !fetch_attrs.contains(&MessageDataItemName::Uid) {
-            fetch_attrs.push(MessageDataItemName::Uid);
-        }
-
-        Self { attrs: fetch_attrs }
-    }
-
-    fn need_body(&self) -> bool {
-        self.attrs.iter().any(|x| {
-            matches!(
-                x,
-                MessageDataItemName::Body
-                    | MessageDataItemName::BodyExt { .. }
-                    | MessageDataItemName::Rfc822
-                    | MessageDataItemName::Rfc822Text
-                    | MessageDataItemName::BodyStructure
-            )
-        })
-    }
-}
-
-pub struct MailIdentifiers {
-    i: NonZeroU32,
-    uid: ImapUid,
-    uuid: UniqueIdent,
-}
-struct MailIdentifiersList(Vec<MailIdentifiers>);
-
-impl MailIdentifiersList {
-    fn uuids(&self) -> Vec<UniqueIdent> {
-        self.0.iter().map(|mi| mi.uuid).collect()
-    }
-}
-
-pub struct MailView<'a> {
-    ids: &'a MailIdentifiers,
-    meta: &'a MailMeta,
-    flags: &'a Vec<String>,
-    content: FetchedMail<'a>,
-}
-
-enum SeenFlag {
-    DoNothing,
-    MustAdd,
-}
-
-impl<'a> MailView<'a> {
-    fn uid(&self) -> MessageDataItem<'static> {
-        MessageDataItem::Uid(self.ids.uid.clone())
-    }
-
-    fn flags(&self) -> MessageDataItem<'static> {
-        MessageDataItem::Flags(
-            self.flags
-                .iter()
-                .filter_map(|f| string_to_flag(f))
-                .collect(),
-        )
-    }
-
-    fn rfc_822_size(&self) -> MessageDataItem<'static> {
-        MessageDataItem::Rfc822Size(self.meta.rfc822_size as u32)
-    }
-
-    fn rfc_822_header(&self) -> MessageDataItem<'static> {
-        MessageDataItem::Rfc822Header(NString(
-            self.meta
-                .headers
-                .to_vec()
-                .try_into()
-                .ok()
-                .map(IString::Literal),
-        ))
-    }
-
-    fn rfc_822_text(&self) -> Result<MessageDataItem<'static>> {
-        Ok(MessageDataItem::Rfc822Text(NString(
-            self.content
-                .as_full()?
-                .raw_body
-                .to_vec()
-                .try_into()
-                .ok()
-                .map(IString::Literal),
-        )))
-    }
-
-    fn rfc822(&self) -> Result<MessageDataItem<'static>> {
-        Ok(MessageDataItem::Rfc822(NString(
-            self.content
-                .as_full()?
-                .raw_part
-                .to_vec()
-                .try_into()
-                .ok()
-                .map(IString::Literal),
-        )))
-    }
-
-    fn envelope(&self) -> MessageDataItem<'static> {
-        MessageDataItem::Envelope(message_envelope(self.content.imf().clone()))
-    }
-
-    fn body(&self) -> Result<MessageDataItem<'static>> {
-        Ok(MessageDataItem::Body(build_imap_email_struct(
-            self.content.as_full()?.child.as_ref(),
-        )?))
-    }
-
-    fn body_structure(&self) -> Result<MessageDataItem<'static>> {
-        Ok(MessageDataItem::Body(build_imap_email_struct(
-            self.content.as_full()?.child.as_ref(),
-        )?))
-    }
-
-    /// maps to BODY[<section>]<<partial>> and BODY.PEEK[<section>]<<partial>>
-    /// peek does not implicitly set the \Seen flag
-    /// eg. BODY[HEADER.FIELDS (DATE FROM)]
-    /// eg. BODY[]<0.2048>
-    fn body_ext<'b>(
-        &self,
-        section: &Option<FetchSection<'b>>,
-        partial: &Option<(u32, NonZeroU32)>,
-        peek: &bool,
-    ) -> Result<(MessageDataItem<'b>, SeenFlag)> {
-        let mut seen = SeenFlag::DoNothing;
-
-        // Extract message section
-        let text = get_message_section(self.content.as_anypart()?, section)?;
-
-        let seen_flag = Flag::Seen.to_string();
-        if !peek && !self.flags.iter().any(|x| *x == seen_flag) {
-            // Add \Seen flag
-            //self.mailbox.add_flags(uuid, &[seen_flag]).await?;
-            seen = SeenFlag::MustAdd;
-        }
-
-        // Handle <<partial>> which cut the message bytes
-        let (text, origin) = apply_partial(partial, &text);
-
-        let data = NString(text.to_vec().try_into().ok().map(IString::Literal));
-
-        return Ok((
-            MessageDataItem::BodyExt {
-                section: section.as_ref().map(|fs| fs.clone()),
-                origin,
-                data,
-            },
-            seen,
-        ));
-    }
-
-    fn internal_date(&self) -> Result<MessageDataItem<'static>> {
-        let dt = Utc
-            .fix()
-            .timestamp_opt(i64::try_from(self.meta.internaldate / 1000)?, 0)
-            .earliest()
-            .ok_or(anyhow!("Unable to parse internal date"))?;
-        Ok(MessageDataItem::InternalDate(DateTime::unvalidated(dt)))
-    }
-
-    fn filter<'b>(&self, ap: &AttributesProxy) -> Result<(Body<'static>, SeenFlag)> {
-        let mut seen = SeenFlag::DoNothing;
-        let res_attrs = ap
-            .attrs
-            .iter()
-            .map(|attr| match attr {
-                MessageDataItemName::Uid => Ok(self.uid()),
-                MessageDataItemName::Flags => Ok(self.flags()),
-                MessageDataItemName::Rfc822Size => Ok(self.rfc_822_size()),
-                MessageDataItemName::Rfc822Header => Ok(self.rfc_822_header()),
-                MessageDataItemName::Rfc822Text => self.rfc_822_text(),
-                MessageDataItemName::Rfc822 => self.rfc822(),
-                MessageDataItemName::Envelope => Ok(self.envelope()),
-                MessageDataItemName::Body => self.body(),
-                MessageDataItemName::BodyStructure => self.body_structure(),
-                MessageDataItemName::BodyExt {
-                    section,
-                    partial,
-                    peek,
-                } => {
-                    let (body, has_seen) = self.body_ext(section, partial, peek)?;
-                    seen = has_seen;
-                    Ok(body)
-                }
-                MessageDataItemName::InternalDate => self.internal_date(),
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok((
-            Body::Data(Data::Fetch {
-                seq: self.ids.i,
-                items: res_attrs.try_into()?,
-            }),
-            seen,
-        ))
-    }
-}
-
-fn apply_partial<'a>(
-    partial: &'_ Option<(u32, NonZeroU32)>,
-    text: &'a [u8],
-) -> (&'a [u8], Option<u32>) {
-    match partial {
-        Some((begin, len)) => {
-            if *begin as usize > text.len() {
-                (&[][..], Some(*begin))
-            } else if (begin + len.get()) as usize >= text.len() {
-                (&text[*begin as usize..], Some(*begin))
-            } else {
-                (
-                    &text[*begin as usize..(begin + len.get()) as usize],
-                    Some(*begin),
-                )
-            }
-        }
-        None => (&text[..], None),
-    }
-}
-
-pub struct BodyIdentifier<'a> {
-    msg_uuid: &'a UniqueIdent,
-    msg_key: &'a Key,
-}
-
-#[derive(Default)]
-pub struct MailSelectionBuilder<'a> {
-    //attrs: AttributeProxy,
-    mail_count: usize,
-    need_body: bool,
-    mi: &'a [MailIdentifiers],
-    meta: &'a [MailMeta],
-    flags: &'a [&'a Vec<String>],
-    bodies: &'a [Vec<u8>],
-}
-
-impl<'a> MailSelectionBuilder<'a> {
-    fn new(need_body: bool, mail_count: usize) -> Self {
-        Self {
-            mail_count,
-            need_body,
-            ..MailSelectionBuilder::default()
-        }
-    }
-
-    fn with_mail_identifiers(&mut self, mi: &'a [MailIdentifiers]) -> &mut Self {
-        self.mi = mi;
-        self
-    }
-
-    fn with_metadata(&mut self, meta: &'a [MailMeta]) -> &mut Self {
-        self.meta = meta;
-        self
-    }
-
-    fn with_flags(&mut self, flags: &'a [&'a Vec<String>]) -> &mut Self {
-        self.flags = flags;
-        self
-    }
-
-    fn bodies_to_collect(&self) -> Vec<BodyIdentifier> {
-        if !self.need_body {
-            return vec![];
-        }
-        zip(self.mi, self.meta)
-            .map(|(mi, meta)| BodyIdentifier {
-                msg_uuid: &mi.uuid,
-                msg_key: &meta.message_key,
-            })
-            .collect::<Vec<_>>()
-    }
-
-    fn with_bodies(&mut self, rbodies: &'a [Vec<u8>]) -> &mut Self {
-        self.bodies = rbodies;
-        self
-    }
-
-    fn build(&self) -> Result<Vec<MailView<'a>>> {
-        let mut bodies = vec![];
-
-        if !self.need_body {
-            for m in self.meta.iter() {
-                let (_, hdrs) =
-                    eml_codec::parse_imf(&m.headers).or(Err(anyhow!("Invalid mail headers")))?;
-                bodies.push(FetchedMail::Partial(hdrs));
-            }
-        } else {
-            for rb in self.bodies.iter() {
-                let (_, p) = eml_codec::parse_message(&rb).or(Err(anyhow!("Invalid mail body")))?;
-                bodies.push(FetchedMail::new_from_message(p));
-            }
-        }
-
-        if self.mi.len() != self.mail_count && self.meta.len() != self.mail_count
-            || self.flags.len() != self.mail_count
-            || bodies.len() != self.mail_count
-        {
-            return Err(anyhow!("Can't build a mail view selection as parts were not correctly registered into the builder."));
-        }
-
-        Ok(zip(self.mi, zip(self.meta, zip(self.flags, bodies)))
-            .map(|(ids, (meta, (flags, content)))| MailView {
-                ids,
-                meta,
-                flags,
-                content,
-            })
-            .collect())
-    }
-}
 
 /// A MailboxView is responsible for giving the client the information
 /// it needs about a mailbox, such as an initial summary of the mailbox's
@@ -497,7 +116,7 @@ impl MailboxView {
                             items: vec![
                                 MessageDataItem::Uid(*uid),
                                 MessageDataItem::Flags(
-                                    flags.iter().filter_map(|f| string_to_flag(f)).collect(),
+                                    flags.iter().filter_map(|f| flags::from_str(f)).collect(),
                                 ),
                             ]
                             .try_into()?,
@@ -853,7 +472,7 @@ impl MailboxView {
             .known_state
             .idx_by_flag
             .flags()
-            .filter_map(|f| match string_to_flag(f) {
+            .filter_map(|f| match flags::from_str(f) {
                 Some(FlagFetch::Flag(fl)) => Some(fl),
                 _ => None,
             })
@@ -900,455 +519,39 @@ impl MailboxView {
     }
 }
 
-fn string_to_flag(f: &str) -> Option<FlagFetch<'static>> {
-    match f.chars().next() {
-        Some('\\') => match f {
-            "\\Seen" => Some(FlagFetch::Flag(Flag::Seen)),
-            "\\Answered" => Some(FlagFetch::Flag(Flag::Answered)),
-            "\\Flagged" => Some(FlagFetch::Flag(Flag::Flagged)),
-            "\\Deleted" => Some(FlagFetch::Flag(Flag::Deleted)),
-            "\\Draft" => Some(FlagFetch::Flag(Flag::Draft)),
-            "\\Recent" => Some(FlagFetch::Recent),
-            _ => match Atom::try_from(f.strip_prefix('\\').unwrap().to_string()) {
-                Err(_) => {
-                    tracing::error!(flag=%f, "Unable to encode flag as IMAP atom");
-                    None
-                }
-                Ok(a) => Some(FlagFetch::Flag(Flag::system(a))),
-            },
-        },
-        Some(_) => match Atom::try_from(f.to_string()) {
-            Err(_) => {
-                tracing::error!(flag=%f, "Unable to encode flag as IMAP atom");
-                None
-            }
-            Ok(a) => Some(FlagFetch::Flag(Flag::keyword(a))),
-        },
-        None => None,
-    }
+
+pub struct MailIdentifiers {
+    pub i: NonZeroU32,
+    pub uid: ImapUid,
+    pub uuid: UniqueIdent,
 }
+pub struct MailIdentifiersList(Vec<MailIdentifiers>);
 
-/// Envelope rules are defined in RFC 3501, section 7.4.2
-/// https://datatracker.ietf.org/doc/html/rfc3501#section-7.4.2
-///
-/// Some important notes:
-///
-/// If the Sender or Reply-To lines are absent in the [RFC-2822]
-/// header, or are present but empty, the server sets the
-/// corresponding member of the envelope to be the same value as
-/// the from member (the client is not expected to know to do
-/// this). Note: [RFC-2822] requires that all messages have a valid
-/// From header.  Therefore, the from, sender, and reply-to
-/// members in the envelope can not be NIL.
-///
-/// If the Date, Subject, In-Reply-To, and Message-ID header lines
-/// are absent in the [RFC-2822] header, the corresponding member
-/// of the envelope is NIL; if these header lines are present but
-/// empty the corresponding member of the envelope is the empty
-/// string.
-
-//@FIXME return an error if the envelope is invalid instead of panicking
-//@FIXME some fields must be defaulted if there are not set.
-fn message_envelope(msg: &imf::Imf) -> Envelope<'static> {
-    let from = msg.from.iter().map(convert_mbx).collect::<Vec<_>>();
-
-    Envelope {
-        date: NString(
-            msg.date
-                .as_ref()
-                .map(|d| IString::try_from(d.to_rfc3339()).unwrap()),
-        ),
-        subject: NString(
-            msg.subject
-                .as_ref()
-                .map(|d| IString::try_from(d.to_string()).unwrap()),
-        ),
-        sender: msg
-            .sender
-            .as_ref()
-            .map(|v| vec![convert_mbx(v)])
-            .unwrap_or(from.clone()),
-        reply_to: if msg.reply_to.is_empty() {
-            from.clone()
-        } else {
-            convert_addresses(&msg.reply_to)
-        },
-        from,
-        to: convert_addresses(&msg.to),
-        cc: convert_addresses(&msg.cc),
-        bcc: convert_addresses(&msg.bcc),
-        in_reply_to: NString(
-            msg.in_reply_to
-                .iter()
-                .next()
-                .map(|d| IString::try_from(d.to_string()).unwrap()),
-        ),
-        message_id: NString(
-            msg.msg_id
-                .as_ref()
-                .map(|d| IString::try_from(d.to_string()).unwrap()),
-        ),
-    }
-}
-
-fn convert_addresses(addrlist: &Vec<imf::address::AddressRef>) -> Vec<Address<'static>> {
-    let mut acc = vec![];
-    for item in addrlist {
-        match item {
-            imf::address::AddressRef::Single(a) => acc.push(convert_mbx(a)),
-            imf::address::AddressRef::Many(l) => acc.extend(l.participants.iter().map(convert_mbx)),
-        }
-    }
-    return acc;
-}
-
-fn convert_mbx(addr: &imf::mailbox::MailboxRef) -> Address<'static> {
-    Address {
-        name: NString(
-            addr.name
-                .as_ref()
-                .map(|x| IString::try_from(x.to_string()).unwrap()),
-        ),
-        // SMTP at-domain-list (source route) seems obsolete since at least 1991
-        // https://www.mhonarc.org/archive/html/ietf-822/1991-06/msg00060.html
-        adl: NString(None),
-        mailbox: NString(Some(
-            IString::try_from(addr.addrspec.local_part.to_string()).unwrap(),
-        )),
-        host: NString(Some(
-            IString::try_from(addr.addrspec.domain.to_string()).unwrap(),
-        )),
-    }
-}
-
-/*
---CAPTURE--
-b fetch 29878:29879 (BODY)
-* 29878 FETCH (BODY (("text" "plain" ("charset" "utf-8") NIL NIL "quoted-printable" 3264 82)("text" "html" ("charset" "utf-8") NIL NIL "quoted-printable" 31834 643) "alternative"))
-* 29879 FETCH (BODY ("text" "html" ("charset" "us-ascii") NIL NIL "7bit" 4107 131))
-                                   ^^^^^^^^^^^^^^^^^^^^^^ ^^^ ^^^ ^^^^^^ ^^^^ ^^^
-                                   |                      |   |   |      |    | number of lines
-                                   |                      |   |   |      | size
-                                   |                      |   |   | content transfer encoding
-                                   |                      |   | description
-                                   |                      | id
-                                   | parameter list
-b OK Fetch completed (0.001 + 0.000 secs).
-*/
-
-fn build_imap_email_struct<'a>(part: &AnyPart<'a>) -> Result<BodyStructure<'static>> {
-    match part {
-        AnyPart::Mult(x) => {
-            let itype = &x.mime.interpreted_type;
-            let subtype = IString::try_from(itype.subtype.to_string())
-                .unwrap_or(unchecked_istring("alternative"));
-
-            let inner_bodies = x
-                .children
-                .iter()
-                .filter_map(|inner| build_imap_email_struct(&inner).ok())
-                .collect::<Vec<_>>();
-            NonEmptyVec::validate(&inner_bodies)?;
-            let bodies = NonEmptyVec::unvalidated(inner_bodies);
-
-            Ok(BodyStructure::Multi {
-                bodies,
-                subtype,
-                extension_data: None,
-                /*Some(MultipartExtensionData {
-                    parameter_list: vec![],
-                    disposition: None,
-                    language: None,
-                    location: None,
-                    extension: vec![],
-                })*/
-            })
-        }
-        AnyPart::Txt(x) => {
-            let mut basic = basic_fields(&x.mime.fields, x.body.len())?;
-
-            // Get the interpreted content type, set it
-            let itype = match &x.mime.interpreted_type {
-                Deductible::Inferred(v) | Deductible::Explicit(v) => v,
-            };
-            let subtype =
-                IString::try_from(itype.subtype.to_string()).unwrap_or(unchecked_istring("plain"));
-
-            // Add charset to the list of parameters if we know it has been inferred as it will be
-            // missing from the parsed content.
-            if let Deductible::Inferred(charset) = &itype.charset {
-                basic.parameter_list.push((
-                    unchecked_istring("charset"),
-                    IString::try_from(charset.to_string()).unwrap_or(unchecked_istring("us-ascii")),
-                ));
-            }
-
-            Ok(BodyStructure::Single {
-                body: FetchBody {
-                    basic,
-                    specific: SpecificFields::Text {
-                        subtype,
-                        number_of_lines: nol(x.body),
-                    },
-                },
-                extension_data: None,
-            })
-        }
-        AnyPart::Bin(x) => {
-            let basic = basic_fields(&x.mime.fields, x.body.len())?;
-
-            let default = mime::r#type::NaiveType {
-                main: &b"application"[..],
-                sub: &b"octet-stream"[..],
-                params: vec![],
-            };
-            let ct = x.mime.fields.ctype.as_ref().unwrap_or(&default);
-
-            let r#type =
-                IString::try_from(String::from_utf8_lossy(ct.main).to_string()).or(Err(
-                    anyhow!("Unable to build IString from given Content-Type type given"),
-                ))?;
-
-            let subtype =
-                IString::try_from(String::from_utf8_lossy(ct.sub).to_string()).or(Err(anyhow!(
-                    "Unable to build IString from given Content-Type subtype given"
-                )))?;
-
-            Ok(BodyStructure::Single {
-                body: FetchBody {
-                    basic,
-                    specific: SpecificFields::Basic { r#type, subtype },
-                },
-                extension_data: None,
-            })
-        }
-        AnyPart::Msg(x) => {
-            let basic = basic_fields(&x.mime.fields, x.raw_part.len())?;
-
-            Ok(BodyStructure::Single {
-                body: FetchBody {
-                    basic,
-                    specific: SpecificFields::Message {
-                        envelope: Box::new(message_envelope(&x.imf)),
-                        body_structure: Box::new(build_imap_email_struct(x.child.as_ref())?),
-                        number_of_lines: nol(x.raw_part),
-                    },
-                },
-                extension_data: None,
-            })
-        }
-    }
-}
-
-fn nol(input: &[u8]) -> u32 {
-    input
-        .iter()
-        .filter(|x| **x == b'\n')
-        .count()
-        .try_into()
-        .unwrap_or(0)
-}
-
-/// s is set to static to ensure that only compile time values
-/// checked by developpers are passed.
-fn unchecked_istring(s: &'static str) -> IString {
-    IString::try_from(s).expect("this value is expected to be a valid imap-codec::IString")
-}
-
-fn basic_fields(m: &mime::NaiveMIME, sz: usize) -> Result<BasicFields<'static>> {
-    let parameter_list = m
-        .ctype
-        .as_ref()
-        .map(|x| {
-            x.params
-                .iter()
-                .map(|p| {
-                    (
-                        IString::try_from(String::from_utf8_lossy(p.name).to_string()),
-                        IString::try_from(p.value.to_string()),
-                    )
-                })
-                .filter(|(k, v)| k.is_ok() && v.is_ok())
-                .map(|(k, v)| (k.unwrap(), v.unwrap()))
-                .collect()
-        })
-        .unwrap_or(vec![]);
-
-    Ok(BasicFields {
-        parameter_list,
-        id: NString(
-            m.id.as_ref()
-                .and_then(|ci| IString::try_from(ci.to_string()).ok()),
-        ),
-        description: NString(
-            m.description
-                .as_ref()
-                .and_then(|cd| IString::try_from(cd.to_string()).ok()),
-        ),
-        content_transfer_encoding: match m.transfer_encoding {
-            mime::mechanism::Mechanism::_8Bit => unchecked_istring("8bit"),
-            mime::mechanism::Mechanism::Binary => unchecked_istring("binary"),
-            mime::mechanism::Mechanism::QuotedPrintable => unchecked_istring("quoted-printable"),
-            mime::mechanism::Mechanism::Base64 => unchecked_istring("base64"),
-            _ => unchecked_istring("7bit"),
-        },
-        // @FIXME we can't compute the size of the message currently...
-        size: u32::try_from(sz)?,
-    })
-}
-
-/// Extract message section for section identifier passed by the FETCH BODY[<section>]<<partial>>
-/// request
-///
-/// Example of message sections:
-///
-/// ```
-///    HEADER     ([RFC-2822] header of the message)
-///    TEXT       ([RFC-2822] text body of the message) MULTIPART/MIXED
-///    1          TEXT/PLAIN
-///    2          APPLICATION/OCTET-STREAM
-///    3          MESSAGE/RFC822
-///    3.HEADER   ([RFC-2822] header of the message)
-///    3.TEXT     ([RFC-2822] text body of the message) MULTIPART/MIXED
-///    3.1        TEXT/PLAIN
-///    3.2        APPLICATION/OCTET-STREAM
-///    4          MULTIPART/MIXED
-///    4.1        IMAGE/GIF
-///    4.1.MIME   ([MIME-IMB] header for the IMAGE/GIF)
-///    4.2        MESSAGE/RFC822
-///    4.2.HEADER ([RFC-2822] header of the message)
-///    4.2.TEXT   ([RFC-2822] text body of the message) MULTIPART/MIXED
-///    4.2.1      TEXT/PLAIN
-///    4.2.2      MULTIPART/ALTERNATIVE
-///    4.2.2.1    TEXT/PLAIN
-///    4.2.2.2    TEXT/RICHTEXT
-/// ```
-fn get_message_section<'a>(
-    parsed: &'a AnyPart<'a>,
-    section: &Option<FetchSection>,
-) -> Result<Cow<'a, [u8]>> {
-    let msg = parsed
-        .as_message()
-        .ok_or(anyhow!("Part must be a message"))?;
-    match section {
-        Some(FetchSection::Text(None)) => Ok(msg.raw_body.into()),
-        Some(FetchSection::Text(Some(part))) => map_subpart(parsed, part.0.as_ref(), |part_msg| {
-            Ok(part_msg
-                .as_message()
-                .ok_or(Error::msg(
-                    "Not a message/rfc822 part while expected by request (TEXT)",
-                ))?
-                .raw_body
-                .into())
-        }),
-        Some(FetchSection::Header(part)) => map_subpart(
-            parsed,
-            part.as_ref().map(|p| p.0.as_ref()).unwrap_or(&[]),
-            |part_msg| {
-                Ok(part_msg
-                    .as_message()
-                    .ok_or(Error::msg(
-                        "Not a message/rfc822 part while expected by request (HEADER)",
-                    ))?
-                    .raw_headers
-                    .into())
-            },
-        ),
-        Some(
-            FetchSection::HeaderFields(part, fields) | FetchSection::HeaderFieldsNot(part, fields),
-        ) => {
-            let invert = matches!(section, Some(FetchSection::HeaderFieldsNot(_, _)));
-            let fields = fields
-                .as_ref()
-                .iter()
-                .map(|x| match x {
-                    AString::Atom(a) => a.inner().as_bytes(),
-                    AString::String(IString::Literal(l)) => l.as_ref(),
-                    AString::String(IString::Quoted(q)) => q.inner().as_bytes(),
-                })
-                .collect::<Vec<_>>();
-
-            map_subpart(
-                parsed,
-                part.as_ref().map(|p| p.0.as_ref()).unwrap_or(&[]),
-                |part_msg| {
-                    let mut ret = vec![];
-                    let mime = match &part_msg {
-                        AnyPart::Msg(msg) => msg.child.mime(),
-                        other => other.mime(),
-                    };
-                    for f in mime.kv.iter() {
-                        let (k, v) = match f {
-                            header::Field::Good(header::Kv2(k, v)) => (k, v),
-                            _ => continue,
-                        };
-                        if fields.as_slice().iter().any(|x| (x == k) ^ invert) {
-                            ret.extend(*k);
-                            ret.extend(b": ");
-                            ret.extend(*v);
-                            ret.extend(b"\r\n");
-                        }
-                    }
-                    ret.extend(b"\r\n");
-                    Ok(ret.into())
-                },
-            )
-        }
-        Some(FetchSection::Part(part)) => map_subpart(parsed, part.0.as_ref(), |part| {
-            let bytes = match &part {
-                AnyPart::Txt(p) => p.body,
-                AnyPart::Bin(p) => p.body,
-                AnyPart::Msg(p) => p.raw_part,
-                AnyPart::Mult(_) => bail!("Multipart part has no body"),
-            };
-            Ok(bytes.to_vec().into())
-        }),
-        Some(FetchSection::Mime(part)) => map_subpart(parsed, part.0.as_ref(), |part| {
-            let bytes = match &part {
-                AnyPart::Txt(p) => p.mime.fields.raw,
-                AnyPart::Bin(p) => p.mime.fields.raw,
-                AnyPart::Msg(p) => p.child.mime().raw,
-                AnyPart::Mult(p) => p.mime.fields.raw,
-            };
-            Ok(bytes.to_vec().into())
-        }),
-        None => Ok(msg.raw_part.into()),
-    }
-}
-
-/// Fetch a MIME SubPart
-///
-/// eg. FETCH BODY[4.2.2.1] -> [4, 2, 2, 1]
-fn map_subpart<'a, F, R>(part: &AnyPart<'a>, path: &[NonZeroU32], f: F) -> Result<R>
-where
-    F: FnOnce(&AnyPart<'a>) -> Result<R>,
-{
-    if path.is_empty() {
-        f(part)
-    } else {
-        match part {
-            AnyPart::Mult(x) => map_subpart(
-                x.children
-                    .get(path[0].get() as usize - 1)
-                    .ok_or(anyhow!("Unable to resolve subpath {:?}, current multipart has only {} elements", path, x.children.len()))?,
-                &path[1..],
-                f),
-            AnyPart::Msg(x) => map_subpart(x.child.as_ref(), path, f),
-            _ => bail!("You tried to access a subpart on an atomic part (text or binary). Unresolved subpath {:?}", path),
-        }
+impl MailIdentifiersList {
+    fn uuids(&self) -> Vec<UniqueIdent> {
+        self.0.iter().map(|mi| mi.uuid).collect()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cryptoblob;
-    use crate::mail::unique_ident;
+    use imap_codec::imap_types::fetch::{
+        MacroOrMessageDataItemNames,  MessageDataItemName,
+    };
     use imap_codec::encode::Encoder;
+    use imap_codec::imap_types::core::NonEmptyVec;
     use imap_codec::imap_types::fetch::Section;
     use imap_codec::imap_types::response::Response;
     use imap_codec::ResponseCodec;
     use std::fs;
+
+
+    use crate::cryptoblob;
+    use crate::mail::unique_ident;
+    use crate::mail::mailbox::MailMeta;
+    use crate::imap::mail_view::{MailView, FetchedMail};
+    use crate::imap::mime_view;
 
     #[test]
     fn mailview_body_ext() -> Result<()> {
@@ -1452,7 +655,7 @@ mod tests {
 
             let test_repr = Response::Data(Data::Fetch {
                 seq: NonZeroU32::new(1).unwrap(),
-                items: NonEmptyVec::from(MessageDataItem::Body(build_imap_email_struct(
+                items: NonEmptyVec::from(MessageDataItem::Body(mime_view::bodystructure(
                     &message.child,
                 )?)),
             });
@@ -1470,3 +673,4 @@ mod tests {
         Ok(())
     }
 }
+

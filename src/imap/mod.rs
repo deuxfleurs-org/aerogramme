@@ -1,7 +1,13 @@
 mod capability;
 mod command;
 mod flow;
+mod attributes;
+mod mail_view;
 mod mailbox_view;
+mod mime_view;
+mod imf_view;
+mod selectors;
+mod flags;
 mod response;
 mod session;
 
