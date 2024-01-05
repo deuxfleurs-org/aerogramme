@@ -344,12 +344,19 @@ impl MailboxView {
         search_key: &SearchKey<'a>,
         uid: bool,
     ) -> Result<Vec<Body<'static>>> {
-        let (seq_set, seq_type) = search::Criteria(search_key).to_sequence_set();
+        // 1. Compute the subset of sequence identifiers we need to fetch
+        let query = search::Criteria(search_key);
+        let (seq_set, seq_type) = query.to_sequence_set();
         let mailids = MailIdentifiersList(self.get_mail_ids(&seq_set, seq_type.is_uid())?);
         let mail_u32 = match uid {
             true => mailids.uids(),
             _ => mailids.ids(),
         };
+
+        // 2. Compute wether we will need to fetch the mail meta and/or the body
+        let _need_meta = query.need_meta();
+        let _need_body = query.need_body();
+
         Ok(vec![Body::Data(Data::Search(mail_u32))])
     }
 

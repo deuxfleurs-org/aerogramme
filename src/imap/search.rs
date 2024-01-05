@@ -69,12 +69,34 @@ impl<'a> Criteria<'a> {
         }
     }
 
-    fn need_meta(&self) {
-        unimplemented!();
+    /// Not really clever as we can have cases where we filter out
+    /// the email before needing to inspect its meta.
+    /// But for now we are seeking the most basic/stupid algorithm.
+    pub fn need_meta(&self) -> bool {
+        use SearchKey::*;
+        match self.0 {
+            // IMF Headers
+            Bcc(_) | Cc(_) | From(_) | Header(..) | SentBefore(_) | SentOn(_) | SentSince(_) | Subject(_) | To(_) => true,
+            // Internal Date is also stored in MailMeta
+            Before(_) | On(_) | Since(_) => true,
+            // Message size is also stored in MailMeta
+            Larger(_) | Smaller(_) => true,
+            And(and_list) => and_list.as_ref().iter().any(|sk| Criteria(sk).need_meta()),
+            Not(inner) => Criteria(inner).need_meta(),
+            Or(left, right) => Criteria(left).need_meta() || Criteria(right).need_meta(),
+            _ => false,
+        }
     }
 
-    fn need_body(&self) {
-        unimplemented!();
+    pub fn need_body(&self) -> bool {
+        use SearchKey::*;
+        match self.0 {
+            Text(_) | Body(_) => true,
+            And(and_list) => and_list.as_ref().iter().any(|sk| Criteria(sk).need_body()),
+            Not(inner) => Criteria(inner).need_body(),
+            Or(left, right) => Criteria(left).need_body() || Criteria(right).need_body(),
+            _ => false,
+        }
     }
 }
 

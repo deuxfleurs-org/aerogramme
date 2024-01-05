@@ -58,7 +58,7 @@ aws-sdk-s3 = "1.9.0"
 eml-codec = { git = "https://git.deuxfleurs.fr/Deuxfleurs/eml-codec.git", branch = "main" }
 smtp-message = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
-imap-codec = { version = "1.0.0", features = ["quirk_crlf_relaxed", "bounded-static", "ext_condstore_qresync"] }
+imap-codec = { version = "1.0.0", features = ["bounded-static", "ext_condstore_qresync"] }
 imap-flow = { git = "https://github.com/duesee/imap-flow.git", rev = "e45ce7bb6ab6bda3c71a0c7b05e9b558a5902e90" }
 
 [dev-dependencies]
