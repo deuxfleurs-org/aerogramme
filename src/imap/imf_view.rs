@@ -1,38 +1,7 @@
-use std::borrow::Cow;
-use std::iter::zip;
-use std::num::NonZeroU32;
-use std::sync::Arc;
-
-use anyhow::{anyhow, bail, Error, Result};
-use chrono::{Offset, TimeZone, Utc};
-
-use futures::stream::{FuturesOrdered, StreamExt};
-
-use imap_codec::imap_types::body::{BasicFields, Body as FetchBody, BodyStructure, SpecificFields};
-use imap_codec::imap_types::core::{AString, Atom, IString, NString, NonEmptyVec};
-use imap_codec::imap_types::datetime::DateTime;
+use imap_codec::imap_types::core::{IString, NString};
 use imap_codec::imap_types::envelope::{Address, Envelope};
-use imap_codec::imap_types::fetch::{
-    MacroOrMessageDataItemNames, MessageDataItem, MessageDataItemName, Section as FetchSection,
-};
-use imap_codec::imap_types::flag::{Flag, FlagFetch, FlagPerm, StoreResponse, StoreType};
-use imap_codec::imap_types::response::{Code, Data, Status};
-use imap_codec::imap_types::sequence::{self, SequenceSet};
 
-use eml_codec::{
-    header, imf, mime,
-    mime::r#type::Deductible,
-    part::{composite::Message, AnyPart},
-};
-
-use crate::cryptoblob::Key;
-use crate::imap::response::Body;
-use crate::mail::mailbox::{MailMeta, Mailbox};
-use crate::mail::uidindex::{ImapUid, ImapUidvalidity, UidIndex};
-use crate::mail::unique_ident::UniqueIdent;
-
-
-
+use eml_codec::imf;
 
 /// Envelope rules are defined in RFC 3501, section 7.4.2
 /// https://datatracker.ietf.org/doc/html/rfc3501#section-7.4.2
