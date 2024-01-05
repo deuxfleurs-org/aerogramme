@@ -5,14 +5,17 @@ use std::collections::HashSet;
 use anyhow::{anyhow, bail, Result};
 
 use imap_codec::imap_types::body::{BasicFields, Body as FetchBody, BodyStructure, SpecificFields};
-use imap_codec::imap_types::core::{AString, IString, NonEmptyVec};
+use imap_codec::imap_types::core::{AString, IString, NString, NonEmptyVec};
 use imap_codec::imap_types::fetch::{
     Section as FetchSection, Part as FetchPart
 };
 
 use eml_codec::{
-    header, part::AnyPart, part::composite, part::discrete,
+    header, mime,
+    part::AnyPart, part::composite, part::discrete,
 };
+
+use crate::imap::imf_view::message_envelope;
 
 
 pub enum BodySection<'a> {
@@ -80,14 +83,13 @@ pub fn body_ext<'a>(
 /// b OK Fetch completed (0.001 + 0.000 secs).
 /// ```
 pub fn bodystructure(part: &AnyPart) -> Result<BodyStructure<'static>> {
-    unimplemented!();
+    NodeMime(part).structure()
 }
 
 /// NodeMime
-///
-
-
-
+/// 
+/// Used for recursive logic on MIME.
+/// See SelectedMime for inspection.
 struct NodeMime<'a>(&'a AnyPart<'a>);
 impl<'a> NodeMime<'a> {
     /// A MIME object is a tree of elements. 
@@ -117,6 +119,15 @@ impl<'a> NodeMime<'a> {
                 },
                 _ => bail!("You tried to access a subpart on an atomic part (text or binary). Unresolved subpath {:?}", path),
             }
+        }
+    }
+
+    fn structure(&self) -> Result<BodyStructure<'static>> {
+        match self.0 {
+            AnyPart::Txt(x) => NodeTxt(self, x).structure(),
+            AnyPart::Bin(x) => NodeBin(self, x).structure(),
+            AnyPart::Mult(x) => NodeMult(self, x).structure(),
+            AnyPart::Msg(x) => NodeMsg(self, x).structure(),
         }
     }
 }
@@ -150,6 +161,9 @@ impl<'a> SubsettedSection<'a> {
     }
 }
 
+/// Used for current MIME inspection
+///
+/// See NodeMime for recursive logic
 struct SelectedMime<'a>(&'a AnyPart<'a>);
 impl<'a> SelectedMime<'a> {
     /// The subsetted fetch section basically tells us the
@@ -253,18 +267,110 @@ impl<'a> SelectedMime<'a> {
     }
 
     // ------------
-    
-    /// Returns the structure of the message
-    fn structure(&self) -> Result<BodyStructure<'static>> {
-        unimplemented!();
-    } 
+
+    /// Basic field of a MIME part that is
+    /// common to all parts
+    fn basic_fields(&self) -> Result<BasicFields<'static>> {
+        let sz = match self.0 {
+            AnyPart::Txt(x) => x.body.len(),
+            AnyPart::Bin(x) => x.body.len(),
+            AnyPart::Msg(x) => x.raw_part.len(),
+            AnyPart::Mult(x) => 0
+        };
+        let m = self.0.mime();
+        let parameter_list = m
+            .ctype
+            .as_ref()
+            .map(|x| {
+                x.params
+                    .iter()
+                    .map(|p| {
+                        (
+                            IString::try_from(String::from_utf8_lossy(p.name).to_string()),
+                            IString::try_from(p.value.to_string()),
+                            )
+                    })
+                .filter(|(k, v)| k.is_ok() && v.is_ok())
+                    .map(|(k, v)| (k.unwrap(), v.unwrap()))
+                    .collect()
+            })
+        .unwrap_or(vec![]);
+
+        Ok(BasicFields {
+            parameter_list,
+            id: NString(
+                m.id.as_ref()
+                .and_then(|ci| IString::try_from(ci.to_string()).ok()),
+                ),
+                description: NString(
+                    m.description
+                    .as_ref()
+                    .and_then(|cd| IString::try_from(cd.to_string()).ok()),
+                    ),
+                    content_transfer_encoding: match m.transfer_encoding {
+                        mime::mechanism::Mechanism::_8Bit => unchecked_istring("8bit"),
+                        mime::mechanism::Mechanism::Binary => unchecked_istring("binary"),
+                        mime::mechanism::Mechanism::QuotedPrintable => unchecked_istring("quoted-printable"),
+                        mime::mechanism::Mechanism::Base64 => unchecked_istring("base64"),
+                        _ => unchecked_istring("7bit"),
+                    },
+                    // @FIXME we can't compute the size of the message currently...
+                    size: u32::try_from(sz)?,
+        })
+    }
 }
 
 // ---------------------------
-struct SelectedMsg<'a>(&'a SelectedMime<'a>, &'a composite::Message<'a>);
-struct SelectedMult<'a>(&'a SelectedMime<'a>, &'a composite::Multipart<'a>);
-struct SelectedTxt<'a>(&'a SelectedMime<'a>, &'a discrete::Text<'a>);
-struct SelectedBin<'a>(&'a SelectedMime<'a>, &'a discrete::Binary<'a>);
+struct NodeMsg<'a>(&'a NodeMime<'a>, &'a composite::Message<'a>);
+impl<'a> NodeMsg<'a> {
+    fn structure(&self) -> Result<BodyStructure<'static>> {
+        let basic = SelectedMime(self.0.0).basic_fields()?;
+
+        Ok(BodyStructure::Single {
+            body: FetchBody {
+                basic,
+                specific: SpecificFields::Message {
+                    envelope: Box::new(message_envelope(&self.1.imf)),
+                    body_structure: Box::new(NodeMime(&self.1.child).structure()?),
+                    number_of_lines: nol(self.1.raw_part),
+                },
+            },
+            extension_data: None,
+        })
+    }
+}
+struct NodeMult<'a>(&'a NodeMime<'a>, &'a composite::Multipart<'a>);
+impl<'a> NodeMult<'a> {
+    fn structure(&self) -> Result<BodyStructure<'static>> {
+        let itype = &self.1.mime.interpreted_type;
+        let subtype = IString::try_from(itype.subtype.to_string())
+            .unwrap_or(unchecked_istring("alternative"));
+
+        let inner_bodies = self.1
+            .children
+            .iter()
+            .filter_map(|inner| NodeMime(&inner).structure().ok())
+            .collect::<Vec<_>>();
+
+        NonEmptyVec::validate(&inner_bodies)?;
+        let bodies = NonEmptyVec::unvalidated(inner_bodies);
+
+        Ok(BodyStructure::Multi {
+            bodies,
+            subtype,
+            extension_data: None,
+            /*Some(MultipartExtensionData {
+              parameter_list: vec![],
+              disposition: None,
+              language: None,
+              location: None,
+              extension: vec![],
+              })*/
+        })
+    }
+}
+struct NodeTxt<'a>(&'a NodeMime<'a>, &'a discrete::Text<'a>);
+struct NodeBin<'a>(&'a NodeMime<'a>, &'a discrete::Binary<'a>);
 
 // ---------------------------
 
@@ -328,4 +434,22 @@ impl<'a> ExtractedFull<'a> {
             origin_octet: begin,
         }
     }
+}
+
+/// ---- LEGACY
+
+/// s is set to static to ensure that only compile time values
+/// checked by developpers are passed.
+fn unchecked_istring(s: &'static str) -> IString {
+    IString::try_from(s).expect("this value is expected to be a valid imap-codec::IString")
+}
+
+// Number Of Lines
+fn nol(input: &[u8]) -> u32 {
+    input
+        .iter()
+        .filter(|x| **x == b'\n')
+        .count()
+        .try_into()
+        .unwrap_or(0)
 }
