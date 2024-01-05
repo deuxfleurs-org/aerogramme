@@ -5,15 +5,18 @@ use anyhow::{anyhow, bail, Error, Result};
 
 use futures::stream::{FuturesOrdered, StreamExt};
 
+use imap_codec::imap_types::core::Charset;
 use imap_codec::imap_types::fetch::{MacroOrMessageDataItemNames, MessageDataItem};
 use imap_codec::imap_types::flag::{Flag, FlagFetch, FlagPerm, StoreResponse, StoreType};
 use imap_codec::imap_types::response::{Code, Data, Status};
+use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::{self, SequenceSet};
 
 use crate::imap::attributes::AttributesProxy;
 use crate::imap::flags;
 use crate::imap::mail_view::SeenFlag;
 use crate::imap::response::Body;
+use crate::imap::search;
 use crate::imap::selectors::MailSelectionBuilder;
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::{ImapUid, ImapUidvalidity, UidIndex};
@@ -308,6 +311,7 @@ impl MailboxView {
             .iter()
             .filter_map(|mv| mv.filter(&ap).ok().map(|(body, seen)| (mv, body, seen)))
             .collect::<Vec<_>>();
+
         // Register seen flags
         let future_flags = filtered_view
             .iter()
@@ -331,6 +335,22 @@ impl MailboxView {
             .collect::<Vec<_>>();
 
         Ok(command_body)
+    }
+
+    /// A very naive search implementation...
+    pub async fn search<'a>(
+        &self,
+        _charset: &Option<Charset<'a>>,
+        search_key: &SearchKey<'a>,
+        uid: bool,
+    ) -> Result<Vec<Body<'static>>> {
+        let (seq_set, seq_type) = search::Criteria(search_key).to_sequence_set();
+        let mailids = MailIdentifiersList(self.get_mail_ids(&seq_set, seq_type.is_uid())?);
+        let mail_u32 = match uid {
+            true => mailids.uids(),
+            _ => mailids.ids(),
+        };
+        Ok(vec![Body::Data(Data::Search(mail_u32))])
     }
 
     // ----
@@ -525,6 +545,12 @@ pub struct MailIdentifiers {
 pub struct MailIdentifiersList(Vec<MailIdentifiers>);
 
 impl MailIdentifiersList {
+    fn ids(&self) -> Vec<NonZeroU32> {
+        self.0.iter().map(|mi| mi.i).collect()
+    }
+    fn uids(&self) -> Vec<ImapUid> {
+        self.0.iter().map(|mi| mi.uid).collect()
+    }
     fn uuids(&self) -> Vec<UniqueIdent> {
         self.0.iter().map(|mi| mi.uuid).collect()
     }

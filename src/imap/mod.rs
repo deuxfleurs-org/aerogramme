@@ -8,6 +8,7 @@ mod mail_view;
 mod mailbox_view;
 mod mime_view;
 mod response;
+mod search;
 mod selectors;
 mod session;
 
