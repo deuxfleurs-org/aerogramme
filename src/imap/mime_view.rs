@@ -12,6 +12,7 @@ use imap_codec::imap_types::fetch::{
 
 use eml_codec::{
     header, mime,
+    mime::r#type::Deductible,
     part::AnyPart, part::composite, part::discrete,
 };
 
@@ -275,7 +276,7 @@ impl<'a> SelectedMime<'a> {
             AnyPart::Txt(x) => x.body.len(),
             AnyPart::Bin(x) => x.body.len(),
             AnyPart::Msg(x) => x.raw_part.len(),
-            AnyPart::Mult(x) => 0
+            AnyPart::Mult(_) => 0,
         };
         let m = self.0.mime();
         let parameter_list = m
@@ -370,7 +371,70 @@ impl<'a> NodeMult<'a> {
     }
 }
 struct NodeTxt<'a>(&'a NodeMime<'a>, &'a discrete::Text<'a>);
+impl<'a> NodeTxt<'a> {
+    fn structure(&self) -> Result<BodyStructure<'static>> {
+        let mut basic = SelectedMime(self.0.0).basic_fields()?;
+
+        // Get the interpreted content type, set it
+        let itype = match &self.1.mime.interpreted_type {
+            Deductible::Inferred(v) | Deductible::Explicit(v) => v,
+        };
+        let subtype =
+            IString::try_from(itype.subtype.to_string()).unwrap_or(unchecked_istring("plain"));
+
+        // Add charset to the list of parameters if we know it has been inferred as it will be
+        // missing from the parsed content.
+        if let Deductible::Inferred(charset) = &itype.charset {
+            basic.parameter_list.push((
+                unchecked_istring("charset"),
+                IString::try_from(charset.to_string()).unwrap_or(unchecked_istring("us-ascii")),
+            ));
+        }
+
+        Ok(BodyStructure::Single {
+            body: FetchBody {
+                basic,
+                specific: SpecificFields::Text {
+                    subtype,
+                    number_of_lines: nol(self.1.body),
+                },
+            },
+            extension_data: None,
+        })
+    }
+}
+
 struct NodeBin<'a>(&'a NodeMime<'a>, &'a discrete::Binary<'a>);
+impl<'a> NodeBin<'a> {
+    fn structure(&self) -> Result<BodyStructure<'static>> {
+        let basic = SelectedMime(self.0.0).basic_fields()?;
+
+        let default = mime::r#type::NaiveType {
+            main: &b"application"[..],
+            sub: &b"octet-stream"[..],
+            params: vec![],
+        };
+        let ct = self.1.mime.fields.ctype.as_ref().unwrap_or(&default);
+
+        let r#type =
+            IString::try_from(String::from_utf8_lossy(ct.main).to_string()).or(Err(
+                anyhow!("Unable to build IString from given Content-Type type given"),
+            ))?;
+
+        let subtype =
+            IString::try_from(String::from_utf8_lossy(ct.sub).to_string()).or(Err(anyhow!(
+                "Unable to build IString from given Content-Type subtype given"
+            )))?;
+
+        Ok(BodyStructure::Single {
+            body: FetchBody {
+                basic,
+                specific: SpecificFields::Basic { r#type, subtype },
+            },
+            extension_data: None,
+        })
+    }
+}
 
 // ---------------------------
 
