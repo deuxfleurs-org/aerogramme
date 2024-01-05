@@ -5,18 +5,16 @@ use anyhow::{anyhow, bail, Error, Result};
 
 use futures::stream::{FuturesOrdered, StreamExt};
 
-use imap_codec::imap_types::fetch::{
-    MacroOrMessageDataItemNames, MessageDataItem
-};
+use imap_codec::imap_types::fetch::{MacroOrMessageDataItemNames, MessageDataItem};
 use imap_codec::imap_types::flag::{Flag, FlagFetch, FlagPerm, StoreResponse, StoreType};
 use imap_codec::imap_types::response::{Code, Data, Status};
 use imap_codec::imap_types::sequence::{self, SequenceSet};
 
-use crate::imap::flags;
-use crate::imap::response::Body;
 use crate::imap::attributes::AttributesProxy;
-use crate::imap::selectors::MailSelectionBuilder;
+use crate::imap::flags;
 use crate::imap::mail_view::SeenFlag;
+use crate::imap::response::Body;
+use crate::imap::selectors::MailSelectionBuilder;
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::{ImapUid, ImapUidvalidity, UidIndex};
 use crate::mail::unique_ident::UniqueIdent;
@@ -519,7 +517,6 @@ impl MailboxView {
     }
 }
 
-
 pub struct MailIdentifiers {
     pub i: NonZeroU32,
     pub uid: ImapUid,
@@ -536,22 +533,19 @@ impl MailIdentifiersList {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use imap_codec::imap_types::fetch::{
-        MacroOrMessageDataItemNames,  MessageDataItemName,
-    };
     use imap_codec::encode::Encoder;
     use imap_codec::imap_types::core::NonEmptyVec;
     use imap_codec::imap_types::fetch::Section;
+    use imap_codec::imap_types::fetch::{MacroOrMessageDataItemNames, MessageDataItemName};
     use imap_codec::imap_types::response::Response;
     use imap_codec::ResponseCodec;
     use std::fs;
 
-
     use crate::cryptoblob;
-    use crate::mail::unique_ident;
-    use crate::mail::mailbox::MailMeta;
-    use crate::imap::mail_view::{MailView, FetchedMail};
+    use crate::imap::mail_view::{FetchedMail, MailView};
     use crate::imap::mime_view;
+    use crate::mail::mailbox::MailMeta;
+    use crate::mail::unique_ident;
 
     #[test]
     fn mailview_body_ext() -> Result<()> {
@@ -673,4 +667,3 @@ mod tests {
         Ok(())
     }
 }
-

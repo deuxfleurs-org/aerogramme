@@ -95,4 +95,3 @@ pub fn convert_mbx(addr: &imf::mailbox::MailboxRef) -> Address<'static> {
         )),
     }
 }
-

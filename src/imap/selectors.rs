@@ -2,9 +2,8 @@ use std::iter::zip;
 
 use anyhow::{anyhow, Result};
 
-
 use crate::cryptoblob::Key;
-use crate::imap::mail_view::{MailView, FetchedMail};
+use crate::imap::mail_view::{FetchedMail, MailView};
 use crate::imap::mailbox_view::MailIdentifiers;
 use crate::mail::mailbox::MailMeta;
 use crate::mail::unique_ident::UniqueIdent;
@@ -13,7 +12,6 @@ pub struct BodyIdentifier<'a> {
     pub msg_uuid: &'a UniqueIdent,
     pub msg_key: &'a Key,
 }
-
 
 #[derive(Default)]
 pub struct MailSelectionBuilder<'a> {
@@ -100,4 +98,3 @@ impl<'a> MailSelectionBuilder<'a> {
             .collect())
     }
 }
-

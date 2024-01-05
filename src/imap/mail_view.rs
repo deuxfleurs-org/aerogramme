@@ -3,7 +3,6 @@ use std::num::NonZeroU32;
 use anyhow::{anyhow, bail, Result};
 use chrono::{Offset, TimeZone, Utc};
 
-
 use imap_codec::imap_types::core::{IString, NString};
 use imap_codec::imap_types::datetime::DateTime;
 use imap_codec::imap_types::fetch::{
@@ -17,13 +16,13 @@ use eml_codec::{
     part::{composite::Message, AnyPart},
 };
 
-use crate::imap::response::Body;
-use crate::imap::mime_view;
-use crate::imap::flags;
 use crate::imap::attributes::AttributesProxy;
-use crate::mail::mailbox::MailMeta;
-use crate::imap::mailbox_view::MailIdentifiers;
+use crate::imap::flags;
 use crate::imap::imf_view::message_envelope;
+use crate::imap::mailbox_view::MailIdentifiers;
+use crate::imap::mime_view;
+use crate::imap::response::Body;
+use crate::mail::mailbox::MailMeta;
 
 pub struct MailView<'a> {
     pub ids: &'a MailIdentifiers,
@@ -121,10 +120,11 @@ impl<'a> MailView<'a> {
         }
 
         // Process message
-        let (text, origin) = match mime_view::body_ext(self.content.as_anypart()?, section, partial)? {
-            mime_view::BodySection::Full(body) => (body, None),
-            mime_view::BodySection::Slice { body, origin_octet } => (body, Some(origin_octet)),
-        };
+        let (text, origin) =
+            match mime_view::body_ext(self.content.as_anypart()?, section, partial)? {
+                mime_view::BodySection::Full(body) => (body, None),
+                mime_view::BodySection::Slice { body, origin_octet } => (body, Some(origin_octet)),
+            };
 
         let data = NString(text.to_vec().try_into().ok().map(IString::Literal));
 
@@ -185,14 +185,12 @@ impl<'a> MailView<'a> {
     }
 }
 
-
 pub enum SeenFlag {
     DoNothing,
     MustAdd,
 }
 
-
-// ------------------- 
+// -------------------
 
 pub enum FetchedMail<'a> {
     Partial(imf::Imf<'a>),
@@ -229,4 +227,3 @@ impl<'a> FetchedMail<'a> {
         }
     }
 }
-

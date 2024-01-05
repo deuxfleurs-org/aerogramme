@@ -1,6 +1,4 @@
-use imap_codec::imap_types::fetch::{
-    MacroOrMessageDataItemNames,  MessageDataItemName,
-};
+use imap_codec::imap_types::fetch::{MacroOrMessageDataItemNames, MessageDataItemName};
 
 /// Internal decisions based on fetched attributes
 /// passed by the client

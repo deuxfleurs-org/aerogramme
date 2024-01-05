@@ -1,28 +1,23 @@
 use std::borrow::Cow;
-use std::num::NonZeroU32;
 use std::collections::HashSet;
+use std::num::NonZeroU32;
 
 use anyhow::{anyhow, bail, Result};
 
 use imap_codec::imap_types::body::{BasicFields, Body as FetchBody, BodyStructure, SpecificFields};
 use imap_codec::imap_types::core::{AString, IString, NString, NonEmptyVec};
-use imap_codec::imap_types::fetch::{
-    Section as FetchSection, Part as FetchPart
-};
+use imap_codec::imap_types::fetch::{Part as FetchPart, Section as FetchSection};
 
 use eml_codec::{
-    header, mime,
-    mime::r#type::Deductible,
-    part::AnyPart, part::composite, part::discrete,
+    header, mime, mime::r#type::Deductible, part::composite, part::discrete, part::AnyPart,
 };
 
 use crate::imap::imf_view::message_envelope;
 
-
 pub enum BodySection<'a> {
     Full(Cow<'a, [u8]>),
     Slice {
-        body: Cow<'a, [u8]>, 
+        body: Cow<'a, [u8]>,
         origin_octet: u32,
     },
 }
@@ -57,9 +52,9 @@ pub enum BodySection<'a> {
 ///    4.2.2.2    TEXT/RICHTEXT
 /// ```
 pub fn body_ext<'a>(
-    part: &'a AnyPart<'a>, 
-    section: &'a Option<FetchSection<'a>>, 
-    partial: &'a Option<(u32, NonZeroU32)>
+    part: &'a AnyPart<'a>,
+    section: &'a Option<FetchSection<'a>>,
+    partial: &'a Option<(u32, NonZeroU32)>,
 ) -> Result<BodySection<'a>> {
     let root_mime = NodeMime(part);
     let (extractor, path) = SubsettedSection::from(section);
@@ -88,12 +83,12 @@ pub fn bodystructure(part: &AnyPart) -> Result<BodyStructure<'static>> {
 }
 
 /// NodeMime
-/// 
+///
 /// Used for recursive logic on MIME.
 /// See SelectedMime for inspection.
 struct NodeMime<'a>(&'a AnyPart<'a>);
 impl<'a> NodeMime<'a> {
-    /// A MIME object is a tree of elements. 
+    /// A MIME object is a tree of elements.
     /// The path indicates which element must be picked.
     /// This function returns the picked element as the new view
     fn subset(self, path: Option<&'a FetchPart>) -> Result<SelectedMime<'a>> {
@@ -138,7 +133,7 @@ impl<'a> NodeMime<'a> {
 /// A FetchSection must be handled in 2 times:
 ///  - First we must extract the MIME part
 ///  - Then we must process it as desired
-/// The given struct mixes both work, so 
+/// The given struct mixes both work, so
 /// we separate this work here.
 enum SubsettedSection<'a> {
     Part,
@@ -153,8 +148,12 @@ impl<'a> SubsettedSection<'a> {
         match section {
             Some(FetchSection::Text(maybe_part)) => (Self::Text, maybe_part.as_ref()),
             Some(FetchSection::Header(maybe_part)) => (Self::Header, maybe_part.as_ref()),
-            Some(FetchSection::HeaderFields(maybe_part, fields)) => (Self::HeaderFields(fields), maybe_part.as_ref()),
-            Some(FetchSection::HeaderFieldsNot(maybe_part, fields)) => (Self::HeaderFieldsNot(fields), maybe_part.as_ref()),
+            Some(FetchSection::HeaderFields(maybe_part, fields)) => {
+                (Self::HeaderFields(fields), maybe_part.as_ref())
+            }
+            Some(FetchSection::HeaderFieldsNot(maybe_part, fields)) => {
+                (Self::HeaderFieldsNot(fields), maybe_part.as_ref())
+            }
             Some(FetchSection::Mime(part)) => (Self::Mime, Some(part)),
             Some(FetchSection::Part(part)) => (Self::Part, Some(part)),
             None => (Self::Part, None),
@@ -212,17 +211,24 @@ impl<'a> SelectedMime<'a> {
     /// returned by HEADER.FIELDS.NOT contains only the header fields
     /// with a non-matching field-name.  The field-matching is
     /// case-insensitive but otherwise exact.
-    fn header_fields(&self, fields: &'a NonEmptyVec<AString<'a>>, invert: bool) -> Result<ExtractedFull<'a>> {
+    fn header_fields(
+        &self,
+        fields: &'a NonEmptyVec<AString<'a>>,
+        invert: bool,
+    ) -> Result<ExtractedFull<'a>> {
         // Build a lowercase ascii hashset with the fields to fetch
         let index = fields
             .as_ref()
             .iter()
-            .map(|x| match x {
-                AString::Atom(a) => a.inner().as_bytes(),
-                AString::String(IString::Literal(l)) => l.as_ref(),
-                AString::String(IString::Quoted(q)) => q.inner().as_bytes(),
-            }.to_ascii_lowercase())
-        .collect::<HashSet<_>>();
+            .map(|x| {
+                match x {
+                    AString::Atom(a) => a.inner().as_bytes(),
+                    AString::String(IString::Literal(l)) => l.as_ref(),
+                    AString::String(IString::Quoted(q)) => q.inner().as_bytes(),
+                }
+                .to_ascii_lowercase()
+            })
+            .collect::<HashSet<_>>();
 
         // Extract MIME headers
         let mime = match &self.0 {
@@ -234,7 +240,9 @@ impl<'a> SelectedMime<'a> {
         // 1. Keep only the correctly formatted headers
         // 2. Keep only based on the index presence or absence
         // 3. Reduce as a byte vector
-        let buffer = mime.kv.iter()
+        let buffer = mime
+            .kv
+            .iter()
             .filter_map(|field| match field {
                 header::Field::Good(header::Kv2(k, v)) => Some((k, v)),
                 _ => None,
@@ -257,13 +265,19 @@ impl<'a> SelectedMime<'a> {
     /// HEADER     ([RFC-2822] header of the message)
     /// ```
     fn header(&self) -> Result<ExtractedFull<'a>> {
-        let msg = self.0.as_message().ok_or(anyhow!("Selected part must be a message/rfc822"))?;
+        let msg = self
+            .0
+            .as_message()
+            .ok_or(anyhow!("Selected part must be a message/rfc822"))?;
         Ok(ExtractedFull(msg.raw_headers.into()))
     }
 
     /// The TEXT part specifier refers to the text body of the message, omitting the [RFC-2822] header.
     fn text(&self) -> Result<ExtractedFull<'a>> {
-        let msg = self.0.as_message().ok_or(anyhow!("Selected part must be a message/rfc822"))?;
+        let msg = self
+            .0
+            .as_message()
+            .ok_or(anyhow!("Selected part must be a message/rfc822"))?;
         Ok(ExtractedFull(msg.raw_body.into()))
     }
 
@@ -289,34 +303,36 @@ impl<'a> SelectedMime<'a> {
                         (
                             IString::try_from(String::from_utf8_lossy(p.name).to_string()),
                             IString::try_from(p.value.to_string()),
-                            )
+                        )
                     })
-                .filter(|(k, v)| k.is_ok() && v.is_ok())
+                    .filter(|(k, v)| k.is_ok() && v.is_ok())
                     .map(|(k, v)| (k.unwrap(), v.unwrap()))
                     .collect()
             })
-        .unwrap_or(vec![]);
+            .unwrap_or(vec![]);
 
         Ok(BasicFields {
             parameter_list,
             id: NString(
                 m.id.as_ref()
-                .and_then(|ci| IString::try_from(ci.to_string()).ok()),
-                ),
-                description: NString(
-                    m.description
+                    .and_then(|ci| IString::try_from(ci.to_string()).ok()),
+            ),
+            description: NString(
+                m.description
                     .as_ref()
                     .and_then(|cd| IString::try_from(cd.to_string()).ok()),
-                    ),
-                    content_transfer_encoding: match m.transfer_encoding {
-                        mime::mechanism::Mechanism::_8Bit => unchecked_istring("8bit"),
-                        mime::mechanism::Mechanism::Binary => unchecked_istring("binary"),
-                        mime::mechanism::Mechanism::QuotedPrintable => unchecked_istring("quoted-printable"),
-                        mime::mechanism::Mechanism::Base64 => unchecked_istring("base64"),
-                        _ => unchecked_istring("7bit"),
-                    },
-                    // @FIXME we can't compute the size of the message currently...
-                    size: u32::try_from(sz)?,
+            ),
+            content_transfer_encoding: match m.transfer_encoding {
+                mime::mechanism::Mechanism::_8Bit => unchecked_istring("8bit"),
+                mime::mechanism::Mechanism::Binary => unchecked_istring("binary"),
+                mime::mechanism::Mechanism::QuotedPrintable => {
+                    unchecked_istring("quoted-printable")
+                }
+                mime::mechanism::Mechanism::Base64 => unchecked_istring("base64"),
+                _ => unchecked_istring("7bit"),
+            },
+            // @FIXME we can't compute the size of the message currently...
+            size: u32::try_from(sz)?,
         })
     }
 }
@@ -325,7 +341,7 @@ impl<'a> SelectedMime<'a> {
 struct NodeMsg<'a>(&'a NodeMime<'a>, &'a composite::Message<'a>);
 impl<'a> NodeMsg<'a> {
     fn structure(&self) -> Result<BodyStructure<'static>> {
-        let basic = SelectedMime(self.0.0).basic_fields()?;
+        let basic = SelectedMime(self.0 .0).basic_fields()?;
 
         Ok(BodyStructure::Single {
             body: FetchBody {
@@ -347,7 +363,8 @@ impl<'a> NodeMult<'a> {
         let subtype = IString::try_from(itype.subtype.to_string())
             .unwrap_or(unchecked_istring("alternative"));
 
-        let inner_bodies = self.1
+        let inner_bodies = self
+            .1
             .children
             .iter()
             .filter_map(|inner| NodeMime(&inner).structure().ok())
@@ -361,19 +378,19 @@ impl<'a> NodeMult<'a> {
             subtype,
             extension_data: None,
             /*Some(MultipartExtensionData {
-              parameter_list: vec![],
-              disposition: None,
-              language: None,
-              location: None,
-              extension: vec![],
-              })*/
+            parameter_list: vec![],
+            disposition: None,
+            language: None,
+            location: None,
+            extension: vec![],
+            })*/
         })
     }
 }
 struct NodeTxt<'a>(&'a NodeMime<'a>, &'a discrete::Text<'a>);
 impl<'a> NodeTxt<'a> {
     fn structure(&self) -> Result<BodyStructure<'static>> {
-        let mut basic = SelectedMime(self.0.0).basic_fields()?;
+        let mut basic = SelectedMime(self.0 .0).basic_fields()?;
 
         // Get the interpreted content type, set it
         let itype = match &self.1.mime.interpreted_type {
@@ -407,7 +424,7 @@ impl<'a> NodeTxt<'a> {
 struct NodeBin<'a>(&'a NodeMime<'a>, &'a discrete::Binary<'a>);
 impl<'a> NodeBin<'a> {
     fn structure(&self) -> Result<BodyStructure<'static>> {
-        let basic = SelectedMime(self.0.0).basic_fields()?;
+        let basic = SelectedMime(self.0 .0).basic_fields()?;
 
         let default = mime::r#type::NaiveType {
             main: &b"application"[..],
@@ -416,15 +433,13 @@ impl<'a> NodeBin<'a> {
         };
         let ct = self.1.mime.fields.ctype.as_ref().unwrap_or(&default);
 
-        let r#type =
-            IString::try_from(String::from_utf8_lossy(ct.main).to_string()).or(Err(
-                anyhow!("Unable to build IString from given Content-Type type given"),
-            ))?;
+        let r#type = IString::try_from(String::from_utf8_lossy(ct.main).to_string()).or(Err(
+            anyhow!("Unable to build IString from given Content-Type type given"),
+        ))?;
 
-        let subtype =
-            IString::try_from(String::from_utf8_lossy(ct.sub).to_string()).or(Err(anyhow!(
-                "Unable to build IString from given Content-Type subtype given"
-            )))?;
+        let subtype = IString::try_from(String::from_utf8_lossy(ct.sub).to_string()).or(Err(
+            anyhow!("Unable to build IString from given Content-Type subtype given"),
+        ))?;
 
         Ok(BodyStructure::Single {
             body: FetchBody {
@@ -473,8 +488,8 @@ impl<'a> ExtractedFull<'a> {
             return BodySection::Slice {
                 body: Cow::Borrowed(&[][..]),
                 origin_octet: begin,
-            }
-        } 
+            };
+        }
 
         // Asked range is ending after the end of the content,
         // slice only the beginning of the buffer
@@ -485,15 +500,19 @@ impl<'a> ExtractedFull<'a> {
                     Cow::Owned(body) => Cow::Owned(body[begin as usize..].to_vec()),
                 },
                 origin_octet: begin,
-            }
+            };
         }
 
         // Range is included inside the considered content,
         // this is the "happy case"
         BodySection::Slice {
             body: match self.0 {
-                Cow::Borrowed(body) => Cow::Borrowed(&body[begin as usize..(begin + len.get()) as usize]),
-                Cow::Owned(body) => Cow::Owned(body[begin as usize..(begin + len.get()) as usize].to_vec()),
+                Cow::Borrowed(body) => {
+                    Cow::Borrowed(&body[begin as usize..(begin + len.get()) as usize])
+                }
+                Cow::Owned(body) => {
+                    Cow::Owned(body[begin as usize..(begin + len.get()) as usize].to_vec())
+                }
             },
             origin_octet: begin,
         }

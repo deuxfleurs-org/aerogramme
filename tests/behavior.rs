@@ -26,15 +26,18 @@ fn rfc3501_imap4rev1_base() {
         lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
         lmtp_deliver_email(lmtp_socket, Email::Multipart).context("mail delivered successfully")?;
         noop_exists(imap_socket).context("noop loop must detect a new email")?;
-        fetch_rfc822(imap_socket, Selection::FirstId, Email::Multipart).context("fetch rfc822 message, should be our first message")?;
-        copy(imap_socket, Selection::FirstId, Mailbox::Archive).context("copy message to the archive mailbox")?;
+        fetch_rfc822(imap_socket, Selection::FirstId, Email::Multipart)
+            .context("fetch rfc822 message, should be our first message")?;
+        copy(imap_socket, Selection::FirstId, Mailbox::Archive)
+            .context("copy message to the archive mailbox")?;
         append_email(imap_socket, Email::Basic).context("insert email in INBOX")?;
         // SEARCH IS NOT IMPLEMENTED YET
         //search(imap_socket).expect("search should return something");
         add_flags_email(imap_socket, Selection::FirstId, Flag::Deleted)
             .context("should add delete flag to the email")?;
         expunge(imap_socket).context("expunge emails")?;
-        rename_mailbox(imap_socket, Mailbox::Archive, Mailbox::Drafts).context("Archive mailbox is renamed Drafts")?;
+        rename_mailbox(imap_socket, Mailbox::Archive, Mailbox::Drafts)
+            .context("Archive mailbox is renamed Drafts")?;
         delete_mailbox(imap_socket, Mailbox::Drafts).context("Drafts mailbox is deleted")?;
         Ok(())
     })
@@ -53,13 +56,16 @@ fn rfc3691_imapext_unselect() {
         login(imap_socket, Account::Alice).context("login test")?;
         select(imap_socket, Mailbox::Inbox, None).context("select inbox")?;
         noop_exists(imap_socket).context("noop loop must detect a new email")?;
-        add_flags_email(imap_socket, Selection::FirstId, Flag::Deleted).context("add delete flags to the email")?;
+        add_flags_email(imap_socket, Selection::FirstId, Flag::Deleted)
+            .context("add delete flags to the email")?;
         unselect(imap_socket)
             .context("unselect inbox while preserving email with the \\Delete flag")?;
         select(imap_socket, Mailbox::Inbox, Some(1)).context("select inbox again")?;
-        fetch_rfc822(imap_socket, Selection::FirstId, Email::Basic).context("message is still present")?;
+        fetch_rfc822(imap_socket, Selection::FirstId, Email::Basic)
+            .context("message is still present")?;
         close(imap_socket).context("close inbox and expunge message")?;
-        select(imap_socket, Mailbox::Inbox, Some(0)).context("select inbox again and check it's empty")?;
+        select(imap_socket, Mailbox::Inbox, Some(0))
+            .context("select inbox again and check it's empty")?;
 
         Ok(())
     })
@@ -94,7 +100,8 @@ fn rfc6851_imapext_move() {
         lmtp_deliver_email(lmtp_socket, Email::Basic).context("mail delivered successfully")?;
 
         noop_exists(imap_socket).context("noop loop must detect a new email")?;
-        r#move(imap_socket, Selection::FirstId, Mailbox::Archive).context("message from inbox moved to archive")?;
+        r#move(imap_socket, Selection::FirstId, Mailbox::Archive)
+            .context("message from inbox moved to archive")?;
 
         unselect(imap_socket)
             .context("unselect inbox while preserving email with the \\Delete flag")?;
@@ -116,5 +123,6 @@ fn rfc7888_imapext_literal() {
         login_with_literal(imap_socket, Account::Alice).context("use literal to connect Alice")?;
 
         Ok(())
-    }).expect("test fully run");
+    })
+    .expect("test fully run");
 }

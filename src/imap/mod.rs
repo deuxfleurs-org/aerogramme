@@ -1,14 +1,14 @@
+mod attributes;
 mod capability;
 mod command;
+mod flags;
 mod flow;
-mod attributes;
+mod imf_view;
 mod mail_view;
 mod mailbox_view;
 mod mime_view;
-mod imf_view;
-mod selectors;
-mod flags;
 mod response;
+mod selectors;
 mod session;
 
 use std::net::SocketAddr;

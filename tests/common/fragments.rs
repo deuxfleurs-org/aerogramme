@@ -52,7 +52,7 @@ pub enum Mailbox {
 
 pub enum Flag {
     Deleted,
-    Important
+    Important,
 }
 
 pub enum Email {
@@ -287,8 +287,6 @@ pub fn append_email(imap: &mut TcpStream, content: Email) -> Result<()> {
     Ok(())
 }
 
-
-
 pub fn add_flags_email(imap: &mut TcpStream, selection: Selection, flag: Flag) -> Result<()> {
     let mut buffer: [u8; 1500] = [0; 1500];
     assert!(matches!(selection, Selection::FirstId));
@@ -390,7 +388,7 @@ pub fn enable(imap: &mut TcpStream, ask: Enable, done: Option<Enable>) -> Result
         Some(Enable::Utf8Accept) => {
             assert_eq!(srv_msg.lines().count(), 2);
             assert!(srv_msg.contains("* ENABLED UTF8=ACCEPT"));
-        },
+        }
         _ => unimplemented!(),
     }
 
