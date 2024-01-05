@@ -82,7 +82,7 @@ impl Mailbox {
         self.mbox.read().await.fetch_full(id, message_key).await
     }
 
-    async fn frozen(self: &std::sync::Arc<Self>) -> super::snapshot::FrozenMailbox {
+    pub async fn frozen(self: &std::sync::Arc<Self>) -> super::snapshot::FrozenMailbox {
         super::snapshot::FrozenMailbox::new(self.clone()).await
     }
 

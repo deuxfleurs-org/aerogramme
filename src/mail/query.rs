@@ -10,10 +10,27 @@ use futures::stream::{FuturesUnordered, StreamExt};
 pub struct Query<'a,'b> {
     pub frozen: &'a FrozenMailbox,
     pub emails: &'b [UniqueIdent],
+    pub scope: QueryScope,
+}
+
+pub enum QueryScope {
+    Index,
+    Partial,
+    Full,
 }
 
 impl<'a,'b> Query<'a,'b> {
-    pub fn index(&self) -> Result<Vec<IndexResult>> {
+    pub async fn fetch(&self) -> Result<Vec<QueryResult>> {
+        match self.scope {
+            QueryScope::Index => self.index(),
+            QueryScope::Partial => self.partial().await,
+            QueryScope::Full => self.full().await,
+        }
+    }
+
+    // --- functions below are private *for reasons*
+
+    fn index(&self) -> Result<Vec<QueryResult>> {
         self
             .emails
             .iter()
@@ -23,18 +40,18 @@ impl<'a,'b> Query<'a,'b> {
                     .snapshot
                     .table
                     .get(uuid)
-                    .map(|index| IndexResult { uuid: *uuid, index })
+                    .map(|index| QueryResult::IndexResult { uuid: *uuid, index })
                     .ok_or(anyhow!("missing email in index"))
             })
             .collect::<Result<Vec<_>, _>>()
     }
 
-    pub async fn partial(&self) -> Result<Vec<PartialResult>> {
+    async fn partial(&self) -> Result<Vec<QueryResult>> {
         let meta = self.frozen.mailbox.fetch_meta(self.emails).await?;
         let result = meta
             .into_iter()
             .zip(self.index()?)
-            .map(|(metadata, index)| PartialResult { uuid: index.uuid, index: index.index, metadata })
+            .map(|(metadata, index)| index.into_partial(metadata).expect("index to be IndexResult"))
             .collect::<Vec<_>>();
         Ok(result)
     }
@@ -43,18 +60,17 @@ impl<'a,'b> Query<'a,'b> {
     /// AND GENERATE SO MUCH NETWORK TRAFFIC.
     /// THIS FUNCTION SHOULD BE REWRITTEN, FOR EXAMPLE WITH
     /// SOMETHING LIKE AN ITERATOR
-    pub async fn full(&self) -> Result<Vec<FullResult>> {
+    async fn full(&self) -> Result<Vec<QueryResult>> {
         let meta_list = self.partial().await?;
         meta_list
             .into_iter()
             .map(|meta| async move  {
-                let content = self.frozen.mailbox.fetch_full(meta.uuid, &meta.metadata.message_key).await?;
-                Ok(FullResult {
-                    uuid: meta.uuid,
-                    index: meta.index,
-                    metadata: meta.metadata,
-                    content,
-                })
+                let content = self.frozen.mailbox.fetch_full(
+                    *meta.uuid(), 
+                    &meta.metadata().expect("meta to be PartialResult").message_key
+                ).await?;
+
+                Ok(meta.into_full(content).expect("meta to be PartialResult"))
             })
             .collect::<FuturesUnordered<_>>()
             .collect::<Vec<_>>()
@@ -64,18 +80,66 @@ impl<'a,'b> Query<'a,'b> {
     }
 }
 
-pub struct IndexResult<'a> {
-    pub uuid: UniqueIdent,
-    pub index: &'a IndexEntry,
+pub enum QueryResult<'a> {
+    IndexResult {
+        uuid: UniqueIdent,
+        index: &'a IndexEntry,
+    },
+    PartialResult {
+        uuid: UniqueIdent,
+        index: &'a IndexEntry,
+        metadata: MailMeta,
+    },
+    FullResult {
+        uuid: UniqueIdent,
+        index: &'a IndexEntry,
+        metadata: MailMeta,
+        content: Vec<u8>,
+    }
 }
-pub struct PartialResult<'a> {
-    pub uuid: UniqueIdent,
-    pub index: &'a IndexEntry,
-    pub metadata: MailMeta,
-}
-pub struct FullResult<'a> {
-    pub uuid: UniqueIdent,
-    pub index: &'a IndexEntry,
-    pub metadata: MailMeta,
-    pub content: Vec<u8>,
+impl<'a> QueryResult<'a> {
+    pub fn uuid(&self) -> &UniqueIdent {
+        match self {
+            Self::IndexResult { uuid, .. } => uuid,
+            Self::PartialResult { uuid, .. } => uuid,
+            Self::FullResult { uuid, .. } => uuid,
+        }
+    }
+
+    pub fn index(&self) -> &IndexEntry {
+        match self {
+            Self::IndexResult { index, .. } => index,
+            Self::PartialResult { index, .. } => index,
+            Self::FullResult { index, .. } => index,
+        }
+    }
+
+    pub fn metadata(&self) -> Option<&MailMeta> {
+        match self {
+            Self::IndexResult { .. } => None,
+            Self::PartialResult { metadata, .. } => Some(metadata),
+            Self::FullResult { metadata, .. } => Some(metadata),
+        }
+    }
+
+    pub fn content(&self) -> Option<&[u8]> {
+        match self {
+            Self::FullResult { content, .. } => Some(content),
+            _ => None,
+        }
+    }
+
+    fn into_partial(self, metadata: MailMeta) -> Option<Self> {
+        match self {
+            Self::IndexResult { uuid, index } => Some(Self::PartialResult { uuid, index, metadata }),
+            _ => None,
+        }
+    }
+
+    fn into_full(self, content: Vec<u8>) -> Option<Self> {
+        match self {
+            Self::PartialResult { uuid, index, metadata } => Some(Self::FullResult { uuid, index, metadata, content }),
+            _ => None,
+        }
+    }
 }

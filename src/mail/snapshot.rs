@@ -4,6 +4,8 @@ use anyhow::Result;
 
 use super::mailbox::Mailbox;
 use super::uidindex::UidIndex;
+use super::unique_ident::UniqueIdent;
+use super::query::{Query, QueryScope};
 
 /// A Frozen Mailbox has a snapshot of the current mailbox
 /// state that is desynchronized with the real mailbox state.
@@ -48,5 +50,13 @@ impl FrozenMailbox {
        self.snapshot = self.mailbox.current_uid_index().await;
 
        old_snapshot
+    }
+
+    pub fn query<'a, 'b>(&'a self, uuids: &'b [UniqueIdent], scope: QueryScope) -> Query<'a, 'b> {
+        Query {
+           frozen: self,
+           emails: uuids,
+           scope,
+        }
     }
 }

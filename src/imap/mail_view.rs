@@ -1,6 +1,6 @@
 use std::num::NonZeroU32;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Result, Context};
 use chrono::{Offset, TimeZone, Utc};
 
 use imap_codec::imap_types::core::{IString, NString};
@@ -22,16 +22,31 @@ use crate::imap::imf_view::message_envelope;
 use crate::imap::mailbox_view::MailIdentifiers;
 use crate::imap::mime_view;
 use crate::imap::response::Body;
-use crate::mail::mailbox::MailMeta;
+use crate::mail::query::QueryResult;
 
 pub struct MailView<'a> {
-    pub ids: &'a MailIdentifiers,
-    pub meta: &'a MailMeta,
-    pub flags: &'a Vec<String>,
+    pub query_result: &'a QueryResult<'a>,
     pub content: FetchedMail<'a>,
 }
 
 impl<'a> MailView<'a> {
+    pub fn new(query_result: &'a QueryResult<'a>) -> Result<Self> {
+        Ok(Self {
+            query_result,
+            content: match query_result {
+                QueryResult::FullResult { content, .. } => {
+                    let (_, parsed) = eml_codec::parse_message(content).context("Invalid mail body")?;
+                    FetchedMail::new_from_message(parsed)
+                },
+                QueryResult::PartialResult { metadata, .. } => {
+                    let (_, parsed) = eml_codec::parse_imf(&metadata.headers).context("Invalid mail headers")?;
+                    FetchedMail::Partial(parsed)
+                }
+                QueryResult::IndexResult { .. } => FetchedMail::None,
+            }
+        })
+    }
+
     fn uid(&self) -> MessageDataItem<'static> {
         MessageDataItem::Uid(self.ids.uid.clone())
     }
@@ -193,6 +208,7 @@ pub enum SeenFlag {
 // -------------------
 
 pub enum FetchedMail<'a> {
+    None,
     Partial(imf::Imf<'a>),
     Full(AnyPart<'a>),
 }
