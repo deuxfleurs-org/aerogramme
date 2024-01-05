@@ -228,19 +228,16 @@ impl MailboxView {
     ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>, Vec<Body<'static>>)> {
         let mails = self.get_mail_ids(sequence_set, *is_uid_copy)?;
 
-        let mut new_uuids = vec![];
         for mi in mails.iter() {
-            let copy_action = to.copy_from(&self.mailbox, mi.uuid).await?;
-            new_uuids.push(copy_action);
-            self.mailbox.delete(mi.uuid).await?
+            to.move_from(&self.mailbox, mi.uuid).await?;
         }
 
         let mut ret = vec![];
         let to_state = to.current_uid_index().await;
-        for (mi, new_uuid) in mails.iter().zip(new_uuids.iter()) {
+        for mi in mails.iter() {
             let dest_uid = to_state
                 .table
-                .get(new_uuid)
+                .get(&mi.uuid)
                 .ok_or(anyhow!("moved mail not in destination mailbox"))?
                 .0;
             ret.push((mi.uid, dest_uid));
