@@ -319,24 +319,25 @@ impl MailboxView {
         let selection = self.index().fetch(&seq_set, seq_type.is_uid())?;
 
         // 3. Filter the selection based on the ID / UID / Flags
-        let selection = crit.filter_on_idx(&selection);
+        let (kept_idx, to_fetch) = crit.filter_on_idx(&selection);
 
         // 4. Fetch additional info about the emails
         let query_scope = crit.query_scope();
-        let uuids = selection
+        let uuids = to_fetch
             .iter()
             .map(|midx| midx.uuid)
             .collect::<Vec<_>>();
         let query_result = self.0.query(&uuids, query_scope).fetch().await?;
 
         // 5. If needed, filter the selection based on the body
-        let selection = crit.filter_on_query(&selection, &query_result);
+        let kept_query = crit.filter_on_query(&to_fetch, &query_result);
 
         // 6. Format the result according to the client's taste:
         // either return UID or ID.
+        let final_selection = kept_idx.into_iter().chain(kept_query.into_iter());
         let selection_fmt = match uid {
-            true => selection.into_iter().map(|in_idx| in_idx.uid).collect(),
-            _ => selection.into_iter().map(|in_idx| in_idx.i).collect(),
+            true => final_selection.map(|in_idx| in_idx.uid).collect(),
+            _ => final_selection.map(|in_idx| in_idx.i).collect(),
         };
 
         Ok(vec![Body::Data(Data::Search(selection_fmt))])

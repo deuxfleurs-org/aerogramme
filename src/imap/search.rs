@@ -17,6 +17,7 @@ impl SeqType {
     }
 }
 
+
 pub struct Criteria<'a>(pub &'a SearchKey<'a>);
 impl<'a> Criteria<'a> {
     /// Returns a set of email identifiers that is greater or equal
@@ -82,6 +83,14 @@ impl<'a> Criteria<'a> {
     pub fn query_scope(&self) -> QueryScope {
         use SearchKey::*;
         match self.0 {
+            // Combinators
+            And(and_list) => and_list.as_ref().iter().fold(QueryScope::Index, |prev, sk| {
+                prev.union(&Criteria(sk).query_scope())
+            }),
+            Not(inner) => Criteria(inner).query_scope(),
+            Or(left, right) => Criteria(left).query_scope().union(&Criteria(right).query_scope()),
+            All => QueryScope::Index,
+
             // IMF Headers
             Bcc(_) | Cc(_) | From(_) | Header(..) | SentBefore(_) | SentOn(_) | SentSince(_)
             | Subject(_) | To(_) => QueryScope::Partial,
@@ -91,25 +100,34 @@ impl<'a> Criteria<'a> {
             Larger(_) | Smaller(_) => QueryScope::Partial,
             // Text and Body require that we fetch the full content!
             Text(_) | Body(_) => QueryScope::Full,
-            And(and_list) => and_list.as_ref().iter().fold(QueryScope::Index, |prev, sk| {
-                prev.union(&Criteria(sk).query_scope())
-            }),
-            Not(inner) => Criteria(inner).query_scope(),
-            Or(left, right) => Criteria(left).query_scope().union(&Criteria(right).query_scope()),
+
             _ => QueryScope::Index,
         }
     }
 
-    pub fn filter_on_idx<'b>(&self, midx_list: &[MailIndex<'b>]) -> Vec<MailIndex<'b>> {
-        midx_list
+    /// Returns emails that we now for sure we want to keep
+    /// but also a second list of emails we need to investigate further by 
+    /// fetching some remote data
+    pub fn filter_on_idx<'b>(&self, midx_list: &[MailIndex<'b>]) -> (Vec<MailIndex<'b>>, Vec<MailIndex<'b>>) {
+        let (p1, p2): (Vec<_>, Vec<_>) = midx_list
             .iter()
-            .filter(|x| self.is_keep_on_idx(x).is_keep())
-            .map(|x| (*x).clone())
-            .collect::<Vec<_>>()
+            .map(|x| (x, self.is_keep_on_idx(x)))
+            .filter(|(_midx, decision)| decision.is_keep())
+            .map(|(midx, decision)| ((*midx).clone(), decision))
+            .partition(|(_midx, decision)| matches!(decision, PartialDecision::Keep));
+
+        let to_keep = p1.into_iter().map(|(v, _)| v).collect();
+        let to_fetch = p2.into_iter().map(|(v, _)| v).collect();
+        (to_keep, to_fetch)
     }
 
-    pub fn filter_on_query(&self, midx_list: &[MailIndex], query_result: &Vec<QueryResult<'_>>) -> Vec<MailIndex> {
-        unimplemented!();
+    pub fn filter_on_query<'b>(&self, midx_list: &[MailIndex<'b>], query_result: &Vec<QueryResult<'_>>) -> Vec<MailIndex<'b>> {
+        midx_list
+            .iter()
+            .zip(query_result.iter())
+            .filter(|(midx, qr)| self.is_keep_on_query(midx, qr))
+            .map(|(midx, _qr)| midx.clone())
+            .collect()
     }
 
     // ----
@@ -137,65 +155,37 @@ impl<'a> Criteria<'a> {
             All => PartialDecision::Keep,
 
             // Sequence logic
-            SequenceSet(seq_set) => seq_set.0.as_ref().iter().fold(PartialDecision::Discard, |acc, seq| {
-                let local_decision: PartialDecision = midx.is_in_sequence_i(seq).into();
-                acc.or(&local_decision)
-            }),
-            Uid(seq_set) => seq_set.0.as_ref().iter().fold(PartialDecision::Discard, |acc, seq| {
-                let local_decision: PartialDecision = midx.is_in_sequence_uid(seq).into();
-                acc.or(&local_decision)
-            }),
-
-            // Flag logic
-            Answered => midx.is_flag_set("\\Answered").into(),
-            Deleted => midx.is_flag_set("\\Deleted").into(),
-            Draft => midx.is_flag_set("\\Draft").into(),
-            Flagged => midx.is_flag_set("\\Flagged").into(),
-            Keyword(kw) => midx.is_flag_set(kw.inner()).into(),
-            New => {
-                let is_recent: PartialDecision = midx.is_flag_set("\\Recent").into();
-                let is_seen: PartialDecision = midx.is_flag_set("\\Seen").into();
-                is_recent.and(&is_seen.not())
-            },
-            Old => {
-                let is_recent: PartialDecision = midx.is_flag_set("\\Recent").into();
-                is_recent.not()
-            },
-            Recent =>  midx.is_flag_set("\\Recent").into(),
-            Seen =>  midx.is_flag_set("\\Seen").into(),
-            Unanswered =>  {
-                let is_answered: PartialDecision = midx.is_flag_set("\\Recent").into();
-                is_answered.not()
-            },
-            Undeleted => {
-                let is_deleted: PartialDecision = midx.is_flag_set("\\Deleted").into();
-                is_deleted.not()
-            },
-            Undraft => {
-                let is_draft: PartialDecision = midx.is_flag_set("\\Draft").into();
-                is_draft.not()
-            },
-            Unflagged => {
-                let is_flagged: PartialDecision = midx.is_flag_set("\\Flagged").into();
-                is_flagged.not()
-            },
-            Unkeyword(kw) => {
-                let is_keyword_set: PartialDecision = midx.is_flag_set(kw.inner()).into();
-                is_keyword_set.not()
-            },
-            Unseen => {
-                let is_seen: PartialDecision = midx.is_flag_set("\\Seen").into();
-                is_seen.not()
-            },
+            maybe_seq if is_sk_seq(maybe_seq) => is_keep_seq(maybe_seq, midx).into(),
+            maybe_flag if is_sk_flag(maybe_flag) => is_keep_flag(maybe_flag, midx).into(),
             
             // All the stuff we can't evaluate yet
             Bcc(_) | Cc(_) | From(_) | Header(..) | SentBefore(_) | SentOn(_) | SentSince(_)
             | Subject(_) | To(_) | Before(_) | On(_) | Since(_) | Larger(_) | Smaller(_)
             | Text(_) | Body(_) => PartialDecision::Postpone,
+
+            _ => unreachable!(),
+        }
+    }
+
+    fn is_keep_on_query(&self, midx: &MailIndex, qr: &QueryResult) -> bool {
+        use SearchKey::*;
+        match self.0 {
+            // Combinator logic
+            And(expr_list) => expr_list
+                .as_ref()
+                .iter()
+                .any(|cur| Criteria(cur).is_keep_on_query(midx, qr)),
+            Or(left, right) => {
+                Criteria(left).is_keep_on_query(midx, qr) || Criteria(right).is_keep_on_query(midx, qr)
+            }
+            Not(expr) => !Criteria(expr).is_keep_on_query(midx, qr),
+            All => true,
+            _ => unimplemented!(),
         }
     }
 }
 
+// ---- Sequence things ----
 fn sequence_set_all() -> SequenceSet {
     SequenceSet::from(Sequence::Range(
         SeqOrUid::Value(NonZeroU32::MIN),
@@ -223,6 +213,8 @@ fn approx_sequence_size(seq: &Sequence) -> u64 {
         }
     }
 }
+
+// --- Partial decision things ----
 
 enum PartialDecision {
     Keep,
@@ -264,5 +256,81 @@ impl PartialDecision {
 
     fn is_keep(&self) -> bool {
         !matches!(self, Self::Discard)
+    }
+}
+
+// ----- Search Key things ---
+fn is_sk_flag(sk: &SearchKey) -> bool {
+    use SearchKey::*;
+    match sk {
+        Answered | Deleted | Draft | Flagged | Keyword(..) | New | Old
+            | Recent | Seen | Unanswered | Undeleted | Undraft 
+            | Unflagged | Unkeyword(..) | Unseen => true,
+        _ => false,
+    }
+}
+
+fn is_keep_flag(sk: &SearchKey, midx: &MailIndex) -> bool {
+    use SearchKey::*;
+    match sk {
+        Answered => midx.is_flag_set("\\Answered"),
+        Deleted => midx.is_flag_set("\\Deleted"),
+        Draft => midx.is_flag_set("\\Draft"),
+        Flagged => midx.is_flag_set("\\Flagged"),
+        Keyword(kw) => midx.is_flag_set(kw.inner()),
+        New => {
+            let is_recent = midx.is_flag_set("\\Recent");
+            let is_seen = midx.is_flag_set("\\Seen");
+            is_recent && !is_seen
+        },
+        Old => {
+            let is_recent = midx.is_flag_set("\\Recent");
+            !is_recent
+        },
+        Recent =>  midx.is_flag_set("\\Recent"),
+        Seen =>  midx.is_flag_set("\\Seen"),
+        Unanswered =>  {
+            let is_answered = midx.is_flag_set("\\Recent");
+            !is_answered
+        },
+        Undeleted => {
+            let is_deleted = midx.is_flag_set("\\Deleted");
+            !is_deleted
+        },
+        Undraft => {
+            let is_draft = midx.is_flag_set("\\Draft");
+            !is_draft
+        },
+        Unflagged => {
+            let is_flagged = midx.is_flag_set("\\Flagged");
+            !is_flagged
+        },
+        Unkeyword(kw) => {
+            let is_keyword_set = midx.is_flag_set(kw.inner());
+            !is_keyword_set
+        },
+        Unseen => {
+            let is_seen = midx.is_flag_set("\\Seen");
+            !is_seen
+        },
+
+        // Not flag logic
+        _ => unreachable!(),
+    }
+}
+
+fn is_sk_seq(sk: &SearchKey) -> bool {
+    use SearchKey::*;
+    match sk {
+        SequenceSet(..) | Uid(..) => true,
+        _ => false,
+    }
+}
+fn is_keep_seq(sk: &SearchKey, midx: &MailIndex) -> bool {
+    use SearchKey::*;
+    match sk {
+        SequenceSet(seq_set) => seq_set.0.as_ref().iter().any(|seq| midx.is_in_sequence_i(seq)),
+        Uid(seq_set) => seq_set.0.as_ref().iter().any(|seq| midx.is_in_sequence_uid(seq)),
+        _ => unreachable!(),
     }
 }
