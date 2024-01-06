@@ -1,3 +1,6 @@
+use anyhow::{anyhow, Result};
+use chrono::naive::NaiveDate;
+
 use imap_codec::imap_types::core::{IString, NString};
 use imap_codec::imap_types::envelope::{Address, Envelope};
 
@@ -6,6 +9,10 @@ use eml_codec::imf;
 pub struct ImfView<'a>(pub &'a imf::Imf<'a>);
 
 impl<'a> ImfView<'a> {
+    pub fn naive_date(&self) -> Result<NaiveDate> {
+        Ok(self.0.date.ok_or(anyhow!("date is not set"))?.date_naive())
+    }
+
     /// Envelope rules are defined in RFC 3501, section 7.4.2
     /// https://datatracker.ietf.org/doc/html/rfc3501#section-7.4.2
     ///

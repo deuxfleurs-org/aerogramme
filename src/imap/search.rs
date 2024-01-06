@@ -220,19 +220,17 @@ impl<'a> Criteria<'a> {
             Smaller(size_ref) => mail_view.query_result.metadata().expect("metadata were fetched").rfc822_size < *size_ref as usize,
 
             // Filter on well-known headers
-            Bcc(_) => unimplemented!(), 
-            Cc(_) => unimplemented!(), 
-            From(_) => unimplemented!(),
-            Subject(_)=> unimplemented!(),
-            To(_) => unimplemented!(),
-
-            // Filter on arbitrary header
-            Header(..) => unimplemented!(),
+            Bcc(txt) => mail_view.is_header_contains_pattern(&b"bcc"[..], txt.as_ref()), 
+            Cc(txt) => mail_view.is_header_contains_pattern(&b"cc"[..], txt.as_ref()), 
+            From(txt) => mail_view.is_header_contains_pattern(&b"from"[..], txt.as_ref()),
+            Subject(txt)=> mail_view.is_header_contains_pattern(&b"subject"[..], txt.as_ref()),
+            To(txt) => mail_view.is_header_contains_pattern(&b"to"[..], txt.as_ref()),
+            Header(hdr, txt) =>  mail_view.is_header_contains_pattern(hdr.as_ref(), txt.as_ref()),
 
             // Filter on Date header
-            SentBefore(_) => unimplemented!(),
-            SentOn(_) => unimplemented!(), 
-            SentSince(_) => unimplemented!(),
+            SentBefore(search_naive) => mail_view.imf().map(|imf| imf.naive_date().ok()).flatten().map(|msg_naive| &msg_naive < search_naive.as_ref()).unwrap_or(false),
+            SentOn(search_naive) => mail_view.imf().map(|imf| imf.naive_date().ok()).flatten().map(|msg_naive| &msg_naive == search_naive.as_ref()).unwrap_or(false), 
+            SentSince(search_naive) => mail_view.imf().map(|imf| imf.naive_date().ok()).flatten().map(|msg_naive| &msg_naive > search_naive.as_ref()).unwrap_or(false),
 
 
             // Filter on the full content of the email
