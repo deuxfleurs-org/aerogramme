@@ -451,10 +451,12 @@ mod tests {
     use std::fs;
 
     use crate::cryptoblob;
-    use crate::imap::mail_view::{FetchedMail, MailView};
+    use crate::imap::mail_view::MailView;
     use crate::imap::mime_view;
+    use crate::imap::index::MailIndex;
     use crate::mail::mailbox::MailMeta;
     use crate::mail::unique_ident;
+    use crate::mail::query::QueryResult;
 
     #[test]
     fn mailview_body_ext() -> Result<()> {
@@ -469,7 +471,6 @@ mod tests {
             false,
         );
 
-        let flags = vec![];
         let key = cryptoblob::gen_key();
         let meta = MailMeta {
             internaldate: 0u64,
@@ -477,20 +478,23 @@ mod tests {
             message_key: key,
             rfc822_size: 8usize,
         };
-        let ids = MailIndex {
+
+        let index_entry = (NonZeroU32::MIN, vec![]);
+        let mail_in_idx = MailIndex {
             i: NonZeroU32::MIN,
-            uid: NonZeroU32::MIN,
+            uid: index_entry.0,
             uuid: unique_ident::gen_ident(),
+            flags: &index_entry.1,
         };
         let rfc822 = b"Subject: hello\r\nFrom: a@a.a\r\nTo: b@b.b\r\nDate: Thu, 12 Oct 2023 08:45:28 +0000\r\n\r\nhello world";
-        let content = FetchedMail::new_from_message(eml_codec::parse_message(rfc822)?.1);
-
-        let mv = MailView {
-            ids: &ids,
-            content,
-            meta: &meta,
-            flags: &flags,
+        let qr = QueryResult::FullResult {
+            uuid: mail_in_idx.uuid.clone(),
+            index: &index_entry,
+            metadata: meta,
+            content: rfc822.to_vec(),
         };
+
+        let mv = MailView::new(&qr, mail_in_idx)?;
         let (res_body, _seen) = mv.filter(&ap)?;
 
         let fattr = match res_body {
