@@ -21,7 +21,7 @@ use crate::imap::attributes::AttributesProxy;
 use crate::imap::flags;
 use crate::imap::mail_view::{MailView, SeenFlag};
 use crate::imap::response::Body;
-//use crate::imap::search;
+use crate::imap::search;
 use crate::imap::index::Index;
 
 
@@ -259,8 +259,7 @@ impl MailboxView {
 
         // [2/6] Fetch the emails
         let uuids = mail_idx_list.iter().map(|midx| midx.uuid).collect::<Vec<_>>();
-        let query = self.0.query(&uuids, query_scope);
-        let query_result = query.fetch().await?;
+        let query_result = self.0.query(&uuids, query_scope).fetch().await?;
             
         // [3/6] Derive an IMAP-specific view from the results, apply the filters
         let views = query_result.iter()
@@ -268,13 +267,18 @@ impl MailboxView {
             .map(|(qr, midx)| MailView::new(qr, midx))
             .collect::<Result<Vec<_>, _>>()?;
 
-        // [4/6] Apply the IMAP transformation to keep only relevant fields
+        // [4/6] Apply the IMAP transformation, bubble up any error
+        // We get 2 results:
+        //   - The one we send to the client
+        //   - The \Seen flags we must set internally
         let (flag_mgmt, imap_ret): (Vec<_>, Vec<_>) = views
             .iter()
-            .filter_map(|mv| mv.filter(&ap).ok().map(|(body, seen)| ((mv, seen), body)))
+            .map(|mv| mv.filter(&ap).map(|(body, seen)| ((mv, seen), body)))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
             .unzip();
 
-        // [5/6] Register seen flags
+        // [5/6] Register the \Seen flags
         flag_mgmt
             .iter()
             .filter(|(_mv, seen)| matches!(seen, SeenFlag::MustAdd))
@@ -293,30 +297,37 @@ impl MailboxView {
         Ok(imap_ret)
     }
 
-    /// A very naive search implementation...
+    /// A naive search implementation...
     pub async fn search<'a>(
         &self,
         _charset: &Option<Charset<'a>>,
-        _search_key: &SearchKey<'a>,
-        _uid: bool,
+        search_key: &SearchKey<'a>,
+        uid: bool,
     ) -> Result<Vec<Body<'static>>> {
-        /*
         // 1. Compute the subset of sequence identifiers we need to fetch
-        let query = search::Criteria(search_key);
-        let (seq_set, seq_type) = query.to_sequence_set();
-        let mailids = MailIdentifiersList(self.get_mail_ids(&seq_set, seq_type.is_uid())?);
-        let mail_u32 = match uid {
-            true => mailids.uids(),
-            _ => mailids.ids(),
+        // based on the search query
+        let crit = search::Criteria(search_key);
+        let (seq_set, seq_type) = crit.to_sequence_set();
+
+        // 2. Get the selection
+        let selection = self.index().fetch(&seq_set, seq_type.is_uid())?;
+
+        // 3. Filter the selection based on the ID / UID / Flags
+
+        // 4. If needed, filter the selection based on the metadata
+        let _need_meta = crit.need_meta();
+
+        // 5. If needed, filter the selection based on the body
+        let _need_body = crit.need_body();
+
+        // 6. Format the result according to the client's taste:
+        // either return UID or ID.
+        let selection_fmt = match uid {
+            true => selection.into_iter().map(|in_idx| in_idx.uid).collect(),
+            _ => selection.into_iter().map(|in_idx| in_idx.i).collect(),
         };
 
-        // 2. Compute wether we will need to fetch the mail meta and/or the body
-        let _need_meta = query.need_meta();
-        let _need_body = query.need_body();
-
-        Ok(vec![Body::Data(Data::Search(mail_u32))])
-        */
-        unimplemented!()
+        Ok(vec![Body::Data(Data::Search(selection_fmt))])
     }
 
     // ----

@@ -21,7 +21,7 @@ pub enum QueryScope {
 }
 
 impl<'a,'b> Query<'a,'b> {
-    pub async fn fetch(&self) -> Result<Vec<QueryResult>> {
+    pub async fn fetch(&self) -> Result<Vec<QueryResult<'a>>> {
         match self.scope {
             QueryScope::Index => self.index(),
             QueryScope::Partial => self.partial().await,
@@ -31,7 +31,7 @@ impl<'a,'b> Query<'a,'b> {
 
     // --- functions below are private *for reasons*
 
-    fn index(&self) -> Result<Vec<QueryResult>> {
+    fn index(&self) -> Result<Vec<QueryResult<'a>>> {
         self
             .emails
             .iter()
@@ -47,7 +47,7 @@ impl<'a,'b> Query<'a,'b> {
             .collect::<Result<Vec<_>, _>>()
     }
 
-    async fn partial(&self) -> Result<Vec<QueryResult>> {
+    async fn partial(&self) -> Result<Vec<QueryResult<'a>>> {
         let meta = self.frozen.mailbox.fetch_meta(self.emails).await?;
         let result = meta
             .into_iter()
@@ -61,7 +61,7 @@ impl<'a,'b> Query<'a,'b> {
     /// AND GENERATE SO MUCH NETWORK TRAFFIC.
     /// THIS FUNCTION SHOULD BE REWRITTEN, FOR EXAMPLE WITH
     /// SOMETHING LIKE AN ITERATOR
-    async fn full(&self) -> Result<Vec<QueryResult>> {
+    async fn full(&self) -> Result<Vec<QueryResult<'a>>> {
         let meta_list = self.partial().await?;
         meta_list
             .into_iter()
