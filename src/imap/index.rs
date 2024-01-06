@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 
 use anyhow::{anyhow, bail, Result};
-use imap_codec::imap_types::sequence::{self, SequenceSet};
+use imap_codec::imap_types::sequence::{self, Sequence, SequenceSet, SeqOrUid};
 
 use crate::mail::uidindex::{ImapUid, UidIndex};
 use crate::mail::unique_ident::UniqueIdent;
@@ -87,9 +87,47 @@ impl<'a> Index<'a> {
     }
 }
 
+#[derive(Clone)]
 pub struct MailIndex<'a> {
     pub i: NonZeroU32,
     pub uid: ImapUid,
     pub uuid: UniqueIdent,
     pub flags: &'a Vec<String>,
+}
+
+impl<'a> MailIndex<'a> {
+    // The following functions are used to implement the SEARCH command    
+    pub fn is_in_sequence_i(&self, seq: &Sequence) -> bool {
+        match seq {
+            Sequence::Single(SeqOrUid::Asterisk) => true,
+            Sequence::Single(SeqOrUid::Value(target)) => target == &self.i,
+            Sequence::Range(SeqOrUid::Asterisk, SeqOrUid::Value(x)) 
+                | Sequence::Range(SeqOrUid::Value(x), SeqOrUid::Asterisk) => x <= &self.i,
+            Sequence::Range(SeqOrUid::Value(x1), SeqOrUid::Value(x2)) => if x1 < x2 {
+                x1 <= &self.i && &self.i <= x2
+            } else {
+                x1 >= &self.i && &self.i >= x2
+            },
+            Sequence::Range(SeqOrUid::Asterisk, SeqOrUid::Asterisk) => true,
+        }
+    }
+
+    pub fn is_in_sequence_uid(&self, seq: &Sequence) -> bool {
+        match seq {
+            Sequence::Single(SeqOrUid::Asterisk) => true,
+            Sequence::Single(SeqOrUid::Value(target)) => target == &self.uid,
+            Sequence::Range(SeqOrUid::Asterisk, SeqOrUid::Value(x))
+                | Sequence::Range(SeqOrUid::Value(x),SeqOrUid::Asterisk) => x <= &self.uid,
+            Sequence::Range(SeqOrUid::Value(x1), SeqOrUid::Value(x2)) => if x1 < x2 {
+                x1 <= &self.uid && &self.uid <= x2
+            } else {
+                x1 >= &self.uid && &self.uid >= x2
+            },
+            Sequence::Range(SeqOrUid::Asterisk, SeqOrUid::Asterisk) => true,
+        }
+    }
+
+    pub fn is_flag_set(&self, flag: &str) -> bool {
+        self.flags.iter().any(|candidate| candidate.as_str() == flag)
+    }
 }

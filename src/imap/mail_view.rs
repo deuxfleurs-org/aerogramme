@@ -52,6 +52,44 @@ impl<'a> MailView<'a> {
         })
     }
 
+    pub fn filter(&self, ap: &AttributesProxy) -> Result<(Body<'static>, SeenFlag)> {
+        let mut seen = SeenFlag::DoNothing;
+        let res_attrs = ap
+            .attrs
+            .iter()
+            .map(|attr| match attr {
+                MessageDataItemName::Uid => Ok(self.uid()),
+                MessageDataItemName::Flags => Ok(self.flags()),
+                MessageDataItemName::Rfc822Size => self.rfc_822_size(),
+                MessageDataItemName::Rfc822Header => self.rfc_822_header(),
+                MessageDataItemName::Rfc822Text => self.rfc_822_text(),
+                MessageDataItemName::Rfc822 => self.rfc822(),
+                MessageDataItemName::Envelope => Ok(self.envelope()),
+                MessageDataItemName::Body => self.body(),
+                MessageDataItemName::BodyStructure => self.body_structure(),
+                MessageDataItemName::BodyExt {
+                    section,
+                    partial,
+                    peek,
+                } => {
+                    let (body, has_seen) = self.body_ext(section, partial, peek)?;
+                    seen = has_seen;
+                    Ok(body)
+                }
+                MessageDataItemName::InternalDate => self.internal_date(),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok((
+            Body::Data(Data::Fetch {
+                seq: self.in_idx.i,
+                items: res_attrs.try_into()?,
+            }),
+            seen,
+        ))
+    }
+
+    // Private function, mainly for filter!
     fn uid(&self) -> MessageDataItem<'static> {
         MessageDataItem::Uid(self.in_idx.uid.clone())
     }
@@ -168,42 +206,6 @@ impl<'a> MailView<'a> {
         Ok(MessageDataItem::InternalDate(DateTime::unvalidated(dt)))
     }
 
-    pub fn filter(&self, ap: &AttributesProxy) -> Result<(Body<'static>, SeenFlag)> {
-        let mut seen = SeenFlag::DoNothing;
-        let res_attrs = ap
-            .attrs
-            .iter()
-            .map(|attr| match attr {
-                MessageDataItemName::Uid => Ok(self.uid()),
-                MessageDataItemName::Flags => Ok(self.flags()),
-                MessageDataItemName::Rfc822Size => self.rfc_822_size(),
-                MessageDataItemName::Rfc822Header => self.rfc_822_header(),
-                MessageDataItemName::Rfc822Text => self.rfc_822_text(),
-                MessageDataItemName::Rfc822 => self.rfc822(),
-                MessageDataItemName::Envelope => Ok(self.envelope()),
-                MessageDataItemName::Body => self.body(),
-                MessageDataItemName::BodyStructure => self.body_structure(),
-                MessageDataItemName::BodyExt {
-                    section,
-                    partial,
-                    peek,
-                } => {
-                    let (body, has_seen) = self.body_ext(section, partial, peek)?;
-                    seen = has_seen;
-                    Ok(body)
-                }
-                MessageDataItemName::InternalDate => self.internal_date(),
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok((
-            Body::Data(Data::Fetch {
-                seq: self.in_idx.i,
-                items: res_attrs.try_into()?,
-            }),
-            seen,
-        ))
-    }
 }
 
 pub enum SeenFlag {

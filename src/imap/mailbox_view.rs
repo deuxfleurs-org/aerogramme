@@ -319,12 +319,18 @@ impl MailboxView {
         let selection = self.index().fetch(&seq_set, seq_type.is_uid())?;
 
         // 3. Filter the selection based on the ID / UID / Flags
+        let selection = crit.filter_on_idx(&selection);
 
-        // 4. If needed, filter the selection based on the metadata
-        let _need_meta = crit.need_meta();
+        // 4. Fetch additional info about the emails
+        let query_scope = crit.query_scope();
+        let uuids = selection
+            .iter()
+            .map(|midx| midx.uuid)
+            .collect::<Vec<_>>();
+        let query_result = self.0.query(&uuids, query_scope).fetch().await?;
 
         // 5. If needed, filter the selection based on the body
-        let _need_body = crit.need_body();
+        let selection = crit.filter_on_query(&selection, &query_result);
 
         // 6. Format the result according to the client's taste:
         // either return UID or ID.

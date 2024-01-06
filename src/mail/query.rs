@@ -19,6 +19,15 @@ pub enum QueryScope {
     Partial,
     Full,
 }
+impl QueryScope {
+    pub fn union(&self, other: &QueryScope) -> QueryScope {
+        match (self, other) {
+            (QueryScope::Full, _) | (_, QueryScope::Full) => QueryScope::Full,
+            (QueryScope::Partial, _) | (_, QueryScope::Partial) => QueryScope::Partial,
+            (QueryScope::Index, QueryScope::Index) => QueryScope::Index,
+        }
+    }
+}
 
 impl<'a, 'b> Query<'a, 'b> {
     pub async fn fetch(&self) -> Result<Vec<QueryResult<'a>>> {

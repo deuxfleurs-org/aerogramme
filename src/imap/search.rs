@@ -3,6 +3,9 @@ use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
 use std::num::NonZeroU32;
 
+use crate::mail::query::{QueryScope, QueryResult};
+use crate::imap::index::MailIndex;
+
 pub enum SeqType {
     Undefined,
     NonUid,
@@ -54,6 +57,10 @@ impl<'a> Criteria<'a> {
                 tracing::debug!(
                     "using AND in a search request is slow: no intersection is performed"
                 );
+                // As we perform no intersection, we don't care if we mix uid or id.
+                // We only keep the smallest range, being it ID or UID, depending of
+                // which one has the less items. This is an approximation as UID ranges
+                // can have holes while ID ones can't.
                 search_list
                     .as_ref()
                     .iter()
@@ -72,31 +79,119 @@ impl<'a> Criteria<'a> {
     /// Not really clever as we can have cases where we filter out
     /// the email before needing to inspect its meta.
     /// But for now we are seeking the most basic/stupid algorithm.
-    pub fn need_meta(&self) -> bool {
+    pub fn query_scope(&self) -> QueryScope {
         use SearchKey::*;
         match self.0 {
             // IMF Headers
             Bcc(_) | Cc(_) | From(_) | Header(..) | SentBefore(_) | SentOn(_) | SentSince(_)
-            | Subject(_) | To(_) => true,
+            | Subject(_) | To(_) => QueryScope::Partial,
             // Internal Date is also stored in MailMeta
-            Before(_) | On(_) | Since(_) => true,
+            Before(_) | On(_) | Since(_) => QueryScope::Partial,
             // Message size is also stored in MailMeta
-            Larger(_) | Smaller(_) => true,
-            And(and_list) => and_list.as_ref().iter().any(|sk| Criteria(sk).need_meta()),
-            Not(inner) => Criteria(inner).need_meta(),
-            Or(left, right) => Criteria(left).need_meta() || Criteria(right).need_meta(),
-            _ => false,
+            Larger(_) | Smaller(_) => QueryScope::Partial,
+            // Text and Body require that we fetch the full content!
+            Text(_) | Body(_) => QueryScope::Full,
+            And(and_list) => and_list.as_ref().iter().fold(QueryScope::Index, |prev, sk| {
+                prev.union(&Criteria(sk).query_scope())
+            }),
+            Not(inner) => Criteria(inner).query_scope(),
+            Or(left, right) => Criteria(left).query_scope().union(&Criteria(right).query_scope()),
+            _ => QueryScope::Index,
         }
     }
 
-    pub fn need_body(&self) -> bool {
+    pub fn filter_on_idx<'b>(&self, midx_list: &[MailIndex<'b>]) -> Vec<MailIndex<'b>> {
+        midx_list
+            .iter()
+            .filter(|x| self.is_keep_on_idx(x).is_keep())
+            .map(|x| (*x).clone())
+            .collect::<Vec<_>>()
+    }
+
+    pub fn filter_on_query(&self, midx_list: &[MailIndex], query_result: &Vec<QueryResult<'_>>) -> Vec<MailIndex> {
+        unimplemented!();
+    }
+
+    // ----
+    
+    /// Here we are doing a partial filtering: we do not have access 
+    /// to the headers or to the body, so every time we encounter a rule
+    /// based on them, we need to keep it.
+    ///
+    /// @TODO Could be optimized on a per-email basis by also returning the QueryScope
+    /// when more information is needed!
+    fn is_keep_on_idx(&self, midx: &MailIndex) -> PartialDecision {
         use SearchKey::*;
         match self.0 {
-            Text(_) | Body(_) => true,
-            And(and_list) => and_list.as_ref().iter().any(|sk| Criteria(sk).need_body()),
-            Not(inner) => Criteria(inner).need_body(),
-            Or(left, right) => Criteria(left).need_body() || Criteria(right).need_body(),
-            _ => false,
+            // Combinator logic
+            And(expr_list) => expr_list
+                .as_ref()
+                .iter()
+                .fold(PartialDecision::Keep, |acc, cur| acc.and(&Criteria(cur).is_keep_on_idx(midx))),
+            Or(left, right) => {
+                let left_decision = Criteria(left).is_keep_on_idx(midx);
+                let right_decision = Criteria(right).is_keep_on_idx(midx);
+                left_decision.or(&right_decision)
+            }
+            Not(expr) => Criteria(expr).is_keep_on_idx(midx).not(),
+            All => PartialDecision::Keep,
+
+            // Sequence logic
+            SequenceSet(seq_set) => seq_set.0.as_ref().iter().fold(PartialDecision::Discard, |acc, seq| {
+                let local_decision: PartialDecision = midx.is_in_sequence_i(seq).into();
+                acc.or(&local_decision)
+            }),
+            Uid(seq_set) => seq_set.0.as_ref().iter().fold(PartialDecision::Discard, |acc, seq| {
+                let local_decision: PartialDecision = midx.is_in_sequence_uid(seq).into();
+                acc.or(&local_decision)
+            }),
+
+            // Flag logic
+            Answered => midx.is_flag_set("\\Answered").into(),
+            Deleted => midx.is_flag_set("\\Deleted").into(),
+            Draft => midx.is_flag_set("\\Draft").into(),
+            Flagged => midx.is_flag_set("\\Flagged").into(),
+            Keyword(kw) => midx.is_flag_set(kw.inner()).into(),
+            New => {
+                let is_recent: PartialDecision = midx.is_flag_set("\\Recent").into();
+                let is_seen: PartialDecision = midx.is_flag_set("\\Seen").into();
+                is_recent.and(&is_seen.not())
+            },
+            Old => {
+                let is_recent: PartialDecision = midx.is_flag_set("\\Recent").into();
+                is_recent.not()
+            },
+            Recent =>  midx.is_flag_set("\\Recent").into(),
+            Seen =>  midx.is_flag_set("\\Seen").into(),
+            Unanswered =>  {
+                let is_answered: PartialDecision = midx.is_flag_set("\\Recent").into();
+                is_answered.not()
+            },
+            Undeleted => {
+                let is_deleted: PartialDecision = midx.is_flag_set("\\Deleted").into();
+                is_deleted.not()
+            },
+            Undraft => {
+                let is_draft: PartialDecision = midx.is_flag_set("\\Draft").into();
+                is_draft.not()
+            },
+            Unflagged => {
+                let is_flagged: PartialDecision = midx.is_flag_set("\\Flagged").into();
+                is_flagged.not()
+            },
+            Unkeyword(kw) => {
+                let is_keyword_set: PartialDecision = midx.is_flag_set(kw.inner()).into();
+                is_keyword_set.not()
+            },
+            Unseen => {
+                let is_seen: PartialDecision = midx.is_flag_set("\\Seen").into();
+                is_seen.not()
+            },
+            
+            // All the stuff we can't evaluate yet
+            Bcc(_) | Cc(_) | From(_) | Header(..) | SentBefore(_) | SentOn(_) | SentSince(_)
+            | Subject(_) | To(_) | Before(_) | On(_) | Since(_) | Larger(_) | Smaller(_)
+            | Text(_) | Body(_) => PartialDecision::Postpone,
         }
     }
 }
@@ -126,5 +221,48 @@ fn approx_sequence_size(seq: &Sequence) -> u64 {
             let x1 = x1.get() as i64;
             (x2 - x1).abs().try_into().unwrap_or(1)
         }
+    }
+}
+
+enum PartialDecision {
+    Keep,
+    Discard,
+    Postpone,
+}
+impl From<bool>  for PartialDecision {
+    fn from(x: bool) -> Self {
+        match x {
+            true => PartialDecision::Keep,
+            _ => PartialDecision::Discard,
+        }
+    }
+}
+impl PartialDecision {
+    fn not(&self) -> Self {
+        match self {
+            Self::Keep => Self::Discard,
+            Self::Discard => Self::Keep,
+            Self::Postpone => Self::Postpone,
+        }
+    }
+
+    fn or(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Postpone, _) | (_, Self::Postpone) => Self::Postpone,
+            (Self::Keep, _) | (_, Self::Keep) => Self::Keep,
+            (Self::Discard, Self::Discard) => Self::Discard,
+        }
+    }
+
+    fn and(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Postpone, _) | (_, Self::Postpone) => Self::Postpone,
+            (Self::Discard, _) | (_, Self::Discard) => Self::Discard,
+            (Self::Keep, Self::Keep) => Self::Keep,
+        }
+    }
+
+    fn is_keep(&self) -> bool {
+        !matches!(self, Self::Discard)
     }
 }
