@@ -82,6 +82,10 @@ impl Mailbox {
         self.mbox.read().await.fetch_full(id, message_key).await
     }
 
+    pub async fn frozen(self: &std::sync::Arc<Self>) -> super::snapshot::FrozenMailbox {
+        super::snapshot::FrozenMailbox::new(self.clone()).await
+    }
+
     // ---- Functions for changing the mailbox ----
 
     /// Add flags to message
@@ -149,7 +153,6 @@ impl Mailbox {
 
     /// Move an email from an other Mailbox to this mailbox
     /// (use this when possible, as it allows for a certain number of storage optimizations)
-    #[allow(dead_code)]
     pub async fn move_from(&self, from: &Mailbox, uuid: UniqueIdent) -> Result<()> {
         if self.id == from.id {
             bail!("Cannot copy move same mailbox");
@@ -403,8 +406,6 @@ impl MailboxInternal {
         Ok(new_id)
     }
 
-    #[allow(dead_code)]
-    // 2023-05-15 will probably be used later
     async fn move_from(&mut self, from: &mut MailboxInternal, id: UniqueIdent) -> Result<()> {
         self.copy_internal(from, id, id).await?;
         from.delete(id).await?;

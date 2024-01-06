@@ -3,6 +3,8 @@ use std::io::Write;
 
 pub mod incoming;
 pub mod mailbox;
+pub mod query;
+pub mod snapshot;
 pub mod uidindex;
 pub mod unique_ident;
 pub mod user;

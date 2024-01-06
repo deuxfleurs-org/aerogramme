@@ -9,6 +9,7 @@ use crate::mail::unique_ident::UniqueIdent;
 pub type ImapUid = NonZeroU32;
 pub type ImapUidvalidity = NonZeroU32;
 pub type Flag = String;
+pub type IndexEntry = (ImapUid, Vec<Flag>);
 
 /// A UidIndex handles the mutable part of a mailbox
 /// It is built by running the event log on it
@@ -18,7 +19,7 @@ pub type Flag = String;
 #[derive(Clone)]
 pub struct UidIndex {
     // Source of trust
-    pub table: OrdMap<UniqueIdent, (ImapUid, Vec<Flag>)>,
+    pub table: OrdMap<UniqueIdent, IndexEntry>,
 
     // Indexes optimized for queries
     pub idx_by_uid: OrdMap<ImapUid, UniqueIdent>,

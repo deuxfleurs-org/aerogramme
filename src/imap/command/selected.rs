@@ -136,21 +136,23 @@ impl<'a> SelectedContext<'a> {
 
     pub async fn search(
         self,
-        _charset: &Option<Charset<'a>>,
-        _criteria: &SearchKey<'a>,
-        _uid: &bool,
+        charset: &Option<Charset<'a>>,
+        criteria: &SearchKey<'a>,
+        uid: &bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
+        let found = self.mailbox.search(charset, criteria, *uid).await?;
         Ok((
             Response::build()
                 .to_req(self.req)
-                .message("Not implemented")
-                .bad()?,
+                .set_body(found)
+                .message("SEARCH completed")
+                .ok()?,
             flow::Transition::None,
         ))
     }
 
     pub async fn noop(self) -> Result<(Response<'static>, flow::Transition)> {
-        self.mailbox.mailbox.force_sync().await?;
+        self.mailbox.0.mailbox.force_sync().await?;
 
         let updates = self.mailbox.update().await?;
         Ok((
