@@ -3,16 +3,16 @@ use std::sync::Arc;
 use anyhow::Result;
 
 use super::mailbox::Mailbox;
+use super::query::{Query, QueryScope};
 use super::uidindex::UidIndex;
 use super::unique_ident::UniqueIdent;
-use super::query::{Query, QueryScope};
 
 /// A Frozen Mailbox has a snapshot of the current mailbox
 /// state that is desynchronized with the real mailbox state.
 /// It's up to the user to choose when their snapshot must be updated
 /// to give useful information to their clients
 ///
-/// 
+///
 pub struct FrozenMailbox {
     pub mailbox: Arc<Mailbox>,
     pub snapshot: UidIndex,
@@ -46,17 +46,17 @@ impl FrozenMailbox {
     /// Update the FrozenMailbox local snapshot.
     /// Returns the old snapshot, so you can build a diff
     pub async fn update(&mut self) -> UidIndex {
-       let old_snapshot = self.snapshot.clone();
-       self.snapshot = self.mailbox.current_uid_index().await;
+        let old_snapshot = self.snapshot.clone();
+        self.snapshot = self.mailbox.current_uid_index().await;
 
-       old_snapshot
+        old_snapshot
     }
 
     pub fn query<'a, 'b>(&'a self, uuids: &'b [UniqueIdent], scope: QueryScope) -> Query<'a, 'b> {
         Query {
-           frozen: self,
-           emails: uuids,
-           scope,
+            frozen: self,
+            emails: uuids,
+            scope,
         }
     }
 }

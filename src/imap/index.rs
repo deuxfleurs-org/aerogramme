@@ -8,7 +8,11 @@ use crate::mail::unique_ident::UniqueIdent;
 
 pub struct Index<'a>(pub &'a UidIndex);
 impl<'a> Index<'a> {
-    pub fn fetch(self: &Index<'a>, sequence_set: &SequenceSet, by_uid: bool) -> Result<Vec<MailIndex<'a>>> {
+    pub fn fetch(
+        self: &Index<'a>,
+        sequence_set: &SequenceSet,
+        by_uid: bool,
+    ) -> Result<Vec<MailIndex<'a>>> {
         let mail_vec = self
             .0
             .idx_by_uid
@@ -37,7 +41,13 @@ impl<'a> Index<'a> {
                             i: NonZeroU32::try_from(i as u32 + 1).unwrap(),
                             uid: mail.0,
                             uuid: mail.1,
-                            flags: self.0.table.get(&mail.1).ok_or(anyhow!("mail is missing from index"))?.1.as_ref(),
+                            flags: self
+                                .0
+                                .table
+                                .get(&mail.1)
+                                .ok_or(anyhow!("mail is missing from index"))?
+                                .1
+                                .as_ref(),
                         });
                     }
                 } else {
@@ -59,7 +69,13 @@ impl<'a> Index<'a> {
                         i,
                         uid: mail.0,
                         uuid: mail.1,
-                        flags: self.0.table.get(&mail.1).ok_or(anyhow!("mail is missing from index"))?.1.as_ref(),
+                        flags: self
+                            .0
+                            .table
+                            .get(&mail.1)
+                            .ok_or(anyhow!("mail is missing from index"))?
+                            .1
+                            .as_ref(),
                     });
                 } else {
                     bail!("No such mail: {}", i);
@@ -68,7 +84,6 @@ impl<'a> Index<'a> {
         }
 
         Ok(mails)
-
     }
 }
 
@@ -76,5 +91,5 @@ pub struct MailIndex<'a> {
     pub i: NonZeroU32,
     pub uid: ImapUid,
     pub uuid: UniqueIdent,
-    pub flags: &'a Vec<String>
+    pub flags: &'a Vec<String>,
 }

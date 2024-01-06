@@ -76,7 +76,8 @@ impl<'a> Criteria<'a> {
         use SearchKey::*;
         match self.0 {
             // IMF Headers
-            Bcc(_) | Cc(_) | From(_) | Header(..) | SentBefore(_) | SentOn(_) | SentSince(_) | Subject(_) | To(_) => true,
+            Bcc(_) | Cc(_) | From(_) | Header(..) | SentBefore(_) | SentOn(_) | SentSince(_)
+            | Subject(_) | To(_) => true,
             // Internal Date is also stored in MailMeta
             Before(_) | On(_) | Since(_) => true,
             // Message size is also stored in MailMeta

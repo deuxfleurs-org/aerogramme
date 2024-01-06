@@ -13,17 +13,16 @@ use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::SequenceSet;
 
 use crate::mail::mailbox::Mailbox;
-use crate::mail::snapshot::FrozenMailbox;
 use crate::mail::query::QueryScope;
+use crate::mail::snapshot::FrozenMailbox;
 use crate::mail::uidindex::{ImapUid, ImapUidvalidity};
 
 use crate::imap::attributes::AttributesProxy;
 use crate::imap::flags;
+use crate::imap::index::Index;
 use crate::imap::mail_view::{MailView, SeenFlag};
 use crate::imap::response::Body;
 use crate::imap::search;
-use crate::imap::index::Index;
-
 
 const DEFAULT_FLAGS: [Flag; 5] = [
     Flag::Seen,
@@ -40,7 +39,7 @@ const DEFAULT_FLAGS: [Flag; 5] = [
 /// To do this, it keeps a variable `known_state` that corresponds to
 /// what the client knows, and produces IMAP messages to be sent to the
 /// client that go along updates to `known_state`.
-pub struct MailboxView (pub FrozenMailbox);
+pub struct MailboxView(pub FrozenMailbox);
 
 impl MailboxView {
     /// Creates a new IMAP view into a mailbox.
@@ -258,11 +257,15 @@ impl MailboxView {
         let mail_idx_list = self.index().fetch(sequence_set, *is_uid_fetch)?;
 
         // [2/6] Fetch the emails
-        let uuids = mail_idx_list.iter().map(|midx| midx.uuid).collect::<Vec<_>>();
+        let uuids = mail_idx_list
+            .iter()
+            .map(|midx| midx.uuid)
+            .collect::<Vec<_>>();
         let query_result = self.0.query(&uuids, query_scope).fetch().await?;
-            
+
         // [3/6] Derive an IMAP-specific view from the results, apply the filters
-        let views = query_result.iter()
+        let views = query_result
+            .iter()
             .zip(mail_idx_list.into_iter())
             .map(|(qr, midx)| MailView::new(qr, midx))
             .collect::<Result<Vec<_>, _>>()?;
@@ -284,7 +287,10 @@ impl MailboxView {
             .filter(|(_mv, seen)| matches!(seen, SeenFlag::MustAdd))
             .map(|(mv, _seen)| async move {
                 let seen_flag = Flag::Seen.to_string();
-                self.0.mailbox.add_flags(*mv.query_result.uuid(), &[seen_flag]).await?;
+                self.0
+                    .mailbox
+                    .add_flags(*mv.query_result.uuid(), &[seen_flag])
+                    .await?;
                 Ok::<_, anyhow::Error>(())
             })
             .collect::<FuturesOrdered<_>>()
@@ -399,7 +405,8 @@ impl MailboxView {
 
         // 1. Collecting all the possible flags in the mailbox
         // 1.a Fetch them from our index
-        let mut known_flags: Vec<Flag> = self.0
+        let mut known_flags: Vec<Flag> = self
+            .0
             .snapshot
             .idx_by_flag
             .flags()
@@ -440,7 +447,8 @@ impl MailboxView {
 
     pub(crate) fn unseen_count(&self) -> usize {
         let total = self.0.snapshot.table.len();
-        let seen = self.0
+        let seen = self
+            .0
             .snapshot
             .idx_by_flag
             .get(&Flag::Seen.to_string())
@@ -462,12 +470,12 @@ mod tests {
     use std::fs;
 
     use crate::cryptoblob;
+    use crate::imap::index::MailIndex;
     use crate::imap::mail_view::MailView;
     use crate::imap::mime_view;
-    use crate::imap::index::MailIndex;
     use crate::mail::mailbox::MailMeta;
-    use crate::mail::unique_ident;
     use crate::mail::query::QueryResult;
+    use crate::mail::unique_ident;
 
     #[test]
     fn mailview_body_ext() -> Result<()> {

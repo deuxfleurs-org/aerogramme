@@ -16,15 +16,14 @@ use eml_codec::{
     part::{composite::Message, AnyPart},
 };
 
-
 use crate::mail::query::QueryResult;
 
 use crate::imap::attributes::AttributesProxy;
 use crate::imap::flags;
 use crate::imap::imf_view::message_envelope;
+use crate::imap::index::MailIndex;
 use crate::imap::mime_view;
 use crate::imap::response::Body;
-use crate::imap::index::MailIndex;
 
 pub struct MailView<'a> {
     pub in_idx: MailIndex<'a>,
@@ -39,18 +38,20 @@ impl<'a> MailView<'a> {
             query_result,
             content: match query_result {
                 QueryResult::FullResult { content, .. } => {
-                    let (_, parsed) = eml_codec::parse_message(&content).or(Err(anyhow!("Invalid mail body")))?;
+                    let (_, parsed) =
+                        eml_codec::parse_message(&content).or(Err(anyhow!("Invalid mail body")))?;
                     FetchedMail::new_from_message(parsed)
-                },
+                }
                 QueryResult::PartialResult { metadata, .. } => {
-                    let (_, parsed) = eml_codec::parse_imf(&metadata.headers).or(Err(anyhow!("unable to parse email headers")))?;
+                    let (_, parsed) = eml_codec::parse_imf(&metadata.headers)
+                        .or(Err(anyhow!("unable to parse email headers")))?;
                     FetchedMail::Partial(parsed)
                 }
                 QueryResult::IndexResult { .. } => FetchedMail::IndexOnly,
-            }
+            },
         })
     }
-    
+
     fn uid(&self) -> MessageDataItem<'static> {
         MessageDataItem::Uid(self.in_idx.uid.clone())
     }
@@ -66,12 +67,22 @@ impl<'a> MailView<'a> {
     }
 
     fn rfc_822_size(&self) -> Result<MessageDataItem<'static>> {
-        let sz = self.query_result.metadata().ok_or(anyhow!("mail metadata are required"))?.rfc822_size;
+        let sz = self
+            .query_result
+            .metadata()
+            .ok_or(anyhow!("mail metadata are required"))?
+            .rfc822_size;
         Ok(MessageDataItem::Rfc822Size(sz as u32))
     }
 
     fn rfc_822_header(&self) -> Result<MessageDataItem<'static>> {
-        let hdrs: NString = self.query_result.metadata().ok_or(anyhow!("mail metadata are required"))?.headers.to_vec().try_into()?;
+        let hdrs: NString = self
+            .query_result
+            .metadata()
+            .ok_or(anyhow!("mail metadata are required"))?
+            .headers
+            .to_vec()
+            .try_into()?;
         Ok(MessageDataItem::Rfc822Header(hdrs))
     }
 
@@ -142,7 +153,16 @@ impl<'a> MailView<'a> {
     fn internal_date(&self) -> Result<MessageDataItem<'static>> {
         let dt = Utc
             .fix()
-            .timestamp_opt(i64::try_from(self.query_result.metadata().ok_or(anyhow!("mail metadata were not fetched"))?.internaldate / 1000)?, 0)
+            .timestamp_opt(
+                i64::try_from(
+                    self.query_result
+                        .metadata()
+                        .ok_or(anyhow!("mail metadata were not fetched"))?
+                        .internaldate
+                        / 1000,
+                )?,
+                0,
+            )
             .earliest()
             .ok_or(anyhow!("Unable to parse internal date"))?;
         Ok(MessageDataItem::InternalDate(DateTime::unvalidated(dt)))
