@@ -323,10 +323,7 @@ impl MailboxView {
 
         // 4. Fetch additional info about the emails
         let query_scope = crit.query_scope();
-        let uuids = to_fetch
-            .iter()
-            .map(|midx| midx.uuid)
-            .collect::<Vec<_>>();
+        let uuids = to_fetch.iter().map(|midx| midx.uuid).collect::<Vec<_>>();
         let query_result = self.0.query(&uuids, query_scope).fetch().await?;
 
         // 5. If needed, filter the selection based on the body

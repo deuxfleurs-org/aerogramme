@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 
 use anyhow::{anyhow, bail, Result};
-use chrono::{Offset, TimeZone, Utc, DateTime as ChronoDateTime, Local, naive::NaiveDate};
+use chrono::{naive::NaiveDate, DateTime as ChronoDateTime, Local, Offset, TimeZone, Utc};
 
 use imap_codec::imap_types::core::NString;
 use imap_codec::imap_types::datetime::DateTime;
@@ -167,7 +167,11 @@ impl<'a> MailView<'a> {
     }
 
     fn envelope(&self) -> MessageDataItem<'static> {
-        MessageDataItem::Envelope(self.imf().expect("an imf object is derivable from fetchedmail").message_envelope())
+        MessageDataItem::Envelope(
+            self.imf()
+                .expect("an imf object is derivable from fetchedmail")
+                .message_envelope(),
+        )
     }
 
     fn body(&self) -> Result<MessageDataItem<'static>> {
@@ -237,7 +241,6 @@ impl<'a> MailView<'a> {
             .ok_or(anyhow!("Unable to parse internal date"))?;
         Ok(MessageDataItem::InternalDate(DateTime::unvalidated(dt)))
     }
-
 }
 
 pub enum SeenFlag {

@@ -40,40 +40,40 @@ impl<'a> ImfView<'a> {
 
         Envelope {
             date: NString(
-                      msg.date
-                      .as_ref()
-                      .map(|d| IString::try_from(d.to_rfc3339()).unwrap()),
-                      ),
-                      subject: NString(
-                          msg.subject
-                          .as_ref()
-                          .map(|d| IString::try_from(d.to_string()).unwrap()),
-                          ),
-                          sender: msg
-                              .sender
-                              .as_ref()
-                              .map(|v| vec![convert_mbx(v)])
-                              .unwrap_or(from.clone()),
-                              reply_to: if msg.reply_to.is_empty() {
-                                  from.clone()
-                              } else {
-                                  convert_addresses(&msg.reply_to)
-                              },
-                              from,
-                              to: convert_addresses(&msg.to),
-                              cc: convert_addresses(&msg.cc),
-                              bcc: convert_addresses(&msg.bcc),
-                              in_reply_to: NString(
-                                  msg.in_reply_to
-                                  .iter()
-                                  .next()
-                                  .map(|d| IString::try_from(d.to_string()).unwrap()),
-                                  ),
-                                  message_id: NString(
-                                      msg.msg_id
-                                      .as_ref()
-                                      .map(|d| IString::try_from(d.to_string()).unwrap()),
-                                      ),
+                msg.date
+                    .as_ref()
+                    .map(|d| IString::try_from(d.to_rfc3339()).unwrap()),
+            ),
+            subject: NString(
+                msg.subject
+                    .as_ref()
+                    .map(|d| IString::try_from(d.to_string()).unwrap()),
+            ),
+            sender: msg
+                .sender
+                .as_ref()
+                .map(|v| vec![convert_mbx(v)])
+                .unwrap_or(from.clone()),
+            reply_to: if msg.reply_to.is_empty() {
+                from.clone()
+            } else {
+                convert_addresses(&msg.reply_to)
+            },
+            from,
+            to: convert_addresses(&msg.to),
+            cc: convert_addresses(&msg.cc),
+            bcc: convert_addresses(&msg.bcc),
+            in_reply_to: NString(
+                msg.in_reply_to
+                    .iter()
+                    .next()
+                    .map(|d| IString::try_from(d.to_string()).unwrap()),
+            ),
+            message_id: NString(
+                msg.msg_id
+                    .as_ref()
+                    .map(|d| IString::try_from(d.to_string()).unwrap()),
+            ),
         }
     }
 }
