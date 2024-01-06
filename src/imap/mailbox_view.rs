@@ -330,7 +330,7 @@ impl MailboxView {
         let query_result = self.0.query(&uuids, query_scope).fetch().await?;
 
         // 5. If needed, filter the selection based on the body
-        let kept_query = crit.filter_on_query(&to_fetch, &query_result);
+        let kept_query = crit.filter_on_query(&to_fetch, &query_result)?;
 
         // 6. Format the result according to the client's taste:
         // either return UID or ID.

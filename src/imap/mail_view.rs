@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 
 use anyhow::{anyhow, bail, Result};
-use chrono::{Offset, TimeZone, Utc};
+use chrono::{Offset, TimeZone, Utc, DateTime as ChronoDateTime, Local, naive::NaiveDate};
 
 use imap_codec::imap_types::core::NString;
 use imap_codec::imap_types::datetime::DateTime;
@@ -20,7 +20,7 @@ use crate::mail::query::QueryResult;
 
 use crate::imap::attributes::AttributesProxy;
 use crate::imap::flags;
-use crate::imap::imf_view::message_envelope;
+use crate::imap::imf_view::ImfView;
 use crate::imap::index::MailIndex;
 use crate::imap::mime_view;
 use crate::imap::response::Body;
@@ -50,6 +50,10 @@ impl<'a> MailView<'a> {
                 QueryResult::IndexResult { .. } => FetchedMail::IndexOnly,
             },
         })
+    }
+
+    pub fn imf(&self) -> Option<ImfView> {
+        self.content.imf().map(ImfView)
     }
 
     pub fn filter(&self, ap: &AttributesProxy) -> Result<(Body<'static>, SeenFlag)> {
@@ -87,6 +91,16 @@ impl<'a> MailView<'a> {
             }),
             seen,
         ))
+    }
+
+    pub fn stored_naive_date(&self) -> Result<NaiveDate> {
+        let mail_meta = self.query_result.metadata().expect("metadata were fetched");
+        let mail_ts: i64 = mail_meta.internaldate.try_into()?;
+        let msg_date: ChronoDateTime<Local> = ChronoDateTime::from_timestamp(mail_ts, 0)
+            .ok_or(anyhow!("unable to parse timestamp"))?
+            .with_timezone(&Local);
+
+        Ok(msg_date.date_naive())
     }
 
     // Private function, mainly for filter!
@@ -135,7 +149,7 @@ impl<'a> MailView<'a> {
     }
 
     fn envelope(&self) -> MessageDataItem<'static> {
-        MessageDataItem::Envelope(message_envelope(self.content.imf().clone()))
+        MessageDataItem::Envelope(self.imf().expect("an imf object is derivable from fetchedmail").message_envelope())
     }
 
     fn body(&self) -> Result<MessageDataItem<'static>> {
@@ -239,11 +253,11 @@ impl<'a> FetchedMail<'a> {
         }
     }
 
-    fn imf(&self) -> &imf::Imf<'a> {
+    fn imf(&self) -> Option<&imf::Imf<'a>> {
         match self {
-            FetchedMail::Full(AnyPart::Msg(x)) => &x.imf,
-            FetchedMail::Partial(x) => &x,
-            _ => panic!("Can't contain AnyPart that is not a message"),
+            FetchedMail::Full(AnyPart::Msg(x)) => Some(&x.imf),
+            FetchedMail::Partial(x) => Some(&x),
+            _ => None,
         }
     }
 }

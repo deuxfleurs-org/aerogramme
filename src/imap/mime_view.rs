@@ -12,7 +12,7 @@ use eml_codec::{
     header, mime, mime::r#type::Deductible, part::composite, part::discrete, part::AnyPart,
 };
 
-use crate::imap::imf_view::message_envelope;
+use crate::imap::imf_view::ImfView;
 
 pub enum BodySection<'a> {
     Full(Cow<'a, [u8]>),
@@ -347,7 +347,7 @@ impl<'a> NodeMsg<'a> {
             body: FetchBody {
                 basic,
                 specific: SpecificFields::Message {
-                    envelope: Box::new(message_envelope(&self.1.imf)),
+                    envelope: Box::new(ImfView(&self.1.imf).message_envelope()),
                     body_structure: Box::new(NodeMime(&self.1.child).structure()?),
                     number_of_lines: nol(self.1.raw_part),
                 },

@@ -1,10 +1,13 @@
+use std::num::NonZeroU32;
+
+use anyhow::Result;
 use imap_codec::imap_types::core::NonEmptyVec;
 use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
-use std::num::NonZeroU32;
 
 use crate::mail::query::{QueryScope, QueryResult};
 use crate::imap::index::MailIndex;
+use crate::imap::mail_view::MailView;
 
 pub enum SeqType {
     Undefined,
@@ -121,13 +124,16 @@ impl<'a> Criteria<'a> {
         (to_keep, to_fetch)
     }
 
-    pub fn filter_on_query<'b>(&self, midx_list: &[MailIndex<'b>], query_result: &Vec<QueryResult<'_>>) -> Vec<MailIndex<'b>> {
-        midx_list
+    pub fn filter_on_query<'b>(&self, midx_list: &[MailIndex<'b>], query_result: &'b Vec<QueryResult<'b>>) -> Result<Vec<MailIndex<'b>>> {
+        Ok(midx_list
             .iter()
             .zip(query_result.iter())
-            .filter(|(midx, qr)| self.is_keep_on_query(midx, qr))
-            .map(|(midx, _qr)| midx.clone())
-            .collect()
+            .map(|(midx, qr)| MailView::new(qr, midx.clone()))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter(|mail_view| self.is_keep_on_query(mail_view))
+            .map(|mail_view| mail_view.in_idx)
+            .collect())
     }
 
     // ----
@@ -163,24 +169,80 @@ impl<'a> Criteria<'a> {
             | Subject(_) | To(_) | Before(_) | On(_) | Since(_) | Larger(_) | Smaller(_)
             | Text(_) | Body(_) => PartialDecision::Postpone,
 
-            _ => unreachable!(),
+            unknown => {
+                tracing::error!("Unknown filter {:?}", unknown);
+                PartialDecision::Discard
+            },
         }
     }
 
-    fn is_keep_on_query(&self, midx: &MailIndex, qr: &QueryResult) -> bool {
+
+    /// @TODO we re-eveluate twice the same logic. The correct way would be, on each pass,
+    /// to simplify the searck query, by removing the elements that were already checked.
+    /// For example if we have AND(OR(seqid(X), body(Y)), body(X)), we can't keep for sure
+    /// the email, as body(x) might be false. So we need to check it. But as seqid(x) is true,
+    /// we could simplify the request to just body(x) and truncate the first OR. Today, we are 
+    /// not doing that, and thus we reevaluate everything.
+    fn is_keep_on_query(&self, mail_view: &MailView) -> bool {
         use SearchKey::*;
         match self.0 {
             // Combinator logic
             And(expr_list) => expr_list
                 .as_ref()
                 .iter()
-                .any(|cur| Criteria(cur).is_keep_on_query(midx, qr)),
+                .any(|cur| Criteria(cur).is_keep_on_query(mail_view)),
             Or(left, right) => {
-                Criteria(left).is_keep_on_query(midx, qr) || Criteria(right).is_keep_on_query(midx, qr)
+                Criteria(left).is_keep_on_query(mail_view) || Criteria(right).is_keep_on_query(mail_view)
             }
-            Not(expr) => !Criteria(expr).is_keep_on_query(midx, qr),
+            Not(expr) => !Criteria(expr).is_keep_on_query(mail_view),
             All => true,
-            _ => unimplemented!(),
+
+            // Reevaluating our previous logic...
+            maybe_seq if is_sk_seq(maybe_seq) => is_keep_seq(maybe_seq, &mail_view.in_idx),
+            maybe_flag if is_sk_flag(maybe_flag) => is_keep_flag(maybe_flag, &mail_view.in_idx),
+
+            // Filter on mail meta
+            Before(search_naive) => match mail_view.stored_naive_date() {
+                Ok(msg_naive) => &msg_naive < search_naive.as_ref(),
+                _ => false,
+            },
+            On(search_naive) => match mail_view.stored_naive_date() {
+                Ok(msg_naive) => &msg_naive == search_naive.as_ref(),
+                _ => false,
+            }, 
+            Since(search_naive) => match mail_view.stored_naive_date() {
+                Ok(msg_naive) => &msg_naive > search_naive.as_ref(),
+                _ => false,
+            },
+
+            // Message size is also stored in MailMeta
+            Larger(size_ref) => mail_view.query_result.metadata().expect("metadata were fetched").rfc822_size > *size_ref as usize,
+            Smaller(size_ref) => mail_view.query_result.metadata().expect("metadata were fetched").rfc822_size < *size_ref as usize,
+
+            // Filter on well-known headers
+            Bcc(_) => unimplemented!(), 
+            Cc(_) => unimplemented!(), 
+            From(_) => unimplemented!(),
+            Subject(_)=> unimplemented!(),
+            To(_) => unimplemented!(),
+
+            // Filter on arbitrary header
+            Header(..) => unimplemented!(),
+
+            // Filter on Date header
+            SentBefore(_) => unimplemented!(),
+            SentOn(_) => unimplemented!(), 
+            SentSince(_) => unimplemented!(),
+
+
+            // Filter on the full content of the email
+            Text(_) => unimplemented!(),
+            Body(_) => unimplemented!(),
+
+            unknown => {
+                tracing::error!("Unknown filter {:?}", unknown);
+                false
+            },
         }
     }
 }
@@ -240,16 +302,16 @@ impl PartialDecision {
 
     fn or(&self, other: &Self) -> Self {
         match (self, other) {
-            (Self::Postpone, _) | (_, Self::Postpone) => Self::Postpone,
             (Self::Keep, _) | (_, Self::Keep) => Self::Keep,
+            (Self::Postpone, _) | (_, Self::Postpone) => Self::Postpone,
             (Self::Discard, Self::Discard) => Self::Discard,
         }
     }
 
     fn and(&self, other: &Self) -> Self {
         match (self, other) {
-            (Self::Postpone, _) | (_, Self::Postpone) => Self::Postpone,
             (Self::Discard, _) | (_, Self::Discard) => Self::Discard,
+            (Self::Postpone, _) | (_, Self::Postpone) => Self::Postpone,
             (Self::Keep, Self::Keep) => Self::Keep,
         }
     }
