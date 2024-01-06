@@ -190,7 +190,7 @@ impl<'a> Criteria<'a> {
             And(expr_list) => expr_list
                 .as_ref()
                 .iter()
-                .any(|cur| Criteria(cur).is_keep_on_query(mail_view)),
+                .all(|cur| Criteria(cur).is_keep_on_query(mail_view)),
             Or(left, right) => {
                 Criteria(left).is_keep_on_query(mail_view) || Criteria(right).is_keep_on_query(mail_view)
             }
@@ -234,8 +234,8 @@ impl<'a> Criteria<'a> {
 
 
             // Filter on the full content of the email
-            Text(_) => unimplemented!(),
-            Body(_) => unimplemented!(),
+            Text(txt) => mail_view.content.as_msg().map(|msg| msg.raw_part.windows(txt.as_ref().len()).any(|win| win == txt.as_ref())).unwrap_or(false),
+            Body(txt) =>  mail_view.content.as_msg().map(|msg| msg.raw_body.windows(txt.as_ref().len()).any(|win| win == txt.as_ref())).unwrap_or(false),
 
             unknown => {
                 tracing::error!("Unknown filter {:?}", unknown);

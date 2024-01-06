@@ -261,7 +261,7 @@ impl<'a> FetchedMail<'a> {
         Self::Partial(AnyPart::Msg(msg))
     }
 
-    fn as_anypart(&self) -> Result<&AnyPart<'a>> {
+    pub fn as_anypart(&self) -> Result<&AnyPart<'a>> {
         match self {
             FetchedMail::Full(x) => Ok(&x),
             FetchedMail::Partial(x) => Ok(&x),
@@ -269,7 +269,7 @@ impl<'a> FetchedMail<'a> {
         }
     }
 
-    fn as_msg(&self) -> Result<&Message<'a>> {
+    pub fn as_msg(&self) -> Result<&Message<'a>> {
         match self {
             FetchedMail::Full(AnyPart::Msg(x)) => Ok(&x),
             FetchedMail::Partial(AnyPart::Msg(x)) => Ok(&x),
@@ -277,7 +277,7 @@ impl<'a> FetchedMail<'a> {
         }
     }
 
-    fn as_imf(&self) -> Option<&imf::Imf<'a>> {
+    pub fn as_imf(&self) -> Option<&imf::Imf<'a>> {
         match self {
             FetchedMail::Full(AnyPart::Msg(x)) => Some(&x.imf),
             FetchedMail::Partial(AnyPart::Msg(x)) => Some(&x.imf),
