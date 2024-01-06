@@ -4,12 +4,12 @@ mod command;
 mod flags;
 mod flow;
 mod imf_view;
+mod index;
 mod mail_view;
 mod mailbox_view;
 mod mime_view;
 mod response;
 mod search;
-mod selectors;
 mod session;
 
 use std::net::SocketAddr;

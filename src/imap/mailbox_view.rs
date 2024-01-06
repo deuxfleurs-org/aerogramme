@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use anyhow::{anyhow, bail, Error, Result};
+use anyhow::{anyhow, Error, Result};
 
 use futures::stream::{FuturesOrdered, StreamExt};
 
@@ -10,19 +10,19 @@ use imap_codec::imap_types::fetch::{MacroOrMessageDataItemNames, MessageDataItem
 use imap_codec::imap_types::flag::{Flag, FlagFetch, FlagPerm, StoreResponse, StoreType};
 use imap_codec::imap_types::response::{Code, Data, Status};
 use imap_codec::imap_types::search::SearchKey;
-use imap_codec::imap_types::sequence::{self, SequenceSet};
+use imap_codec::imap_types::sequence::SequenceSet;
 
 use crate::mail::mailbox::Mailbox;
 use crate::mail::snapshot::FrozenMailbox;
 use crate::mail::query::QueryScope;
 use crate::mail::uidindex::{ImapUid, ImapUidvalidity};
-use crate::mail::unique_ident::UniqueIdent;
 
 use crate::imap::attributes::AttributesProxy;
 use crate::imap::flags;
 use crate::imap::mail_view::{MailView, SeenFlag};
 use crate::imap::response::Body;
-use crate::imap::search;
+//use crate::imap::search;
+use crate::imap::index::Index;
 
 
 const DEFAULT_FLAGS: [Flag; 5] = [
@@ -147,7 +147,7 @@ impl MailboxView {
 
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
 
-        let mails = self.get_mail_ids(sequence_set, *is_uid_store)?;
+        let mails = self.index().fetch(sequence_set, *is_uid_store)?;
         for mi in mails.iter() {
             match kind {
                 StoreType::Add => {
@@ -190,7 +190,7 @@ impl MailboxView {
         to: Arc<Mailbox>,
         is_uid_copy: &bool,
     ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>)> {
-        let mails = self.get_mail_ids(sequence_set, *is_uid_copy)?;
+        let mails = self.index().fetch(sequence_set, *is_uid_copy)?;
 
         let mut new_uuids = vec![];
         for mi in mails.iter() {
@@ -217,7 +217,7 @@ impl MailboxView {
         to: Arc<Mailbox>,
         is_uid_copy: &bool,
     ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>, Vec<Body<'static>>)> {
-        let mails = self.get_mail_ids(sequence_set, *is_uid_copy)?;
+        let mails = self.index().fetch(sequence_set, *is_uid_copy)?;
 
         for mi in mails.iter() {
             to.move_from(&self.0.mailbox, mi.uuid).await?;
@@ -255,16 +255,17 @@ impl MailboxView {
             true => QueryScope::Full,
             _ => QueryScope::Partial,
         };
-        let mids = MailIdentifiersList(self.get_mail_ids(sequence_set, *is_uid_fetch)?);
-        let uuids = mids.uuids();
+        let mail_idx_list = self.index().fetch(sequence_set, *is_uid_fetch)?;
 
         // [2/6] Fetch the emails
+        let uuids = mail_idx_list.iter().map(|midx| midx.uuid).collect::<Vec<_>>();
         let query = self.0.query(&uuids, query_scope);
         let query_result = query.fetch().await?;
             
         // [3/6] Derive an IMAP-specific view from the results, apply the filters
         let views = query_result.iter()
-            .map(MailView::new)
+            .zip(mail_idx_list.into_iter())
+            .map(|(qr, midx)| MailView::new(qr, midx))
             .collect::<Result<Vec<_>, _>>()?;
 
         // [4/6] Apply the IMAP transformation to keep only relevant fields
@@ -296,9 +297,10 @@ impl MailboxView {
     pub async fn search<'a>(
         &self,
         _charset: &Option<Charset<'a>>,
-        search_key: &SearchKey<'a>,
-        uid: bool,
+        _search_key: &SearchKey<'a>,
+        _uid: bool,
     ) -> Result<Vec<Body<'static>>> {
+        /*
         // 1. Compute the subset of sequence identifiers we need to fetch
         let query = search::Criteria(search_key);
         let (seq_set, seq_type) = query.to_sequence_set();
@@ -313,78 +315,14 @@ impl MailboxView {
         let _need_body = query.need_body();
 
         Ok(vec![Body::Data(Data::Search(mail_u32))])
+        */
+        unimplemented!()
     }
 
     // ----
-
-    // Gets the IMAP ID, the IMAP UIDs and, the Aerogramme UUIDs of mails identified by a SequenceSet of
-    // sequence numbers (~ IMAP selector)
-    fn get_mail_ids(
-        &self,
-        sequence_set: &SequenceSet,
-        by_uid: bool,
-    ) -> Result<Vec<MailIdentifiers>> {
-        let mail_vec = self
-            .0
-            .snapshot
-            .idx_by_uid
-            .iter()
-            .map(|(uid, uuid)| (*uid, *uuid))
-            .collect::<Vec<_>>();
-
-        let mut mails = vec![];
-
-        if by_uid {
-            if mail_vec.is_empty() {
-                return Ok(vec![]);
-            }
-            let iter_strat = sequence::Strategy::Naive {
-                largest: mail_vec.last().unwrap().0,
-            };
-
-            let mut i = 0;
-            for uid in sequence_set.iter(iter_strat) {
-                while mail_vec.get(i).map(|mail| mail.0 < uid).unwrap_or(false) {
-                    i += 1;
-                }
-                if let Some(mail) = mail_vec.get(i) {
-                    if mail.0 == uid {
-                        mails.push(MailIdentifiers {
-                            i: NonZeroU32::try_from(i as u32 + 1).unwrap(),
-                            uid: mail.0,
-                            uuid: mail.1,
-                        });
-                    }
-                } else {
-                    break;
-                }
-            }
-        } else {
-            if mail_vec.is_empty() {
-                bail!("No such message (mailbox is empty)");
-            }
-
-            let iter_strat = sequence::Strategy::Naive {
-                largest: NonZeroU32::try_from((mail_vec.len()) as u32).unwrap(),
-            };
-
-            for i in sequence_set.iter(iter_strat) {
-                if let Some(mail) = mail_vec.get(i.get() as usize - 1) {
-                    mails.push(MailIdentifiers {
-                        i,
-                        uid: mail.0,
-                        uuid: mail.1,
-                    });
-                } else {
-                    bail!("No such mail: {}", i);
-                }
-            }
-        }
-
-        Ok(mails)
+    fn index<'a>(&'a self) -> Index<'a> {
+        Index(&self.0.snapshot)
     }
-
-    // ----
 
     /// Produce an OK [UIDVALIDITY _] message corresponding to `known_state`
     fn uidvalidity_status(&self) -> Result<Body<'static>> {
@@ -501,25 +439,6 @@ impl MailboxView {
     }
 }
 
-pub struct MailIdentifiers {
-    pub i: NonZeroU32,
-    pub uid: ImapUid,
-    pub uuid: UniqueIdent,
-}
-pub struct MailIdentifiersList(Vec<MailIdentifiers>);
-
-impl MailIdentifiersList {
-    fn ids(&self) -> Vec<NonZeroU32> {
-        self.0.iter().map(|mi| mi.i).collect()
-    }
-    fn uids(&self) -> Vec<ImapUid> {
-        self.0.iter().map(|mi| mi.uid).collect()
-    }
-    fn uuids(&self) -> Vec<UniqueIdent> {
-        self.0.iter().map(|mi| mi.uuid).collect()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -558,7 +477,7 @@ mod tests {
             message_key: key,
             rfc822_size: 8usize,
         };
-        let ids = MailIdentifiers {
+        let ids = MailIndex {
             i: NonZeroU32::MIN,
             uid: NonZeroU32::MIN,
             uuid: unique_ident::gen_ident(),

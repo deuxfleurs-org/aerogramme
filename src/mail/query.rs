@@ -13,6 +13,7 @@ pub struct Query<'a,'b> {
     pub scope: QueryScope,
 }
 
+#[allow(dead_code)]
 pub enum QueryScope {
     Index,
     Partial,
@@ -106,6 +107,7 @@ impl<'a> QueryResult<'a> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn index(&self) -> &IndexEntry {
         match self {
             Self::IndexResult { index, .. } => index,
@@ -114,7 +116,7 @@ impl<'a> QueryResult<'a> {
         }
     }
 
-    pub fn metadata(&self) -> Option<&MailMeta> {
+    pub fn metadata(&'a self) -> Option<&'a MailMeta> {
         match self {
             Self::IndexResult { .. } => None,
             Self::PartialResult { metadata, .. } => Some(metadata),
@@ -122,7 +124,8 @@ impl<'a> QueryResult<'a> {
         }
     }
 
-    pub fn content(&self) -> Option<&[u8]> {
+    #[allow(dead_code)]
+    pub fn content(&'a self) -> Option<&'a [u8]> {
         match self {
             Self::FullResult { content, .. } => Some(content),
             _ => None,
