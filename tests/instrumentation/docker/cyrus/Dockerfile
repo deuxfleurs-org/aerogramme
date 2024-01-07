@@ -1,4 +1,4 @@
-FROM debian:buster
+FROM debian:sid
 
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt update && \
@@ -6,7 +6,7 @@ RUN apt update && \
     echo "admins: cyrus" >> /etc/imapd.conf && \
     touch /var/lib/cyrus/tls_sessions.db && \
     chown cyrus:mail /var/lib/cyrus/tls_sessions.db && \
-    mkdir /run/cyrus && \
+    mkdir -p /run/cyrus && \
     chown -R cyrus:mail /run/cyrus
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
