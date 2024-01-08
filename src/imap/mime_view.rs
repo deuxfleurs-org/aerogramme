@@ -12,7 +12,7 @@ use eml_codec::{
     header, mime, mime::r#type::Deductible, part::composite, part::discrete, part::AnyPart,
 };
 
-use crate::imap::imf_view::message_envelope;
+use crate::imap::imf_view::ImfView;
 
 pub enum BodySection<'a> {
     Full(Cow<'a, [u8]>),
@@ -164,8 +164,23 @@ impl<'a> SubsettedSection<'a> {
 /// Used for current MIME inspection
 ///
 /// See NodeMime for recursive logic
-struct SelectedMime<'a>(&'a AnyPart<'a>);
+pub struct SelectedMime<'a>(pub &'a AnyPart<'a>);
 impl<'a> SelectedMime<'a> {
+    pub fn header_value(&'a self, to_match_ext: &[u8]) -> Option<&'a [u8]> {
+        let to_match = to_match_ext.to_ascii_lowercase();
+
+        self.eml_mime()
+            .kv
+            .iter()
+            .filter_map(|field| match field {
+                header::Field::Good(header::Kv2(k, v)) => Some((k, v)),
+                _ => None,
+            })
+            .find(|(k, _)| k.to_ascii_lowercase() == to_match)
+            .map(|(_, v)| v)
+            .copied()
+    }
+
     /// The subsetted fetch section basically tells us the
     /// extraction logic to apply on our selected MIME.
     /// This function acts as a router for these logic.
@@ -200,6 +215,13 @@ impl<'a> SelectedMime<'a> {
         Ok(ExtractedFull(bytes.to_vec().into()))
     }
 
+    fn eml_mime(&self) -> &eml_codec::mime::NaiveMIME<'_> {
+        match &self.0 {
+            AnyPart::Msg(msg) => msg.child.mime(),
+            other => other.mime(),
+        }
+    }
+
     /// The [...] HEADER.FIELDS, and HEADER.FIELDS.NOT part
     /// specifiers refer to the [RFC-2822] header of the message or of
     /// an encapsulated [MIME-IMT] MESSAGE/RFC822 message.
@@ -231,10 +253,7 @@ impl<'a> SelectedMime<'a> {
             .collect::<HashSet<_>>();
 
         // Extract MIME headers
-        let mime = match &self.0 {
-            AnyPart::Msg(msg) => msg.child.mime(),
-            other => other.mime(),
-        };
+        let mime = self.eml_mime();
 
         // Filter our MIME headers based on the field index
         // 1. Keep only the correctly formatted headers
@@ -347,7 +366,7 @@ impl<'a> NodeMsg<'a> {
             body: FetchBody {
                 basic,
                 specific: SpecificFields::Message {
-                    envelope: Box::new(message_envelope(&self.1.imf)),
+                    envelope: Box::new(ImfView(&self.1.imf).message_envelope()),
                     body_structure: Box::new(NodeMime(&self.1.child).structure()?),
                     number_of_lines: nol(self.1.raw_part),
                 },

@@ -22,6 +22,7 @@ impl Default for ServerCapability {
     fn default() -> Self {
         Self(HashSet::from([
             Capability::Imap4Rev1,
+            Capability::Enable,
             Capability::Move,
             Capability::LiteralPlus,
             capability_unselect(),

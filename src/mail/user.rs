@@ -71,10 +71,15 @@ impl User {
     /// Opens an existing mailbox given its IMAP name.
     pub async fn open_mailbox(&self, name: &str) -> Result<Option<Arc<Mailbox>>> {
         let (mut list, ct) = self.load_mailbox_list().await?;
+
+        //@FIXME it could be a trace or an opentelemtry trace thing.
+        // Be careful to not leak sensible data
+        /*
         eprintln!("List of mailboxes:");
         for ent in list.0.iter() {
             eprintln!(" - {:?}", ent);
         }
+        */
 
         if let Some((uidvalidity, Some(mbid))) = list.get_mailbox(name) {
             let mb = self.open_mailbox_by_id(mbid, uidvalidity).await?;

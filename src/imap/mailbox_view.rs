@@ -146,7 +146,8 @@ impl MailboxView {
 
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
 
-        let mails = self.index().fetch(sequence_set, *is_uid_store)?;
+        let idx = self.index()?;
+        let mails = idx.fetch(sequence_set, *is_uid_store)?;
         for mi in mails.iter() {
             match kind {
                 StoreType::Add => {
@@ -189,7 +190,8 @@ impl MailboxView {
         to: Arc<Mailbox>,
         is_uid_copy: &bool,
     ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>)> {
-        let mails = self.index().fetch(sequence_set, *is_uid_copy)?;
+        let idx = self.index()?;
+        let mails = idx.fetch(sequence_set, *is_uid_copy)?;
 
         let mut new_uuids = vec![];
         for mi in mails.iter() {
@@ -216,7 +218,8 @@ impl MailboxView {
         to: Arc<Mailbox>,
         is_uid_copy: &bool,
     ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>, Vec<Body<'static>>)> {
-        let mails = self.index().fetch(sequence_set, *is_uid_copy)?;
+        let idx = self.index()?;
+        let mails = idx.fetch(sequence_set, *is_uid_copy)?;
 
         for mi in mails.iter() {
             to.move_from(&self.0.mailbox, mi.uuid).await?;
@@ -254,7 +257,8 @@ impl MailboxView {
             true => QueryScope::Full,
             _ => QueryScope::Partial,
         };
-        let mail_idx_list = self.index().fetch(sequence_set, *is_uid_fetch)?;
+        let idx = self.index()?;
+        let mail_idx_list = idx.fetch(sequence_set, *is_uid_fetch)?;
 
         // [2/6] Fetch the emails
         let uuids = mail_idx_list
@@ -316,29 +320,38 @@ impl MailboxView {
         let (seq_set, seq_type) = crit.to_sequence_set();
 
         // 2. Get the selection
-        let selection = self.index().fetch(&seq_set, seq_type.is_uid())?;
+        let idx = self.index()?;
+        let selection = idx.fetch(&seq_set, seq_type.is_uid())?;
 
         // 3. Filter the selection based on the ID / UID / Flags
+        let (kept_idx, to_fetch) = crit.filter_on_idx(&selection);
 
-        // 4. If needed, filter the selection based on the metadata
-        let _need_meta = crit.need_meta();
+        // 4. Fetch additional info about the emails
+        let query_scope = crit.query_scope();
+        let uuids = to_fetch.iter().map(|midx| midx.uuid).collect::<Vec<_>>();
+        let query_result = self.0.query(&uuids, query_scope).fetch().await?;
 
         // 5. If needed, filter the selection based on the body
-        let _need_body = crit.need_body();
+        let kept_query = crit.filter_on_query(&to_fetch, &query_result)?;
 
         // 6. Format the result according to the client's taste:
         // either return UID or ID.
+        let final_selection = kept_idx.into_iter().chain(kept_query.into_iter());
         let selection_fmt = match uid {
-            true => selection.into_iter().map(|in_idx| in_idx.uid).collect(),
-            _ => selection.into_iter().map(|in_idx| in_idx.i).collect(),
+            true => final_selection.map(|in_idx| in_idx.uid).collect(),
+            _ => final_selection.map(|in_idx| in_idx.i).collect(),
         };
 
         Ok(vec![Body::Data(Data::Search(selection_fmt))])
     }
 
     // ----
-    fn index<'a>(&'a self) -> Index<'a> {
-        Index(&self.0.snapshot)
+    /// @FIXME index should be stored for longer than a single request
+    /// Instead they should be tied to the FrozenMailbox refresh
+    /// It's not trivial to refactor the code to do that, so we are doing
+    /// some useless computation for now...
+    fn index<'a>(&'a self) -> Result<Index<'a>> {
+        Index::new(&self.0.snapshot)
     }
 
     /// Produce an OK [UIDVALIDITY _] message corresponding to `known_state`
@@ -513,7 +526,7 @@ mod tests {
             content: rfc822.to_vec(),
         };
 
-        let mv = MailView::new(&qr, mail_in_idx)?;
+        let mv = MailView::new(&qr, &mail_in_idx)?;
         let (res_body, _seen) = mv.filter(&ap)?;
 
         let fattr = match res_body {

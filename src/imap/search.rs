@@ -1,7 +1,13 @@
+use std::num::NonZeroU32;
+
+use anyhow::Result;
 use imap_codec::imap_types::core::NonEmptyVec;
 use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
-use std::num::NonZeroU32;
+
+use crate::imap::index::MailIndex;
+use crate::imap::mail_view::MailView;
+use crate::mail::query::{QueryResult, QueryScope};
 
 pub enum SeqType {
     Undefined,
@@ -54,6 +60,10 @@ impl<'a> Criteria<'a> {
                 tracing::debug!(
                     "using AND in a search request is slow: no intersection is performed"
                 );
+                // As we perform no intersection, we don't care if we mix uid or id.
+                // We only keep the smallest range, being it ID or UID, depending of
+                // which one has the less items. This is an approximation as UID ranges
+                // can have holes while ID ones can't.
                 search_list
                     .as_ref()
                     .iter()
@@ -72,35 +82,227 @@ impl<'a> Criteria<'a> {
     /// Not really clever as we can have cases where we filter out
     /// the email before needing to inspect its meta.
     /// But for now we are seeking the most basic/stupid algorithm.
-    pub fn need_meta(&self) -> bool {
+    pub fn query_scope(&self) -> QueryScope {
         use SearchKey::*;
         match self.0 {
+            // Combinators
+            And(and_list) => and_list
+                .as_ref()
+                .iter()
+                .fold(QueryScope::Index, |prev, sk| {
+                    prev.union(&Criteria(sk).query_scope())
+                }),
+            Not(inner) => Criteria(inner).query_scope(),
+            Or(left, right) => Criteria(left)
+                .query_scope()
+                .union(&Criteria(right).query_scope()),
+            All => QueryScope::Index,
+
             // IMF Headers
             Bcc(_) | Cc(_) | From(_) | Header(..) | SentBefore(_) | SentOn(_) | SentSince(_)
-            | Subject(_) | To(_) => true,
+            | Subject(_) | To(_) => QueryScope::Partial,
             // Internal Date is also stored in MailMeta
-            Before(_) | On(_) | Since(_) => true,
+            Before(_) | On(_) | Since(_) => QueryScope::Partial,
             // Message size is also stored in MailMeta
-            Larger(_) | Smaller(_) => true,
-            And(and_list) => and_list.as_ref().iter().any(|sk| Criteria(sk).need_meta()),
-            Not(inner) => Criteria(inner).need_meta(),
-            Or(left, right) => Criteria(left).need_meta() || Criteria(right).need_meta(),
-            _ => false,
+            Larger(_) | Smaller(_) => QueryScope::Partial,
+            // Text and Body require that we fetch the full content!
+            Text(_) | Body(_) => QueryScope::Full,
+
+            _ => QueryScope::Index,
         }
     }
 
-    pub fn need_body(&self) -> bool {
+    /// Returns emails that we now for sure we want to keep
+    /// but also a second list of emails we need to investigate further by
+    /// fetching some remote data
+    pub fn filter_on_idx<'b>(
+        &self,
+        midx_list: &[&'b MailIndex<'b>],
+    ) -> (Vec<&'b MailIndex<'b>>, Vec<&'b MailIndex<'b>>) {
+        let (p1, p2): (Vec<_>, Vec<_>) = midx_list
+            .iter()
+            .map(|x| (x, self.is_keep_on_idx(x)))
+            .filter(|(_midx, decision)| decision.is_keep())
+            .map(|(midx, decision)| (*midx, decision))
+            .partition(|(_midx, decision)| matches!(decision, PartialDecision::Keep));
+
+        let to_keep = p1.into_iter().map(|(v, _)| v).collect();
+        let to_fetch = p2.into_iter().map(|(v, _)| v).collect();
+        (to_keep, to_fetch)
+    }
+
+    pub fn filter_on_query<'b>(
+        &self,
+        midx_list: &[&'b MailIndex<'b>],
+        query_result: &'b Vec<QueryResult<'b>>,
+    ) -> Result<Vec<&'b MailIndex<'b>>> {
+        Ok(midx_list
+            .iter()
+            .zip(query_result.iter())
+            .map(|(midx, qr)| MailView::new(qr, midx))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter(|mail_view| self.is_keep_on_query(mail_view))
+            .map(|mail_view| mail_view.in_idx)
+            .collect())
+    }
+
+    // ----
+
+    /// Here we are doing a partial filtering: we do not have access
+    /// to the headers or to the body, so every time we encounter a rule
+    /// based on them, we need to keep it.
+    ///
+    /// @TODO Could be optimized on a per-email basis by also returning the QueryScope
+    /// when more information is needed!
+    fn is_keep_on_idx(&self, midx: &MailIndex) -> PartialDecision {
         use SearchKey::*;
         match self.0 {
-            Text(_) | Body(_) => true,
-            And(and_list) => and_list.as_ref().iter().any(|sk| Criteria(sk).need_body()),
-            Not(inner) => Criteria(inner).need_body(),
-            Or(left, right) => Criteria(left).need_body() || Criteria(right).need_body(),
-            _ => false,
+            // Combinator logic
+            And(expr_list) => expr_list
+                .as_ref()
+                .iter()
+                .fold(PartialDecision::Keep, |acc, cur| {
+                    acc.and(&Criteria(cur).is_keep_on_idx(midx))
+                }),
+            Or(left, right) => {
+                let left_decision = Criteria(left).is_keep_on_idx(midx);
+                let right_decision = Criteria(right).is_keep_on_idx(midx);
+                left_decision.or(&right_decision)
+            }
+            Not(expr) => Criteria(expr).is_keep_on_idx(midx).not(),
+            All => PartialDecision::Keep,
+
+            // Sequence logic
+            maybe_seq if is_sk_seq(maybe_seq) => is_keep_seq(maybe_seq, midx).into(),
+            maybe_flag if is_sk_flag(maybe_flag) => is_keep_flag(maybe_flag, midx).into(),
+
+            // All the stuff we can't evaluate yet
+            Bcc(_) | Cc(_) | From(_) | Header(..) | SentBefore(_) | SentOn(_) | SentSince(_)
+            | Subject(_) | To(_) | Before(_) | On(_) | Since(_) | Larger(_) | Smaller(_)
+            | Text(_) | Body(_) => PartialDecision::Postpone,
+
+            unknown => {
+                tracing::error!("Unknown filter {:?}", unknown);
+                PartialDecision::Discard
+            }
+        }
+    }
+
+    /// @TODO we re-eveluate twice the same logic. The correct way would be, on each pass,
+    /// to simplify the searck query, by removing the elements that were already checked.
+    /// For example if we have AND(OR(seqid(X), body(Y)), body(X)), we can't keep for sure
+    /// the email, as body(x) might be false. So we need to check it. But as seqid(x) is true,
+    /// we could simplify the request to just body(x) and truncate the first OR. Today, we are
+    /// not doing that, and thus we reevaluate everything.
+    fn is_keep_on_query(&self, mail_view: &MailView) -> bool {
+        use SearchKey::*;
+        match self.0 {
+            // Combinator logic
+            And(expr_list) => expr_list
+                .as_ref()
+                .iter()
+                .all(|cur| Criteria(cur).is_keep_on_query(mail_view)),
+            Or(left, right) => {
+                Criteria(left).is_keep_on_query(mail_view)
+                    || Criteria(right).is_keep_on_query(mail_view)
+            }
+            Not(expr) => !Criteria(expr).is_keep_on_query(mail_view),
+            All => true,
+
+            // Reevaluating our previous logic...
+            maybe_seq if is_sk_seq(maybe_seq) => is_keep_seq(maybe_seq, &mail_view.in_idx),
+            maybe_flag if is_sk_flag(maybe_flag) => is_keep_flag(maybe_flag, &mail_view.in_idx),
+
+            // Filter on mail meta
+            Before(search_naive) => match mail_view.stored_naive_date() {
+                Ok(msg_naive) => &msg_naive < search_naive.as_ref(),
+                _ => false,
+            },
+            On(search_naive) => match mail_view.stored_naive_date() {
+                Ok(msg_naive) => &msg_naive == search_naive.as_ref(),
+                _ => false,
+            },
+            Since(search_naive) => match mail_view.stored_naive_date() {
+                Ok(msg_naive) => &msg_naive > search_naive.as_ref(),
+                _ => false,
+            },
+
+            // Message size is also stored in MailMeta
+            Larger(size_ref) => {
+                mail_view
+                    .query_result
+                    .metadata()
+                    .expect("metadata were fetched")
+                    .rfc822_size
+                    > *size_ref as usize
+            }
+            Smaller(size_ref) => {
+                mail_view
+                    .query_result
+                    .metadata()
+                    .expect("metadata were fetched")
+                    .rfc822_size
+                    < *size_ref as usize
+            }
+
+            // Filter on well-known headers
+            Bcc(txt) => mail_view.is_header_contains_pattern(&b"bcc"[..], txt.as_ref()),
+            Cc(txt) => mail_view.is_header_contains_pattern(&b"cc"[..], txt.as_ref()),
+            From(txt) => mail_view.is_header_contains_pattern(&b"from"[..], txt.as_ref()),
+            Subject(txt) => mail_view.is_header_contains_pattern(&b"subject"[..], txt.as_ref()),
+            To(txt) => mail_view.is_header_contains_pattern(&b"to"[..], txt.as_ref()),
+            Header(hdr, txt) => mail_view.is_header_contains_pattern(hdr.as_ref(), txt.as_ref()),
+
+            // Filter on Date header
+            SentBefore(search_naive) => mail_view
+                .imf()
+                .map(|imf| imf.naive_date().ok())
+                .flatten()
+                .map(|msg_naive| &msg_naive < search_naive.as_ref())
+                .unwrap_or(false),
+            SentOn(search_naive) => mail_view
+                .imf()
+                .map(|imf| imf.naive_date().ok())
+                .flatten()
+                .map(|msg_naive| &msg_naive == search_naive.as_ref())
+                .unwrap_or(false),
+            SentSince(search_naive) => mail_view
+                .imf()
+                .map(|imf| imf.naive_date().ok())
+                .flatten()
+                .map(|msg_naive| &msg_naive > search_naive.as_ref())
+                .unwrap_or(false),
+
+            // Filter on the full content of the email
+            Text(txt) => mail_view
+                .content
+                .as_msg()
+                .map(|msg| {
+                    msg.raw_part
+                        .windows(txt.as_ref().len())
+                        .any(|win| win == txt.as_ref())
+                })
+                .unwrap_or(false),
+            Body(txt) => mail_view
+                .content
+                .as_msg()
+                .map(|msg| {
+                    msg.raw_body
+                        .windows(txt.as_ref().len())
+                        .any(|win| win == txt.as_ref())
+                })
+                .unwrap_or(false),
+
+            unknown => {
+                tracing::error!("Unknown filter {:?}", unknown);
+                false
+            }
         }
     }
 }
 
+// ---- Sequence things ----
 fn sequence_set_all() -> SequenceSet {
     SequenceSet::from(Sequence::Range(
         SeqOrUid::Value(NonZeroU32::MIN),
@@ -126,5 +328,133 @@ fn approx_sequence_size(seq: &Sequence) -> u64 {
             let x1 = x1.get() as i64;
             (x2 - x1).abs().try_into().unwrap_or(1)
         }
+    }
+}
+
+// --- Partial decision things ----
+
+enum PartialDecision {
+    Keep,
+    Discard,
+    Postpone,
+}
+impl From<bool> for PartialDecision {
+    fn from(x: bool) -> Self {
+        match x {
+            true => PartialDecision::Keep,
+            _ => PartialDecision::Discard,
+        }
+    }
+}
+impl PartialDecision {
+    fn not(&self) -> Self {
+        match self {
+            Self::Keep => Self::Discard,
+            Self::Discard => Self::Keep,
+            Self::Postpone => Self::Postpone,
+        }
+    }
+
+    fn or(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Keep, _) | (_, Self::Keep) => Self::Keep,
+            (Self::Postpone, _) | (_, Self::Postpone) => Self::Postpone,
+            (Self::Discard, Self::Discard) => Self::Discard,
+        }
+    }
+
+    fn and(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Discard, _) | (_, Self::Discard) => Self::Discard,
+            (Self::Postpone, _) | (_, Self::Postpone) => Self::Postpone,
+            (Self::Keep, Self::Keep) => Self::Keep,
+        }
+    }
+
+    fn is_keep(&self) -> bool {
+        !matches!(self, Self::Discard)
+    }
+}
+
+// ----- Search Key things ---
+fn is_sk_flag(sk: &SearchKey) -> bool {
+    use SearchKey::*;
+    match sk {
+        Answered | Deleted | Draft | Flagged | Keyword(..) | New | Old | Recent | Seen
+        | Unanswered | Undeleted | Undraft | Unflagged | Unkeyword(..) | Unseen => true,
+        _ => false,
+    }
+}
+
+fn is_keep_flag(sk: &SearchKey, midx: &MailIndex) -> bool {
+    use SearchKey::*;
+    match sk {
+        Answered => midx.is_flag_set("\\Answered"),
+        Deleted => midx.is_flag_set("\\Deleted"),
+        Draft => midx.is_flag_set("\\Draft"),
+        Flagged => midx.is_flag_set("\\Flagged"),
+        Keyword(kw) => midx.is_flag_set(kw.inner()),
+        New => {
+            let is_recent = midx.is_flag_set("\\Recent");
+            let is_seen = midx.is_flag_set("\\Seen");
+            is_recent && !is_seen
+        }
+        Old => {
+            let is_recent = midx.is_flag_set("\\Recent");
+            !is_recent
+        }
+        Recent => midx.is_flag_set("\\Recent"),
+        Seen => midx.is_flag_set("\\Seen"),
+        Unanswered => {
+            let is_answered = midx.is_flag_set("\\Recent");
+            !is_answered
+        }
+        Undeleted => {
+            let is_deleted = midx.is_flag_set("\\Deleted");
+            !is_deleted
+        }
+        Undraft => {
+            let is_draft = midx.is_flag_set("\\Draft");
+            !is_draft
+        }
+        Unflagged => {
+            let is_flagged = midx.is_flag_set("\\Flagged");
+            !is_flagged
+        }
+        Unkeyword(kw) => {
+            let is_keyword_set = midx.is_flag_set(kw.inner());
+            !is_keyword_set
+        }
+        Unseen => {
+            let is_seen = midx.is_flag_set("\\Seen");
+            !is_seen
+        }
+
+        // Not flag logic
+        _ => unreachable!(),
+    }
+}
+
+fn is_sk_seq(sk: &SearchKey) -> bool {
+    use SearchKey::*;
+    match sk {
+        SequenceSet(..) | Uid(..) => true,
+        _ => false,
+    }
+}
+fn is_keep_seq(sk: &SearchKey, midx: &MailIndex) -> bool {
+    use SearchKey::*;
+    match sk {
+        SequenceSet(seq_set) => seq_set
+            .0
+            .as_ref()
+            .iter()
+            .any(|seq| midx.is_in_sequence_i(seq)),
+        Uid(seq_set) => seq_set
+            .0
+            .as_ref()
+            .iter()
+            .any(|seq| midx.is_in_sequence_uid(seq)),
+        _ => unreachable!(),
     }
 }

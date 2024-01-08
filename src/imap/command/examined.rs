@@ -111,15 +111,17 @@ impl<'a> ExaminedContext<'a> {
 
     pub async fn search(
         self,
-        _charset: &Option<Charset<'a>>,
-        _criteria: &SearchKey<'a>,
-        _uid: &bool,
+        charset: &Option<Charset<'a>>,
+        criteria: &SearchKey<'a>,
+        uid: &bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
+        let found = self.mailbox.search(charset, criteria, *uid).await?;
         Ok((
             Response::build()
                 .to_req(self.req)
-                .message("Not implemented")
-                .bad()?,
+                .set_body(found)
+                .message("SEARCH completed")
+                .ok()?,
             flow::Transition::None,
         ))
     }

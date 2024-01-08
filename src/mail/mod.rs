@@ -1,5 +1,4 @@
 use std::convert::TryFrom;
-use std::io::Write;
 
 pub mod incoming;
 pub mod mailbox;
@@ -22,9 +21,6 @@ impl<'a> TryFrom<&'a [u8]> for IMF<'a> {
     type Error = ();
 
     fn try_from(body: &'a [u8]) -> Result<IMF<'a>, ()> {
-        eprintln!("---- BEGIN PARSED MESSAGE ----");
-        let _ = std::io::stderr().write_all(body);
-        eprintln!("---- END PARSED MESSAGE ----");
         let parsed = eml_codec::parse_message(body).or(Err(()))?.1;
         Ok(Self { raw: body, parsed })
     }

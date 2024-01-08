@@ -39,7 +39,11 @@ impl Mailbox {
                 .await?;
         }
 
+        // @FIXME reporting through opentelemetry or some logs
+        // info on the "shape" of the mailbox would be welcomed
+        /*
         dump(&uid_index);
+        */
 
         let mbox = RwLock::new(MailboxInternal {
             id,
