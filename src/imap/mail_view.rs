@@ -74,7 +74,12 @@ impl<'a> MailView<'a> {
                 MessageDataItemName::Rfc822Size => self.rfc_822_size(),
                 MessageDataItemName::Rfc822Header => self.rfc_822_header(),
                 MessageDataItemName::Rfc822Text => self.rfc_822_text(),
-                MessageDataItemName::Rfc822 => self.rfc822(),
+                MessageDataItemName::Rfc822 => {
+                    if self.is_not_yet_seen() {
+                        seen = SeenFlag::MustAdd;
+                    }
+                    self.rfc822()
+                },
                 MessageDataItemName::Envelope => Ok(self.envelope()),
                 MessageDataItemName::Body => self.body(),
                 MessageDataItemName::BodyStructure => self.body_structure(),
@@ -189,6 +194,11 @@ impl<'a> MailView<'a> {
         )?))
     }
 
+    fn is_not_yet_seen(&self) -> bool {
+        let seen_flag = Flag::Seen.to_string();
+        !self.in_idx.flags.iter().any(|x| *x == seen_flag)
+    }
+
     /// maps to BODY[<section>]<<partial>> and BODY.PEEK[<section>]<<partial>>
     /// peek does not implicitly set the \Seen flag
     /// eg. BODY[HEADER.FIELDS (DATE FROM)]
@@ -201,8 +211,7 @@ impl<'a> MailView<'a> {
     ) -> Result<(MessageDataItem<'static>, SeenFlag)> {
         // Manage Seen flag
         let mut seen = SeenFlag::DoNothing;
-        let seen_flag = Flag::Seen.to_string();
-        if !peek && !self.in_idx.flags.iter().any(|x| *x == seen_flag) {
+        if !peek && self.is_not_yet_seen() {
             // Add \Seen flag
             //self.mailbox.add_flags(uuid, &[seen_flag]).await?;
             seen = SeenFlag::MustAdd;
