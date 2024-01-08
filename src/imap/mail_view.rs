@@ -79,7 +79,7 @@ impl<'a> MailView<'a> {
                         seen = SeenFlag::MustAdd;
                     }
                     self.rfc822()
-                },
+                }
                 MessageDataItemName::Envelope => Ok(self.envelope()),
                 MessageDataItemName::Body => self.body(),
                 MessageDataItemName::BodyStructure => self.body_structure(),
@@ -185,12 +185,14 @@ impl<'a> MailView<'a> {
     fn body(&self) -> Result<MessageDataItem<'static>> {
         Ok(MessageDataItem::Body(mime_view::bodystructure(
             self.content.as_msg()?.child.as_ref(),
+            false,
         )?))
     }
 
     fn body_structure(&self) -> Result<MessageDataItem<'static>> {
         Ok(MessageDataItem::Body(mime_view::bodystructure(
             self.content.as_msg()?.child.as_ref(),
+            true,
         )?))
     }
 

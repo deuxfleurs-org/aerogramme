@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use anyhow::{anyhow, Error, Context, Result};
+use anyhow::{anyhow, Context, Error, Result};
 
 use futures::stream::{FuturesOrdered, StreamExt};
 
@@ -130,7 +130,8 @@ impl MailboxView {
         data.extend(self.flags_status()?.into_iter());
         data.push(self.uidvalidity_status()?);
         data.push(self.uidnext_status()?);
-        self.unseen_first_status()?.map(|unseen_status| data.push(unseen_status));
+        self.unseen_first_status()?
+            .map(|unseen_status| data.push(unseen_status));
 
         Ok(data)
     }
@@ -402,18 +403,23 @@ impl MailboxView {
     }
 
     fn unseen_first_status(&self) -> Result<Option<Body<'static>>> {
-        Ok(self.unseen_first()?.map(|unseen_id| {
-            Status::ok(None, Some(Code::Unseen(unseen_id)), "First unseen.").map(Body::Status)
-        }).transpose()?)
+        Ok(self
+            .unseen_first()?
+            .map(|unseen_id| {
+                Status::ok(None, Some(Code::Unseen(unseen_id)), "First unseen.").map(Body::Status)
+            })
+            .transpose()?)
     }
 
     fn unseen_first(&self) -> Result<Option<NonZeroU32>> {
-        Ok(self.0.snapshot.table
+        Ok(self
+            .0
+            .snapshot
+            .table
             .values()
             .enumerate()
-            .find(|(_i, (_imap_uid, flags))| {
-                !flags.contains(&"\\Seen".to_string())
-            }).map(|(i, _)| NonZeroU32::try_from(i as u32 + 1))
+            .find(|(_i, (_imap_uid, flags))| !flags.contains(&"\\Seen".to_string()))
+            .map(|(i, _)| NonZeroU32::try_from(i as u32 + 1))
             .transpose()?)
     }
 
