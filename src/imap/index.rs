@@ -62,7 +62,7 @@ impl<'a> Index<'a> {
             return vec![];
         }
         let iter_strat = sequence::Strategy::Naive {
-            largest: self.last().expect("imap index is not empty").uid,
+            largest: self.last().expect("The mailbox is not empty").uid,
         };
         let mut unroll_seq = sequence_set.iter(iter_strat).collect::<Vec<_>>();
         unroll_seq.sort();
@@ -104,7 +104,7 @@ impl<'a> Index<'a> {
             return Ok(vec![]);
         }
         let iter_strat = sequence::Strategy::Naive {
-            largest: self.last().expect("The mailbox is empty").uid,
+            largest: self.last().expect("The mailbox is not empty").uid,
         };
         sequence_set
             .iter(iter_strat)
