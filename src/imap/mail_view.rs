@@ -190,7 +190,7 @@ impl<'a> MailView<'a> {
     }
 
     fn body_structure(&self) -> Result<MessageDataItem<'static>> {
-        Ok(MessageDataItem::Body(mime_view::bodystructure(
+        Ok(MessageDataItem::BodyStructure(mime_view::bodystructure(
             self.content.as_msg()?.child.as_ref(),
             true,
         )?))

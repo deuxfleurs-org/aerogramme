@@ -152,7 +152,7 @@ impl<S: BayouState> Bayou<S> {
             match &val[0] {
                 storage::Alternative::Value(v) => {
                     let op = open_deserialize::<S::Op>(v, &self.key)?;
-                    debug!("(sync) operation {}: {:?}", sort_key, op);
+                    tracing::trace!("(sync) operation {}: {:?}", sort_key, op);
                     ops.push((ts, op));
                 }
                 storage::Alternative::Tombstone => {
