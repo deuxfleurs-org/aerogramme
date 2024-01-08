@@ -51,6 +51,14 @@ parameters = {
     "ext": ".cyrus",
     "mb": "INBOX."+base_test_mb,
   },
+  "courier": {
+    "con": IMAP4,
+    "port": 144,
+    "user": "debian",
+    "pw": "debian",
+    "ext": ".courier",
+    "mb": base_test_mb,
+  },
   "stalwart": {
     "con": IMAP4_SSL,
     "port": 1993,
