@@ -32,10 +32,7 @@ pub struct MailView<'a> {
 }
 
 impl<'a> MailView<'a> {
-    pub fn new(
-        query_result: &'a QueryResult,
-        in_idx: &'a MailIndex<'a>,
-    ) -> Result<MailView<'a>> {
+    pub fn new(query_result: &'a QueryResult, in_idx: &'a MailIndex<'a>) -> Result<MailView<'a>> {
         Ok(Self {
             in_idx,
             query_result,

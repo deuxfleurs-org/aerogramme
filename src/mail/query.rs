@@ -31,8 +31,12 @@ impl QueryScope {
 impl<'a, 'b> Query<'a, 'b> {
     pub async fn fetch(&self) -> Result<Vec<QueryResult>> {
         match self.scope {
-            QueryScope::Index => Ok(self.emails.iter().map(|&uuid| QueryResult::IndexResult { uuid }).collect()),
-            QueryScope::Partial =>self.partial().await,
+            QueryScope::Index => Ok(self
+                .emails
+                .iter()
+                .map(|&uuid| QueryResult::IndexResult { uuid })
+                .collect()),
+            QueryScope::Partial => self.partial().await,
             QueryScope::Full => self.full().await,
         }
     }
@@ -44,9 +48,7 @@ impl<'a, 'b> Query<'a, 'b> {
         let result = meta
             .into_iter()
             .zip(self.emails.iter())
-            .map(|(metadata, &uuid)| {
-                QueryResult::PartialResult  { uuid, metadata }
-            })
+            .map(|(metadata, &uuid)| QueryResult::PartialResult { uuid, metadata })
             .collect::<Vec<_>>();
 
         Ok(result)
@@ -125,20 +127,14 @@ impl QueryResult {
 
     fn into_partial(self, metadata: MailMeta) -> Option<Self> {
         match self {
-            Self::IndexResult { uuid } => Some(Self::PartialResult {
-                uuid,
-                metadata,
-            }),
+            Self::IndexResult { uuid } => Some(Self::PartialResult { uuid, metadata }),
             _ => None,
         }
     }
 
     fn into_full(self, content: Vec<u8>) -> Option<Self> {
         match self {
-            Self::PartialResult {
-                uuid,
-                metadata,
-            } => Some(Self::FullResult {
+            Self::PartialResult { uuid, metadata } => Some(Self::FullResult {
                 uuid,
                 metadata,
                 content,
