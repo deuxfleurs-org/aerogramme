@@ -134,7 +134,7 @@ impl<'a> Criteria<'a> {
     pub fn filter_on_query<'b>(
         &self,
         midx_list: &[&'b MailIndex<'b>],
-        query_result: &'b Vec<QueryResult<'b>>,
+        query_result: &'b Vec<QueryResult>,
     ) -> Result<Vec<&'b MailIndex<'b>>> {
         Ok(midx_list
             .iter()

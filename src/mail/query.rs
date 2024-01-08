@@ -1,9 +1,8 @@
 use super::mailbox::MailMeta;
 use super::snapshot::FrozenMailbox;
-use super::uidindex::IndexEntry;
 use super::unique_ident::UniqueIdent;
-use anyhow::{anyhow, Result};
-use futures::stream::{FuturesUnordered, StreamExt};
+use anyhow::Result;
+use futures::stream::{FuturesOrdered, StreamExt};
 
 /// Query is in charge of fetching efficiently
 /// requested data for a list of emails
@@ -13,7 +12,7 @@ pub struct Query<'a, 'b> {
     pub scope: QueryScope,
 }
 
-#[allow(dead_code)]
+#[derive(Debug)]
 pub enum QueryScope {
     Index,
     Partial,
@@ -30,41 +29,26 @@ impl QueryScope {
 }
 
 impl<'a, 'b> Query<'a, 'b> {
-    pub async fn fetch(&self) -> Result<Vec<QueryResult<'a>>> {
+    pub async fn fetch(&self) -> Result<Vec<QueryResult>> {
         match self.scope {
-            QueryScope::Index => self.index(),
-            QueryScope::Partial => self.partial().await,
+            QueryScope::Index => Ok(self.emails.iter().map(|&uuid| QueryResult::IndexResult { uuid }).collect()),
+            QueryScope::Partial =>self.partial().await,
             QueryScope::Full => self.full().await,
         }
     }
 
     // --- functions below are private *for reasons*
 
-    fn index(&self) -> Result<Vec<QueryResult<'a>>> {
-        self.emails
-            .iter()
-            .map(|uuid| {
-                self.frozen
-                    .snapshot
-                    .table
-                    .get(uuid)
-                    .map(|index| QueryResult::IndexResult { uuid: *uuid, index })
-                    .ok_or(anyhow!("missing email in index"))
-            })
-            .collect::<Result<Vec<_>, _>>()
-    }
-
-    async fn partial(&self) -> Result<Vec<QueryResult<'a>>> {
+    async fn partial(&self) -> Result<Vec<QueryResult>> {
         let meta = self.frozen.mailbox.fetch_meta(self.emails).await?;
         let result = meta
             .into_iter()
-            .zip(self.index()?)
-            .map(|(metadata, index)| {
-                index
-                    .into_partial(metadata)
-                    .expect("index to be IndexResult")
+            .zip(self.emails.iter())
+            .map(|(metadata, &uuid)| {
+                QueryResult::PartialResult  { uuid, metadata }
             })
             .collect::<Vec<_>>();
+
         Ok(result)
     }
 
@@ -72,7 +56,7 @@ impl<'a, 'b> Query<'a, 'b> {
     /// AND GENERATE SO MUCH NETWORK TRAFFIC.
     /// THIS FUNCTION SHOULD BE REWRITTEN, FOR EXAMPLE WITH
     /// SOMETHING LIKE AN ITERATOR
-    async fn full(&self) -> Result<Vec<QueryResult<'a>>> {
+    async fn full(&self) -> Result<Vec<QueryResult>> {
         let meta_list = self.partial().await?;
         meta_list
             .into_iter()
@@ -91,7 +75,7 @@ impl<'a, 'b> Query<'a, 'b> {
 
                 Ok(meta.into_full(content).expect("meta to be PartialResult"))
             })
-            .collect::<FuturesUnordered<_>>()
+            .collect::<FuturesOrdered<_>>()
             .collect::<Vec<_>>()
             .await
             .into_iter()
@@ -99,24 +83,22 @@ impl<'a, 'b> Query<'a, 'b> {
     }
 }
 
-pub enum QueryResult<'a> {
+#[derive(Debug)]
+pub enum QueryResult {
     IndexResult {
         uuid: UniqueIdent,
-        index: &'a IndexEntry,
     },
     PartialResult {
         uuid: UniqueIdent,
-        index: &'a IndexEntry,
         metadata: MailMeta,
     },
     FullResult {
         uuid: UniqueIdent,
-        index: &'a IndexEntry,
         metadata: MailMeta,
         content: Vec<u8>,
     },
 }
-impl<'a> QueryResult<'a> {
+impl QueryResult {
     pub fn uuid(&self) -> &UniqueIdent {
         match self {
             Self::IndexResult { uuid, .. } => uuid,
@@ -125,16 +107,7 @@ impl<'a> QueryResult<'a> {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn index(&self) -> &IndexEntry {
-        match self {
-            Self::IndexResult { index, .. } => index,
-            Self::PartialResult { index, .. } => index,
-            Self::FullResult { index, .. } => index,
-        }
-    }
-
-    pub fn metadata(&'a self) -> Option<&'a MailMeta> {
+    pub fn metadata(&self) -> Option<&MailMeta> {
         match self {
             Self::IndexResult { .. } => None,
             Self::PartialResult { metadata, .. } => Some(metadata),
@@ -143,7 +116,7 @@ impl<'a> QueryResult<'a> {
     }
 
     #[allow(dead_code)]
-    pub fn content(&'a self) -> Option<&'a [u8]> {
+    pub fn content(&self) -> Option<&[u8]> {
         match self {
             Self::FullResult { content, .. } => Some(content),
             _ => None,
@@ -152,9 +125,8 @@ impl<'a> QueryResult<'a> {
 
     fn into_partial(self, metadata: MailMeta) -> Option<Self> {
         match self {
-            Self::IndexResult { uuid, index } => Some(Self::PartialResult {
+            Self::IndexResult { uuid } => Some(Self::PartialResult {
                 uuid,
-                index,
                 metadata,
             }),
             _ => None,
@@ -165,11 +137,9 @@ impl<'a> QueryResult<'a> {
         match self {
             Self::PartialResult {
                 uuid,
-                index,
                 metadata,
             } => Some(Self::FullResult {
                 uuid,
-                index,
                 metadata,
                 content,
             }),

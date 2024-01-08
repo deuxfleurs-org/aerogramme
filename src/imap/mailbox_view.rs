@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{anyhow, Error, Result};
 
 use futures::stream::{FuturesOrdered, StreamExt};
 
@@ -259,6 +259,7 @@ impl MailboxView {
             true => QueryScope::Full,
             _ => QueryScope::Partial,
         };
+        tracing::debug!("Query scope {:?}", query_scope);
         let idx = self.index()?;
         let mail_idx_list = idx.fetch(sequence_set, *is_uid_fetch)?;
 
@@ -544,7 +545,6 @@ mod tests {
         let rfc822 = b"Subject: hello\r\nFrom: a@a.a\r\nTo: b@b.b\r\nDate: Thu, 12 Oct 2023 08:45:28 +0000\r\n\r\nhello world";
         let qr = QueryResult::FullResult {
             uuid: mail_in_idx.uuid.clone(),
-            index: &index_entry,
             metadata: meta,
             content: rfc822.to_vec(),
         };
@@ -619,6 +619,7 @@ mod tests {
                 seq: NonZeroU32::new(1).unwrap(),
                 items: NonEmptyVec::from(MessageDataItem::Body(mime_view::bodystructure(
                     &message.child,
+                    false,
                 )?)),
             });
             let test_bytes = ResponseCodec::new().encode(&test_repr).dump();

@@ -104,16 +104,21 @@ impl<'a> Index<'a> {
             return Ok(vec![]);
         }
         let iter_strat = sequence::Strategy::Naive {
-            largest: self.last().expect("The mailbox is not empty").uid,
+            largest: NonZeroU32::try_from(self.imap_index.len() as u32)?,
         };
-        sequence_set
+        let mut acc = sequence_set
             .iter(iter_strat)
             .map(|wanted_id| {
                 self.imap_index
                     .get((wanted_id.get() as usize) - 1)
                     .ok_or(anyhow!("Mail not found"))
             })
-            .collect::<Result<Vec<_>>>()
+            .collect::<Result<Vec<_>>>()?;
+
+        // Sort the result to be consistent with UID
+        acc.sort_by(|a, b| a.i.cmp(&b.i));
+
+        Ok(acc)
     }
 
     pub fn fetch(
