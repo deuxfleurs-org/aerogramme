@@ -20,7 +20,7 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 
-use imap_codec::imap_types::response::Greeting;
+use imap_codec::imap_types::{core::Text, response::Greeting};
 use imap_flow::server::{ServerFlow, ServerFlowEvent, ServerFlowOptions};
 use imap_flow::stream::AnyStream;
 
@@ -108,7 +108,12 @@ async fn client(mut ctx: ClientContext) -> Result<()> {
     // Send greeting
     let (mut server, _) = ServerFlow::send_greeting(
         ctx.stream,
-        ServerFlowOptions::default(),
+        ServerFlowOptions {
+            crlf_relaxed: false,
+            literal_accept_text: Text::unvalidated("OK"),
+            literal_reject_text: Text::unvalidated("Literal rejected"),
+            ..ServerFlowOptions::default()
+        },
         Greeting::ok(
             Some(Code::Capability(ctx.server_capabilities.to_vec())),
             "Aerogramme",
