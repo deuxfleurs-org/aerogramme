@@ -1,6 +1,6 @@
 use std::num::NonZeroU32;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use imap_codec::imap_types::sequence::{self, SeqOrUid, Sequence, SequenceSet};
 
 use crate::mail::uidindex::{ImapUid, UidIndex};
@@ -80,10 +80,6 @@ impl<'a> Index<'a> {
                 .partition_point(|mail_idx| &mail_idx.uid < start_seq);
             &self.imap_index[start_idx..]
         };
-        println!(
-            "win: {:?}",
-            imap_idx.iter().map(|midx| midx.uid).collect::<Vec<_>>()
-        );
 
         let mut acc = vec![];
         for wanted_uid in unroll_seq.iter() {
@@ -104,8 +100,11 @@ impl<'a> Index<'a> {
     }
 
     pub fn fetch_on_id(&'a self, sequence_set: &SequenceSet) -> Result<Vec<&'a MailIndex<'a>>> {
+        if self.imap_index.is_empty() {
+            return Ok(vec![]);
+        }
         let iter_strat = sequence::Strategy::Naive {
-            largest: self.last().context("The mailbox is empty")?.uid,
+            largest: self.last().expect("The mailbox is empty").uid,
         };
         sequence_set
             .iter(iter_strat)
