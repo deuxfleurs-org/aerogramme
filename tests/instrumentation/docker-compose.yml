@@ -1,7 +1,7 @@
 version: '3.4'
 services:
   dovecot:
-    image: dovecot/dovecot:2.3.19.1
+    image: dovecot/dovecot:2.3.21
     ports:
       - "993:993/tcp"
 
