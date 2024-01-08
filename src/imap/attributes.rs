@@ -36,7 +36,6 @@ impl AttributesProxy {
 
     pub fn need_body(&self) -> bool {
         self.attrs.iter().any(|x| {
-            println!("item is: {:?}", x);
             match x {
                 MessageDataItemName::Body
                 | MessageDataItemName::Rfc822
