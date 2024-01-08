@@ -6,7 +6,7 @@ use imap_codec::imap_types::sequence::{self, SeqOrUid, Sequence, SequenceSet};
 use crate::mail::uidindex::{ImapUid, UidIndex};
 use crate::mail::unique_ident::UniqueIdent;
 
-pub struct Index<'a> { 
+pub struct Index<'a> {
     pub imap_index: Vec<MailIndex<'a>>,
     pub internal: &'a UidIndex,
 }
@@ -17,19 +17,32 @@ impl<'a> Index<'a> {
             .iter()
             .enumerate()
             .map(|(i_enum, (&uid, &uuid))| {
-                let flags = internal.table.get(&uuid).ok_or(anyhow!("mail is missing from index"))?.1.as_ref();
+                let flags = internal
+                    .table
+                    .get(&uuid)
+                    .ok_or(anyhow!("mail is missing from index"))?
+                    .1
+                    .as_ref();
                 let i_int: u32 = (i_enum + 1).try_into()?;
                 let i: NonZeroU32 = i_int.try_into()?;
 
-                Ok(MailIndex {  i, uid, uuid, flags })
+                Ok(MailIndex {
+                    i,
+                    uid,
+                    uuid,
+                    flags,
+                })
             })
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(Self { imap_index, internal })
+        Ok(Self {
+            imap_index,
+            internal,
+        })
     }
 
     pub fn last(&'a self) -> Option<&'a MailIndex<'a>> {
-        self.imap_index.last()       
+        self.imap_index.last()
     }
 
     /// Fetch mail descriptors based on a sequence of UID
@@ -62,10 +75,15 @@ impl<'a> Index<'a> {
         // Quickly jump to the right point in the mailbox vector O(log m) instead
         // of iterating one by one O(m). Works only because both unroll_seq & imap_index are sorted per uid.
         let mut imap_idx = {
-            let start_idx = self.imap_index.partition_point(|mail_idx| &mail_idx.uid < start_seq);
+            let start_idx = self
+                .imap_index
+                .partition_point(|mail_idx| &mail_idx.uid < start_seq);
             &self.imap_index[start_idx..]
         };
-        println!("win: {:?}", imap_idx.iter().map(|midx| midx.uid).collect::<Vec<_>>());
+        println!(
+            "win: {:?}",
+            imap_idx.iter().map(|midx| midx.uid).collect::<Vec<_>>()
+        );
 
         let mut acc = vec![];
         for wanted_uid in unroll_seq.iter() {
@@ -91,10 +109,14 @@ impl<'a> Index<'a> {
         };
         sequence_set
             .iter(iter_strat)
-            .map(|wanted_id| self.imap_index.get((wanted_id.get() as usize) - 1).ok_or(anyhow!("Mail not found")))
+            .map(|wanted_id| {
+                self.imap_index
+                    .get((wanted_id.get() as usize) - 1)
+                    .ok_or(anyhow!("Mail not found"))
+            })
             .collect::<Result<Vec<_>>>()
     }
-    
+
     pub fn fetch(
         self: &'a Index<'a>,
         sequence_set: &SequenceSet,
