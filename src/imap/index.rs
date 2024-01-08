@@ -1,6 +1,6 @@
 use std::num::NonZeroU32;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use imap_codec::imap_types::sequence::{self, SeqOrUid, Sequence, SequenceSet};
 
 use crate::mail::uidindex::{ImapUid, UidIndex};
@@ -62,7 +62,7 @@ impl<'a> Index<'a> {
             return vec![];
         }
         let iter_strat = sequence::Strategy::Naive {
-            largest: self.last().expect("imap index is not empty").uid,
+            largest: self.last().expect("The mailbox is not empty").uid,
         };
         let mut unroll_seq = sequence_set.iter(iter_strat).collect::<Vec<_>>();
         unroll_seq.sort();
@@ -80,10 +80,6 @@ impl<'a> Index<'a> {
                 .partition_point(|mail_idx| &mail_idx.uid < start_seq);
             &self.imap_index[start_idx..]
         };
-        println!(
-            "win: {:?}",
-            imap_idx.iter().map(|midx| midx.uid).collect::<Vec<_>>()
-        );
 
         let mut acc = vec![];
         for wanted_uid in unroll_seq.iter() {
@@ -104,17 +100,25 @@ impl<'a> Index<'a> {
     }
 
     pub fn fetch_on_id(&'a self, sequence_set: &SequenceSet) -> Result<Vec<&'a MailIndex<'a>>> {
+        if self.imap_index.is_empty() {
+            return Ok(vec![]);
+        }
         let iter_strat = sequence::Strategy::Naive {
-            largest: self.last().context("The mailbox is empty")?.uid,
+            largest: NonZeroU32::try_from(self.imap_index.len() as u32)?,
         };
-        sequence_set
+        let mut acc = sequence_set
             .iter(iter_strat)
             .map(|wanted_id| {
                 self.imap_index
                     .get((wanted_id.get() as usize) - 1)
                     .ok_or(anyhow!("Mail not found"))
             })
-            .collect::<Result<Vec<_>>>()
+            .collect::<Result<Vec<_>>>()?;
+
+        // Sort the result to be consistent with UID
+        acc.sort_by(|a, b| a.i.cmp(&b.i));
+
+        Ok(acc)
     }
 
     pub fn fetch(

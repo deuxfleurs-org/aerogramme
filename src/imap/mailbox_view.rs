@@ -130,6 +130,8 @@ impl MailboxView {
         data.extend(self.flags_status()?.into_iter());
         data.push(self.uidvalidity_status()?);
         data.push(self.uidnext_status()?);
+        self.unseen_first_status()?
+            .map(|unseen_status| data.push(unseen_status));
 
         Ok(data)
     }
@@ -257,6 +259,7 @@ impl MailboxView {
             true => QueryScope::Full,
             _ => QueryScope::Partial,
         };
+        tracing::debug!("Query scope {:?}", query_scope);
         let idx = self.index()?;
         let mail_idx_list = idx.fetch(sequence_set, *is_uid_fetch)?;
 
@@ -400,6 +403,27 @@ impl MailboxView {
         Ok(Body::Data(Data::Recent(self.recent()?)))
     }
 
+    fn unseen_first_status(&self) -> Result<Option<Body<'static>>> {
+        Ok(self
+            .unseen_first()?
+            .map(|unseen_id| {
+                Status::ok(None, Some(Code::Unseen(unseen_id)), "First unseen.").map(Body::Status)
+            })
+            .transpose()?)
+    }
+
+    fn unseen_first(&self) -> Result<Option<NonZeroU32>> {
+        Ok(self
+            .0
+            .snapshot
+            .table
+            .values()
+            .enumerate()
+            .find(|(_i, (_imap_uid, flags))| !flags.contains(&"\\Seen".to_string()))
+            .map(|(i, _)| NonZeroU32::try_from(i as u32 + 1))
+            .transpose()?)
+    }
+
     pub(crate) fn recent(&self) -> Result<u32> {
         let recent = self
             .0
@@ -521,7 +545,6 @@ mod tests {
         let rfc822 = b"Subject: hello\r\nFrom: a@a.a\r\nTo: b@b.b\r\nDate: Thu, 12 Oct 2023 08:45:28 +0000\r\n\r\nhello world";
         let qr = QueryResult::FullResult {
             uuid: mail_in_idx.uuid.clone(),
-            index: &index_entry,
             metadata: meta,
             content: rfc822.to_vec(),
         };
@@ -596,6 +619,7 @@ mod tests {
                 seq: NonZeroU32::new(1).unwrap(),
                 items: NonEmptyVec::from(MessageDataItem::Body(mime_view::bodystructure(
                     &message.child,
+                    false,
                 )?)),
             });
             let test_bytes = ResponseCodec::new().encode(&test_repr).dump();

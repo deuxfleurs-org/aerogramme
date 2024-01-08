@@ -4,7 +4,10 @@ use std::num::NonZeroU32;
 
 use anyhow::{anyhow, bail, Result};
 
-use imap_codec::imap_types::body::{BasicFields, Body as FetchBody, BodyStructure, SpecificFields};
+use imap_codec::imap_types::body::{
+    BasicFields, Body as FetchBody, BodyStructure, MultiPartExtensionData, SinglePartExtensionData,
+    SpecificFields,
+};
 use imap_codec::imap_types::core::{AString, IString, NString, NonEmptyVec};
 use imap_codec::imap_types::fetch::{Part as FetchPart, Section as FetchSection};
 
@@ -78,8 +81,8 @@ pub fn body_ext<'a>(
 ///                                   | parameter list
 /// b OK Fetch completed (0.001 + 0.000 secs).
 /// ```
-pub fn bodystructure(part: &AnyPart) -> Result<BodyStructure<'static>> {
-    NodeMime(part).structure()
+pub fn bodystructure(part: &AnyPart, is_ext: bool) -> Result<BodyStructure<'static>> {
+    NodeMime(part).structure(is_ext)
 }
 
 /// NodeMime
@@ -118,12 +121,12 @@ impl<'a> NodeMime<'a> {
         }
     }
 
-    fn structure(&self) -> Result<BodyStructure<'static>> {
+    fn structure(&self, is_ext: bool) -> Result<BodyStructure<'static>> {
         match self.0 {
-            AnyPart::Txt(x) => NodeTxt(self, x).structure(),
-            AnyPart::Bin(x) => NodeBin(self, x).structure(),
-            AnyPart::Mult(x) => NodeMult(self, x).structure(),
-            AnyPart::Msg(x) => NodeMsg(self, x).structure(),
+            AnyPart::Txt(x) => NodeTxt(self, x).structure(is_ext),
+            AnyPart::Bin(x) => NodeBin(self, x).structure(is_ext),
+            AnyPart::Mult(x) => NodeMult(self, x).structure(is_ext),
+            AnyPart::Msg(x) => NodeMsg(self, x).structure(is_ext),
         }
     }
 }
@@ -359,7 +362,7 @@ impl<'a> SelectedMime<'a> {
 // ---------------------------
 struct NodeMsg<'a>(&'a NodeMime<'a>, &'a composite::Message<'a>);
 impl<'a> NodeMsg<'a> {
-    fn structure(&self) -> Result<BodyStructure<'static>> {
+    fn structure(&self, is_ext: bool) -> Result<BodyStructure<'static>> {
         let basic = SelectedMime(self.0 .0).basic_fields()?;
 
         Ok(BodyStructure::Single {
@@ -367,17 +370,23 @@ impl<'a> NodeMsg<'a> {
                 basic,
                 specific: SpecificFields::Message {
                     envelope: Box::new(ImfView(&self.1.imf).message_envelope()),
-                    body_structure: Box::new(NodeMime(&self.1.child).structure()?),
+                    body_structure: Box::new(NodeMime(&self.1.child).structure(is_ext)?),
                     number_of_lines: nol(self.1.raw_part),
                 },
             },
-            extension_data: None,
+            extension_data: match is_ext {
+                true => Some(SinglePartExtensionData {
+                    md5: NString(None),
+                    tail: None,
+                }),
+                _ => None,
+            },
         })
     }
 }
 struct NodeMult<'a>(&'a NodeMime<'a>, &'a composite::Multipart<'a>);
 impl<'a> NodeMult<'a> {
-    fn structure(&self) -> Result<BodyStructure<'static>> {
+    fn structure(&self, is_ext: bool) -> Result<BodyStructure<'static>> {
         let itype = &self.1.mime.interpreted_type;
         let subtype = IString::try_from(itype.subtype.to_string())
             .unwrap_or(unchecked_istring("alternative"));
@@ -386,7 +395,7 @@ impl<'a> NodeMult<'a> {
             .1
             .children
             .iter()
-            .filter_map(|inner| NodeMime(&inner).structure().ok())
+            .filter_map(|inner| NodeMime(&inner).structure(is_ext).ok())
             .collect::<Vec<_>>();
 
         NonEmptyVec::validate(&inner_bodies)?;
@@ -395,20 +404,22 @@ impl<'a> NodeMult<'a> {
         Ok(BodyStructure::Multi {
             bodies,
             subtype,
-            extension_data: None,
-            /*Some(MultipartExtensionData {
-            parameter_list: vec![],
-            disposition: None,
-            language: None,
-            location: None,
-            extension: vec![],
-            })*/
+            extension_data: match is_ext {
+                true => Some(MultiPartExtensionData {
+                    parameter_list: vec![(
+                        IString::try_from("boundary").unwrap(),
+                        IString::try_from(self.1.mime.interpreted_type.boundary.to_string())?,
+                    )],
+                    tail: None,
+                }),
+                _ => None,
+            },
         })
     }
 }
 struct NodeTxt<'a>(&'a NodeMime<'a>, &'a discrete::Text<'a>);
 impl<'a> NodeTxt<'a> {
-    fn structure(&self) -> Result<BodyStructure<'static>> {
+    fn structure(&self, is_ext: bool) -> Result<BodyStructure<'static>> {
         let mut basic = SelectedMime(self.0 .0).basic_fields()?;
 
         // Get the interpreted content type, set it
@@ -435,14 +446,20 @@ impl<'a> NodeTxt<'a> {
                     number_of_lines: nol(self.1.body),
                 },
             },
-            extension_data: None,
+            extension_data: match is_ext {
+                true => Some(SinglePartExtensionData {
+                    md5: NString(None),
+                    tail: None,
+                }),
+                _ => None,
+            },
         })
     }
 }
 
 struct NodeBin<'a>(&'a NodeMime<'a>, &'a discrete::Binary<'a>);
 impl<'a> NodeBin<'a> {
-    fn structure(&self) -> Result<BodyStructure<'static>> {
+    fn structure(&self, is_ext: bool) -> Result<BodyStructure<'static>> {
         let basic = SelectedMime(self.0 .0).basic_fields()?;
 
         let default = mime::r#type::NaiveType {
@@ -465,7 +482,13 @@ impl<'a> NodeBin<'a> {
                 basic,
                 specific: SpecificFields::Basic { r#type, subtype },
             },
-            extension_data: None,
+            extension_data: match is_ext {
+                true => Some(SinglePartExtensionData {
+                    md5: NString(None),
+                    tail: None,
+                }),
+                _ => None,
+            },
         })
     }
 }

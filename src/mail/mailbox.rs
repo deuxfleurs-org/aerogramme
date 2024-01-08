@@ -486,7 +486,7 @@ fn dump(uid_index: &Bayou<UidIndex>) {
 
 /// The metadata of a message that is stored in K2V
 /// at pk = mail/<mailbox uuid>, sk = <message uuid>
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MailMeta {
     /// INTERNALDATE field (milliseconds since epoch)
     pub internaldate: u64,

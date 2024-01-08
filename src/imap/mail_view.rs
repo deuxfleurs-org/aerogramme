@@ -27,15 +27,12 @@ use crate::imap::response::Body;
 
 pub struct MailView<'a> {
     pub in_idx: &'a MailIndex<'a>,
-    pub query_result: &'a QueryResult<'a>,
+    pub query_result: &'a QueryResult,
     pub content: FetchedMail<'a>,
 }
 
 impl<'a> MailView<'a> {
-    pub fn new(
-        query_result: &'a QueryResult<'a>,
-        in_idx: &'a MailIndex<'a>,
-    ) -> Result<MailView<'a>> {
+    pub fn new(query_result: &'a QueryResult, in_idx: &'a MailIndex<'a>) -> Result<MailView<'a>> {
         Ok(Self {
             in_idx,
             query_result,
@@ -74,7 +71,12 @@ impl<'a> MailView<'a> {
                 MessageDataItemName::Rfc822Size => self.rfc_822_size(),
                 MessageDataItemName::Rfc822Header => self.rfc_822_header(),
                 MessageDataItemName::Rfc822Text => self.rfc_822_text(),
-                MessageDataItemName::Rfc822 => self.rfc822(),
+                MessageDataItemName::Rfc822 => {
+                    if self.is_not_yet_seen() {
+                        seen = SeenFlag::MustAdd;
+                    }
+                    self.rfc822()
+                }
                 MessageDataItemName::Envelope => Ok(self.envelope()),
                 MessageDataItemName::Body => self.body(),
                 MessageDataItemName::BodyStructure => self.body_structure(),
@@ -180,13 +182,20 @@ impl<'a> MailView<'a> {
     fn body(&self) -> Result<MessageDataItem<'static>> {
         Ok(MessageDataItem::Body(mime_view::bodystructure(
             self.content.as_msg()?.child.as_ref(),
+            false,
         )?))
     }
 
     fn body_structure(&self) -> Result<MessageDataItem<'static>> {
-        Ok(MessageDataItem::Body(mime_view::bodystructure(
+        Ok(MessageDataItem::BodyStructure(mime_view::bodystructure(
             self.content.as_msg()?.child.as_ref(),
+            true,
         )?))
+    }
+
+    fn is_not_yet_seen(&self) -> bool {
+        let seen_flag = Flag::Seen.to_string();
+        !self.in_idx.flags.iter().any(|x| *x == seen_flag)
     }
 
     /// maps to BODY[<section>]<<partial>> and BODY.PEEK[<section>]<<partial>>
@@ -201,8 +210,7 @@ impl<'a> MailView<'a> {
     ) -> Result<(MessageDataItem<'static>, SeenFlag)> {
         // Manage Seen flag
         let mut seen = SeenFlag::DoNothing;
-        let seen_flag = Flag::Seen.to_string();
-        if !peek && !self.in_idx.flags.iter().any(|x| *x == seen_flag) {
+        if !peek && self.is_not_yet_seen() {
             // Add \Seen flag
             //self.mailbox.add_flags(uuid, &[seen_flag]).await?;
             seen = SeenFlag::MustAdd;
