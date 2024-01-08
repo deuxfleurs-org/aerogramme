@@ -117,13 +117,13 @@ impl<'a> Criteria<'a> {
     /// fetching some remote data
     pub fn filter_on_idx<'b>(
         &self,
-        midx_list: &[MailIndex<'b>],
-    ) -> (Vec<MailIndex<'b>>, Vec<MailIndex<'b>>) {
+        midx_list: &[&'b MailIndex<'b>],
+    ) -> (Vec<&'b MailIndex<'b>>, Vec<&'b MailIndex<'b>>) {
         let (p1, p2): (Vec<_>, Vec<_>) = midx_list
             .iter()
             .map(|x| (x, self.is_keep_on_idx(x)))
             .filter(|(_midx, decision)| decision.is_keep())
-            .map(|(midx, decision)| ((*midx).clone(), decision))
+            .map(|(midx, decision)| (*midx, decision))
             .partition(|(_midx, decision)| matches!(decision, PartialDecision::Keep));
 
         let to_keep = p1.into_iter().map(|(v, _)| v).collect();
@@ -133,13 +133,13 @@ impl<'a> Criteria<'a> {
 
     pub fn filter_on_query<'b>(
         &self,
-        midx_list: &[MailIndex<'b>],
+        midx_list: &[&'b MailIndex<'b>],
         query_result: &'b Vec<QueryResult<'b>>,
-    ) -> Result<Vec<MailIndex<'b>>> {
+    ) -> Result<Vec<&'b MailIndex<'b>>> {
         Ok(midx_list
             .iter()
             .zip(query_result.iter())
-            .map(|(midx, qr)| MailView::new(qr, midx.clone()))
+            .map(|(midx, qr)| MailView::new(qr, midx))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .filter(|mail_view| self.is_keep_on_query(mail_view))

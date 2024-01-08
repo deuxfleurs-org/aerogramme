@@ -146,7 +146,8 @@ impl MailboxView {
 
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
 
-        let mails = self.index().fetch(sequence_set, *is_uid_store)?;
+        let idx = self.index()?;
+        let mails = idx.fetch(sequence_set, *is_uid_store)?;
         for mi in mails.iter() {
             match kind {
                 StoreType::Add => {
@@ -189,7 +190,8 @@ impl MailboxView {
         to: Arc<Mailbox>,
         is_uid_copy: &bool,
     ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>)> {
-        let mails = self.index().fetch(sequence_set, *is_uid_copy)?;
+        let idx = self.index()?;
+        let mails = idx.fetch(sequence_set, *is_uid_copy)?;
 
         let mut new_uuids = vec![];
         for mi in mails.iter() {
@@ -216,7 +218,8 @@ impl MailboxView {
         to: Arc<Mailbox>,
         is_uid_copy: &bool,
     ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>, Vec<Body<'static>>)> {
-        let mails = self.index().fetch(sequence_set, *is_uid_copy)?;
+        let idx = self.index()?;
+        let mails = idx.fetch(sequence_set, *is_uid_copy)?;
 
         for mi in mails.iter() {
             to.move_from(&self.0.mailbox, mi.uuid).await?;
@@ -254,7 +257,8 @@ impl MailboxView {
             true => QueryScope::Full,
             _ => QueryScope::Partial,
         };
-        let mail_idx_list = self.index().fetch(sequence_set, *is_uid_fetch)?;
+        let idx = self.index()?;
+        let mail_idx_list = idx.fetch(sequence_set, *is_uid_fetch)?;
 
         // [2/6] Fetch the emails
         let uuids = mail_idx_list
@@ -316,7 +320,8 @@ impl MailboxView {
         let (seq_set, seq_type) = crit.to_sequence_set();
 
         // 2. Get the selection
-        let selection = self.index().fetch(&seq_set, seq_type.is_uid())?;
+        let idx = self.index()?;
+        let selection = idx.fetch(&seq_set, seq_type.is_uid())?;
 
         // 3. Filter the selection based on the ID / UID / Flags
         let (kept_idx, to_fetch) = crit.filter_on_idx(&selection);
@@ -341,8 +346,12 @@ impl MailboxView {
     }
 
     // ----
-    fn index<'a>(&'a self) -> Index<'a> {
-        Index(&self.0.snapshot)
+    /// @FIXME index should be stored for longer than a single request
+    /// Instead they should be tied to the FrozenMailbox refresh
+    /// It's not trivial to refactor the code to do that, so we are doing
+    /// some useless computation for now...
+    fn index<'a>(&'a self) -> Result<Index<'a>> {
+        Index::new(&self.0.snapshot)
     }
 
     /// Produce an OK [UIDVALIDITY _] message corresponding to `known_state`

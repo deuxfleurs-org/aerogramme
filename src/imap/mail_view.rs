@@ -26,13 +26,13 @@ use crate::imap::mime_view;
 use crate::imap::response::Body;
 
 pub struct MailView<'a> {
-    pub in_idx: MailIndex<'a>,
+    pub in_idx: &'a MailIndex<'a>,
     pub query_result: &'a QueryResult<'a>,
     pub content: FetchedMail<'a>,
 }
 
 impl<'a> MailView<'a> {
-    pub fn new(query_result: &'a QueryResult<'a>, in_idx: MailIndex<'a>) -> Result<MailView<'a>> {
+    pub fn new(query_result: &'a QueryResult<'a>, in_idx: &'a MailIndex<'a>) -> Result<MailView<'a>> {
         Ok(Self {
             in_idx,
             query_result,

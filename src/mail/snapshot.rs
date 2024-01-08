@@ -11,8 +11,6 @@ use super::unique_ident::UniqueIdent;
 /// state that is desynchronized with the real mailbox state.
 /// It's up to the user to choose when their snapshot must be updated
 /// to give useful information to their clients
-///
-///
 pub struct FrozenMailbox {
     pub mailbox: Arc<Mailbox>,
     pub snapshot: UidIndex,

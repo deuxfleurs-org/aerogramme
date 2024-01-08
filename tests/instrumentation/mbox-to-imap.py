@@ -25,6 +25,8 @@ if args.tls:
 else:
     imap = IMAP4
 
+
+print(args)
 with imap(host=args.host, port=args.port) as M:
     print(M.login(args.user, args.password))
     print(M.select(args.mailbox))
