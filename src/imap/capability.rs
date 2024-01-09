@@ -26,7 +26,7 @@ impl Default for ServerCapability {
             Capability::Move,
             Capability::LiteralPlus,
             capability_unselect(),
-            //capability_condstore(),
+            capability_condstore(),
             //capability_qresync(),
         ]))
     }

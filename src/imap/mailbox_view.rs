@@ -130,8 +130,8 @@ impl MailboxView {
         data.extend(self.flags_status()?.into_iter());
         data.push(self.uidvalidity_status()?);
         data.push(self.uidnext_status()?);
-        self.unseen_first_status()?
-            .map(|unseen_status| data.push(unseen_status));
+        /*self.unseen_first_status()?
+            .map(|unseen_status| data.push(unseen_status));*/
 
         Ok(data)
     }
@@ -403,6 +403,7 @@ impl MailboxView {
         Ok(Body::Data(Data::Recent(self.recent()?)))
     }
 
+    #[allow(dead_code)]
     fn unseen_first_status(&self) -> Result<Option<Body<'static>>> {
         Ok(self
             .unseen_first()?
@@ -412,6 +413,7 @@ impl MailboxView {
             .transpose()?)
     }
 
+    #[allow(dead_code)]
     fn unseen_first(&self) -> Result<Option<NonZeroU32>> {
         Ok(self
             .0
