@@ -48,15 +48,21 @@ impl ServerCapability {
     }
 }
 
-enum ClientStatus {
+pub enum ClientStatus {
     NotSupportedByServer,
     Disabled,
     Enabled,
 }
+impl ClientStatus {
+    pub fn is_enabled(&self) -> bool {
+        matches!(self, Self::Enabled)
+    }
+}
+
 
 pub struct ClientCapability {
-    condstore: ClientStatus,
-    utf8kind: Option<Utf8Kind>,
+    pub condstore: ClientStatus,
+    pub utf8kind: Option<Utf8Kind>,
 }
 
 impl ClientCapability {

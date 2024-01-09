@@ -292,7 +292,7 @@ impl<'a> AuthenticatedContext<'a> {
             }
         };
 
-        let view = MailboxView::new(mb).await;
+        let view = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await;
 
         let mut ret_attrs = vec![];
         for attr in attributes.iter() {
@@ -439,7 +439,7 @@ impl<'a> AuthenticatedContext<'a> {
         };
         tracing::info!(username=%self.user.username, mailbox=%name, "mailbox.selected");
 
-        let mb = MailboxView::new(mb).await;
+        let mb = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await;
         let data = mb.summary()?;
 
         Ok((
@@ -474,7 +474,7 @@ impl<'a> AuthenticatedContext<'a> {
         };
         tracing::info!(username=%self.user.username, mailbox=%name, "mailbox.examined");
 
-        let mb = MailboxView::new(mb).await;
+        let mb = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await;
         let data = mb.summary()?;
 
         Ok((

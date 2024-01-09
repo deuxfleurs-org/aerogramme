@@ -8,7 +8,7 @@ use futures::stream::{FuturesOrdered, StreamExt};
 use imap_codec::imap_types::core::Charset;
 use imap_codec::imap_types::fetch::{MacroOrMessageDataItemNames, MessageDataItem};
 use imap_codec::imap_types::flag::{Flag, FlagFetch, FlagPerm, StoreResponse, StoreType};
-use imap_codec::imap_types::response::{Code, Data, Status};
+use imap_codec::imap_types::response::{Code, CodeOther, Data, Status};
 use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::SequenceSet;
 
@@ -39,12 +39,18 @@ const DEFAULT_FLAGS: [Flag; 5] = [
 /// To do this, it keeps a variable `known_state` that corresponds to
 /// what the client knows, and produces IMAP messages to be sent to the
 /// client that go along updates to `known_state`.
-pub struct MailboxView(pub FrozenMailbox);
+pub struct MailboxView {
+    pub internal: FrozenMailbox,
+    pub is_condstore: bool,
+}
 
 impl MailboxView {
     /// Creates a new IMAP view into a mailbox.
-    pub async fn new(mailbox: Arc<Mailbox>) -> Self {
-        Self(mailbox.frozen().await)
+    pub async fn new(mailbox: Arc<Mailbox>, is_cond: bool) -> Self {
+        Self { 
+            internal: mailbox.frozen().await,
+            is_condstore: is_cond,
+        }
     }
 
     /// Create an updated view, useful to make a diff
@@ -54,8 +60,8 @@ impl MailboxView {
     /// This does NOT trigger a sync, it bases itself on what is currently
     /// loaded in RAM by Bayou.
     pub async fn update(&mut self) -> Result<Vec<Body<'static>>> {
-        let old_snapshot = self.0.update().await;
-        let new_snapshot = &self.0.snapshot;
+        let old_snapshot = self.internal.update().await;
+        let new_snapshot = &self.internal.snapshot;
 
         let mut data = Vec::<Body>::new();
 
@@ -130,6 +136,9 @@ impl MailboxView {
         data.extend(self.flags_status()?.into_iter());
         data.push(self.uidvalidity_status()?);
         data.push(self.uidnext_status()?);
+        if self.is_condstore {
+            data.push(self.highestmodseq_status()?);
+        }
         /*self.unseen_first_status()?
             .map(|unseen_status| data.push(unseen_status));*/
 
@@ -144,7 +153,7 @@ impl MailboxView {
         flags: &[Flag<'a>],
         is_uid_store: &bool,
     ) -> Result<Vec<Body<'static>>> {
-        self.0.sync().await?;
+        self.internal.sync().await?;
 
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
 
@@ -153,13 +162,13 @@ impl MailboxView {
         for mi in mails.iter() {
             match kind {
                 StoreType::Add => {
-                    self.0.mailbox.add_flags(mi.uuid, &flags[..]).await?;
+                    self.internal.mailbox.add_flags(mi.uuid, &flags[..]).await?;
                 }
                 StoreType::Remove => {
-                    self.0.mailbox.del_flags(mi.uuid, &flags[..]).await?;
+                    self.internal.mailbox.del_flags(mi.uuid, &flags[..]).await?;
                 }
                 StoreType::Replace => {
-                    self.0.mailbox.set_flags(mi.uuid, &flags[..]).await?;
+                    self.internal.mailbox.set_flags(mi.uuid, &flags[..]).await?;
                 }
             }
         }
@@ -169,8 +178,8 @@ impl MailboxView {
     }
 
     pub async fn expunge(&mut self) -> Result<Vec<Body<'static>>> {
-        self.0.sync().await?;
-        let state = self.0.peek().await;
+        self.internal.sync().await?;
+        let state = self.internal.peek().await;
 
         let deleted_flag = Flag::Deleted.to_string();
         let msgs = state
@@ -180,7 +189,7 @@ impl MailboxView {
             .map(|(uuid, _)| *uuid);
 
         for msg in msgs {
-            self.0.mailbox.delete(msg).await?;
+            self.internal.mailbox.delete(msg).await?;
         }
 
         self.update().await
@@ -197,7 +206,7 @@ impl MailboxView {
 
         let mut new_uuids = vec![];
         for mi in mails.iter() {
-            new_uuids.push(to.copy_from(&self.0.mailbox, mi.uuid).await?);
+            new_uuids.push(to.copy_from(&self.internal.mailbox, mi.uuid).await?);
         }
 
         let mut ret = vec![];
@@ -224,7 +233,7 @@ impl MailboxView {
         let mails = idx.fetch(sequence_set, *is_uid_copy)?;
 
         for mi in mails.iter() {
-            to.move_from(&self.0.mailbox, mi.uuid).await?;
+            to.move_from(&self.internal.mailbox, mi.uuid).await?;
         }
 
         let mut ret = vec![];
@@ -268,7 +277,7 @@ impl MailboxView {
             .iter()
             .map(|midx| midx.uuid)
             .collect::<Vec<_>>();
-        let query_result = self.0.query(&uuids, query_scope).fetch().await?;
+        let query_result = self.internal.query(&uuids, query_scope).fetch().await?;
 
         // [3/6] Derive an IMAP-specific view from the results, apply the filters
         let views = query_result
@@ -294,7 +303,7 @@ impl MailboxView {
             .filter(|(_mv, seen)| matches!(seen, SeenFlag::MustAdd))
             .map(|(mv, _seen)| async move {
                 let seen_flag = Flag::Seen.to_string();
-                self.0
+                self.internal
                     .mailbox
                     .add_flags(*mv.query_result.uuid(), &[seen_flag])
                     .await?;
@@ -332,7 +341,7 @@ impl MailboxView {
         // 4. Fetch additional info about the emails
         let query_scope = crit.query_scope();
         let uuids = to_fetch.iter().map(|midx| midx.uuid).collect::<Vec<_>>();
-        let query_result = self.0.query(&uuids, query_scope).fetch().await?;
+        let query_result = self.internal.query(&uuids, query_scope).fetch().await?;
 
         // 5. If needed, filter the selection based on the body
         let kept_query = crit.filter_on_query(&to_fetch, &query_result)?;
@@ -354,7 +363,7 @@ impl MailboxView {
     /// It's not trivial to refactor the code to do that, so we are doing
     /// some useless computation for now...
     fn index<'a>(&'a self) -> Result<Index<'a>> {
-        Index::new(&self.0.snapshot)
+        Index::new(&self.internal.snapshot)
     }
 
     /// Produce an OK [UIDVALIDITY _] message corresponding to `known_state`
@@ -369,7 +378,7 @@ impl MailboxView {
     }
 
     pub(crate) fn uidvalidity(&self) -> ImapUidvalidity {
-        self.0.snapshot.uidvalidity
+        self.internal.snapshot.uidvalidity
     }
 
     /// Produce an OK [UIDNEXT _] message corresponding to `known_state`
@@ -384,7 +393,15 @@ impl MailboxView {
     }
 
     pub(crate) fn uidnext(&self) -> ImapUid {
-        self.0.snapshot.uidnext
+        self.internal.snapshot.uidnext
+    }
+
+    pub(crate) fn highestmodseq_status(&self) -> Result<Body<'static>> {
+        Ok(Body::Status(Status::ok(
+            None, 
+            Some(Code::Other(CodeOther::unvalidated(format!("HIGHESTMODSEQ {}", 0).into_bytes()))),
+            "Highest",
+        )?))
     }
 
     /// Produce an EXISTS message corresponding to the number of mails
@@ -394,7 +411,7 @@ impl MailboxView {
     }
 
     pub(crate) fn exists(&self) -> Result<u32> {
-        Ok(u32::try_from(self.0.snapshot.idx_by_uid.len())?)
+        Ok(u32::try_from(self.internal.snapshot.idx_by_uid.len())?)
     }
 
     /// Produce a RECENT message corresponding to the number of
@@ -416,7 +433,7 @@ impl MailboxView {
     #[allow(dead_code)]
     fn unseen_first(&self) -> Result<Option<NonZeroU32>> {
         Ok(self
-            .0
+            .internal
             .snapshot
             .table
             .values()
@@ -428,7 +445,7 @@ impl MailboxView {
 
     pub(crate) fn recent(&self) -> Result<u32> {
         let recent = self
-            .0
+            .internal
             .snapshot
             .idx_by_flag
             .get(&"\\Recent".to_string())
@@ -445,7 +462,7 @@ impl MailboxView {
         // 1. Collecting all the possible flags in the mailbox
         // 1.a Fetch them from our index
         let mut known_flags: Vec<Flag> = self
-            .0
+            .internal
             .snapshot
             .idx_by_flag
             .flags()
@@ -485,9 +502,9 @@ impl MailboxView {
     }
 
     pub(crate) fn unseen_count(&self) -> usize {
-        let total = self.0.snapshot.table.len();
+        let total = self.internal.snapshot.table.len();
         let seen = self
-            .0
+            .internal
             .snapshot
             .idx_by_flag
             .get(&Flag::Seen.to_string())
