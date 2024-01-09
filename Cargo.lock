@@ -1807,7 +1807,6 @@ dependencies = [
 [[package]]
 name = "imap-codec"
 version = "1.0.0"
-source = "git+https://github.com/duesee/imap-codec?branch=v2#1f490146bb6197eee6032205e3aa7f297efd9b39"
 dependencies = [
  "abnf-core",
  "base64 0.21.5",
@@ -1834,7 +1833,6 @@ dependencies = [
 [[package]]
 name = "imap-types"
 version = "1.0.0"
-source = "git+https://github.com/duesee/imap-codec?branch=v2#1f490146bb6197eee6032205e3aa7f297efd9b39"
 dependencies = [
  "base64 0.21.5",
  "bounded-static",

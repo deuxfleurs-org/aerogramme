@@ -1,4 +1,4 @@
-use imap_codec::imap_types::core::NonEmptyVec;
+use imap_codec::imap_types::core::{Atom, NonEmptyVec};
 use imap_codec::imap_types::extensions::enable::{CapabilityEnable, Utf8Kind};
 use imap_codec::imap_types::response::Capability;
 use std::collections::HashSet;
@@ -48,6 +48,7 @@ impl ServerCapability {
     }
 }
 
+#[derive(Clone)]
 pub enum ClientStatus {
     NotSupportedByServer,
     Disabled,
@@ -56,6 +57,13 @@ pub enum ClientStatus {
 impl ClientStatus {
     pub fn is_enabled(&self) -> bool {
         matches!(self, Self::Enabled)
+    }
+
+    pub fn enable(&self) -> Self {
+        match self {
+            Self::Disabled => Self::Enabled,
+            other => other.clone(),
+        }
     }
 }
 
@@ -73,6 +81,14 @@ impl ClientCapability {
                 _ => ClientStatus::NotSupportedByServer,
             },
             utf8kind: None,
+        }
+    }
+
+    pub fn select_enable(&mut self, atoms: &[Atom]) {
+        for at in atoms.iter() {
+            if at.as_ref().to_uppercase() == "CONDSTORE" {
+                self.condstore = self.condstore.enable();
+            }
         }
     }
 

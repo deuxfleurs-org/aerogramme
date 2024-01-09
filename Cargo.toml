@@ -64,8 +64,10 @@ imap-flow = { git = "https://github.com/duesee/imap-flow.git", rev = "e45ce7bb6a
 [dev-dependencies]
 
 [patch.crates-io]
-imap-types = { git = "https://github.com/duesee/imap-codec", branch = "v2" }
-imap-codec = { git = "https://github.com/duesee/imap-codec", branch = "v2" }
+#imap-types = { git = "https://github.com/duesee/imap-codec", branch = "v2" }
+#imap-codec = { git = "https://github.com/duesee/imap-codec", branch = "v2" }
+imap-types = { path = "../../imap-codec/imap-types" }
+imap-codec = { path = "../../imap-codec/imap-codec" }
 
 [[test]]
 name = "behavior"

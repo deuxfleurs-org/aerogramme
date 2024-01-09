@@ -58,8 +58,8 @@ pub async fn dispatch<'a>(
         } => ctx.status(mailbox, item_names).await,
         CommandBody::Subscribe { mailbox } => ctx.subscribe(mailbox).await,
         CommandBody::Unsubscribe { mailbox } => ctx.unsubscribe(mailbox).await,
-        CommandBody::Select { mailbox } => ctx.select(mailbox).await,
-        CommandBody::Examine { mailbox } => ctx.examine(mailbox).await,
+        CommandBody::Select { mailbox, parameters } => ctx.select(mailbox, parameters).await,
+        CommandBody::Examine { mailbox, parameters } => ctx.examine(mailbox, parameters).await,
         CommandBody::Append {
             mailbox,
             flags,
@@ -421,7 +421,12 @@ impl<'a> AuthenticatedContext<'a> {
     async fn select(
         self,
         mailbox: &MailboxCodec<'a>,
+        parameters: &Option<NonEmptyVec<Atom<'a>>>,
     ) -> Result<(Response<'static>, flow::Transition)> {
+        parameters.as_ref().map(|plist|
+            self.client_capabilities.select_enable(plist.as_ref())
+        );
+
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
@@ -456,7 +461,12 @@ impl<'a> AuthenticatedContext<'a> {
     async fn examine(
         self,
         mailbox: &MailboxCodec<'a>,
+        parameters: &Option<NonEmptyVec<Atom<'a>>>,
     ) -> Result<(Response<'static>, flow::Transition)> {
+        parameters.as_ref().map(|plist|
+            self.client_capabilities.select_enable(plist.as_ref())
+        );
+
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
