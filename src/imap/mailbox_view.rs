@@ -399,7 +399,7 @@ impl MailboxView {
     pub(crate) fn highestmodseq_status(&self) -> Result<Body<'static>> {
         Ok(Body::Status(Status::ok(
             None, 
-            Some(Code::Other(CodeOther::unvalidated(format!("HIGHESTMODSEQ {}", 0).into_bytes()))),
+            Some(Code::Other(CodeOther::unvalidated(format!("HIGHESTMODSEQ {}", self.internal.snapshot.highestmodseq).into_bytes()))),
             "Highest",
         )?))
     }
