@@ -259,7 +259,7 @@ impl MailboxView {
         sequence_set: &SequenceSet,
         attributes: &'b MacroOrMessageDataItemNames<'static>,
         is_uid_fetch: &bool,
-    ) -> Result<Vec<Body<'static>>> {
+    ) -> Result<(Vec<Body<'static>>, bool)> {
         // [1/6] Pre-compute data
         //  a. what are the uuids of the emails we want?
         //  b. do we need to fetch the full body?
@@ -316,7 +316,7 @@ impl MailboxView {
             .collect::<Result<_, _>>()?;
 
         // [6/6] Build the final result that will be sent to the client.
-        Ok(imap_ret)
+        Ok((imap_ret, ap.is_enabling_condstore()))
     }
 
     /// A naive search implementation...

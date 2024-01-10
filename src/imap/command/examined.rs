@@ -91,14 +91,19 @@ impl<'a> ExaminedContext<'a> {
         uid: &bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
         match self.mailbox.fetch(sequence_set, attributes, uid).await {
-            Ok(resp) => Ok((
-                Response::build()
-                    .to_req(self.req)
-                    .message("FETCH completed")
-                    .set_body(resp)
-                    .ok()?,
-                flow::Transition::None,
-            )),
+            Ok((resp, enable_condstore)) => {
+                if enable_condstore {
+                    self.client_capabilities.enable_condstore();
+                }
+                Ok((
+                    Response::build()
+                        .to_req(self.req)
+                        .message("FETCH completed")
+                        .set_body(resp)
+                        .ok()?,
+                    flow::Transition::None,
+                ))
+            },
             Err(e) => Ok((
                 Response::build()
                     .to_req(self.req)

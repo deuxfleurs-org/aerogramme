@@ -34,6 +34,12 @@ impl AttributesProxy {
         Self { attrs: fetch_attrs }
     }
 
+    pub fn is_enabling_condstore(&self) -> bool {
+        self.attrs.iter().any(|x| {
+            matches!(x, MessageDataItemName::ModSeq)
+        })
+    }
+
     pub fn need_body(&self) -> bool {
         self.attrs.iter().any(|x| {
             match x {
