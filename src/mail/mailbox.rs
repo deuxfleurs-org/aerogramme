@@ -465,6 +465,9 @@ impl MailboxInternal {
     }
 }
 
+// Can be useful to debug so we want this code
+// to be available to developers
+#[allow(dead_code)]
 fn dump(uid_index: &Bayou<UidIndex>) {
     let s = uid_index.state();
     println!("---- MAILBOX STATE ----");

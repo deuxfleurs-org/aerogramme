@@ -311,8 +311,9 @@ impl<'a> AuthenticatedContext<'a> {
                     bail!("quota not implemented, can't return freed storage after EXPUNGE will be run");
                 },
                 StatusDataItemName::HighestModSeq => {
-                    bail!("highestmodseq not yet implemented");
-                }
+                    self.client_capabilities.enable_condstore();
+                    StatusDataItem::HighestModSeq(view.highestmodseq().get())
+                },
             });
         }
 

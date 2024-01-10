@@ -125,13 +125,6 @@ impl QueryResult {
         }
     }
 
-    fn into_partial(self, metadata: MailMeta) -> Option<Self> {
-        match self {
-            Self::IndexResult { uuid } => Some(Self::PartialResult { uuid, metadata }),
-            _ => None,
-        }
-    }
-
     fn into_full(self, content: Vec<u8>) -> Option<Self> {
         match self {
             Self::PartialResult { uuid, metadata } => Some(Self::FullResult {

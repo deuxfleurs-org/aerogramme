@@ -15,7 +15,7 @@ use imap_codec::imap_types::sequence::SequenceSet;
 use crate::mail::mailbox::Mailbox;
 use crate::mail::query::QueryScope;
 use crate::mail::snapshot::FrozenMailbox;
-use crate::mail::uidindex::{ImapUid, ImapUidvalidity};
+use crate::mail::uidindex::{ImapUid, ImapUidvalidity, ModSeq};
 
 use crate::imap::attributes::AttributesProxy;
 use crate::imap::flags;
@@ -399,9 +399,13 @@ impl MailboxView {
     pub(crate) fn highestmodseq_status(&self) -> Result<Body<'static>> {
         Ok(Body::Status(Status::ok(
             None, 
-            Some(Code::Other(CodeOther::unvalidated(format!("HIGHESTMODSEQ {}", self.internal.snapshot.highestmodseq).into_bytes()))),
+            Some(Code::Other(CodeOther::unvalidated(format!("HIGHESTMODSEQ {}", self.highestmodseq()).into_bytes()))),
             "Highest",
         )?))
+    }
+
+    pub(crate) fn highestmodseq(&self) -> ModSeq {
+        self.internal.snapshot.highestmodseq
     }
 
     /// Produce an EXISTS message corresponding to the number of mails

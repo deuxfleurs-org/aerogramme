@@ -11,9 +11,11 @@ fn capability_condstore() -> Capability<'static> {
     Capability::try_from("CONDSTORE").unwrap()
 }
 
+/*
 fn capability_qresync() -> Capability<'static> {
     Capability::try_from("QRESYNC").unwrap()
 }
+*/
 
 #[derive(Debug, Clone)]
 pub struct ServerCapability(HashSet<Capability<'static>>);
@@ -84,10 +86,14 @@ impl ClientCapability {
         }
     }
 
+    pub fn enable_condstore(&mut self) {
+        self.condstore = self.condstore.enable();
+    }
+
     pub fn select_enable(&mut self, atoms: &[Atom]) {
         for at in atoms.iter() {
             if at.as_ref().to_uppercase() == "CONDSTORE" {
-                self.condstore = self.condstore.enable();
+                self.enable_condstore();
             }
         }
     }

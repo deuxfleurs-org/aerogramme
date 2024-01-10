@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 
 use im::{HashMap, OrdMap, OrdSet};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -6,7 +6,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::bayou::*;
 use crate::mail::unique_ident::UniqueIdent;
 
-pub type ModSeq = NonZeroU32;
+pub type ModSeq = NonZeroU64;
 pub type ImapUid = NonZeroU32;
 pub type ImapUidvalidity = NonZeroU32;
 pub type Flag = String;
@@ -118,10 +118,10 @@ impl Default for UidIndex {
 
             uidvalidity: NonZeroU32::new(1).unwrap(),
             uidnext: NonZeroU32::new(1).unwrap(),
-            highestmodseq: NonZeroU32::new(1).unwrap(),
+            highestmodseq: NonZeroU64::new(1).unwrap(),
 
             internalseq: NonZeroU32::new(1).unwrap(),
-            internalmodseq: NonZeroU32::new(1).unwrap(),
+            internalmodseq: NonZeroU64::new(1).unwrap(),
         }
     }
 }
@@ -138,7 +138,7 @@ impl BayouState for UidIndex {
                 // The intuition: we increase the UIDValidity by the number of possible conflicts
                 if *uid < new.internalseq || *modseq < new.internalmodseq {
                     let bump_uid = new.internalseq.get() - uid.get();
-                    let bump_modseq = new.internalmodseq.get() - modseq.get();
+                    let bump_modseq = (new.internalmodseq.get() - modseq.get()) as u32;
                     new.uidvalidity =
                         NonZeroU32::new(new.uidvalidity.get() + bump_uid + bump_modseq)
                             .unwrap();
@@ -164,7 +164,7 @@ impl BayouState for UidIndex {
                 new.highestmodseq = new.internalmodseq;
 
                 new.internalseq = NonZeroU32::new(new.internalseq.get() + 1).unwrap();
-                new.internalmodseq = NonZeroU32::new(new.internalmodseq.get() + 1).unwrap();
+                new.internalmodseq = NonZeroU64::new(new.internalmodseq.get() + 1).unwrap();
 
                 new.uidnext = new.internalseq;
             }
@@ -179,7 +179,7 @@ impl BayouState for UidIndex {
                 if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
                     // Bump UIDValidity if required
                     if *candidate_modseq < new.internalmodseq {
-                        let bump_modseq = new.internalmodseq.get() - candidate_modseq.get();
+                        let bump_modseq = (new.internalmodseq.get() - candidate_modseq.get()) as u32;
                         new.uidvalidity =
                             NonZeroU32::new(new.uidvalidity.get() + bump_modseq)
                                 .unwrap();
@@ -198,14 +198,14 @@ impl BayouState for UidIndex {
 
                     // Update counters
                     new.highestmodseq = new.internalmodseq;
-                    new.internalmodseq = NonZeroU32::new(new.internalmodseq.get() + 1).unwrap();
+                    new.internalmodseq = NonZeroU64::new(new.internalmodseq.get() + 1).unwrap();
                 }
             }
             UidIndexOp::FlagDel(ident, candidate_modseq, rm_flags) => {
                 if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
                     // Bump UIDValidity if required
                     if *candidate_modseq < new.internalmodseq {
-                        let bump_modseq = new.internalmodseq.get() - candidate_modseq.get();
+                        let bump_modseq = (new.internalmodseq.get() - candidate_modseq.get()) as u32;
                         new.uidvalidity =
                             NonZeroU32::new(new.uidvalidity.get() + bump_modseq)
                                 .unwrap();
@@ -221,14 +221,14 @@ impl BayouState for UidIndex {
 
                     // Update counters
                     new.highestmodseq = new.internalmodseq;
-                    new.internalmodseq = NonZeroU32::new(new.internalmodseq.get() + 1).unwrap();
+                    new.internalmodseq = NonZeroU64::new(new.internalmodseq.get() + 1).unwrap();
                 }
             }
             UidIndexOp::FlagSet(ident, candidate_modseq, new_flags) => {
                 if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
                     // Bump UIDValidity if required
                     if *candidate_modseq < new.internalmodseq {
-                        let bump_modseq = new.internalmodseq.get() - candidate_modseq.get();
+                        let bump_modseq = (new.internalmodseq.get() - candidate_modseq.get()) as u32;
                         new.uidvalidity =
                             NonZeroU32::new(new.uidvalidity.get() + bump_modseq)
                                 .unwrap();
@@ -255,7 +255,7 @@ impl BayouState for UidIndex {
 
                     // Update counters
                     new.highestmodseq = new.internalmodseq;
-                    new.internalmodseq = NonZeroU32::new(new.internalmodseq.get() + 1).unwrap();
+                    new.internalmodseq = NonZeroU64::new(new.internalmodseq.get() + 1).unwrap();
                 }
             }
             UidIndexOp::BumpUidvalidity(count) => {
