@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use anyhow::{anyhow, Result};
 use imap_codec::imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
 
-use crate::mail::uidindex::{ImapUid, UidIndex};
+use crate::mail::uidindex::{ImapUid, ModSeq, UidIndex};
 use crate::mail::unique_ident::UniqueIdent;
 
 pub struct Index<'a> {
@@ -17,12 +17,10 @@ impl<'a> Index<'a> {
             .iter()
             .enumerate()
             .map(|(i_enum, (&uid, &uuid))| {
-                let flags = internal
+                let (_, modseq, flags) = internal
                     .table
                     .get(&uuid)
-                    .ok_or(anyhow!("mail is missing from index"))?
-                    .2
-                    .as_ref();
+                    .ok_or(anyhow!("mail is missing from index"))?;
                 let i_int: u32 = (i_enum + 1).try_into()?;
                 let i: NonZeroU32 = i_int.try_into()?;
 
@@ -30,6 +28,7 @@ impl<'a> Index<'a> {
                     i,
                     uid,
                     uuid,
+                    modseq: *modseq,
                     flags,
                 })
             })
@@ -134,6 +133,7 @@ pub struct MailIndex<'a> {
     pub i: NonZeroU32,
     pub uid: ImapUid,
     pub uuid: UniqueIdent,
+    pub modseq: ModSeq,
     pub flags: &'a Vec<String>,
 }
 

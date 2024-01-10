@@ -90,6 +90,7 @@ impl<'a> MailView<'a> {
                     Ok(body)
                 }
                 MessageDataItemName::InternalDate => self.internal_date(),
+                MessageDataItemName::ModSeq => Ok(self.modseq()),
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -251,6 +252,10 @@ impl<'a> MailView<'a> {
             .earliest()
             .ok_or(anyhow!("Unable to parse internal date"))?;
         Ok(MessageDataItem::InternalDate(DateTime::unvalidated(dt)))
+    }
+
+    fn modseq(&self) -> MessageDataItem<'static> {
+        MessageDataItem::ModSeq(self.in_idx.modseq)
     }
 }
 
