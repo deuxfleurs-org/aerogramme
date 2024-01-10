@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use imap_codec::imap_types::command::{Command, CommandBody};
-use imap_codec::imap_types::core::Charset;
+use imap_codec::imap_types::command::{Command, CommandBody, StoreModifier};
+use imap_codec::imap_types::core::{Charset, Atom};
 use imap_codec::imap_types::fetch::MacroOrMessageDataItemNames;
 use imap_codec::imap_types::flag::{Flag, StoreResponse, StoreType};
 use imap_codec::imap_types::mailbox::Mailbox as MailboxCodec;
@@ -56,8 +56,9 @@ pub async fn dispatch<'a>(
             kind,
             response,
             flags,
+            modifiers,
             uid,
-        } => ctx.store(sequence_set, kind, response, flags, uid).await,
+        } => ctx.store(sequence_set, kind, response, flags, modifiers, uid).await,
         CommandBody::Copy {
             sequence_set,
             mailbox,
@@ -185,8 +186,10 @@ impl<'a> SelectedContext<'a> {
         kind: &StoreType,
         response: &StoreResponse,
         flags: &[Flag<'a>],
+        modifiers: &[(Atom<'a>, StoreModifier<'a>)],
         uid: &bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
+        tracing::info!(modifiers=?modifiers);
         let data = self
             .mailbox
             .store(sequence_set, kind, response, flags, uid)
