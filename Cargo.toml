@@ -58,16 +58,14 @@ aws-sdk-s3 = "1.9.0"
 eml-codec = { git = "https://git.deuxfleurs.fr/Deuxfleurs/eml-codec.git", branch = "main" }
 smtp-message = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
-imap-codec = { version = "1.0.0", features = ["bounded-static", "ext_condstore_qresync"] }
-imap-flow = { git = "https://github.com/duesee/imap-flow.git", rev = "e45ce7bb6ab6bda3c71a0c7b05e9b558a5902e90" }
+imap-codec = { version = "2.0.0", features = ["bounded-static", "ext_condstore_qresync"] }
+imap-flow = { git = "https://github.com/superboum/imap-flow.git", branch = "custom/aerogramme" }
 
 [dev-dependencies]
 
 [patch.crates-io]
-#imap-types = { git = "https://github.com/duesee/imap-codec", branch = "v2" }
-#imap-codec = { git = "https://github.com/duesee/imap-codec", branch = "v2" }
-imap-types = { path = "../../imap-codec/imap-types" }
-imap-codec = { path = "../../imap-codec/imap-codec" }
+imap-types = { git = "https://github.com/superboum/imap-codec", branch = "custom/aerogramme" }
+imap-codec = { git = "https://github.com/superboum/imap-codec", branch = "custom/aerogramme" }
 
 [[test]]
 name = "behavior"

@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 
 use anyhow::{anyhow, Result};
-use imap_codec::imap_types::sequence::{self, SeqOrUid, Sequence, SequenceSet};
+use imap_codec::imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
 
 use crate::mail::uidindex::{ImapUid, UidIndex};
 use crate::mail::unique_ident::UniqueIdent;
@@ -61,10 +61,8 @@ impl<'a> Index<'a> {
         if self.imap_index.is_empty() {
             return vec![];
         }
-        let iter_strat = sequence::Strategy::Naive {
-            largest: self.last().expect("The mailbox is not empty").uid,
-        };
-        let mut unroll_seq = sequence_set.iter(iter_strat).collect::<Vec<_>>();
+        let largest = self.last().expect("The mailbox is not empty").uid;
+        let mut unroll_seq = sequence_set.iter(largest).collect::<Vec<_>>();
         unroll_seq.sort();
 
         let start_seq = match unroll_seq.iter().next() {
@@ -103,11 +101,9 @@ impl<'a> Index<'a> {
         if self.imap_index.is_empty() {
             return Ok(vec![]);
         }
-        let iter_strat = sequence::Strategy::Naive {
-            largest: NonZeroU32::try_from(self.imap_index.len() as u32)?,
-        };
+        let largest = NonZeroU32::try_from(self.imap_index.len() as u32)?;
         let mut acc = sequence_set
-            .iter(iter_strat)
+            .iter(largest)
             .map(|wanted_id| {
                 self.imap_index
                     .get((wanted_id.get() as usize) - 1)
