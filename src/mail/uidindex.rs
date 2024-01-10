@@ -136,7 +136,7 @@ impl BayouState for UidIndex {
                 // Change UIDValidity if there is a UID conflict or a MODSEQ conflict
                 // @FIXME Need to prove that summing work
                 // The intuition: we increase the UIDValidity by the number of possible conflicts
-                if *uid < new.internalseq || *modseq < new.highestmodseq {
+                if *uid < new.internalseq || *modseq < new.internalmodseq {
                     let bump_uid = new.internalseq.get() - uid.get();
                     let bump_modseq = new.internalmodseq.get() - modseq.get();
                     new.uidvalidity =
@@ -148,7 +148,7 @@ impl BayouState for UidIndex {
                 let new_uid = new.internalseq;
 
                 // Assign the real modseq of the email and its new flags
-                let new_modseq = new.highestmodseq;
+                let new_modseq = new.internalmodseq;
 
                 // Delete the previous entry if any.
                 // Our proof has no assumption on `ident` uniqueness,
@@ -175,11 +175,11 @@ impl BayouState for UidIndex {
                 // We update the counter
                 new.internalseq = NonZeroU32::new(new.internalseq.get() + 1).unwrap();
             }
-            UidIndexOp::FlagAdd(ident, modseq, new_flags) => {
-                if let Some((uid, modseq, existing_flags)) = new.table.get_mut(ident) {
+            UidIndexOp::FlagAdd(ident, candidate_modseq, new_flags) => {
+                if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
                     // Bump UIDValidity if required
-                    if *modseq < new.highestmodseq {
-                        let bump_modseq = new.internalmodseq.get() - modseq.get();
+                    if *candidate_modseq < new.internalmodseq {
+                        let bump_modseq = new.internalmodseq.get() - candidate_modseq.get();
                         new.uidvalidity =
                             NonZeroU32::new(new.uidvalidity.get() + bump_modseq)
                                 .unwrap();
@@ -192,7 +192,8 @@ impl BayouState for UidIndex {
                         .cloned()
                         .collect();
                     new.idx_by_flag.insert(*uid, &to_add);
-                    new.idx_by_modseq.insert(*modseq, *ident);
+                    *email_modseq = new.internalmodseq;
+                    new.idx_by_modseq.insert(new.internalmodseq, *ident);
                     existing_flags.append(&mut to_add);
 
                     // Update counters
@@ -200,11 +201,11 @@ impl BayouState for UidIndex {
                     new.internalmodseq = NonZeroU32::new(new.internalmodseq.get() + 1).unwrap();
                 }
             }
-            UidIndexOp::FlagDel(ident, modseq, rm_flags) => {
-                if let Some((uid, modseq, existing_flags)) = new.table.get_mut(ident) {
+            UidIndexOp::FlagDel(ident, candidate_modseq, rm_flags) => {
+                if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
                     // Bump UIDValidity if required
-                    if *modseq < new.highestmodseq {
-                        let bump_modseq = new.internalmodseq.get() - modseq.get();
+                    if *candidate_modseq < new.internalmodseq {
+                        let bump_modseq = new.internalmodseq.get() - candidate_modseq.get();
                         new.uidvalidity =
                             NonZeroU32::new(new.uidvalidity.get() + bump_modseq)
                                 .unwrap();
@@ -215,15 +216,24 @@ impl BayouState for UidIndex {
                     new.idx_by_flag.remove(*uid, rm_flags);
 
                     // Register that email has been modified
-                    new.idx_by_modseq.insert(*modseq, *ident);
+                    new.idx_by_modseq.insert(new.internalmodseq, *ident);
+                    *email_modseq = new.internalmodseq;
 
                     // Update counters
                     new.highestmodseq = new.internalmodseq;
                     new.internalmodseq = NonZeroU32::new(new.internalmodseq.get() + 1).unwrap();
                 }
             }
-            UidIndexOp::FlagSet(ident, modseq, new_flags) => {
-                if let Some((uid, modseq, existing_flags)) = new.table.get_mut(ident) {
+            UidIndexOp::FlagSet(ident, candidate_modseq, new_flags) => {
+                if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
+                    // Bump UIDValidity if required
+                    if *candidate_modseq < new.internalmodseq {
+                        let bump_modseq = new.internalmodseq.get() - candidate_modseq.get();
+                        new.uidvalidity =
+                            NonZeroU32::new(new.uidvalidity.get() + bump_modseq)
+                                .unwrap();
+                    }
+
                     // Remove flags from the source of trust and the cache
                     let (keep_flags, rm_flags): (Vec<String>, Vec<String>) = existing_flags
                         .iter()
@@ -240,7 +250,8 @@ impl BayouState for UidIndex {
                     new.idx_by_flag.insert(*uid, &to_add);
                     
                     // Register that email has been modified
-                    new.idx_by_modseq.insert(*modseq, *ident);
+                    new.idx_by_modseq.insert(new.internalmodseq, *ident);
+                    *email_modseq = new.internalmodseq;
 
                     // Update counters
                     new.highestmodseq = new.internalmodseq;

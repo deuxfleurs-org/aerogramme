@@ -108,7 +108,7 @@ impl MailboxView {
                 let old_mail = old_snapshot.table.get(uuid);
                 let new_mail = new_snapshot.table.get(uuid);
                 if old_mail.is_some() && old_mail != new_mail {
-                    if let Some((uid, flags)) = new_mail {
+                    if let Some((uid, _modseq, flags)) = new_mail {
                         data.push(Body::Data(Data::Fetch {
                             seq: NonZeroU32::try_from((i + 1) as u32).unwrap(),
                             items: vec![
@@ -185,7 +185,7 @@ impl MailboxView {
         let msgs = state
             .table
             .iter()
-            .filter(|(_uuid, (_uid, flags))| flags.iter().any(|x| *x == deleted_flag))
+            .filter(|(_uuid, (_uid, _modseq, flags))| flags.iter().any(|x| *x == deleted_flag))
             .map(|(uuid, _)| *uuid);
 
         for msg in msgs {
@@ -438,7 +438,7 @@ impl MailboxView {
             .table
             .values()
             .enumerate()
-            .find(|(_i, (_imap_uid, flags))| !flags.contains(&"\\Seen".to_string()))
+            .find(|(_i, (_imap_uid, _modseq, flags))| !flags.contains(&"\\Seen".to_string()))
             .map(|(i, _)| NonZeroU32::try_from(i as u32 + 1))
             .transpose()?)
     }

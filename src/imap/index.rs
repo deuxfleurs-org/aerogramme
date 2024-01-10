@@ -21,7 +21,7 @@ impl<'a> Index<'a> {
                     .table
                     .get(&uuid)
                     .ok_or(anyhow!("mail is missing from index"))?
-                    .1
+                    .2
                     .as_ref();
                 let i_int: u32 = (i_enum + 1).try_into()?;
                 let i: NonZeroU32 = i_int.try_into()?;

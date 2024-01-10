@@ -507,7 +507,7 @@ impl<'a> AuthenticatedContext<'a> {
     ) -> Result<(Response<'static>, flow::Transition)> {
         let append_tag = self.req.tag.clone();
         match self.append_internal(mailbox, flags, date, message).await {
-            Ok((_mb, uidvalidity, uid)) => Ok((
+            Ok((_mb, uidvalidity, uid, _modseq)) => Ok((
                 Response::build()
                     .tag(append_tag)
                     .message("APPEND completed")
@@ -548,7 +548,7 @@ impl<'a> AuthenticatedContext<'a> {
         flags: &[Flag<'a>],
         date: &Option<DateTime>,
         message: &Literal<'a>,
-    ) -> Result<(Arc<Mailbox>, ImapUidvalidity, ImapUidvalidity)> {
+    ) -> Result<(Arc<Mailbox>, ImapUidvalidity, ImapUid, ModSeq)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
@@ -566,9 +566,9 @@ impl<'a> AuthenticatedContext<'a> {
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         // TODO: filter allowed flags? ping @Quentin
 
-        let (uidvalidity, uid) = mb.append(msg, None, &flags[..]).await?;
+        let (uidvalidity, uid, modseq) = mb.append(msg, None, &flags[..]).await?;
 
-        Ok((mb, uidvalidity, uid))
+        Ok((mb, uidvalidity, uid, modseq))
     }
 }
 
