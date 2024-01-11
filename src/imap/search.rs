@@ -112,6 +112,17 @@ impl<'a> Criteria<'a> {
         }
     }
 
+    pub fn is_modseq(&self) -> bool {
+        use SearchKey::*;
+        match self.0 {
+            And(and_list) => and_list.as_ref().iter().any(|child| Criteria(child).is_modseq()),
+            Or(left, right) => Criteria(left).is_modseq() || Criteria(right).is_modseq(),
+            Not(child) => Criteria(child).is_modseq(),
+            ModSeq { .. } => true,
+            _ => false,
+        } 
+    }
+
     /// Returns emails that we now for sure we want to keep
     /// but also a second list of emails we need to investigate further by
     /// fetching some remote data

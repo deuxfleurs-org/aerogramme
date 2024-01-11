@@ -146,7 +146,10 @@ impl<'a> SelectedContext<'a> {
         criteria: &SearchKey<'a>,
         uid: &bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
-        let found = self.mailbox.search(charset, criteria, *uid).await?;
+        let (found, enable_condstore) = self.mailbox.search(charset, criteria, *uid).await?;
+        if enable_condstore {
+            self.client_capabilities.enable_condstore();
+        }
         Ok((
             Response::build()
                 .to_req(self.req)

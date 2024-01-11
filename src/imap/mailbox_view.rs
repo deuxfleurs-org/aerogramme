@@ -325,7 +325,7 @@ impl MailboxView {
         _charset: &Option<Charset<'a>>,
         search_key: &SearchKey<'a>,
         uid: bool,
-    ) -> Result<Vec<Body<'static>>> {
+    ) -> Result<(Vec<Body<'static>>, bool)> {
         // 1. Compute the subset of sequence identifiers we need to fetch
         // based on the search query
         let crit = search::Criteria(search_key);
@@ -354,7 +354,10 @@ impl MailboxView {
             _ => final_selection.map(|in_idx| in_idx.i).collect(),
         };
 
-        Ok(vec![Body::Data(Data::Search(selection_fmt))])
+        // 7. Add the modseq entry if needed
+        let is_modseq = crit.is_modseq();
+
+        Ok((vec![Body::Data(Data::Search(selection_fmt))], is_modseq))
     }
 
     // ----
