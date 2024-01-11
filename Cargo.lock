@@ -1807,7 +1807,7 @@ dependencies = [
 [[package]]
 name = "imap-codec"
 version = "2.0.0"
-source = "git+https://github.com/superboum/imap-codec?branch=custom/aerogramme#3fdc1f3184ec121823d44b3f39e56b448ac80751"
+source = "git+https://github.com/superboum/imap-codec?branch=custom/aerogramme#b0a80c4826f3d8bf2d2e69f68443c261e62bb40f"
 dependencies = [
  "abnf-core",
  "base64 0.21.5",
@@ -1834,7 +1834,7 @@ dependencies = [
 [[package]]
 name = "imap-types"
 version = "2.0.0"
-source = "git+https://github.com/superboum/imap-codec?branch=custom/aerogramme#3fdc1f3184ec121823d44b3f39e56b448ac80751"
+source = "git+https://github.com/superboum/imap-codec?branch=custom/aerogramme#b0a80c4826f3d8bf2d2e69f68443c261e62bb40f"
 dependencies = [
  "base64 0.21.5",
  "bounded-static",

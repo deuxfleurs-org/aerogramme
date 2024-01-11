@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Result};
-use imap_codec::imap_types::command::{Command, CommandBody};
+use imap_codec::imap_types::command::{Command, CommandBody, SelectExamineModifier};
 use imap_codec::imap_types::core::{Atom, Literal, NonEmptyVec, QuotedChar};
 use imap_codec::imap_types::datetime::DateTime;
 use imap_codec::imap_types::extensions::enable::CapabilityEnable;
@@ -58,8 +58,8 @@ pub async fn dispatch<'a>(
         } => ctx.status(mailbox, item_names).await,
         CommandBody::Subscribe { mailbox } => ctx.subscribe(mailbox).await,
         CommandBody::Unsubscribe { mailbox } => ctx.unsubscribe(mailbox).await,
-        CommandBody::Select { mailbox, parameters } => ctx.select(mailbox, parameters).await,
-        CommandBody::Examine { mailbox, parameters } => ctx.examine(mailbox, parameters).await,
+        CommandBody::Select { mailbox, modifiers } => ctx.select(mailbox, modifiers).await,
+        CommandBody::Examine { mailbox, modifiers } => ctx.examine(mailbox, modifiers).await,
         CommandBody::Append {
             mailbox,
             flags,
@@ -422,11 +422,9 @@ impl<'a> AuthenticatedContext<'a> {
     async fn select(
         self,
         mailbox: &MailboxCodec<'a>,
-        parameters: &Option<NonEmptyVec<Atom<'a>>>,
+        modifiers: &[SelectExamineModifier],
     ) -> Result<(Response<'static>, flow::Transition)> {
-        parameters.as_ref().map(|plist|
-            self.client_capabilities.select_enable(plist.as_ref())
-        );
+        self.client_capabilities.select_enable(modifiers);
 
         let name: &str = MailboxName(mailbox).try_into()?;
 
@@ -462,11 +460,9 @@ impl<'a> AuthenticatedContext<'a> {
     async fn examine(
         self,
         mailbox: &MailboxCodec<'a>,
-        parameters: &Option<NonEmptyVec<Atom<'a>>>,
+        modifiers: &[SelectExamineModifier],
     ) -> Result<(Response<'static>, flow::Transition)> {
-        parameters.as_ref().map(|plist|
-            self.client_capabilities.select_enable(plist.as_ref())
-        );
+        self.client_capabilities.select_enable(modifiers);
 
         let name: &str = MailboxName(mailbox).try_into()?;
 

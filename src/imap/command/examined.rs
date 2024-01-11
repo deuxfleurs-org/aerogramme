@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use imap_codec::imap_types::command::{Command, CommandBody};
+use imap_codec::imap_types::command::{Command, CommandBody, FetchModifier};
 use imap_codec::imap_types::core::Charset;
 use imap_codec::imap_types::fetch::MacroOrMessageDataItemNames;
 use imap_codec::imap_types::search::SearchKey;
@@ -37,8 +37,9 @@ pub async fn dispatch(ctx: ExaminedContext<'_>) -> Result<(Response<'static>, fl
         CommandBody::Fetch {
             sequence_set,
             macro_or_item_names,
+            modifiers,
             uid,
-        } => ctx.fetch(sequence_set, macro_or_item_names, uid).await,
+        } => ctx.fetch(sequence_set, macro_or_item_names, modifiers, uid).await,
         CommandBody::Search {
             charset,
             criteria,
@@ -88,6 +89,7 @@ impl<'a> ExaminedContext<'a> {
         self,
         sequence_set: &SequenceSet,
         attributes: &'a MacroOrMessageDataItemNames<'static>,
+        modifiers: &[FetchModifier],
         uid: &bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
         match self.mailbox.fetch(sequence_set, attributes, uid).await {

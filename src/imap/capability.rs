@@ -1,4 +1,5 @@
-use imap_codec::imap_types::core::{Atom, NonEmptyVec};
+use imap_codec::imap_types::command::SelectExamineModifier;
+use imap_codec::imap_types::core::NonEmptyVec;
 use imap_codec::imap_types::extensions::enable::{CapabilityEnable, Utf8Kind};
 use imap_codec::imap_types::response::Capability;
 use std::collections::HashSet;
@@ -90,10 +91,10 @@ impl ClientCapability {
         self.condstore = self.condstore.enable();
     }
 
-    pub fn select_enable(&mut self, atoms: &[Atom]) {
-        for at in atoms.iter() {
-            if at.as_ref().to_uppercase() == "CONDSTORE" {
-                self.enable_condstore();
+    pub fn select_enable(&mut self, mods: &[SelectExamineModifier]) {
+        for m in mods.iter() {
+            match m {
+                SelectExamineModifier::Condstore => self.enable_condstore(),
             }
         }
     }
