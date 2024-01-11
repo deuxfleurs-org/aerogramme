@@ -1,8 +1,8 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 
 use anyhow::Result;
 use imap_codec::imap_types::core::NonEmptyVec;
-use imap_codec::imap_types::search::SearchKey;
+use imap_codec::imap_types::search::{SearchKey, MetadataItemSearch};
 use imap_codec::imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
 
 use crate::imap::index::MailIndex;
@@ -176,6 +176,7 @@ impl<'a> Criteria<'a> {
             // Sequence logic
             maybe_seq if is_sk_seq(maybe_seq) => is_keep_seq(maybe_seq, midx).into(),
             maybe_flag if is_sk_flag(maybe_flag) => is_keep_flag(maybe_flag, midx).into(),
+            ModSeq { metadata_item , modseq } => is_keep_modseq(metadata_item, modseq, midx).into(),
 
             // All the stuff we can't evaluate yet
             Bcc(_) | Cc(_) | From(_) | Header(..) | SentBefore(_) | SentOn(_) | SentSince(_)
@@ -210,9 +211,10 @@ impl<'a> Criteria<'a> {
             Not(expr) => !Criteria(expr).is_keep_on_query(mail_view),
             All => true,
 
-            // Reevaluating our previous logic...
+            //@FIXME Reevaluating our previous logic...
             maybe_seq if is_sk_seq(maybe_seq) => is_keep_seq(maybe_seq, &mail_view.in_idx),
             maybe_flag if is_sk_flag(maybe_flag) => is_keep_flag(maybe_flag, &mail_view.in_idx),
+            ModSeq { metadata_item , modseq } => is_keep_modseq(metadata_item, modseq, &mail_view.in_idx).into(),
 
             // Filter on mail meta
             Before(search_naive) => match mail_view.stored_naive_date() {
@@ -318,7 +320,8 @@ fn approx_sequence_set_size(seq_set: &SequenceSet) -> u64 {
 }
 
 // This is wrong as sequence UID can have holes,
-// as we don't know the number of messages in the mailbox also
+// as we don't know the number of messages in the mailbox also 
+// we gave to guess
 fn approx_sequence_size(seq: &Sequence) -> u64 {
     match seq {
         Sequence::Single(_) => 1,
@@ -457,4 +460,11 @@ fn is_keep_seq(sk: &SearchKey, midx: &MailIndex) -> bool {
             .any(|seq| midx.is_in_sequence_uid(seq)),
         _ => unreachable!(),
     }
+}
+
+fn is_keep_modseq(filter: &Option<MetadataItemSearch>, modseq: &NonZeroU64, midx: &MailIndex) -> bool {
+    if filter.is_some() {
+        tracing::warn!(filter=?filter, "Ignoring search metadata filter as it's not supported yet");
+    }
+    modseq <= &midx.modseq 
 }
