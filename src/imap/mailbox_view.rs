@@ -1,5 +1,6 @@
 use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::Arc;
+use std::collections::HashSet;
 
 use anyhow::{anyhow, Error, Result};
 
@@ -12,6 +13,7 @@ use imap_codec::imap_types::response::{Code, CodeOther, Data, Status};
 use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::SequenceSet;
 
+use crate::mail::unique_ident::UniqueIdent;
 use crate::mail::mailbox::Mailbox;
 use crate::mail::query::QueryScope;
 use crate::mail::snapshot::FrozenMailbox;
@@ -31,6 +33,21 @@ const DEFAULT_FLAGS: [Flag; 5] = [
     Flag::Deleted,
     Flag::Draft,
 ];
+
+pub struct UpdateParameters {
+    pub silence: HashSet<UniqueIdent>,
+    pub with_modseq: bool,
+    pub with_uid: bool,
+}
+impl Default for UpdateParameters {
+    fn default() -> Self {
+        Self {
+            silence: HashSet::new(),
+            with_modseq: false,
+            with_uid: false,
+        }
+    }
+}
 
 /// A MailboxView is responsible for giving the client the information
 /// it needs about a mailbox, such as an initial summary of the mailbox's
@@ -59,7 +76,7 @@ impl MailboxView {
     /// what the client knows and what is actually in the mailbox.
     /// This does NOT trigger a sync, it bases itself on what is currently
     /// loaded in RAM by Bayou.
-    pub async fn update(&mut self) -> Result<Vec<Body<'static>>> {
+    pub async fn update(&mut self, params: UpdateParameters) -> Result<Vec<Body<'static>>> {
         let old_snapshot = self.internal.update().await;
         let new_snapshot = &self.internal.snapshot;
 
@@ -105,19 +122,31 @@ impl MailboxView {
         } else {
             // - if flags changed for existing mails, tell client
             for (i, (_uid, uuid)) in new_snapshot.idx_by_uid.iter().enumerate() {
+                if params.silence.contains(uuid) {
+                    continue;
+                }
+
                 let old_mail = old_snapshot.table.get(uuid);
                 let new_mail = new_snapshot.table.get(uuid);
                 if old_mail.is_some() && old_mail != new_mail {
-                    if let Some((uid, _modseq, flags)) = new_mail {
+                    if let Some((uid, modseq, flags)) = new_mail {
+                        let mut items = vec![
+                            MessageDataItem::Flags(
+                                flags.iter().filter_map(|f| flags::from_str(f)).collect(),
+                            ),
+                        ];
+
+                        if params.with_uid {
+                            items.push(MessageDataItem::Uid(*uid));
+                        }
+
+                        if params.with_modseq {
+                            items.push(MessageDataItem::ModSeq(*modseq));
+                        }
+
                         data.push(Body::Data(Data::Fetch {
                             seq: NonZeroU32::try_from((i + 1) as u32).unwrap(),
-                            items: vec![
-                                MessageDataItem::Uid(*uid),
-                                MessageDataItem::Flags(
-                                    flags.iter().filter_map(|f| flags::from_str(f)).collect(),
-                                ),
-                            ]
-                            .try_into()?,
+                            items: items.try_into()?,
                         }));
                     }
                 }
@@ -149,17 +178,20 @@ impl MailboxView {
         &mut self,
         sequence_set: &SequenceSet,
         kind: &StoreType,
-        _response: &StoreResponse,
+        response: &StoreResponse,
         flags: &[Flag<'a>],
+        unchanged_since: Option<NonZeroU64>,
         is_uid_store: &bool,
-    ) -> Result<Vec<Body<'static>>> {
+    ) -> Result<(Vec<Body<'static>>, Vec<NonZeroU32>)> {
         self.internal.sync().await?;
 
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
 
         let idx = self.index()?;
-        let mails = idx.fetch(sequence_set, *is_uid_store)?;
-        for mi in mails.iter() {
+        let (editable, in_conflict) = idx
+            .fetch_unchanged_since(sequence_set, unchanged_since, *is_uid_store)?;
+
+        for mi in editable.iter() {
             match kind {
                 StoreType::Add => {
                     self.internal.mailbox.add_flags(mi.uuid, &flags[..]).await?;
@@ -173,8 +205,23 @@ impl MailboxView {
             }
         }
 
-        // @TODO: handle _response
-        self.update().await
+        let silence = match response {
+            StoreResponse::Answer => HashSet::new(),
+            StoreResponse::Silent => editable.iter().map(|midx| midx.uuid).collect(),
+        };
+
+        let conflict_id_or_uid = match is_uid_store {
+            true => in_conflict.into_iter().map(|midx| midx.uid).collect(),
+            _ => in_conflict.into_iter().map(|midx| midx.i).collect(),
+        };
+
+        let summary = self.update(UpdateParameters {
+            with_uid: *is_uid_store,
+            with_modseq: unchanged_since.is_some(),
+            silence,
+        }).await?;
+
+        Ok((summary, conflict_id_or_uid))
     }
 
     pub async fn expunge(&mut self) -> Result<Vec<Body<'static>>> {
@@ -192,7 +239,7 @@ impl MailboxView {
             self.internal.mailbox.delete(msg).await?;
         }
 
-        self.update().await
+        self.update(UpdateParameters::default()).await
     }
 
     pub async fn copy(
@@ -247,7 +294,10 @@ impl MailboxView {
             ret.push((mi.uid, dest_uid));
         }
 
-        let update = self.update().await?;
+        let update = self.update(UpdateParameters {
+            with_uid: *is_uid_copy,
+            ..UpdateParameters::default()
+        }).await?;
 
         Ok((to_state.uidvalidity, ret, update))
     }
@@ -258,6 +308,7 @@ impl MailboxView {
         &self,
         sequence_set: &SequenceSet,
         ap: &AttributesProxy,
+        changed_since: Option<NonZeroU64>,
         is_uid_fetch: &bool,
     ) -> Result<Vec<Body<'static>>> {
         // [1/6] Pre-compute data
@@ -270,7 +321,11 @@ impl MailboxView {
         };
         tracing::debug!("Query scope {:?}", query_scope);
         let idx = self.index()?;
-        let mail_idx_list = idx.fetch(sequence_set, *is_uid_fetch)?;
+        let mail_idx_list = idx.fetch_changed_since(
+            sequence_set, 
+            changed_since, 
+            *is_uid_fetch
+        )?;
 
         // [2/6] Fetch the emails
         let uuids = mail_idx_list

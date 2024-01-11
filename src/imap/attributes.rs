@@ -1,4 +1,5 @@
 use imap_codec::imap_types::fetch::{MacroOrMessageDataItemNames, MessageDataItemName, Section};
+use imap_codec::imap_types::command::FetchModifier;
 
 /// Internal decisions based on fetched attributes
 /// passed by the client
@@ -7,7 +8,7 @@ pub struct AttributesProxy {
     pub attrs: Vec<MessageDataItemName<'static>>,
 }
 impl AttributesProxy {
-    pub fn new(attrs: &MacroOrMessageDataItemNames<'static>, is_uid_fetch: bool) -> Self {
+    pub fn new(attrs: &MacroOrMessageDataItemNames<'static>, modifiers: &[FetchModifier], is_uid_fetch: bool) -> Self {
         // Expand macros
         let mut fetch_attrs = match attrs {
             MacroOrMessageDataItemNames::Macro(m) => {
@@ -29,6 +30,14 @@ impl AttributesProxy {
         // Handle uids
         if is_uid_fetch && !fetch_attrs.contains(&MessageDataItemName::Uid) {
             fetch_attrs.push(MessageDataItemName::Uid);
+        }
+
+        // Handle inferred MODSEQ tag
+        let is_changed_since = modifiers
+            .iter()
+            .any(|m| matches!(m, FetchModifier::ChangedSince(..)));
+        if is_changed_since && !fetch_attrs.contains(&MessageDataItemName::ModSeq) {
+            fetch_attrs.push(MessageDataItemName::ModSeq);
         }
 
         Self { attrs: fetch_attrs }

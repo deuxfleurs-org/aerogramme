@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::num::NonZeroU64;
 
 use anyhow::Result;
 use imap_codec::imap_types::command::{Command, CommandBody, FetchModifier};
@@ -11,7 +12,7 @@ use crate::imap::attributes::AttributesProxy;
 use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anystate, authenticated};
 use crate::imap::flow;
-use crate::imap::mailbox_view::MailboxView;
+use crate::imap::mailbox_view::{MailboxView, UpdateParameters};
 use crate::imap::response::Response;
 use crate::mail::user::User;
 
@@ -93,9 +94,15 @@ impl<'a> ExaminedContext<'a> {
         modifiers: &[FetchModifier],
         uid: &bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
-        let ap = AttributesProxy::new(attributes, *uid);
+        let ap = AttributesProxy::new(attributes, modifiers, *uid);
+        let mut changed_since: Option<NonZeroU64> = None;
+        modifiers.iter().for_each(|m| match m {
+            FetchModifier::ChangedSince(val) => {
+                changed_since = Some(*val);
+            },
+        });
 
-        match self.mailbox.fetch(sequence_set, &ap, uid).await {
+        match self.mailbox.fetch(sequence_set, &ap, changed_since, uid).await {
             Ok(resp) => {
                 // Capabilities enabling logic only on successful command
                 // (according to my understanding of the spec)
@@ -144,7 +151,7 @@ impl<'a> ExaminedContext<'a> {
     pub async fn noop(self) -> Result<(Response<'static>, flow::Transition)> {
         self.mailbox.internal.mailbox.force_sync().await?;
 
-        let updates = self.mailbox.update().await?;
+        let updates = self.mailbox.update(UpdateParameters::default()).await?;
         Ok((
             Response::build()
                 .to_req(self.req)

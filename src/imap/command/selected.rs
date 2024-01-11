@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::num::NonZeroU64;
 
 use anyhow::Result;
 use imap_codec::imap_types::command::{Command, CommandBody, FetchModifier, StoreModifier};
@@ -13,7 +14,7 @@ use imap_codec::imap_types::sequence::SequenceSet;
 use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anystate, authenticated, MailboxName};
 use crate::imap::flow;
-use crate::imap::mailbox_view::MailboxView;
+use crate::imap::mailbox_view::{MailboxView, UpdateParameters};
 use crate::imap::response::Response;
 use crate::imap::attributes::AttributesProxy;
 use crate::mail::user::User;
@@ -118,9 +119,15 @@ impl<'a> SelectedContext<'a> {
         modifiers: &[FetchModifier],
         uid: &bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
-        let ap = AttributesProxy::new(attributes, *uid);
+        let ap = AttributesProxy::new(attributes, modifiers, *uid);
+        let mut changed_since: Option<NonZeroU64> = None;
+        modifiers.iter().for_each(|m| match m {
+            FetchModifier::ChangedSince(val) => {
+                changed_since = Some(*val);
+            },
+        });
 
-        match self.mailbox.fetch(sequence_set, &ap, uid).await {
+        match self.mailbox.fetch(sequence_set, &ap, changed_since, uid).await {
             Ok(resp) => {
                 // Capabilities enabling logic only on successful command
                 // (according to my understanding of the spec)
@@ -170,7 +177,7 @@ impl<'a> SelectedContext<'a> {
     pub async fn noop(self) -> Result<(Response<'static>, flow::Transition)> {
         self.mailbox.internal.mailbox.force_sync().await?;
 
-        let updates = self.mailbox.update().await?;
+        let updates = self.mailbox.update(UpdateParameters::default()).await?;
         Ok((
             Response::build()
                 .to_req(self.req)
@@ -204,10 +211,18 @@ impl<'a> SelectedContext<'a> {
         modifiers: &[StoreModifier],
         uid: &bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
-        let data = self
+        let mut unchanged_since: Option<NonZeroU64> = None;
+        modifiers.iter().for_each(|m| match m {
+            StoreModifier::UnchangedSince(val) => {
+                unchanged_since = Some(*val);
+            },
+        });
+
+        let (data, modified) = self
             .mailbox
-            .store(sequence_set, kind, response, flags, uid)
+            .store(sequence_set, kind, response, flags, unchanged_since, uid)
             .await?;
+        let modified_str = format!("MODIFIED {}", modified.into_iter().map(|x| x.to_string()).collect::<Vec<_>>().join(","));
 
         self.client_capabilities.store_modifiers_enable(modifiers);
 
@@ -215,6 +230,7 @@ impl<'a> SelectedContext<'a> {
             Response::build()
                 .to_req(self.req)
                 .message("STORE completed")
+                .code(Code::Other(CodeOther::unvalidated(modified_str.into_bytes())))
                 .set_body(data)
                 .ok()?,
             flow::Transition::None,

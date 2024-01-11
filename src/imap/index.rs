@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 
 use anyhow::{anyhow, Result};
 use imap_codec::imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
@@ -125,6 +125,36 @@ impl<'a> Index<'a> {
             true => Ok(self.fetch_on_uid(sequence_set)),
             _ => self.fetch_on_id(sequence_set),
         }
+    }
+
+    pub fn fetch_changed_since(
+        self: &'a Index<'a>,
+        sequence_set: &SequenceSet,
+        maybe_modseq: Option<NonZeroU64>,
+        by_uid: bool,
+    ) -> Result<Vec<&'a MailIndex<'a>>> {
+        let raw = self.fetch(sequence_set, by_uid)?;
+        let res = match maybe_modseq {
+            Some(pit) => raw.into_iter().filter(|midx| midx.modseq > pit).collect(),
+            None => raw,
+        };
+
+        Ok(res)
+    }
+
+    pub fn fetch_unchanged_since(
+        self: &'a Index<'a>,
+        sequence_set: &SequenceSet,
+        maybe_modseq: Option<NonZeroU64>,
+        by_uid: bool,
+    ) -> Result<(Vec<&'a MailIndex<'a>>, Vec<&'a MailIndex<'a>>)> {
+        let raw = self.fetch(sequence_set, by_uid)?;
+        let res = match maybe_modseq {
+            Some(pit) => raw.into_iter().partition(|midx| midx.modseq <= pit),
+            None => (raw, vec![]),
+        };
+
+        Ok(res)
     }
 }
 
