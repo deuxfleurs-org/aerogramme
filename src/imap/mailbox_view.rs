@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Error, Result};
@@ -348,7 +348,7 @@ impl MailboxView {
 
         // 6. Format the result according to the client's taste:
         // either return UID or ID.
-        let final_selection = kept_idx.into_iter().chain(kept_query.into_iter());
+        let final_selection = kept_idx.iter().chain(kept_query.iter());
         let selection_fmt = match uid {
             true => final_selection.map(|in_idx| in_idx.uid).collect(),
             _ => final_selection.map(|in_idx| in_idx.i).collect(),
@@ -356,8 +356,15 @@ impl MailboxView {
 
         // 7. Add the modseq entry if needed
         let is_modseq = crit.is_modseq();
+        let maybe_modseq = match is_modseq {
+            true => {
+                let final_selection = kept_idx.iter().chain(kept_query.iter());
+                final_selection.map(|in_idx| in_idx.modseq).max().map(|r| NonZeroU64::try_from(r)).transpose()?
+            },
+            _ => None,
+        };
 
-        Ok((vec![Body::Data(Data::Search(selection_fmt))], is_modseq))
+        Ok((vec![Body::Data(Data::Search(selection_fmt, maybe_modseq))], is_modseq))
     }
 
     // ----
