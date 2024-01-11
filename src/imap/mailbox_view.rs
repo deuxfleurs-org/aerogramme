@@ -6,7 +6,7 @@ use anyhow::{anyhow, Error, Result};
 use futures::stream::{FuturesOrdered, StreamExt};
 
 use imap_codec::imap_types::core::Charset;
-use imap_codec::imap_types::fetch::{MacroOrMessageDataItemNames, MessageDataItem};
+use imap_codec::imap_types::fetch::MessageDataItem;
 use imap_codec::imap_types::flag::{Flag, FlagFetch, FlagPerm, StoreResponse, StoreType};
 use imap_codec::imap_types::response::{Code, CodeOther, Data, Status};
 use imap_codec::imap_types::search::SearchKey;
@@ -257,13 +257,13 @@ impl MailboxView {
     pub async fn fetch<'b>(
         &self,
         sequence_set: &SequenceSet,
-        attributes: &'b MacroOrMessageDataItemNames<'static>,
+        ap: &AttributesProxy,
         is_uid_fetch: &bool,
-    ) -> Result<(Vec<Body<'static>>, bool)> {
+    ) -> Result<Vec<Body<'static>>> {
         // [1/6] Pre-compute data
         //  a. what are the uuids of the emails we want?
         //  b. do we need to fetch the full body?
-        let ap = AttributesProxy::new(attributes, *is_uid_fetch);
+        //let ap = AttributesProxy::new(attributes, *is_uid_fetch);
         let query_scope = match ap.need_body() {
             true => QueryScope::Full,
             _ => QueryScope::Partial,
@@ -316,7 +316,7 @@ impl MailboxView {
             .collect::<Result<_, _>>()?;
 
         // [6/6] Build the final result that will be sent to the client.
-        Ok((imap_ret, ap.is_enabling_condstore()))
+        Ok(imap_ret)
     }
 
     /// A naive search implementation...

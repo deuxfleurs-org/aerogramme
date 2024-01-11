@@ -15,7 +15,7 @@ use crate::imap::command::{anystate, authenticated, MailboxName};
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
 use crate::imap::response::Response;
-
+use crate::imap::attributes::AttributesProxy;
 use crate::mail::user::User;
 
 pub struct SelectedContext<'a> {
@@ -118,11 +118,16 @@ impl<'a> SelectedContext<'a> {
         modifiers: &[FetchModifier],
         uid: &bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
-        match self.mailbox.fetch(sequence_set, attributes, uid).await {
-            Ok((resp, enable_condstore)) => {
-                if enable_condstore {
-                    self.client_capabilities.enable_condstore();
-                }
+        let ap = AttributesProxy::new(attributes, *uid);
+
+        match self.mailbox.fetch(sequence_set, &ap, uid).await {
+            Ok(resp) => {
+                // Capabilities enabling logic only on successful command
+                // (according to my understanding of the spec)
+                self.client_capabilities.attributes_enable(&ap);
+                self.client_capabilities.fetch_modifiers_enable(modifiers);
+
+                // Response to the client
                 Ok((
                     Response::build()
                         .to_req(self.req)
@@ -199,11 +204,12 @@ impl<'a> SelectedContext<'a> {
         modifiers: &[StoreModifier],
         uid: &bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
-        tracing::info!(modifiers=?modifiers);
         let data = self
             .mailbox
             .store(sequence_set, kind, response, flags, uid)
             .await?;
+
+        self.client_capabilities.store_modifiers_enable(modifiers);
 
         Ok((
             Response::build()

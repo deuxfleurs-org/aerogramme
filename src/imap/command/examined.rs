@@ -7,6 +7,7 @@ use imap_codec::imap_types::fetch::MacroOrMessageDataItemNames;
 use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::SequenceSet;
 
+use crate::imap::attributes::AttributesProxy;
 use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anystate, authenticated};
 use crate::imap::flow;
@@ -92,11 +93,15 @@ impl<'a> ExaminedContext<'a> {
         modifiers: &[FetchModifier],
         uid: &bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
-        match self.mailbox.fetch(sequence_set, attributes, uid).await {
-            Ok((resp, enable_condstore)) => {
-                if enable_condstore {
-                    self.client_capabilities.enable_condstore();
-                }
+        let ap = AttributesProxy::new(attributes, *uid);
+
+        match self.mailbox.fetch(sequence_set, &ap, uid).await {
+            Ok(resp) => {
+                // Capabilities enabling logic only on successful command
+                // (according to my understanding of the spec)
+                self.client_capabilities.attributes_enable(&ap);
+                self.client_capabilities.fetch_modifiers_enable(modifiers);
+
                 Ok((
                     Response::build()
                         .to_req(self.req)
