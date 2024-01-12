@@ -88,3 +88,12 @@ pub fn read_lines<'a, F: Read>(
     println!("read: {}", std::str::from_utf8(&buffer[..nbytes])?);
     Ok(&buffer[..nbytes])
 }
+
+pub fn read_first_u32(inp: &str) -> Result<u32> {
+    Ok(inp
+        .chars()
+        .skip_while(|c| !c.is_digit(10))
+        .take_while(|c| c.is_digit(10))
+        .collect::<String>()
+        .parse::<u32>()?)
+}

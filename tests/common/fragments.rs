@@ -34,7 +34,7 @@ pub enum Extension {
     None,
     Unselect,
     Move,
-    CondStore,
+    Condstore,
     LiteralPlus,
 }
 
@@ -65,6 +65,11 @@ pub enum Selection {
     SecondId,
 }
 
+pub enum SelectMod {
+    None,
+    Condstore,
+}
+
 pub fn capability(imap: &mut TcpStream, ext: Extension) -> Result<()> {
     imap.write(&b"5 capability\r\n"[..])?;
 
@@ -72,7 +77,7 @@ pub fn capability(imap: &mut TcpStream, ext: Extension) -> Result<()> {
         Extension::None => None,
         Extension::Unselect => Some("UNSELECT"),
         Extension::Move => Some("MOVE"),
-        Extension::CondStore => Some("CONDSTORE"),
+        Extension::Condstore => Some("CONDSTORE"),
         Extension::LiteralPlus => Some("LITERAL+"),
     };
 
@@ -125,7 +130,7 @@ pub fn create_mailbox(imap: &mut TcpStream, mbx: Mailbox) -> Result<()> {
     Ok(())
 }
 
-pub fn select(imap: &mut TcpStream, mbx: Mailbox, maybe_exists: Option<u64>) -> Result<()> {
+pub fn select(imap: &mut TcpStream, mbx: Mailbox, modifier: SelectMod, maybe_exists: Option<u64>) -> Result<()> {
     let mut buffer: [u8; 6000] = [0; 6000];
 
     let mbx_str = match mbx {
@@ -133,13 +138,25 @@ pub fn select(imap: &mut TcpStream, mbx: Mailbox, maybe_exists: Option<u64>) -> 
         Mailbox::Archive => "Archive",
         Mailbox::Drafts => "Drafts",
     };
-    imap.write(format!("20 select {}\r\n", mbx_str).as_bytes())?;
+
+    let mod_str = match modifier {
+        SelectMod::Condstore => " (CONDSTORE)",
+        SelectMod::None => "",
+    };
+
+    imap.write(format!("20 select {}{}\r\n", mbx_str, mod_str).as_bytes())?;
 
     let read = read_lines(imap, &mut buffer, Some(&b"20 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
     if let Some(exists) = maybe_exists {
         let expected = format!("* {} EXISTS", exists);
         assert!(srv_msg.contains(&expected));
+    }
+    match modifier {
+        SelectMod::Condstore => {
+            assert!(srv_msg.contains("[HIGHESTMODSEQ"));
+        }
+        _ => (),
     }
 
     Ok(())
@@ -206,7 +223,7 @@ pub fn lmtp_deliver_email(lmtp: &mut TcpStream, email_type: Email) -> Result<()>
     Ok(())
 }
 
-pub fn noop_exists(imap: &mut TcpStream) -> Result<()> {
+pub fn noop_exists(imap: &mut TcpStream, must_exists: u32) -> Result<()> {
     let mut buffer: [u8; 6000] = [0; 6000];
 
     let mut max_retry = 20;
@@ -216,16 +233,23 @@ pub fn noop_exists(imap: &mut TcpStream) -> Result<()> {
         let read = read_lines(imap, &mut buffer, Some(&b"30 OK"[..]))?;
         let srv_msg = std::str::from_utf8(read)?;
 
-        match (max_retry, srv_msg.lines().count()) {
-            (_, cnt) if cnt > 1 => break,
-            (0, _) => bail!("no more retry"),
-            _ => (),
+        for line in srv_msg.lines() {
+            if line.contains("EXISTS") {
+                let got = read_first_u32(line)?;
+                if got == must_exists {
+                    // Done
+                    return Ok(());
+                }
+            }
+        }
+
+        if max_retry <= 0 {
+            // Failed
+            bail!("no more retry");
         }
 
         thread::sleep(SMALL_DELAY);
     }
-
-    Ok(())
 }
 
 pub fn fetch_rfc822(imap: &mut TcpStream, selection: Selection, r#ref: Email) -> Result<()> {
@@ -281,9 +305,6 @@ pub fn append_email(imap: &mut TcpStream, content: Email) -> Result<()> {
     let read = read_lines(imap, &mut buffer, None)?;
     assert_eq!(&read[..5], &b"47 OK"[..]);
 
-    // we check that noop detects the change
-    noop_exists(imap)?;
-
     Ok(())
 }
 
@@ -292,7 +313,7 @@ pub fn add_flags_email(imap: &mut TcpStream, selection: Selection, flag: Flag) -
     assert!(matches!(selection, Selection::FirstId));
     assert!(matches!(flag, Flag::Deleted));
     imap.write(&b"50 store 1 +FLAGS (\\Deleted)\r\n"[..])?;
-    let _read = read_lines(imap, &mut buffer, Some(&b"50 OK STORE"[..]))?;
+    let _read = read_lines(imap, &mut buffer, Some(&b"50 OK"[..]))?;
 
     Ok(())
 }
@@ -302,7 +323,7 @@ pub fn add_flags_email(imap: &mut TcpStream, selection: Selection, flag: Flag) -
 pub fn search(imap: &mut TcpStream) -> Result<()> {
     imap.write(&b"55 search text \"OoOoO\"\r\n"[..])?;
     let mut buffer: [u8; 1500] = [0; 1500];
-    let _read = read_lines(imap, &mut buffer, Some(&b"55 OK SEARCH"[..]))?;
+    let _read = read_lines(imap, &mut buffer, Some(&b"55 OK"[..]))?;
     Ok(())
 }
 

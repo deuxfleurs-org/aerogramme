@@ -222,17 +222,25 @@ impl<'a> SelectedContext<'a> {
             .mailbox
             .store(sequence_set, kind, response, flags, unchanged_since, uid)
             .await?;
-        let modified_str = format!("MODIFIED {}", modified.into_iter().map(|x| x.to_string()).collect::<Vec<_>>().join(","));
+
+        let mut ok_resp = Response::build()
+                .to_req(self.req)
+                .message("STORE completed")
+                .set_body(data);
+
+
+        match modified[..] {
+            [] => (),
+            [_head, ..] => {
+                let modified_str = format!("MODIFIED {}", modified.into_iter().map(|x| x.to_string()).collect::<Vec<_>>().join(","));
+                ok_resp = ok_resp.code(Code::Other(CodeOther::unvalidated(modified_str.into_bytes())));
+            },
+        };
+
 
         self.client_capabilities.store_modifiers_enable(modifiers);
 
-        Ok((
-            Response::build()
-                .to_req(self.req)
-                .message("STORE completed")
-                .code(Code::Other(CodeOther::unvalidated(modified_str.into_bytes())))
-                .set_body(data)
-                .ok()?,
+        Ok((ok_resp.ok()?,
             flow::Transition::None,
         ))
     }

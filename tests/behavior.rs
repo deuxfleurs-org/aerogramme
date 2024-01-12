@@ -9,10 +9,12 @@ fn main() {
     rfc5161_imapext_enable();
     rfc6851_imapext_move();
     rfc7888_imapext_literal();
+    rfc4551_imapext_condstore();
+    println!("✅ SUCCESS 🌟🚀🥳🙏🥹");
 }
 
 fn rfc3501_imap4rev1_base() {
-    println!("rfc3501_imap4rev1_base");
+    println!("🧪 rfc3501_imap4rev1_base");
     common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {
         connect(imap_socket).context("server says hello")?;
         capability(imap_socket, Extension::None).context("check server capabilities")?;
@@ -20,18 +22,19 @@ fn rfc3501_imap4rev1_base() {
         create_mailbox(imap_socket, Mailbox::Archive).context("created mailbox archive")?;
         // UNSUBSCRIBE IS NOT IMPLEMENTED YET
         //unsubscribe_mailbox(imap_socket).context("unsubscribe from archive")?;
-        select(imap_socket, Mailbox::Inbox, None).context("select inbox")?;
+        select(imap_socket, Mailbox::Inbox, SelectMod::None, None).context("select inbox")?;
         check(imap_socket).context("check must run")?;
         status_mailbox(imap_socket, Mailbox::Archive).context("status of archive from inbox")?;
         lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
         lmtp_deliver_email(lmtp_socket, Email::Multipart).context("mail delivered successfully")?;
-        noop_exists(imap_socket).context("noop loop must detect a new email")?;
+        noop_exists(imap_socket, 1).context("noop loop must detect a new email")?;
         fetch_rfc822(imap_socket, Selection::FirstId, Email::Multipart)
             .context("fetch rfc822 message, should be our first message")?;
         copy(imap_socket, Selection::FirstId, Mailbox::Archive)
             .context("copy message to the archive mailbox")?;
         append_email(imap_socket, Email::Basic).context("insert email in INBOX")?;
-        // SEARCH IS NOT IMPLEMENTED YET
+        noop_exists(imap_socket, 2).context("noop loop must detect a new email")?;
+        // SEARCH IS NOT TESTED YET
         //search(imap_socket).expect("search should return something");
         add_flags_email(imap_socket, Selection::FirstId, Flag::Deleted)
             .context("should add delete flag to the email")?;
@@ -45,7 +48,7 @@ fn rfc3501_imap4rev1_base() {
 }
 
 fn rfc3691_imapext_unselect() {
-    println!("rfc3691_imapext_unselect");
+    println!("🧪 rfc3691_imapext_unselect");
     common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {
         connect(imap_socket).context("server says hello")?;
 
@@ -54,17 +57,17 @@ fn rfc3691_imapext_unselect() {
 
         capability(imap_socket, Extension::Unselect).context("check server capabilities")?;
         login(imap_socket, Account::Alice).context("login test")?;
-        select(imap_socket, Mailbox::Inbox, None).context("select inbox")?;
-        noop_exists(imap_socket).context("noop loop must detect a new email")?;
+        select(imap_socket, Mailbox::Inbox, SelectMod::None, None).context("select inbox")?;
+        noop_exists(imap_socket, 1).context("noop loop must detect a new email")?;
         add_flags_email(imap_socket, Selection::FirstId, Flag::Deleted)
             .context("add delete flags to the email")?;
         unselect(imap_socket)
             .context("unselect inbox while preserving email with the \\Delete flag")?;
-        select(imap_socket, Mailbox::Inbox, Some(1)).context("select inbox again")?;
+        select(imap_socket, Mailbox::Inbox, SelectMod::None, Some(1)).context("select inbox again")?;
         fetch_rfc822(imap_socket, Selection::FirstId, Email::Basic)
             .context("message is still present")?;
         close(imap_socket).context("close inbox and expunge message")?;
-        select(imap_socket, Mailbox::Inbox, Some(0))
+        select(imap_socket, Mailbox::Inbox, SelectMod::None, Some(0))
             .context("select inbox again and check it's empty")?;
 
         Ok(())
@@ -73,7 +76,7 @@ fn rfc3691_imapext_unselect() {
 }
 
 fn rfc5161_imapext_enable() {
-    println!("rfc5161_imapext_enable");
+    println!("🧪 rfc5161_imapext_enable");
     common::aerogramme_provider_daemon_dev(|imap_socket, _lmtp_socket| {
         connect(imap_socket).context("server says hello")?;
         login(imap_socket, Account::Alice).context("login test")?;
@@ -87,25 +90,25 @@ fn rfc5161_imapext_enable() {
 }
 
 fn rfc6851_imapext_move() {
-    println!("rfc6851_imapext_move");
+    println!("🧪 rfc6851_imapext_move");
     common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {
         connect(imap_socket).context("server says hello")?;
 
         capability(imap_socket, Extension::Move).context("check server capabilities")?;
         login(imap_socket, Account::Alice).context("login test")?;
         create_mailbox(imap_socket, Mailbox::Archive).context("created mailbox archive")?;
-        select(imap_socket, Mailbox::Inbox, None).context("select inbox")?;
+        select(imap_socket, Mailbox::Inbox, SelectMod::None, None).context("select inbox")?;
 
         lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
         lmtp_deliver_email(lmtp_socket, Email::Basic).context("mail delivered successfully")?;
 
-        noop_exists(imap_socket).context("noop loop must detect a new email")?;
+        noop_exists(imap_socket, 1).context("noop loop must detect a new email")?;
         r#move(imap_socket, Selection::FirstId, Mailbox::Archive)
             .context("message from inbox moved to archive")?;
 
         unselect(imap_socket)
             .context("unselect inbox while preserving email with the \\Delete flag")?;
-        select(imap_socket, Mailbox::Archive, Some(1)).context("select archive")?;
+        select(imap_socket, Mailbox::Archive, SelectMod::None, Some(1)).context("select archive")?;
         fetch_rfc822(imap_socket, Selection::FirstId, Email::Basic).context("check mail exists")?;
         logout(imap_socket).context("must quit")?;
 
@@ -115,12 +118,30 @@ fn rfc6851_imapext_move() {
 }
 
 fn rfc7888_imapext_literal() {
-    println!("rfc7888_imapext_literal");
+    println!("🧪 rfc7888_imapext_literal");
     common::aerogramme_provider_daemon_dev(|imap_socket, _lmtp_socket| {
         connect(imap_socket).context("server says hello")?;
 
         capability(imap_socket, Extension::LiteralPlus).context("check server capabilities")?;
         login_with_literal(imap_socket, Account::Alice).context("use literal to connect Alice")?;
+
+        Ok(())
+    })
+    .expect("test fully run");
+}
+
+fn rfc4551_imapext_condstore() {
+    println!("🧪 rfc4551_imapext_condstore");
+    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {
+        lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
+        lmtp_deliver_email(lmtp_socket, Email::Basic).context("mail delivered successfully")?;
+        lmtp_deliver_email(lmtp_socket, Email::Multipart).context("mail delivered successfully")?;
+
+        connect(imap_socket).context("server says hello")?;
+        capability(imap_socket, Extension::Condstore).context("check server capabilities")?;
+        login(imap_socket, Account::Alice).context("login test")?;
+        select(imap_socket, Mailbox::Inbox, SelectMod::Condstore, None).context("select inbox")?;
+        noop_exists(imap_socket, 2).context("noop loop must detect a new email")?;
 
         Ok(())
     })
