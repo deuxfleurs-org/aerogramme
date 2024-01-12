@@ -34,9 +34,9 @@ fn rfc3501_imap4rev1_base() {
             .context("copy message to the archive mailbox")?;
         append_email(imap_socket, Email::Basic).context("insert email in INBOX")?;
         noop_exists(imap_socket, 2).context("noop loop must detect a new email")?;
-        // SEARCH IS NOT TESTED YET
-        //search(imap_socket).expect("search should return something");
-        add_flags_email(imap_socket, Selection::FirstId, Flag::Deleted)
+        // Missing STORE command
+        search(imap_socket).expect("search should return something");
+        store(imap_socket, Selection::FirstId, Flag::Deleted, StoreAction::AddFlags, StoreMod::None)
             .context("should add delete flag to the email")?;
         expunge(imap_socket).context("expunge emails")?;
         rename_mailbox(imap_socket, Mailbox::Archive, Mailbox::Drafts)
@@ -59,7 +59,7 @@ fn rfc3691_imapext_unselect() {
         login(imap_socket, Account::Alice).context("login test")?;
         select(imap_socket, Mailbox::Inbox, SelectMod::None, None).context("select inbox")?;
         noop_exists(imap_socket, 1).context("noop loop must detect a new email")?;
-        add_flags_email(imap_socket, Selection::FirstId, Flag::Deleted)
+        store(imap_socket, Selection::FirstId, Flag::Deleted, StoreAction::AddFlags, StoreMod::None)
             .context("add delete flags to the email")?;
         unselect(imap_socket)
             .context("unselect inbox while preserving email with the \\Delete flag")?;
@@ -133,15 +133,23 @@ fn rfc7888_imapext_literal() {
 fn rfc4551_imapext_condstore() {
     println!("🧪 rfc4551_imapext_condstore");
     common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {
-        lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
-        lmtp_deliver_email(lmtp_socket, Email::Basic).context("mail delivered successfully")?;
-        lmtp_deliver_email(lmtp_socket, Email::Multipart).context("mail delivered successfully")?;
-
+        // Setup the test
         connect(imap_socket).context("server says hello")?;
         capability(imap_socket, Extension::Condstore).context("check server capabilities")?;
         login(imap_socket, Account::Alice).context("login test")?;
+
+        // Check that the condstore modifier works
         select(imap_socket, Mailbox::Inbox, SelectMod::Condstore, None).context("select inbox")?;
+
+
+        lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
+        lmtp_deliver_email(lmtp_socket, Email::Basic).context("mail delivered successfully")?;
+        lmtp_deliver_email(lmtp_socket, Email::Multipart).context("mail delivered successfully")?;
         noop_exists(imap_socket, 2).context("noop loop must detect a new email")?;
+
+
+
+        //store(
 
         Ok(())
     })

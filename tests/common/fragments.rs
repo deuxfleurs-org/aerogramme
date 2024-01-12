@@ -63,11 +63,26 @@ pub enum Email {
 pub enum Selection {
     FirstId,
     SecondId,
+    All,
 }
 
 pub enum SelectMod {
     None,
     Condstore,
+}
+
+pub enum StoreAction {
+    AddFlags,
+    DelFlags,
+    SetFlags,
+    AddFlagsSilent,
+    DelFlagsSilent,
+    SetFlagsSilent,
+}
+
+pub enum StoreMod {
+    None,
+    UnchangedSince(u64),
 }
 
 pub fn capability(imap: &mut TcpStream, ext: Extension) -> Result<()> {
@@ -308,23 +323,51 @@ pub fn append_email(imap: &mut TcpStream, content: Email) -> Result<()> {
     Ok(())
 }
 
-pub fn add_flags_email(imap: &mut TcpStream, selection: Selection, flag: Flag) -> Result<()> {
-    let mut buffer: [u8; 1500] = [0; 1500];
-    assert!(matches!(selection, Selection::FirstId));
-    assert!(matches!(flag, Flag::Deleted));
-    imap.write(&b"50 store 1 +FLAGS (\\Deleted)\r\n"[..])?;
-    let _read = read_lines(imap, &mut buffer, Some(&b"50 OK"[..]))?;
-
-    Ok(())
-}
-
-#[allow(dead_code)]
-/// Not yet implemented
 pub fn search(imap: &mut TcpStream) -> Result<()> {
     imap.write(&b"55 search text \"OoOoO\"\r\n"[..])?;
     let mut buffer: [u8; 1500] = [0; 1500];
     let _read = read_lines(imap, &mut buffer, Some(&b"55 OK"[..]))?;
     Ok(())
+}
+
+pub fn store(
+    imap: &mut TcpStream, 
+    sel: Selection, 
+    flag: Flag,
+    action: StoreAction,
+    modifier: StoreMod
+) -> Result<String> {
+    let mut buffer: [u8; 6000] = [0; 6000];
+
+    let seq = match sel {
+        Selection::FirstId => "1",
+        Selection::SecondId => "2",
+        Selection::All => "1:*",
+    };
+
+    let modif = match modifier {
+        StoreMod::None => "".into(),
+        StoreMod::UnchangedSince(val) => format!(" (UNCHANGEDSINCE {})", val),
+    };
+
+    let flags_str = match flag {
+        Flag::Deleted => "(\\Deleted)",
+        Flag::Important => "(\\Important)",
+    };
+
+    let action_str = match action {
+        StoreAction::AddFlags => "+FLAGS",
+        StoreAction::DelFlags => "-FLAGS",
+        StoreAction::SetFlags => "FLAGS",
+        StoreAction::AddFlagsSilent => "+FLAGS.SILENT",
+        StoreAction::DelFlagsSilent => "-FLAGS.SILENT",
+        StoreAction::SetFlagsSilent => "FLAGS.SILENT",
+    };
+
+    imap.write(format!("57 STORE {}{} {} {}\r\n", seq, modif, action_str, flags_str).as_bytes())?;
+    let read = read_lines(imap, &mut buffer, Some(&b"57 OK"[..]))?;
+    let srv_msg = std::str::from_utf8(read)?;
+    Ok(srv_msg.to_string())
 }
 
 pub fn expunge(imap: &mut TcpStream) -> Result<()> {
