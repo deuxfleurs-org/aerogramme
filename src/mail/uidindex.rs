@@ -393,6 +393,7 @@ mod tests {
             assert_eq!(state.table.len(), 1);
             let (uid, modseq, flags) = state.table.get(&m).unwrap();
             assert_eq!(*uid, NonZeroU32::new(1).unwrap());
+            assert_eq!(*modseq, NonZeroU64::new(1).unwrap());
             assert_eq!(flags.len(), 2);
             let ident = state.idx_by_uid.get(&NonZeroU32::new(1).unwrap()).unwrap();
             assert_eq!(&m, ident);
@@ -447,7 +448,7 @@ mod tests {
         {
             let m = UniqueIdent([0x03; 24]);
             let f = vec!["\\Archive".to_string(), "\\Recent".to_string()];
-            let ev = UidIndexOp::MailAdd(m, NonZeroU32::new(1).unwrap(), NonZeroU32::new(1).unwrap(), f);
+            let ev = UidIndexOp::MailAdd(m, NonZeroU32::new(1).unwrap(), NonZeroU64::new(1).unwrap(), f);
             state = state.apply(&ev);
         }
 

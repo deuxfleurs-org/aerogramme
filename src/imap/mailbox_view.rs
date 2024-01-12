@@ -612,6 +612,7 @@ mod tests {
                     peek: false,
                 },
             ]),
+            &[],
             false,
         );
 
@@ -623,12 +624,13 @@ mod tests {
             rfc822_size: 8usize,
         };
 
-        let index_entry = (NonZeroU32::MIN, vec![]);
+        let index_entry = (NonZeroU32::MIN, NonZeroU64::MIN, vec![]);
         let mail_in_idx = MailIndex {
             i: NonZeroU32::MIN,
             uid: index_entry.0,
+            modseq: index_entry.1,
             uuid: unique_ident::gen_ident(),
-            flags: &index_entry.1,
+            flags: &index_entry.2,
         };
         let rfc822 = b"Subject: hello\r\nFrom: a@a.a\r\nTo: b@b.b\r\nDate: Thu, 12 Oct 2023 08:45:28 +0000\r\n\r\nhello world";
         let qr = QueryResult::FullResult {
