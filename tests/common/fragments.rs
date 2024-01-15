@@ -85,6 +85,26 @@ pub enum StoreMod {
     UnchangedSince(u64),
 }
 
+pub enum FetchKind {
+    Rfc822,
+    Rfc822Size,
+}
+
+pub enum FetchMod {
+    None,
+    ChangedSince(u64),
+}
+
+pub enum SearchKind<'a> {
+    Text(&'a str),
+    ModSeq(u64),
+}
+
+pub enum StatusKind {
+    UidNext,
+    HighestModSeq,
+}
+
 pub fn capability(imap: &mut TcpStream, ext: Extension) -> Result<()> {
     imap.write(&b"5 capability\r\n"[..])?;
 
@@ -145,7 +165,7 @@ pub fn create_mailbox(imap: &mut TcpStream, mbx: Mailbox) -> Result<()> {
     Ok(())
 }
 
-pub fn select(imap: &mut TcpStream, mbx: Mailbox, modifier: SelectMod, maybe_exists: Option<u64>) -> Result<()> {
+pub fn select(imap: &mut TcpStream, mbx: Mailbox, modifier: SelectMod) -> Result<String> {
     let mut buffer: [u8; 6000] = [0; 6000];
 
     let mbx_str = match mbx {
@@ -163,18 +183,8 @@ pub fn select(imap: &mut TcpStream, mbx: Mailbox, modifier: SelectMod, maybe_exi
 
     let read = read_lines(imap, &mut buffer, Some(&b"20 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
-    if let Some(exists) = maybe_exists {
-        let expected = format!("* {} EXISTS", exists);
-        assert!(srv_msg.contains(&expected));
-    }
-    match modifier {
-        SelectMod::Condstore => {
-            assert!(srv_msg.contains("[HIGHESTMODSEQ"));
-        }
-        _ => (),
-    }
 
-    Ok(())
+    Ok(srv_msg.to_string())
 }
 
 pub fn unselect(imap: &mut TcpStream) -> Result<()> {
@@ -194,13 +204,22 @@ pub fn check(imap: &mut TcpStream) -> Result<()> {
     Ok(())
 }
 
-pub fn status_mailbox(imap: &mut TcpStream, mbx: Mailbox) -> Result<()> {
-    assert!(matches!(mbx, Mailbox::Archive));
-    imap.write(&b"25 STATUS Archive (UIDNEXT MESSAGES)\r\n"[..])?;
+pub fn status(imap: &mut TcpStream, mbx: Mailbox, sk: StatusKind) -> Result<String> {
+    let mbx_str = match mbx {
+        Mailbox::Inbox => "INBOX",
+        Mailbox::Archive => "Archive",
+        Mailbox::Drafts => "Drafts",
+    };
+    let sk_str = match sk {
+        StatusKind::UidNext => "(UIDNEXT)",
+        StatusKind::HighestModSeq => "(HIGHESTMODSEQ)",
+    };
+    imap.write(format!("25 STATUS {} {}\r\n", mbx_str, sk_str).as_bytes())?;
     let mut buffer: [u8; 6000] = [0; 6000];
-    let _read = read_lines(imap, &mut buffer, Some(&b"25 OK"[..]))?;
+    let read = read_lines(imap, &mut buffer, Some(&b"25 OK"[..]))?;
+    let srv_msg = std::str::from_utf8(read)?;
 
-    Ok(())
+    Ok(srv_msg.to_string())
 }
 
 pub fn lmtp_handshake(lmtp: &mut TcpStream) -> Result<()> {
@@ -267,23 +286,31 @@ pub fn noop_exists(imap: &mut TcpStream, must_exists: u32) -> Result<()> {
     }
 }
 
-pub fn fetch_rfc822(imap: &mut TcpStream, selection: Selection, r#ref: Email) -> Result<()> {
+pub fn fetch(imap: &mut TcpStream, selection: Selection, kind: FetchKind, modifier: FetchMod) -> Result<String> {
     let mut buffer: [u8; 65535] = [0; 65535];
 
-    assert!(matches!(selection, Selection::FirstId));
-    imap.write(&b"40 fetch 1 rfc822\r\n"[..])?;
+    let sel_str = match selection {
+        Selection::FirstId => "1",
+        Selection::SecondId => "2",
+        Selection::All => "1:*",
+    };
+
+    let kind_str = match kind {
+        FetchKind::Rfc822 => "RFC822",
+        FetchKind::Rfc822Size => "RFC822.SIZE",
+    };
+
+    let mod_str = match modifier {
+        FetchMod::None => "".into(),
+        FetchMod::ChangedSince(val) => format!(" (CHANGEDSINCE {})", val),
+    };
+
+    imap.write(format!("40 fetch {} {}{}\r\n", sel_str, kind_str, mod_str).as_bytes())?;
 
     let read = read_lines(imap, &mut buffer, Some(&b"40 OK FETCH"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
 
-    let ref_mail = match r#ref {
-        Email::Basic => EMAIL2,
-        Email::Multipart => EMAIL1,
-    };
-    let orig_email = std::str::from_utf8(ref_mail)?;
-    assert!(srv_msg.contains(orig_email));
-
-    Ok(())
+    Ok(srv_msg.to_string())
 }
 
 pub fn copy(imap: &mut TcpStream, selection: Selection, to: Mailbox) -> Result<()> {
@@ -323,11 +350,16 @@ pub fn append_email(imap: &mut TcpStream, content: Email) -> Result<()> {
     Ok(())
 }
 
-pub fn search(imap: &mut TcpStream) -> Result<()> {
-    imap.write(&b"55 search text \"OoOoO\"\r\n"[..])?;
+pub fn search(imap: &mut TcpStream, sk: SearchKind) -> Result<String> {
+    let sk_str = match sk {
+        SearchKind::Text(x) => format!("TEXT \"{}\"", x),
+        SearchKind::ModSeq(x) => format!("MODSEQ {}", x),
+    };
+    imap.write(format!("55 SEARCH {}\r\n", sk_str).as_bytes())?;
     let mut buffer: [u8; 1500] = [0; 1500];
-    let _read = read_lines(imap, &mut buffer, Some(&b"55 OK"[..]))?;
-    Ok(())
+    let read = read_lines(imap, &mut buffer, Some(&b"55 OK"[..]))?;
+    let srv_msg = std::str::from_utf8(read)?;
+    Ok(srv_msg.to_string())
 }
 
 pub fn store(
