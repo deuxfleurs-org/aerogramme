@@ -1,7 +1,8 @@
 use std::sync::Arc;
+use std::num::NonZeroU64;
 
 use anyhow::Result;
-use imap_codec::imap_types::command::{Command, CommandBody};
+use imap_codec::imap_types::command::{Command, CommandBody, FetchModifier, StoreModifier};
 use imap_codec::imap_types::core::Charset;
 use imap_codec::imap_types::fetch::MacroOrMessageDataItemNames;
 use imap_codec::imap_types::flag::{Flag, StoreResponse, StoreType};
@@ -13,9 +14,9 @@ use imap_codec::imap_types::sequence::SequenceSet;
 use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anystate, authenticated, MailboxName};
 use crate::imap::flow;
-use crate::imap::mailbox_view::MailboxView;
+use crate::imap::mailbox_view::{MailboxView, UpdateParameters};
 use crate::imap::response::Response;
-
+use crate::imap::attributes::AttributesProxy;
 use crate::mail::user::User;
 
 pub struct SelectedContext<'a> {
@@ -43,8 +44,9 @@ pub async fn dispatch<'a>(
         CommandBody::Fetch {
             sequence_set,
             macro_or_item_names,
+            modifiers,
             uid,
-        } => ctx.fetch(sequence_set, macro_or_item_names, uid).await,
+        } => ctx.fetch(sequence_set, macro_or_item_names, modifiers, uid).await,
         CommandBody::Search {
             charset,
             criteria,
@@ -56,8 +58,9 @@ pub async fn dispatch<'a>(
             kind,
             response,
             flags,
+            modifiers,
             uid,
-        } => ctx.store(sequence_set, kind, response, flags, uid).await,
+        } => ctx.store(sequence_set, kind, response, flags, modifiers, uid).await,
         CommandBody::Copy {
             sequence_set,
             mailbox,
@@ -113,17 +116,34 @@ impl<'a> SelectedContext<'a> {
         self,
         sequence_set: &SequenceSet,
         attributes: &'a MacroOrMessageDataItemNames<'static>,
+        modifiers: &[FetchModifier],
         uid: &bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
-        match self.mailbox.fetch(sequence_set, attributes, uid).await {
-            Ok(resp) => Ok((
-                Response::build()
-                    .to_req(self.req)
-                    .message("FETCH completed")
-                    .set_body(resp)
-                    .ok()?,
-                flow::Transition::None,
-            )),
+        let ap = AttributesProxy::new(attributes, modifiers, *uid);
+        let mut changed_since: Option<NonZeroU64> = None;
+        modifiers.iter().for_each(|m| match m {
+            FetchModifier::ChangedSince(val) => {
+                changed_since = Some(*val);
+            },
+        });
+
+        match self.mailbox.fetch(sequence_set, &ap, changed_since, uid).await {
+            Ok(resp) => {
+                // Capabilities enabling logic only on successful command
+                // (according to my understanding of the spec)
+                self.client_capabilities.attributes_enable(&ap);
+                self.client_capabilities.fetch_modifiers_enable(modifiers);
+
+                // Response to the client
+                Ok((
+                    Response::build()
+                        .to_req(self.req)
+                        .message("FETCH completed")
+                        .set_body(resp)
+                        .ok()?,
+                    flow::Transition::None,
+                ))
+            },
             Err(e) => Ok((
                 Response::build()
                     .to_req(self.req)
@@ -140,7 +160,10 @@ impl<'a> SelectedContext<'a> {
         criteria: &SearchKey<'a>,
         uid: &bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
-        let found = self.mailbox.search(charset, criteria, *uid).await?;
+        let (found, enable_condstore) = self.mailbox.search(charset, criteria, *uid).await?;
+        if enable_condstore {
+            self.client_capabilities.enable_condstore();
+        }
         Ok((
             Response::build()
                 .to_req(self.req)
@@ -152,9 +175,9 @@ impl<'a> SelectedContext<'a> {
     }
 
     pub async fn noop(self) -> Result<(Response<'static>, flow::Transition)> {
-        self.mailbox.0.mailbox.force_sync().await?;
+        self.mailbox.internal.mailbox.force_sync().await?;
 
-        let updates = self.mailbox.update().await?;
+        let updates = self.mailbox.update(UpdateParameters::default()).await?;
         Ok((
             Response::build()
                 .to_req(self.req)
@@ -185,19 +208,39 @@ impl<'a> SelectedContext<'a> {
         kind: &StoreType,
         response: &StoreResponse,
         flags: &[Flag<'a>],
+        modifiers: &[StoreModifier],
         uid: &bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
-        let data = self
+        let mut unchanged_since: Option<NonZeroU64> = None;
+        modifiers.iter().for_each(|m| match m {
+            StoreModifier::UnchangedSince(val) => {
+                unchanged_since = Some(*val);
+            },
+        });
+
+        let (data, modified) = self
             .mailbox
-            .store(sequence_set, kind, response, flags, uid)
+            .store(sequence_set, kind, response, flags, unchanged_since, uid)
             .await?;
 
-        Ok((
-            Response::build()
+        let mut ok_resp = Response::build()
                 .to_req(self.req)
                 .message("STORE completed")
-                .set_body(data)
-                .ok()?,
+                .set_body(data);
+
+
+        match modified[..] {
+            [] => (),
+            [_head, ..] => {
+                let modified_str = format!("MODIFIED {}", modified.into_iter().map(|x| x.to_string()).collect::<Vec<_>>().join(","));
+                ok_resp = ok_resp.code(Code::Other(CodeOther::unvalidated(modified_str.into_bytes())));
+            },
+        };
+
+
+        self.client_capabilities.store_modifiers_enable(modifiers);
+
+        Ok((ok_resp.ok()?,
             flow::Transition::None,
         ))
     }

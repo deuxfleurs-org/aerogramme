@@ -1,21 +1,23 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::Arc;
+use std::collections::HashSet;
 
 use anyhow::{anyhow, Error, Result};
 
 use futures::stream::{FuturesOrdered, StreamExt};
 
 use imap_codec::imap_types::core::Charset;
-use imap_codec::imap_types::fetch::{MacroOrMessageDataItemNames, MessageDataItem};
+use imap_codec::imap_types::fetch::MessageDataItem;
 use imap_codec::imap_types::flag::{Flag, FlagFetch, FlagPerm, StoreResponse, StoreType};
-use imap_codec::imap_types::response::{Code, Data, Status};
+use imap_codec::imap_types::response::{Code, CodeOther, Data, Status};
 use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::SequenceSet;
 
+use crate::mail::unique_ident::UniqueIdent;
 use crate::mail::mailbox::Mailbox;
 use crate::mail::query::QueryScope;
 use crate::mail::snapshot::FrozenMailbox;
-use crate::mail::uidindex::{ImapUid, ImapUidvalidity};
+use crate::mail::uidindex::{ImapUid, ImapUidvalidity, ModSeq};
 
 use crate::imap::attributes::AttributesProxy;
 use crate::imap::flags;
@@ -32,6 +34,21 @@ const DEFAULT_FLAGS: [Flag; 5] = [
     Flag::Draft,
 ];
 
+pub struct UpdateParameters {
+    pub silence: HashSet<UniqueIdent>,
+    pub with_modseq: bool,
+    pub with_uid: bool,
+}
+impl Default for UpdateParameters {
+    fn default() -> Self {
+        Self {
+            silence: HashSet::new(),
+            with_modseq: false,
+            with_uid: false,
+        }
+    }
+}
+
 /// A MailboxView is responsible for giving the client the information
 /// it needs about a mailbox, such as an initial summary of the mailbox's
 /// content and continuous updates indicating when the content
@@ -39,12 +56,18 @@ const DEFAULT_FLAGS: [Flag; 5] = [
 /// To do this, it keeps a variable `known_state` that corresponds to
 /// what the client knows, and produces IMAP messages to be sent to the
 /// client that go along updates to `known_state`.
-pub struct MailboxView(pub FrozenMailbox);
+pub struct MailboxView {
+    pub internal: FrozenMailbox,
+    pub is_condstore: bool,
+}
 
 impl MailboxView {
     /// Creates a new IMAP view into a mailbox.
-    pub async fn new(mailbox: Arc<Mailbox>) -> Self {
-        Self(mailbox.frozen().await)
+    pub async fn new(mailbox: Arc<Mailbox>, is_cond: bool) -> Self {
+        Self { 
+            internal: mailbox.frozen().await,
+            is_condstore: is_cond,
+        }
     }
 
     /// Create an updated view, useful to make a diff
@@ -53,9 +76,9 @@ impl MailboxView {
     /// what the client knows and what is actually in the mailbox.
     /// This does NOT trigger a sync, it bases itself on what is currently
     /// loaded in RAM by Bayou.
-    pub async fn update(&mut self) -> Result<Vec<Body<'static>>> {
-        let old_snapshot = self.0.update().await;
-        let new_snapshot = &self.0.snapshot;
+    pub async fn update(&mut self, params: UpdateParameters) -> Result<Vec<Body<'static>>> {
+        let old_snapshot = self.internal.update().await;
+        let new_snapshot = &self.internal.snapshot;
 
         let mut data = Vec::<Body>::new();
 
@@ -99,19 +122,31 @@ impl MailboxView {
         } else {
             // - if flags changed for existing mails, tell client
             for (i, (_uid, uuid)) in new_snapshot.idx_by_uid.iter().enumerate() {
+                if params.silence.contains(uuid) {
+                    continue;
+                }
+
                 let old_mail = old_snapshot.table.get(uuid);
                 let new_mail = new_snapshot.table.get(uuid);
                 if old_mail.is_some() && old_mail != new_mail {
-                    if let Some((uid, flags)) = new_mail {
+                    if let Some((uid, modseq, flags)) = new_mail {
+                        let mut items = vec![
+                            MessageDataItem::Flags(
+                                flags.iter().filter_map(|f| flags::from_str(f)).collect(),
+                            ),
+                        ];
+
+                        if params.with_uid {
+                            items.push(MessageDataItem::Uid(*uid));
+                        }
+
+                        if params.with_modseq {
+                            items.push(MessageDataItem::ModSeq(*modseq));
+                        }
+
                         data.push(Body::Data(Data::Fetch {
                             seq: NonZeroU32::try_from((i + 1) as u32).unwrap(),
-                            items: vec![
-                                MessageDataItem::Uid(*uid),
-                                MessageDataItem::Flags(
-                                    flags.iter().filter_map(|f| flags::from_str(f)).collect(),
-                                ),
-                            ]
-                            .try_into()?,
+                            items: items.try_into()?,
                         }));
                     }
                 }
@@ -130,8 +165,11 @@ impl MailboxView {
         data.extend(self.flags_status()?.into_iter());
         data.push(self.uidvalidity_status()?);
         data.push(self.uidnext_status()?);
-        self.unseen_first_status()?
-            .map(|unseen_status| data.push(unseen_status));
+        if self.is_condstore {
+            data.push(self.highestmodseq_status()?);
+        }
+        /*self.unseen_first_status()?
+            .map(|unseen_status| data.push(unseen_status));*/
 
         Ok(data)
     }
@@ -140,50 +178,68 @@ impl MailboxView {
         &mut self,
         sequence_set: &SequenceSet,
         kind: &StoreType,
-        _response: &StoreResponse,
+        response: &StoreResponse,
         flags: &[Flag<'a>],
+        unchanged_since: Option<NonZeroU64>,
         is_uid_store: &bool,
-    ) -> Result<Vec<Body<'static>>> {
-        self.0.sync().await?;
+    ) -> Result<(Vec<Body<'static>>, Vec<NonZeroU32>)> {
+        self.internal.sync().await?;
 
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
 
         let idx = self.index()?;
-        let mails = idx.fetch(sequence_set, *is_uid_store)?;
-        for mi in mails.iter() {
+        let (editable, in_conflict) = idx
+            .fetch_unchanged_since(sequence_set, unchanged_since, *is_uid_store)?;
+
+        for mi in editable.iter() {
             match kind {
                 StoreType::Add => {
-                    self.0.mailbox.add_flags(mi.uuid, &flags[..]).await?;
+                    self.internal.mailbox.add_flags(mi.uuid, &flags[..]).await?;
                 }
                 StoreType::Remove => {
-                    self.0.mailbox.del_flags(mi.uuid, &flags[..]).await?;
+                    self.internal.mailbox.del_flags(mi.uuid, &flags[..]).await?;
                 }
                 StoreType::Replace => {
-                    self.0.mailbox.set_flags(mi.uuid, &flags[..]).await?;
+                    self.internal.mailbox.set_flags(mi.uuid, &flags[..]).await?;
                 }
             }
         }
 
-        // @TODO: handle _response
-        self.update().await
+        let silence = match response {
+            StoreResponse::Answer => HashSet::new(),
+            StoreResponse::Silent => editable.iter().map(|midx| midx.uuid).collect(),
+        };
+
+        let conflict_id_or_uid = match is_uid_store {
+            true => in_conflict.into_iter().map(|midx| midx.uid).collect(),
+            _ => in_conflict.into_iter().map(|midx| midx.i).collect(),
+        };
+
+        let summary = self.update(UpdateParameters {
+            with_uid: *is_uid_store,
+            with_modseq: unchanged_since.is_some(),
+            silence,
+        }).await?;
+
+        Ok((summary, conflict_id_or_uid))
     }
 
     pub async fn expunge(&mut self) -> Result<Vec<Body<'static>>> {
-        self.0.sync().await?;
-        let state = self.0.peek().await;
+        self.internal.sync().await?;
+        let state = self.internal.peek().await;
 
         let deleted_flag = Flag::Deleted.to_string();
         let msgs = state
             .table
             .iter()
-            .filter(|(_uuid, (_uid, flags))| flags.iter().any(|x| *x == deleted_flag))
+            .filter(|(_uuid, (_uid, _modseq, flags))| flags.iter().any(|x| *x == deleted_flag))
             .map(|(uuid, _)| *uuid);
 
         for msg in msgs {
-            self.0.mailbox.delete(msg).await?;
+            self.internal.mailbox.delete(msg).await?;
         }
 
-        self.update().await
+        self.update(UpdateParameters::default()).await
     }
 
     pub async fn copy(
@@ -197,7 +253,7 @@ impl MailboxView {
 
         let mut new_uuids = vec![];
         for mi in mails.iter() {
-            new_uuids.push(to.copy_from(&self.0.mailbox, mi.uuid).await?);
+            new_uuids.push(to.copy_from(&self.internal.mailbox, mi.uuid).await?);
         }
 
         let mut ret = vec![];
@@ -224,7 +280,7 @@ impl MailboxView {
         let mails = idx.fetch(sequence_set, *is_uid_copy)?;
 
         for mi in mails.iter() {
-            to.move_from(&self.0.mailbox, mi.uuid).await?;
+            to.move_from(&self.internal.mailbox, mi.uuid).await?;
         }
 
         let mut ret = vec![];
@@ -238,7 +294,10 @@ impl MailboxView {
             ret.push((mi.uid, dest_uid));
         }
 
-        let update = self.update().await?;
+        let update = self.update(UpdateParameters {
+            with_uid: *is_uid_copy,
+            ..UpdateParameters::default()
+        }).await?;
 
         Ok((to_state.uidvalidity, ret, update))
     }
@@ -248,27 +307,32 @@ impl MailboxView {
     pub async fn fetch<'b>(
         &self,
         sequence_set: &SequenceSet,
-        attributes: &'b MacroOrMessageDataItemNames<'static>,
+        ap: &AttributesProxy,
+        changed_since: Option<NonZeroU64>,
         is_uid_fetch: &bool,
     ) -> Result<Vec<Body<'static>>> {
         // [1/6] Pre-compute data
         //  a. what are the uuids of the emails we want?
         //  b. do we need to fetch the full body?
-        let ap = AttributesProxy::new(attributes, *is_uid_fetch);
+        //let ap = AttributesProxy::new(attributes, *is_uid_fetch);
         let query_scope = match ap.need_body() {
             true => QueryScope::Full,
             _ => QueryScope::Partial,
         };
         tracing::debug!("Query scope {:?}", query_scope);
         let idx = self.index()?;
-        let mail_idx_list = idx.fetch(sequence_set, *is_uid_fetch)?;
+        let mail_idx_list = idx.fetch_changed_since(
+            sequence_set, 
+            changed_since, 
+            *is_uid_fetch
+        )?;
 
         // [2/6] Fetch the emails
         let uuids = mail_idx_list
             .iter()
             .map(|midx| midx.uuid)
             .collect::<Vec<_>>();
-        let query_result = self.0.query(&uuids, query_scope).fetch().await?;
+        let query_result = self.internal.query(&uuids, query_scope).fetch().await?;
 
         // [3/6] Derive an IMAP-specific view from the results, apply the filters
         let views = query_result
@@ -294,7 +358,7 @@ impl MailboxView {
             .filter(|(_mv, seen)| matches!(seen, SeenFlag::MustAdd))
             .map(|(mv, _seen)| async move {
                 let seen_flag = Flag::Seen.to_string();
-                self.0
+                self.internal
                     .mailbox
                     .add_flags(*mv.query_result.uuid(), &[seen_flag])
                     .await?;
@@ -316,7 +380,7 @@ impl MailboxView {
         _charset: &Option<Charset<'a>>,
         search_key: &SearchKey<'a>,
         uid: bool,
-    ) -> Result<Vec<Body<'static>>> {
+    ) -> Result<(Vec<Body<'static>>, bool)> {
         // 1. Compute the subset of sequence identifiers we need to fetch
         // based on the search query
         let crit = search::Criteria(search_key);
@@ -332,20 +396,30 @@ impl MailboxView {
         // 4. Fetch additional info about the emails
         let query_scope = crit.query_scope();
         let uuids = to_fetch.iter().map(|midx| midx.uuid).collect::<Vec<_>>();
-        let query_result = self.0.query(&uuids, query_scope).fetch().await?;
+        let query_result = self.internal.query(&uuids, query_scope).fetch().await?;
 
         // 5. If needed, filter the selection based on the body
         let kept_query = crit.filter_on_query(&to_fetch, &query_result)?;
 
         // 6. Format the result according to the client's taste:
         // either return UID or ID.
-        let final_selection = kept_idx.into_iter().chain(kept_query.into_iter());
+        let final_selection = kept_idx.iter().chain(kept_query.iter());
         let selection_fmt = match uid {
             true => final_selection.map(|in_idx| in_idx.uid).collect(),
             _ => final_selection.map(|in_idx| in_idx.i).collect(),
         };
 
-        Ok(vec![Body::Data(Data::Search(selection_fmt))])
+        // 7. Add the modseq entry if needed
+        let is_modseq = crit.is_modseq();
+        let maybe_modseq = match is_modseq {
+            true => {
+                let final_selection = kept_idx.iter().chain(kept_query.iter());
+                final_selection.map(|in_idx| in_idx.modseq).max().map(|r| NonZeroU64::try_from(r)).transpose()?
+            },
+            _ => None,
+        };
+
+        Ok((vec![Body::Data(Data::Search(selection_fmt, maybe_modseq))], is_modseq))
     }
 
     // ----
@@ -354,7 +428,7 @@ impl MailboxView {
     /// It's not trivial to refactor the code to do that, so we are doing
     /// some useless computation for now...
     fn index<'a>(&'a self) -> Result<Index<'a>> {
-        Index::new(&self.0.snapshot)
+        Index::new(&self.internal.snapshot)
     }
 
     /// Produce an OK [UIDVALIDITY _] message corresponding to `known_state`
@@ -369,7 +443,7 @@ impl MailboxView {
     }
 
     pub(crate) fn uidvalidity(&self) -> ImapUidvalidity {
-        self.0.snapshot.uidvalidity
+        self.internal.snapshot.uidvalidity
     }
 
     /// Produce an OK [UIDNEXT _] message corresponding to `known_state`
@@ -384,7 +458,19 @@ impl MailboxView {
     }
 
     pub(crate) fn uidnext(&self) -> ImapUid {
-        self.0.snapshot.uidnext
+        self.internal.snapshot.uidnext
+    }
+
+    pub(crate) fn highestmodseq_status(&self) -> Result<Body<'static>> {
+        Ok(Body::Status(Status::ok(
+            None, 
+            Some(Code::Other(CodeOther::unvalidated(format!("HIGHESTMODSEQ {}", self.highestmodseq()).into_bytes()))),
+            "Highest",
+        )?))
+    }
+
+    pub(crate) fn highestmodseq(&self) -> ModSeq {
+        self.internal.snapshot.highestmodseq
     }
 
     /// Produce an EXISTS message corresponding to the number of mails
@@ -394,7 +480,7 @@ impl MailboxView {
     }
 
     pub(crate) fn exists(&self) -> Result<u32> {
-        Ok(u32::try_from(self.0.snapshot.idx_by_uid.len())?)
+        Ok(u32::try_from(self.internal.snapshot.idx_by_uid.len())?)
     }
 
     /// Produce a RECENT message corresponding to the number of
@@ -403,6 +489,7 @@ impl MailboxView {
         Ok(Body::Data(Data::Recent(self.recent()?)))
     }
 
+    #[allow(dead_code)]
     fn unseen_first_status(&self) -> Result<Option<Body<'static>>> {
         Ok(self
             .unseen_first()?
@@ -412,21 +499,22 @@ impl MailboxView {
             .transpose()?)
     }
 
+    #[allow(dead_code)]
     fn unseen_first(&self) -> Result<Option<NonZeroU32>> {
         Ok(self
-            .0
+            .internal
             .snapshot
             .table
             .values()
             .enumerate()
-            .find(|(_i, (_imap_uid, flags))| !flags.contains(&"\\Seen".to_string()))
+            .find(|(_i, (_imap_uid, _modseq, flags))| !flags.contains(&"\\Seen".to_string()))
             .map(|(i, _)| NonZeroU32::try_from(i as u32 + 1))
             .transpose()?)
     }
 
     pub(crate) fn recent(&self) -> Result<u32> {
         let recent = self
-            .0
+            .internal
             .snapshot
             .idx_by_flag
             .get(&"\\Recent".to_string())
@@ -443,7 +531,7 @@ impl MailboxView {
         // 1. Collecting all the possible flags in the mailbox
         // 1.a Fetch them from our index
         let mut known_flags: Vec<Flag> = self
-            .0
+            .internal
             .snapshot
             .idx_by_flag
             .flags()
@@ -483,9 +571,9 @@ impl MailboxView {
     }
 
     pub(crate) fn unseen_count(&self) -> usize {
-        let total = self.0.snapshot.table.len();
+        let total = self.internal.snapshot.table.len();
         let seen = self
-            .0
+            .internal
             .snapshot
             .idx_by_flag
             .get(&Flag::Seen.to_string())
@@ -524,6 +612,7 @@ mod tests {
                     peek: false,
                 },
             ]),
+            &[],
             false,
         );
 
@@ -535,12 +624,13 @@ mod tests {
             rfc822_size: 8usize,
         };
 
-        let index_entry = (NonZeroU32::MIN, vec![]);
+        let index_entry = (NonZeroU32::MIN, NonZeroU64::MIN, vec![]);
         let mail_in_idx = MailIndex {
             i: NonZeroU32::MIN,
             uid: index_entry.0,
+            modseq: index_entry.1,
             uuid: unique_ident::gen_ident(),
-            flags: &index_entry.1,
+            flags: &index_entry.2,
         };
         let rfc822 = b"Subject: hello\r\nFrom: a@a.a\r\nTo: b@b.b\r\nDate: Thu, 12 Oct 2023 08:45:28 +0000\r\n\r\nhello world";
         let qr = QueryResult::FullResult {

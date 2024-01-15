@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Result};
-use imap_codec::imap_types::command::{Command, CommandBody};
+use imap_codec::imap_types::command::{Command, CommandBody, SelectExamineModifier};
 use imap_codec::imap_types::core::{Atom, Literal, NonEmptyVec, QuotedChar};
 use imap_codec::imap_types::datetime::DateTime;
 use imap_codec::imap_types::extensions::enable::CapabilityEnable;
@@ -58,8 +58,8 @@ pub async fn dispatch<'a>(
         } => ctx.status(mailbox, item_names).await,
         CommandBody::Subscribe { mailbox } => ctx.subscribe(mailbox).await,
         CommandBody::Unsubscribe { mailbox } => ctx.unsubscribe(mailbox).await,
-        CommandBody::Select { mailbox } => ctx.select(mailbox).await,
-        CommandBody::Examine { mailbox } => ctx.examine(mailbox).await,
+        CommandBody::Select { mailbox, modifiers } => ctx.select(mailbox, modifiers).await,
+        CommandBody::Examine { mailbox, modifiers } => ctx.examine(mailbox, modifiers).await,
         CommandBody::Append {
             mailbox,
             flags,
@@ -292,7 +292,7 @@ impl<'a> AuthenticatedContext<'a> {
             }
         };
 
-        let view = MailboxView::new(mb).await;
+        let view = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await;
 
         let mut ret_attrs = vec![];
         for attr in attributes.iter() {
@@ -311,8 +311,9 @@ impl<'a> AuthenticatedContext<'a> {
                     bail!("quota not implemented, can't return freed storage after EXPUNGE will be run");
                 },
                 StatusDataItemName::HighestModSeq => {
-                    bail!("highestmodseq not yet implemented");
-                }
+                    self.client_capabilities.enable_condstore();
+                    StatusDataItem::HighestModSeq(view.highestmodseq().get())
+                },
             });
         }
 
@@ -404,6 +405,7 @@ impl<'a> AuthenticatedContext<'a> {
                           it is therefore correct to not return it even if there are unseen messages
       RFC9051 (imap4rev2) says that OK [UNSEEN] responses are deprecated after SELECT and EXAMINE
       For Aerogramme, we just don't send the OK [UNSEEN], it's correct to do in both specifications.
+    
 
     20 select "INBOX.achats"
     * FLAGS (\Answered \Flagged \Deleted \Seen \Draft $Forwarded JUNK $label1)
@@ -420,7 +422,10 @@ impl<'a> AuthenticatedContext<'a> {
     async fn select(
         self,
         mailbox: &MailboxCodec<'a>,
+        modifiers: &[SelectExamineModifier],
     ) -> Result<(Response<'static>, flow::Transition)> {
+        self.client_capabilities.select_enable(modifiers);
+
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
@@ -438,7 +443,7 @@ impl<'a> AuthenticatedContext<'a> {
         };
         tracing::info!(username=%self.user.username, mailbox=%name, "mailbox.selected");
 
-        let mb = MailboxView::new(mb).await;
+        let mb = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await;
         let data = mb.summary()?;
 
         Ok((
@@ -455,7 +460,10 @@ impl<'a> AuthenticatedContext<'a> {
     async fn examine(
         self,
         mailbox: &MailboxCodec<'a>,
+        modifiers: &[SelectExamineModifier],
     ) -> Result<(Response<'static>, flow::Transition)> {
+        self.client_capabilities.select_enable(modifiers);
+
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
@@ -473,7 +481,7 @@ impl<'a> AuthenticatedContext<'a> {
         };
         tracing::info!(username=%self.user.username, mailbox=%name, "mailbox.examined");
 
-        let mb = MailboxView::new(mb).await;
+        let mb = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await;
         let data = mb.summary()?;
 
         Ok((
@@ -496,7 +504,7 @@ impl<'a> AuthenticatedContext<'a> {
     ) -> Result<(Response<'static>, flow::Transition)> {
         let append_tag = self.req.tag.clone();
         match self.append_internal(mailbox, flags, date, message).await {
-            Ok((_mb, uidvalidity, uid)) => Ok((
+            Ok((_mb, uidvalidity, uid, _modseq)) => Ok((
                 Response::build()
                     .tag(append_tag)
                     .message("APPEND completed")
@@ -537,7 +545,7 @@ impl<'a> AuthenticatedContext<'a> {
         flags: &[Flag<'a>],
         date: &Option<DateTime>,
         message: &Literal<'a>,
-    ) -> Result<(Arc<Mailbox>, ImapUidvalidity, ImapUidvalidity)> {
+    ) -> Result<(Arc<Mailbox>, ImapUidvalidity, ImapUid, ModSeq)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
@@ -555,9 +563,9 @@ impl<'a> AuthenticatedContext<'a> {
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         // TODO: filter allowed flags? ping @Quentin
 
-        let (uidvalidity, uid) = mb.append(msg, None, &flags[..]).await?;
+        let (uidvalidity, uid, modseq) = mb.append(msg, None, &flags[..]).await?;
 
-        Ok((mb, uidvalidity, uid))
+        Ok((mb, uidvalidity, uid, modseq))
     }
 }
 

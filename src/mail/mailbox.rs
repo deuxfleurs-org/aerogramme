@@ -113,7 +113,7 @@ impl Mailbox {
         msg: IMF<'a>,
         ident: Option<UniqueIdent>,
         flags: &[Flag],
-    ) -> Result<(ImapUidvalidity, ImapUid)> {
+    ) -> Result<(ImapUidvalidity, ImapUid, ModSeq)> {
         self.mbox.write().await.append(msg, ident, flags).await
     }
 
@@ -271,7 +271,7 @@ impl MailboxInternal {
         mail: IMF<'_>,
         ident: Option<UniqueIdent>,
         flags: &[Flag],
-    ) -> Result<(ImapUidvalidity, ImapUid)> {
+    ) -> Result<(ImapUidvalidity, ImapUid, ModSeq)> {
         let ident = ident.unwrap_or_else(gen_ident);
         let message_key = gen_key();
 
@@ -312,14 +312,14 @@ impl MailboxInternal {
         let add_mail_op = uid_state.op_mail_add(ident, flags.to_vec());
 
         let uidvalidity = uid_state.uidvalidity;
-        let uid = match add_mail_op {
-            UidIndexOp::MailAdd(_, uid, _) => uid,
+        let (uid, modseq) = match add_mail_op {
+            UidIndexOp::MailAdd(_, uid, modseq, _) => (uid, modseq),
             _ => unreachable!(),
         };
 
         self.uid_index.push(add_mail_op).await?;
 
-        Ok((uidvalidity, uid))
+        Ok((uidvalidity, uid, modseq))
     }
 
     async fn append_from_s3<'a>(
@@ -432,7 +432,7 @@ impl MailboxInternal {
             .table
             .get(&source_id)
             .ok_or(anyhow!("Source mail not found"))?
-            .1
+            .2
             .clone();
 
         futures::try_join!(
@@ -465,6 +465,9 @@ impl MailboxInternal {
     }
 }
 
+// Can be useful to debug so we want this code
+// to be available to developers
+#[allow(dead_code)]
 fn dump(uid_index: &Bayou<UidIndex>) {
     let s = uid_index.state();
     println!("---- MAILBOX STATE ----");
@@ -476,7 +479,7 @@ fn dump(uid_index: &Bayou<UidIndex>) {
             "{} {} {}",
             uid,
             hex::encode(ident.0),
-            s.table.get(ident).cloned().unwrap().1.join(", ")
+            s.table.get(ident).cloned().unwrap().2.join(", ")
         );
     }
     println!();

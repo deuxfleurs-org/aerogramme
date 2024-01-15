@@ -1,9 +1,9 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 
 use anyhow::{anyhow, Result};
-use imap_codec::imap_types::sequence::{self, SeqOrUid, Sequence, SequenceSet};
+use imap_codec::imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
 
-use crate::mail::uidindex::{ImapUid, UidIndex};
+use crate::mail::uidindex::{ImapUid, ModSeq, UidIndex};
 use crate::mail::unique_ident::UniqueIdent;
 
 pub struct Index<'a> {
@@ -17,12 +17,10 @@ impl<'a> Index<'a> {
             .iter()
             .enumerate()
             .map(|(i_enum, (&uid, &uuid))| {
-                let flags = internal
+                let (_, modseq, flags) = internal
                     .table
                     .get(&uuid)
-                    .ok_or(anyhow!("mail is missing from index"))?
-                    .1
-                    .as_ref();
+                    .ok_or(anyhow!("mail is missing from index"))?;
                 let i_int: u32 = (i_enum + 1).try_into()?;
                 let i: NonZeroU32 = i_int.try_into()?;
 
@@ -30,6 +28,7 @@ impl<'a> Index<'a> {
                     i,
                     uid,
                     uuid,
+                    modseq: *modseq,
                     flags,
                 })
             })
@@ -61,10 +60,8 @@ impl<'a> Index<'a> {
         if self.imap_index.is_empty() {
             return vec![];
         }
-        let iter_strat = sequence::Strategy::Naive {
-            largest: self.last().expect("The mailbox is not empty").uid,
-        };
-        let mut unroll_seq = sequence_set.iter(iter_strat).collect::<Vec<_>>();
+        let largest = self.last().expect("The mailbox is not empty").uid;
+        let mut unroll_seq = sequence_set.iter(largest).collect::<Vec<_>>();
         unroll_seq.sort();
 
         let start_seq = match unroll_seq.iter().next() {
@@ -103,11 +100,9 @@ impl<'a> Index<'a> {
         if self.imap_index.is_empty() {
             return Ok(vec![]);
         }
-        let iter_strat = sequence::Strategy::Naive {
-            largest: NonZeroU32::try_from(self.imap_index.len() as u32)?,
-        };
+        let largest = NonZeroU32::try_from(self.imap_index.len() as u32)?;
         let mut acc = sequence_set
-            .iter(iter_strat)
+            .iter(largest)
             .map(|wanted_id| {
                 self.imap_index
                     .get((wanted_id.get() as usize) - 1)
@@ -131,6 +126,36 @@ impl<'a> Index<'a> {
             _ => self.fetch_on_id(sequence_set),
         }
     }
+
+    pub fn fetch_changed_since(
+        self: &'a Index<'a>,
+        sequence_set: &SequenceSet,
+        maybe_modseq: Option<NonZeroU64>,
+        by_uid: bool,
+    ) -> Result<Vec<&'a MailIndex<'a>>> {
+        let raw = self.fetch(sequence_set, by_uid)?;
+        let res = match maybe_modseq {
+            Some(pit) => raw.into_iter().filter(|midx| midx.modseq > pit).collect(),
+            None => raw,
+        };
+
+        Ok(res)
+    }
+
+    pub fn fetch_unchanged_since(
+        self: &'a Index<'a>,
+        sequence_set: &SequenceSet,
+        maybe_modseq: Option<NonZeroU64>,
+        by_uid: bool,
+    ) -> Result<(Vec<&'a MailIndex<'a>>, Vec<&'a MailIndex<'a>>)> {
+        let raw = self.fetch(sequence_set, by_uid)?;
+        let res = match maybe_modseq {
+            Some(pit) => raw.into_iter().partition(|midx| midx.modseq <= pit),
+            None => (raw, vec![]),
+        };
+
+        Ok(res)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -138,6 +163,7 @@ pub struct MailIndex<'a> {
     pub i: NonZeroU32,
     pub uid: ImapUid,
     pub uuid: UniqueIdent,
+    pub modseq: ModSeq,
     pub flags: &'a Vec<String>,
 }
 
