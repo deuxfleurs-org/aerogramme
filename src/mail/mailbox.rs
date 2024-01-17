@@ -67,6 +67,11 @@ impl Mailbox {
         self.mbox.write().await.opportunistic_sync().await
     }
 
+    /// Block until a sync has been done (due to changes in the event log)
+    pub async fn idle_sync(&self) -> Result<()> {
+        self.mbox.write().await.idle_sync().await
+    }
+
     // ---- Functions for reading the mailbox ----
 
     /// Get a clone of the current UID Index of this mailbox
@@ -196,6 +201,11 @@ impl MailboxInternal {
 
     async fn opportunistic_sync(&mut self) -> Result<()> {
         self.uid_index.opportunistic_sync().await?;
+        Ok(())
+    }
+
+    async fn idle_sync(&mut self) -> Result<()> {
+        self.uid_index.idle_sync().await?;
         Ok(())
     }
 

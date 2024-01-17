@@ -21,7 +21,7 @@ pub enum State {
     NotAuthenticated,
     Authenticated(Arc<User>),
     Selected(Arc<User>, MailboxView, MailboxPerm),
-    Idle(Arc<User>, MailboxView, MailboxPerm, Notify),
+    Idle(Arc<User>, MailboxView, MailboxPerm, Arc<Notify>),
     Logout,
 }
 
@@ -56,7 +56,7 @@ impl State {
                 State::Authenticated(u.clone())
             }
             (State::Selected(u, m, p), Transition::Idle(s)) => {
-                State::Idle(u, m, p, s)
+                State::Idle(u, m, p, Arc::new(s))
             },
             (State::Idle(u, m, p, _), Transition::UnIdle) => {
                 State::Selected(u, m, p)

@@ -38,6 +38,16 @@ impl Instance {
             _ => unreachable!(),
         };
 
+        tokio::select! {
+            _ = stop.notified() => {
+                return Response::build()
+                    .tag(imap_codec::imap_types::core::Tag::try_from("FIXME").unwrap())
+                    .message("IDLE completed")
+                    .ok()
+                    .unwrap()
+            }
+        }
+
         unimplemented!();
     }
 
@@ -108,8 +118,8 @@ impl Instance {
                 .unwrap());
         }
 
-        match self.state {
-            flow::State::Idle(..) => ResponseOrIdle::StartIdle,
+        match &self.state {
+            flow::State::Idle(_, _, _, n) => ResponseOrIdle::StartIdle(n.clone()),
             _ => ResponseOrIdle::Response(resp),
         }
     }

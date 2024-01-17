@@ -97,11 +97,14 @@ impl Server {
     }
 }
 
-use  tokio::sync::mpsc::*;
+use tokio::sync::mpsc::*;
+use tokio_util::bytes::BytesMut;
+use tokio::sync::Notify;
+use std::sync::Arc;
 enum LoopMode {
     Quit,
     Interactive,
-    Idle,
+    Idle(BytesMut, Arc<Notify>),
 }
 
 // @FIXME a full refactor of this part of the code will be needed sooner or later
@@ -190,7 +193,7 @@ impl NetLoop {
         loop {
             mode = match mode {
                 LoopMode::Interactive => self.interactive_mode().await?,
-                LoopMode::Idle => self.idle_mode().await?,
+                LoopMode::Idle(buff, stop) => self.idle_mode(buff, stop).await?,
                 LoopMode::Quit => break,
             }
         }
@@ -238,11 +241,11 @@ impl NetLoop {
                     }
                     self.server.enqueue_status(response.completion);
                 },
-                Some(ResponseOrIdle::StartIdle) => {
+                Some(ResponseOrIdle::StartIdle(stop)) => {
                     let cr = CommandContinuationRequest::basic(None, "Idling")?;
                     self.server.enqueue_continuation(cr);
                     self.cmd_tx.try_send(Request::Idle)?;
-                    return Ok(LoopMode::Idle)
+                    return Ok(LoopMode::Idle(BytesMut::new(), stop))
                 },
                 None => {
                     self.server.enqueue_status(Status::bye(None, "Internal session exited").unwrap());
@@ -260,9 +263,19 @@ impl NetLoop {
         Ok(LoopMode::Interactive)
     }
 
-    async fn idle_mode(&mut self) -> Result<LoopMode> {
+    async fn idle_mode(&mut self, mut buff: BytesMut, stop: Arc<Notify>) -> Result<LoopMode> {
+        // Flush send
+        loop {
+            match self.server.progress_send().await? {
+                Some(..) => continue,
+                None => break,
+            }
+        }
+
         tokio::select! {
+            // Receiving IDLE event from background
             maybe_msg = self.resp_rx.recv() => match maybe_msg {
+                // Session decided idle is terminated
                 Some(ResponseOrIdle::Response(response)) => {
                     for body_elem in response.body.into_iter() {
                         let _handle = match body_elem {
@@ -273,6 +286,7 @@ impl NetLoop {
                     self.server.enqueue_status(response.completion);
                     return Ok(LoopMode::Interactive)
                 },
+                // Session has some information for user
                 Some(ResponseOrIdle::IdleEvent(elems)) => {
                     for body_elem in elems.into_iter() {
                         let _handle = match body_elem {
@@ -280,17 +294,43 @@ impl NetLoop {
                             Body::Status(s) => self.server.enqueue_status(s),
                         };
                     }
-                    return Ok(LoopMode::Idle)
+                    self.cmd_tx.try_send(Request::Idle)?;
+                    return Ok(LoopMode::Idle(buff, stop))
                 },
+
+                // Session crashed
                 None => {
                     self.server.enqueue_status(Status::bye(None, "Internal session exited").unwrap());
                     tracing::error!("session task exited for {:?}, quitting", self.ctx.addr);
                     return Ok(LoopMode::Interactive)
                 },
-                Some(ResponseOrIdle::StartIdle) => unreachable!(),
-            }
+
+                // Session can't start idling while already idling, it's a logic error!
+                Some(ResponseOrIdle::StartIdle(..)) => bail!("can't start idling while already idling!"),
+            },
+
+            // User is trying to interact with us
+            _read_client_bytes = self.server.stream.read(&mut buff) => {
+                use imap_codec::decode::Decoder;
+                let codec = imap_codec::IdleDoneCodec::new();
+                match codec.decode(&buff) {
+                    Ok(([], imap_codec::imap_types::extensions::idle::IdleDone)) => {
+                        // Session will be informed that it must stop idle
+                        // It will generate the "done" message and change the loop mode
+                        stop.notify_one()
+                    },
+                    Err(_) => (),
+                    _ => bail!("Client sent data after terminating the continuation without waiting for the server. This is an unsupported behavior and bug in Aerogramme, quitting."),
+                };
+
+                return Ok(LoopMode::Idle(buff, stop))
+            },
+
+            // When receiving a CTRL+C
+            _ = self.ctx.must_exit.changed() => {
+                self.server.enqueue_status(Status::bye(None, "Server is being shutdown").unwrap());
+                return Ok(LoopMode::Interactive)
+            },
         };
-        /*self.cmd_tx.try_send(Request::Idle).unwrap();
-        Ok(LoopMode::Idle)*/
     }
 }

@@ -1,4 +1,6 @@
+use std::sync::Arc;
 use anyhow::Result;
+use tokio::sync::Notify;
 use imap_codec::imap_types::command::Command;
 use imap_codec::imap_types::core::Tag;
 use imap_codec::imap_types::response::{Code, Data, Status};
@@ -116,6 +118,6 @@ impl<'a> Response<'a> {
 #[derive(Debug)]
 pub enum ResponseOrIdle {
     Response(Response<'static>),
-    StartIdle,
+    StartIdle(Arc<Notify>),
     IdleEvent(Vec<Body<'static>>),
 }

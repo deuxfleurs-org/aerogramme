@@ -82,7 +82,7 @@ pub async fn dispatch<'a>(
         // IDLE extension (rfc2177)
         CommandBody::Idle => {
             Ok((
-                Response::build().to_req(ctx.req).message("DUMMY response due to anti-pattern").ok()?,
+                Response::build().to_req(ctx.req).message("DUMMY command due to anti-pattern in the code").ok()?,
                 flow::Transition::Idle(tokio::sync::Notify::new()),
             ))
         }
