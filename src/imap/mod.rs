@@ -101,9 +101,10 @@ use  tokio::sync::mpsc::*;
 enum LoopMode {
     Quit,
     Interactive,
-    IdleUntil(tokio::sync::Notify),
+    Idle,
 }
 
+// @FIXME a full refactor of this part of the code will be needed sooner or later
 struct NetLoop {
     ctx: ClientContext,
     server: ServerFlow,
@@ -189,7 +190,7 @@ impl NetLoop {
         loop {
             mode = match mode {
                 LoopMode::Interactive => self.interactive_mode().await?,
-                LoopMode::IdleUntil(notif) => self.idle_mode(notif).await?,
+                LoopMode::Idle => self.idle_mode().await?,
                 LoopMode::Quit => break,
             }
         }
@@ -237,15 +238,18 @@ impl NetLoop {
                     }
                     self.server.enqueue_status(response.completion);
                 },
-                Some(ResponseOrIdle::Idle) => {
-                    let cr = CommandContinuationRequest::basic(None, "idling")?;
+                Some(ResponseOrIdle::StartIdle) => {
+                    let cr = CommandContinuationRequest::basic(None, "Idling")?;
                     self.server.enqueue_continuation(cr);
-                    return Ok(LoopMode::IdleUntil(tokio::sync::Notify::new()))
+                    self.cmd_tx.try_send(Request::Idle)?;
+                    return Ok(LoopMode::Idle)
                 },
                 None => {
                     self.server.enqueue_status(Status::bye(None, "Internal session exited").unwrap());
                     tracing::error!("session task exited for {:?}, quitting", self.ctx.addr);
                 },
+                Some(_) => unreachable!(),
+                
             },
 
             // When receiving a CTRL+C
@@ -256,7 +260,37 @@ impl NetLoop {
         Ok(LoopMode::Interactive)
     }
 
-    async fn idle_mode(&mut self, notif: tokio::sync::Notify) -> Result<LoopMode> {
-        Ok(LoopMode::IdleUntil(notif))
+    async fn idle_mode(&mut self) -> Result<LoopMode> {
+        tokio::select! {
+            maybe_msg = self.resp_rx.recv() => match maybe_msg {
+                Some(ResponseOrIdle::Response(response)) => {
+                    for body_elem in response.body.into_iter() {
+                        let _handle = match body_elem {
+                            Body::Data(d) => self.server.enqueue_data(d),
+                            Body::Status(s) => self.server.enqueue_status(s),
+                        };
+                    }
+                    self.server.enqueue_status(response.completion);
+                    return Ok(LoopMode::Interactive)
+                },
+                Some(ResponseOrIdle::IdleEvent(elems)) => {
+                    for body_elem in elems.into_iter() {
+                        let _handle = match body_elem {
+                            Body::Data(d) => self.server.enqueue_data(d),
+                            Body::Status(s) => self.server.enqueue_status(s),
+                        };
+                    }
+                    return Ok(LoopMode::Idle)
+                },
+                None => {
+                    self.server.enqueue_status(Status::bye(None, "Internal session exited").unwrap());
+                    tracing::error!("session task exited for {:?}, quitting", self.ctx.addr);
+                    return Ok(LoopMode::Interactive)
+                },
+                Some(ResponseOrIdle::StartIdle) => unreachable!(),
+            }
+        };
+        /*self.cmd_tx.try_send(Request::Idle).unwrap();
+        Ok(LoopMode::Idle)*/
     }
 }

@@ -1,6 +1,7 @@
 use std::error::Error as StdError;
 use std::fmt;
 use std::sync::Arc;
+use tokio::sync::Notify;
 
 use crate::imap::mailbox_view::MailboxView;
 use crate::mail::user::User;
@@ -20,7 +21,7 @@ pub enum State {
     NotAuthenticated,
     Authenticated(Arc<User>),
     Selected(Arc<User>, MailboxView, MailboxPerm),
-    Idle(Arc<User>, MailboxView, MailboxPerm),
+    Idle(Arc<User>, MailboxView, MailboxPerm, Notify),
     Logout,
 }
 
@@ -34,7 +35,7 @@ pub enum Transition {
     None,
     Authenticate(Arc<User>),
     Select(MailboxView, MailboxPerm),
-    Idle,
+    Idle(Notify),
     UnIdle,
     Unselect,
     Logout,
@@ -54,10 +55,10 @@ impl State {
             (State::Selected(u, _, _) , Transition::Unselect) => {
                 State::Authenticated(u.clone())
             }
-            (State::Selected(u, m, p), Transition::Idle) => {
-                State::Idle(u, m, p)
+            (State::Selected(u, m, p), Transition::Idle(s)) => {
+                State::Idle(u, m, p, s)
             },
-            (State::Idle(u, m, p), Transition::UnIdle) => {
+            (State::Idle(u, m, p, _), Transition::UnIdle) => {
                 State::Selected(u, m, p)
             },
             (_, Transition::Logout) => State::Logout,

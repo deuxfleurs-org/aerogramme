@@ -81,7 +81,10 @@ pub async fn dispatch<'a>(
 
         // IDLE extension (rfc2177)
         CommandBody::Idle => {
-            unimplemented!()
+            Ok((
+                Response::build().to_req(ctx.req).message("DUMMY response due to anti-pattern").ok()?,
+                flow::Transition::Idle(tokio::sync::Notify::new()),
+            ))
         }
 
         // In selected mode, we fallback to authenticated when needed

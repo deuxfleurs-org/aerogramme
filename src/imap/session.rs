@@ -27,14 +27,14 @@ impl Instance {
 
     pub async fn request(&mut self, req: Request) -> ResponseOrIdle {
         match req {
-            Request::IdleUntil(stop) => ResponseOrIdle::Response(self.idle(stop).await),
+            Request::Idle => ResponseOrIdle::Response(self.idle().await),
             Request::ImapCommand(cmd) => self.command(cmd).await,
         }
     }
 
-    pub async fn idle(&mut self, stop: tokio::sync::Notify) -> Response<'static> {
-        let (user, mbx) = match &mut self.state {
-            flow::State::Idle(ref user, ref mut mailbox, ref perm) => (user, mailbox),
+    pub async fn idle(&mut self) -> Response<'static> {
+        let (user, mbx, perm, stop) = match &mut self.state {
+            flow::State::Idle(ref user, ref mut mailbox, ref perm, ref stop) => (user, mailbox, perm, stop),
             _ => unreachable!(),
         };
 
@@ -109,7 +109,7 @@ impl Instance {
         }
 
         match self.state {
-            flow::State::Idle(..) => ResponseOrIdle::Idle,
+            flow::State::Idle(..) => ResponseOrIdle::StartIdle,
             _ => ResponseOrIdle::Response(resp),
         }
     }
