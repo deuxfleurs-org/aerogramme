@@ -3,6 +3,7 @@ use imap_codec::imap_types::command::Command;
 use imap_codec::imap_types::core::Tag;
 use imap_codec::imap_types::response::{Code, Data, Status};
 
+#[derive(Debug)]
 pub enum Body<'a> {
     Data(Data<'a>),
     Status(Status<'a>),
@@ -88,6 +89,7 @@ impl<'a> ResponseBuilder<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct Response<'a> {
     pub body: Vec<Body<'a>>,
     pub completion: Status<'a>,
@@ -109,4 +111,10 @@ impl<'a> Response<'a> {
             body: vec![],
         })
     }
+}
+
+#[derive(Debug)]
+pub enum ResponseOrIdle {
+    Response(Response<'static>),
+    Idle,
 }

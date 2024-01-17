@@ -25,6 +25,7 @@ pub struct SelectedContext<'a> {
     pub mailbox: &'a mut MailboxView,
     pub server_capabilities: &'a ServerCapability,
     pub client_capabilities: &'a mut ClientCapability,
+    pub perm: &'a flow::MailboxPerm,
 }
 
 pub async fn dispatch<'a>(
@@ -39,7 +40,10 @@ pub async fn dispatch<'a>(
         CommandBody::Logout => anystate::logout(),
 
         // Specific to this state (7 commands + NOOP)
-        CommandBody::Close => ctx.close().await,
+        CommandBody::Close => match ctx.perm {
+            flow::MailboxPerm::ReadWrite => ctx.close().await,
+            flow::MailboxPerm::ReadOnly => ctx.examine_close().await,
+        },
         CommandBody::Noop | CommandBody::Check => ctx.noop().await,
         CommandBody::Fetch {
             sequence_set,
@@ -75,6 +79,11 @@ pub async fn dispatch<'a>(
         // UNSELECT extension (rfc3691)
         CommandBody::Unselect => ctx.unselect().await,
 
+        // IDLE extension (rfc2177)
+        CommandBody::Idle => {
+            unimplemented!()
+        }
+
         // In selected mode, we fallback to authenticated when needed
         _ => {
             authenticated::dispatch(authenticated::AuthenticatedContext {
@@ -98,6 +107,18 @@ impl<'a> SelectedContext<'a> {
         self.expunge().await?;
         Ok((
             Response::build().tag(tag).message("CLOSE completed").ok()?,
+            flow::Transition::Unselect,
+        ))
+    }
+
+    /// CLOSE in examined state is not the same as in selected state
+    /// (in selected state it also does an EXPUNGE, here it doesn't)
+    async fn examine_close(self) -> Result<(Response<'static>, flow::Transition)> {
+        Ok((
+            Response::build()
+                .to_req(self.req)
+                .message("CLOSE completed")
+                .ok()?,
             flow::Transition::Unselect,
         ))
     }
@@ -189,6 +210,10 @@ impl<'a> SelectedContext<'a> {
     }
 
     async fn expunge(self) -> Result<(Response<'static>, flow::Transition)> {
+        if let Some(failed) = self.fail_read_only() {
+            return Ok((failed, flow::Transition::None))
+        }
+
         let tag = self.req.tag.clone();
         let data = self.mailbox.expunge().await?;
 
@@ -211,6 +236,10 @@ impl<'a> SelectedContext<'a> {
         modifiers: &[StoreModifier],
         uid: &bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
+        if let Some(failed) = self.fail_read_only() {
+            return Ok((failed, flow::Transition::None))
+        }
+
         let mut unchanged_since: Option<NonZeroU64> = None;
         modifiers.iter().for_each(|m| match m {
             StoreModifier::UnchangedSince(val) => {
@@ -251,6 +280,11 @@ impl<'a> SelectedContext<'a> {
         mailbox: &MailboxCodec<'a>,
         uid: &bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
+        //@FIXME Could copy be valid in EXAMINE mode?
+        if let Some(failed) = self.fail_read_only() {
+            return Ok((failed, flow::Transition::None))
+        }
+
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
@@ -303,6 +337,10 @@ impl<'a> SelectedContext<'a> {
         mailbox: &MailboxCodec<'a>,
         uid: &bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
+        if let Some(failed) = self.fail_read_only() {
+            return Ok((failed, flow::Transition::None))
+        }
+
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
@@ -349,5 +387,17 @@ impl<'a> SelectedContext<'a> {
                 .ok()?,
             flow::Transition::None,
         ))
+    }
+
+    fn fail_read_only(&self) -> Option<Response<'static>> {
+        match self.perm {
+            flow::MailboxPerm::ReadWrite => None,
+            flow::MailboxPerm::ReadOnly => {
+               Some(Response::build()
+                   .to_req(self.req)
+                   .message("Write command are forbidden while exmining mailbox")
+                   .no().unwrap())
+            },
+        }
     }
 }

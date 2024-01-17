@@ -19,17 +19,23 @@ impl StdError for Error {}
 pub enum State {
     NotAuthenticated,
     Authenticated(Arc<User>),
-    Selected(Arc<User>, MailboxView),
-    // Examined is like Selected, but indicates that the mailbox is read-only
-    Examined(Arc<User>, MailboxView),
+    Selected(Arc<User>, MailboxView, MailboxPerm),
+    Idle(Arc<User>, MailboxView, MailboxPerm),
     Logout,
+}
+
+#[derive(Clone)]
+pub enum MailboxPerm {
+    ReadOnly,
+    ReadWrite,
 }
 
 pub enum Transition {
     None,
     Authenticate(Arc<User>),
-    Examine(MailboxView),
-    Select(MailboxView),
+    Select(MailboxView, MailboxPerm),
+    Idle,
+    UnIdle,
     Unselect,
     Logout,
 }
@@ -38,20 +44,22 @@ pub enum Transition {
 // https://datatracker.ietf.org/doc/html/rfc3501#page-13
 impl State {
     pub fn apply(&mut self, tr: Transition) -> Result<(), Error> {
-        let new_state = match (&self, tr) {
+        let new_state = match (std::mem::replace(self, State::NotAuthenticated), tr) {
             (_s, Transition::None) => return Ok(()),
             (State::NotAuthenticated, Transition::Authenticate(u)) => State::Authenticated(u),
             (
-                State::Authenticated(u) | State::Selected(u, _) | State::Examined(u, _),
-                Transition::Select(m),
-            ) => State::Selected(u.clone(), m),
-            (
-                State::Authenticated(u) | State::Selected(u, _) | State::Examined(u, _),
-                Transition::Examine(m),
-            ) => State::Examined(u.clone(), m),
-            (State::Selected(u, _) | State::Examined(u, _), Transition::Unselect) => {
+                State::Authenticated(u) | State::Selected(u, _, _),
+                Transition::Select(m, p),
+            ) => State::Selected(u, m, p),
+            (State::Selected(u, _, _) , Transition::Unselect) => {
                 State::Authenticated(u.clone())
             }
+            (State::Selected(u, m, p), Transition::Idle) => {
+                State::Idle(u, m, p)
+            },
+            (State::Idle(u, m, p), Transition::UnIdle) => {
+                State::Selected(u, m, p)
+            },
             (_, Transition::Logout) => State::Logout,
             _ => return Err(Error::ForbiddenTransition),
         };

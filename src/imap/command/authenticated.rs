@@ -453,7 +453,7 @@ impl<'a> AuthenticatedContext<'a> {
                 .code(Code::ReadWrite)
                 .set_body(data)
                 .ok()?,
-            flow::Transition::Select(mb),
+            flow::Transition::Select(mb, flow::MailboxPerm::ReadWrite),
         ))
     }
 
@@ -491,7 +491,7 @@ impl<'a> AuthenticatedContext<'a> {
                 .code(Code::ReadOnly)
                 .set_body(data)
                 .ok()?,
-            flow::Transition::Examine(mb),
+            flow::Transition::Select(mb, flow::MailboxPerm::ReadOnly),
         ))
     }
 
