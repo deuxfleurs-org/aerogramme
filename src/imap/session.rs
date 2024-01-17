@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use crate::imap::capability::{ClientCapability, ServerCapability};
-use crate::imap::command::{anonymous, authenticated, examined, selected};
+use crate::imap::command::{anonymous, authenticated, selected};
 use crate::imap::flow;
 use crate::imap::request::Request;
 use crate::imap::response::{Response, ResponseOrIdle};
