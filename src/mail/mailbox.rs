@@ -68,8 +68,8 @@ impl Mailbox {
     }
 
     /// Block until a sync has been done (due to changes in the event log)
-    pub async fn idle_sync(&self) -> Result<()> {
-        self.mbox.write().await.idle_sync().await
+    pub async fn notify(&self) -> std::sync::Weak<tokio::sync::Notify> {
+        self.mbox.read().await.notifier()
     }
 
     // ---- Functions for reading the mailbox ----
@@ -204,9 +204,8 @@ impl MailboxInternal {
         Ok(())
     }
 
-    async fn idle_sync(&mut self) -> Result<()> {
-        self.uid_index.idle_sync().await?;
-        Ok(())
+    fn notifier(&self) -> std::sync::Weak<tokio::sync::Notify> {
+        self.uid_index.notifier()
     }
 
     // ---- Functions for reading the mailbox ----

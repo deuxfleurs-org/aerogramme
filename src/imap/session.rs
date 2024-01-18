@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::{Result, anyhow, bail};
 use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anonymous, authenticated, selected};
 use crate::imap::flow;
@@ -27,28 +27,40 @@ impl Instance {
 
     pub async fn request(&mut self, req: Request) -> ResponseOrIdle {
         match req {
-            Request::Idle => ResponseOrIdle::Response(self.idle().await),
+            Request::Idle => self.idle().await,
             Request::ImapCommand(cmd) => self.command(cmd).await,
         }
     }
 
-    pub async fn idle(&mut self) -> Response<'static> {
-        let (user, mbx, perm, stop) = match &mut self.state {
-            flow::State::Idle(ref user, ref mut mailbox, ref perm, ref stop) => (user, mailbox, perm, stop),
-            _ => unreachable!(),
+    pub async fn idle(&mut self) -> ResponseOrIdle {
+        match self.idle_happy().await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!(err=?e, "something bad happened in idle");
+                ResponseOrIdle::Response(Response::bye().unwrap())
+            }
+        }
+    }
+
+    pub async fn idle_happy(&mut self) -> Result<ResponseOrIdle> {
+        let (mbx, tag, stop) = match &mut self.state {
+            flow::State::Idle(_, ref mut mbx, _, tag, stop) => (mbx, tag.clone(), stop.clone()),
+            _ => bail!("Invalid session state, can't idle"),
         };
 
         tokio::select! {
             _ = stop.notified() => {
-                return Response::build()
-                    .tag(imap_codec::imap_types::core::Tag::try_from("FIXME").unwrap())
+                self.state.apply(flow::Transition::UnIdle)?;
+                return Ok(ResponseOrIdle::Response(Response::build()
+                    .tag(tag.clone())
                     .message("IDLE completed")
-                    .ok()
-                    .unwrap()
+                    .ok()?))
+            },
+            change = mbx.idle_sync() => {
+                tracing::debug!("idle event");
+                return Ok(ResponseOrIdle::IdleEvent(change?));
             }
         }
-
-        unimplemented!();
     }
 
 
@@ -119,7 +131,7 @@ impl Instance {
         }
 
         match &self.state {
-            flow::State::Idle(_, _, _, n) => ResponseOrIdle::StartIdle(n.clone()),
+            flow::State::Idle(_, _, _, _, n) => ResponseOrIdle::StartIdle(n.clone()),
             _ => ResponseOrIdle::Response(resp),
         }
     }

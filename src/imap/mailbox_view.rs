@@ -224,6 +224,12 @@ impl MailboxView {
         Ok((summary, conflict_id_or_uid))
     }
 
+    pub async fn idle_sync(&mut self) -> Result<Vec<Body<'static>>> {
+        self.internal.mailbox.notify().await.upgrade().ok_or(anyhow!("test"))?.notified().await;
+        self.internal.mailbox.opportunistic_sync().await?;
+        self.update(UpdateParameters::default()).await
+    }
+
     pub async fn expunge(&mut self) -> Result<Vec<Body<'static>>> {
         self.internal.sync().await?;
         let state = self.internal.peek().await;

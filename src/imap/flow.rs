@@ -3,6 +3,7 @@ use std::fmt;
 use std::sync::Arc;
 use tokio::sync::Notify;
 
+use imap_codec::imap_types::core::Tag;
 use crate::imap::mailbox_view::MailboxView;
 use crate::mail::user::User;
 
@@ -21,7 +22,7 @@ pub enum State {
     NotAuthenticated,
     Authenticated(Arc<User>),
     Selected(Arc<User>, MailboxView, MailboxPerm),
-    Idle(Arc<User>, MailboxView, MailboxPerm, Arc<Notify>),
+    Idle(Arc<User>, MailboxView, MailboxPerm, Tag<'static>, Arc<Notify>),
     Logout,
 }
 
@@ -35,7 +36,7 @@ pub enum Transition {
     None,
     Authenticate(Arc<User>),
     Select(MailboxView, MailboxPerm),
-    Idle(Notify),
+    Idle(Tag<'static>, Notify),
     UnIdle,
     Unselect,
     Logout,
@@ -55,10 +56,10 @@ impl State {
             (State::Selected(u, _, _) , Transition::Unselect) => {
                 State::Authenticated(u.clone())
             }
-            (State::Selected(u, m, p), Transition::Idle(s)) => {
-                State::Idle(u, m, p, Arc::new(s))
+            (State::Selected(u, m, p), Transition::Idle(t, s)) => {
+                State::Idle(u, m, p, t, Arc::new(s))
             },
-            (State::Idle(u, m, p, _), Transition::UnIdle) => {
+            (State::Idle(u, m, p, _, _), Transition::UnIdle) => {
                 State::Selected(u, m, p)
             },
             (_, Transition::Logout) => State::Logout,
