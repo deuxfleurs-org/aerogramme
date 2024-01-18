@@ -1,8 +1,8 @@
 use anyhow::Context;
 
 mod common;
-use crate::common::fragments::*;
 use crate::common::constants::*;
+use crate::common::fragments::*;
 
 fn main() {
     rfc3501_imap4rev1_base();
@@ -23,27 +23,40 @@ fn rfc3501_imap4rev1_base() {
         create_mailbox(imap_socket, Mailbox::Archive).context("created mailbox archive")?;
         // UNSUBSCRIBE IS NOT IMPLEMENTED YET
         //unsubscribe_mailbox(imap_socket).context("unsubscribe from archive")?;
-        let select_res = select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
+        let select_res =
+            select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
         assert!(select_res.contains("* 0 EXISTS"));
 
         check(imap_socket).context("check must run")?;
-        status(imap_socket, Mailbox::Archive, StatusKind::UidNext).context("status of archive from inbox")?;
+        status(imap_socket, Mailbox::Archive, StatusKind::UidNext)
+            .context("status of archive from inbox")?;
         lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
         lmtp_deliver_email(lmtp_socket, Email::Multipart).context("mail delivered successfully")?;
         noop_exists(imap_socket, 1).context("noop loop must detect a new email")?;
 
-        let srv_msg = fetch(imap_socket, Selection::FirstId, FetchKind::Rfc822, FetchMod::None)
-            .context("fetch rfc822 message, should be our first message")?;
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Rfc822,
+            FetchMod::None,
+        )
+        .context("fetch rfc822 message, should be our first message")?;
         let orig_email = std::str::from_utf8(EMAIL1)?;
         assert!(srv_msg.contains(orig_email));
-        
+
         copy(imap_socket, Selection::FirstId, Mailbox::Archive)
             .context("copy message to the archive mailbox")?;
         append_email(imap_socket, Email::Basic).context("insert email in INBOX")?;
         noop_exists(imap_socket, 2).context("noop loop must detect a new email")?;
         search(imap_socket, SearchKind::Text("OoOoO")).expect("search should return something");
-        store(imap_socket, Selection::FirstId, Flag::Deleted, StoreAction::AddFlags, StoreMod::None)
-            .context("should add delete flag to the email")?;
+        store(
+            imap_socket,
+            Selection::FirstId,
+            Flag::Deleted,
+            StoreAction::AddFlags,
+            StoreMod::None,
+        )
+        .context("should add delete flag to the email")?;
         expunge(imap_socket).context("expunge emails")?;
         rename_mailbox(imap_socket, Mailbox::Archive, Mailbox::Drafts)
             .context("Archive mailbox is renamed Drafts")?;
@@ -63,19 +76,32 @@ fn rfc3691_imapext_unselect() {
 
         capability(imap_socket, Extension::Unselect).context("check server capabilities")?;
         login(imap_socket, Account::Alice).context("login test")?;
-        let select_res = select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
+        let select_res =
+            select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
         assert!(select_res.contains("* 0 EXISTS"));
 
         noop_exists(imap_socket, 1).context("noop loop must detect a new email")?;
-        store(imap_socket, Selection::FirstId, Flag::Deleted, StoreAction::AddFlags, StoreMod::None)
-            .context("add delete flags to the email")?;
+        store(
+            imap_socket,
+            Selection::FirstId,
+            Flag::Deleted,
+            StoreAction::AddFlags,
+            StoreMod::None,
+        )
+        .context("add delete flags to the email")?;
         unselect(imap_socket)
             .context("unselect inbox while preserving email with the \\Delete flag")?;
-        let select_res = select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox again")?;
+        let select_res =
+            select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox again")?;
         assert!(select_res.contains("* 1 EXISTS"));
 
-        let srv_msg = fetch(imap_socket, Selection::FirstId, FetchKind::Rfc822, FetchMod::None)
-            .context("message is still present")?;
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Rfc822,
+            FetchMod::None,
+        )
+        .context("message is still present")?;
         let orig_email = std::str::from_utf8(EMAIL2)?;
         assert!(srv_msg.contains(orig_email));
 
@@ -111,7 +137,8 @@ fn rfc6851_imapext_move() {
         capability(imap_socket, Extension::Move).context("check server capabilities")?;
         login(imap_socket, Account::Alice).context("login test")?;
         create_mailbox(imap_socket, Mailbox::Archive).context("created mailbox archive")?;
-        let select_res = select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
+        let select_res =
+            select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
         assert!(select_res.contains("* 0 EXISTS"));
 
         lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
@@ -123,15 +150,17 @@ fn rfc6851_imapext_move() {
 
         unselect(imap_socket)
             .context("unselect inbox while preserving email with the \\Delete flag")?;
-        let select_res = select(imap_socket, Mailbox::Archive, SelectMod::None).context("select archive")?;
+        let select_res =
+            select(imap_socket, Mailbox::Archive, SelectMod::None).context("select archive")?;
         assert!(select_res.contains("* 1 EXISTS"));
 
         let srv_msg = fetch(
-            imap_socket, 
-            Selection::FirstId, 
-            FetchKind::Rfc822, 
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Rfc822,
             FetchMod::None,
-        ).context("check mail exists")?;
+        )
+        .context("check mail exists")?;
         let orig_email = std::str::from_utf8(EMAIL2)?;
         assert!(srv_msg.contains(orig_email));
 
@@ -166,7 +195,8 @@ fn rfc4551_imapext_condstore() {
         login(imap_socket, Account::Alice).context("login test")?;
 
         // RFC 3.1.8.  CONDSTORE Parameter to SELECT and EXAMINE
-        let select_res = select(imap_socket, Mailbox::Inbox, SelectMod::Condstore).context("select inbox")?;
+        let select_res =
+            select(imap_socket, Mailbox::Inbox, SelectMod::Condstore).context("select inbox")?;
         // RFC 3.1.2   New OK Untagged Responses for SELECT and EXAMINE
         assert!(select_res.contains("[HIGHESTMODSEQ 1]"));
 
@@ -175,14 +205,25 @@ fn rfc4551_imapext_condstore() {
         lmtp_deliver_email(lmtp_socket, Email::Basic).context("mail delivered successfully")?;
         lmtp_deliver_email(lmtp_socket, Email::Multipart).context("mail delivered successfully")?;
         noop_exists(imap_socket, 2).context("noop loop must detect a new email")?;
-        let store_res = store(imap_socket, Selection::All, Flag::Important, StoreAction::AddFlags, StoreMod::UnchangedSince(1))?;
+        let store_res = store(
+            imap_socket,
+            Selection::All,
+            Flag::Important,
+            StoreAction::AddFlags,
+            StoreMod::UnchangedSince(1),
+        )?;
         assert!(store_res.contains("[MODIFIED 2]"));
         assert!(store_res.contains("* 1 FETCH (FLAGS (\\Important) MODSEQ (3))"));
         assert!(!store_res.contains("* 2 FETCH"));
         assert_eq!(store_res.lines().count(), 2);
 
         // RFC 3.1.4.  FETCH and UID FETCH Commands
-        let fetch_res = fetch(imap_socket, Selection::All, FetchKind::Rfc822Size, FetchMod::ChangedSince(2))?;
+        let fetch_res = fetch(
+            imap_socket,
+            Selection::All,
+            FetchKind::Rfc822Size,
+            FetchMod::ChangedSince(2),
+        )?;
         assert!(fetch_res.contains("* 1 FETCH (RFC822.SIZE 84 MODSEQ (3))"));
         assert!(!fetch_res.contains("* 2 FETCH"));
         assert_eq!(store_res.lines().count(), 2);

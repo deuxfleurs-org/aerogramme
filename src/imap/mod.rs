@@ -15,23 +15,23 @@ mod session;
 
 use std::net::SocketAddr;
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use futures::stream::{FuturesUnordered, StreamExt};
 
 use tokio::net::TcpListener;
-use tokio::sync::watch;
 use tokio::sync::mpsc;
+use tokio::sync::watch;
 
+use imap_codec::imap_types::response::{Code, CommandContinuationRequest, Response, Status};
 use imap_codec::imap_types::{core::Text, response::Greeting};
 use imap_flow::server::{ServerFlow, ServerFlowEvent, ServerFlowOptions};
 use imap_flow::stream::AnyStream;
-use imap_codec::imap_types::response::{Code, Response, CommandContinuationRequest, Status};
 
-use crate::imap::response::{Body, ResponseOrIdle};
-use crate::imap::session::Instance;
-use crate::imap::request::Request;
 use crate::config::ImapConfig;
 use crate::imap::capability::ServerCapability;
+use crate::imap::request::Request;
+use crate::imap::response::{Body, ResponseOrIdle};
+use crate::imap::session::Instance;
 use crate::login::ArcLoginProvider;
 
 /// Server is a thin wrapper to register our Services in BàL
@@ -97,10 +97,10 @@ impl Server {
     }
 }
 
-use tokio::sync::mpsc::*;
-use tokio_util::bytes::BytesMut;
-use tokio::sync::Notify;
 use std::sync::Arc;
+use tokio::sync::mpsc::*;
+use tokio::sync::Notify;
+use tokio_util::bytes::BytesMut;
 enum LoopMode {
     Quit,
     Interactive,
@@ -123,10 +123,10 @@ impl NetLoop {
             Ok(nl) => {
                 tracing::debug!(addr=?addr, "netloop successfully initialized");
                 nl
-            },
+            }
             Err(e) => {
                 tracing::error!(addr=?addr, err=?e, "netloop can not be initialized, closing session");
-                return
+                return;
             }
         };
 
@@ -153,10 +153,10 @@ impl NetLoop {
             Greeting::ok(
                 Some(Code::Capability(ctx.server_capabilities.to_vec())),
                 "Aerogramme",
-                )
-            .unwrap(),
             )
-            .await?;
+            .unwrap(),
+        )
+        .await?;
 
         // Start a mailbox session in background
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<Request>(3);
@@ -164,11 +164,20 @@ impl NetLoop {
         tokio::spawn(Self::session(ctx.clone(), cmd_rx, resp_tx));
 
         // Return the object
-        Ok(NetLoop { ctx, server, cmd_tx, resp_rx })
+        Ok(NetLoop {
+            ctx,
+            server,
+            cmd_tx,
+            resp_rx,
+        })
     }
 
     /// Coms with the background session
-    async fn session(ctx: ClientContext, mut cmd_rx: Receiver<Request>, resp_tx: UnboundedSender<ResponseOrIdle>) -> () {
+    async fn session(
+        ctx: ClientContext,
+        mut cmd_rx: Receiver<Request>,
+        resp_tx: UnboundedSender<ResponseOrIdle>,
+    ) -> () {
         let mut session = Instance::new(ctx.login_provider, ctx.server_capabilities);
         loop {
             let cmd = match cmd_rx.recv().await {
@@ -199,7 +208,6 @@ impl NetLoop {
         }
         Ok(())
     }
-
 
     async fn interactive_mode(&mut self) -> Result<LoopMode> {
         tokio::select! {
@@ -252,7 +260,7 @@ impl NetLoop {
                     tracing::error!("session task exited for {:?}, quitting", self.ctx.addr);
                 },
                 Some(_) => unreachable!(),
-                
+
             },
 
             // When receiving a CTRL+C

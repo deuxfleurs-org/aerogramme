@@ -1,10 +1,10 @@
-use anyhow::{Result, anyhow, bail};
 use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anonymous, authenticated, selected};
 use crate::imap::flow;
 use crate::imap::request::Request;
 use crate::imap::response::{Response, ResponseOrIdle};
 use crate::login::ArcLoginProvider;
+use anyhow::{anyhow, bail, Result};
 use imap_codec::imap_types::command::Command;
 
 //-----
@@ -62,7 +62,6 @@ impl Instance {
             }
         }
     }
-
 
     pub async fn command(&mut self, cmd: Command<'static>) -> ResponseOrIdle {
         // Command behavior is modulated by the state.

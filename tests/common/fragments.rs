@@ -286,7 +286,12 @@ pub fn noop_exists(imap: &mut TcpStream, must_exists: u32) -> Result<()> {
     }
 }
 
-pub fn fetch(imap: &mut TcpStream, selection: Selection, kind: FetchKind, modifier: FetchMod) -> Result<String> {
+pub fn fetch(
+    imap: &mut TcpStream,
+    selection: Selection,
+    kind: FetchKind,
+    modifier: FetchMod,
+) -> Result<String> {
     let mut buffer: [u8; 65535] = [0; 65535];
 
     let sel_str = match selection {
@@ -363,11 +368,11 @@ pub fn search(imap: &mut TcpStream, sk: SearchKind) -> Result<String> {
 }
 
 pub fn store(
-    imap: &mut TcpStream, 
-    sel: Selection, 
+    imap: &mut TcpStream,
+    sel: Selection,
     flag: Flag,
     action: StoreAction,
-    modifier: StoreMod
+    modifier: StoreMod,
 ) -> Result<String> {
     let mut buffer: [u8; 6000] = [0; 6000];
 

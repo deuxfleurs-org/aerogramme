@@ -442,7 +442,12 @@ impl K2vWatch {
         let propagate_local_update = Notify::new();
         let learnt_remote_update = Arc::new(Notify::new());
 
-        let watch = Arc::new(K2vWatch { target, rx, propagate_local_update, learnt_remote_update  });
+        let watch = Arc::new(K2vWatch {
+            target,
+            rx,
+            propagate_local_update,
+            learnt_remote_update,
+        });
 
         tokio::spawn(Self::background_task(Arc::downgrade(&watch), storage, tx));
 
@@ -462,7 +467,8 @@ impl K2vWatch {
         while let Some(this) = Weak::upgrade(&self_weak) {
             tracing::debug!(
                 "bayou k2v watch bg loop iter ({}, {})",
-                this.target.uid.shard, this.target.uid.sort
+                this.target.uid.shard,
+                this.target.uid.sort
             );
             tokio::select!(
                 // Needed to exit: will force a loop iteration every minutes,

@@ -1,9 +1,9 @@
-use std::sync::Arc;
 use anyhow::Result;
-use tokio::sync::Notify;
 use imap_codec::imap_types::command::Command;
 use imap_codec::imap_types::core::Tag;
 use imap_codec::imap_types::response::{Code, Data, Status};
+use std::sync::Arc;
+use tokio::sync::Notify;
 
 #[derive(Debug)]
 pub enum Body<'a> {
