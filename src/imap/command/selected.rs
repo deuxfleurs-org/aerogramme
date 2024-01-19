@@ -59,7 +59,10 @@ pub async fn dispatch<'a>(
             criteria,
             uid,
         } => ctx.search(charset, criteria, uid).await,
-        CommandBody::Expunge => ctx.expunge().await,
+        CommandBody::Expunge {
+            // UIDPLUS (rfc4315)
+            uid_sequence_set,
+        } => ctx.expunge(uid_sequence_set).await,
         CommandBody::Store {
             sequence_set,
             kind,
@@ -114,7 +117,7 @@ impl<'a> SelectedContext<'a> {
         // We expunge messages,
         // but we don't send the untagged EXPUNGE responses
         let tag = self.req.tag.clone();
-        self.expunge().await?;
+        self.expunge(&None).await?;
         Ok((
             Response::build().tag(tag).message("CLOSE completed").ok()?,
             flow::Transition::Unselect,
@@ -223,13 +226,13 @@ impl<'a> SelectedContext<'a> {
         ))
     }
 
-    async fn expunge(self) -> Result<(Response<'static>, flow::Transition)> {
+    async fn expunge(self, uid_sequence_set: &Option<SequenceSet>) -> Result<(Response<'static>, flow::Transition)> {
         if let Some(failed) = self.fail_read_only() {
             return Ok((failed, flow::Transition::None));
         }
 
         let tag = self.req.tag.clone();
-        let data = self.mailbox.expunge().await?;
+        let data = self.mailbox.expunge(uid_sequence_set).await?;
 
         Ok((
             Response::build()
