@@ -140,9 +140,9 @@ impl NetLoop {
         }
     }
 
-    async fn new(mut ctx: ClientContext, sock: AnyStream) -> Result<Self> {
+    async fn new(ctx: ClientContext, sock: AnyStream) -> Result<Self> {
         // Send greeting
-        let (mut server, _) = ServerFlow::send_greeting(
+        let (server, _) = ServerFlow::send_greeting(
             sock,
             ServerFlowOptions {
                 crlf_relaxed: false,
@@ -159,8 +159,8 @@ impl NetLoop {
         .await?;
 
         // Start a mailbox session in background
-        let (cmd_tx, mut cmd_rx) = mpsc::channel::<Request>(3);
-        let (resp_tx, mut resp_rx) = mpsc::unbounded_channel::<ResponseOrIdle>();
+        let (cmd_tx, cmd_rx) = mpsc::channel::<Request>(3);
+        let (resp_tx, resp_rx) = mpsc::unbounded_channel::<ResponseOrIdle>();
         tokio::spawn(Self::session(ctx.clone(), cmd_rx, resp_tx));
 
         // Return the object
