@@ -36,6 +36,7 @@ pub enum Extension {
     Move,
     Condstore,
     LiteralPlus,
+    Idle,
 }
 
 pub enum Enable {
@@ -114,6 +115,7 @@ pub fn capability(imap: &mut TcpStream, ext: Extension) -> Result<()> {
         Extension::Move => Some("MOVE"),
         Extension::Condstore => Some("CONDSTORE"),
         Extension::LiteralPlus => Some("LITERAL+"),
+        Extension::Idle => Some("IDLE"),
     };
 
     let mut buffer: [u8; 6000] = [0; 6000];
@@ -494,6 +496,22 @@ pub fn enable(imap: &mut TcpStream, ask: Enable, done: Option<Enable>) -> Result
     }
 
     Ok(())
+}
+
+pub fn start_idle(imap: &mut TcpStream) -> Result<()> {
+    let mut buffer: [u8; 1500] = [0; 1500];
+    imap.write(&b"98 IDLE\r\n"[..])?;
+    let read = read_lines(imap, &mut buffer, None)?;
+    assert_eq!(read[0], b'+');
+    Ok(())
+}
+
+pub fn stop_idle(imap: &mut TcpStream) -> Result<String> {
+    let mut buffer: [u8; 16536] = [0; 16536];
+    imap.write(&b"DONE\r\n"[..])?;
+    let read = read_lines(imap, &mut buffer, Some(&b"98 OK"[..]))?;
+    let srv_msg = std::str::from_utf8(read)?;
+    Ok(srv_msg.to_string())
 }
 
 pub fn logout(imap: &mut TcpStream) -> Result<()> {

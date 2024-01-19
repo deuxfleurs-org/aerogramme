@@ -11,6 +11,7 @@ fn main() {
     rfc6851_imapext_move();
     rfc7888_imapext_literal();
     rfc4551_imapext_condstore();
+    rfc2177_imapext_idle();
     println!("✅ SUCCESS 🌟🚀🥳🙏🥹");
 }
 
@@ -21,8 +22,6 @@ fn rfc3501_imap4rev1_base() {
         capability(imap_socket, Extension::None).context("check server capabilities")?;
         login(imap_socket, Account::Alice).context("login test")?;
         create_mailbox(imap_socket, Mailbox::Archive).context("created mailbox archive")?;
-        // UNSUBSCRIBE IS NOT IMPLEMENTED YET
-        //unsubscribe_mailbox(imap_socket).context("unsubscribe from archive")?;
         let select_res =
             select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
         assert!(select_res.contains("* 0 EXISTS"));
@@ -236,6 +235,28 @@ fn rfc4551_imapext_condstore() {
         // RFC 3.1.7   HIGHESTMODSEQ Status Data Items
         let status_res = status(imap_socket, Mailbox::Inbox, StatusKind::HighestModSeq)?;
         assert!(status_res.contains("HIGHESTMODSEQ 3"));
+
+        Ok(())
+    })
+    .expect("test fully run");
+}
+
+
+fn rfc2177_imapext_idle() {
+    println!("🧪 rfc2177_imapext_idle");
+    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {
+        // Test setup
+        connect(imap_socket).context("server says hello")?;
+        capability(imap_socket, Extension::Idle).context("check server capabilities")?;
+        login(imap_socket, Account::Alice).context("login test")?;
+        select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
+
+        // Check that new messages from LMTP are correctly detected during idling
+        start_idle(imap_socket).context("can't start idling")?;
+        lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
+        lmtp_deliver_email(lmtp_socket, Email::Basic).context("mail delivered successfully")?;
+        let srv_msg = stop_idle(imap_socket).context("stop idling")?;
+        assert!(srv_msg.contains("* 1 EXISTS"));
 
         Ok(())
     })
