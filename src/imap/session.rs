@@ -1,8 +1,10 @@
 use crate::imap::capability::{ClientCapability, ServerCapability};
-use crate::imap::command::{anonymous, authenticated, examined, selected};
+use crate::imap::command::{anonymous, authenticated, selected};
 use crate::imap::flow;
-use crate::imap::response::Response;
+use crate::imap::request::Request;
+use crate::imap::response::{Response, ResponseOrIdle};
 use crate::login::ArcLoginProvider;
+use anyhow::{anyhow, bail, Result};
 use imap_codec::imap_types::command::Command;
 
 //-----
@@ -23,7 +25,45 @@ impl Instance {
         }
     }
 
-    pub async fn command(&mut self, cmd: Command<'static>) -> Response<'static> {
+    pub async fn request(&mut self, req: Request) -> ResponseOrIdle {
+        match req {
+            Request::Idle => self.idle().await,
+            Request::ImapCommand(cmd) => self.command(cmd).await,
+        }
+    }
+
+    pub async fn idle(&mut self) -> ResponseOrIdle {
+        match self.idle_happy().await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!(err=?e, "something bad happened in idle");
+                ResponseOrIdle::Response(Response::bye().unwrap())
+            }
+        }
+    }
+
+    pub async fn idle_happy(&mut self) -> Result<ResponseOrIdle> {
+        let (mbx, tag, stop) = match &mut self.state {
+            flow::State::Idle(_, ref mut mbx, _, tag, stop) => (mbx, tag.clone(), stop.clone()),
+            _ => bail!("Invalid session state, can't idle"),
+        };
+
+        tokio::select! {
+            _ = stop.notified() => {
+                self.state.apply(flow::Transition::UnIdle)?;
+                return Ok(ResponseOrIdle::Response(Response::build()
+                    .tag(tag.clone())
+                    .message("IDLE completed")
+                    .ok()?))
+            },
+            change = mbx.idle_sync() => {
+                tracing::debug!("idle event");
+                return Ok(ResponseOrIdle::IdleEvent(change?));
+            }
+        }
+    }
+
+    pub async fn command(&mut self, cmd: Command<'static>) -> ResponseOrIdle {
         // Command behavior is modulated by the state.
         // To prevent state error, we handle the same command in separate code paths.
         let (resp, tr) = match &mut self.state {
@@ -44,26 +84,18 @@ impl Instance {
                 };
                 authenticated::dispatch(ctx).await
             }
-            flow::State::Selected(ref user, ref mut mailbox) => {
+            flow::State::Selected(ref user, ref mut mailbox, ref perm) => {
                 let ctx = selected::SelectedContext {
                     req: &cmd,
                     server_capabilities: &self.server_capabilities,
                     client_capabilities: &mut self.client_capabilities,
                     user,
                     mailbox,
+                    perm,
                 };
                 selected::dispatch(ctx).await
             }
-            flow::State::Examined(ref user, ref mut mailbox) => {
-                let ctx = examined::ExaminedContext {
-                    req: &cmd,
-                    server_capabilities: &self.server_capabilities,
-                    client_capabilities: &mut self.client_capabilities,
-                    user,
-                    mailbox,
-                };
-                examined::dispatch(ctx).await
-            }
+            flow::State::Idle(..) => Err(anyhow!("can not receive command while idling")),
             flow::State::Logout => Response::build()
                 .tag(cmd.tag.clone())
                 .message("No commands are allowed in the LOGOUT state.")
@@ -88,15 +120,18 @@ impl Instance {
                 e,
                 cmd
             );
-            return Response::build()
+            return ResponseOrIdle::Response(Response::build()
                 .to_req(&cmd)
                 .message(
                     "Internal error, processing command triggered an illegal IMAP state transition",
                 )
                 .bad()
-                .unwrap();
+                .unwrap());
         }
 
-        resp
+        match &self.state {
+            flow::State::Idle(_, _, _, _, n) => ResponseOrIdle::StartIdle(n.clone()),
+            _ => ResponseOrIdle::Response(resp),
+        }
     }
 }

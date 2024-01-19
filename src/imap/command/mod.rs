@@ -1,7 +1,6 @@
 pub mod anonymous;
 pub mod anystate;
 pub mod authenticated;
-pub mod examined;
 pub mod selected;
 
 use crate::mail::user::INBOX;

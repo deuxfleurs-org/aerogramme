@@ -67,6 +67,11 @@ impl Mailbox {
         self.mbox.write().await.opportunistic_sync().await
     }
 
+    /// Block until a sync has been done (due to changes in the event log)
+    pub async fn notify(&self) -> std::sync::Weak<tokio::sync::Notify> {
+        self.mbox.read().await.notifier()
+    }
+
     // ---- Functions for reading the mailbox ----
 
     /// Get a clone of the current UID Index of this mailbox
@@ -197,6 +202,10 @@ impl MailboxInternal {
     async fn opportunistic_sync(&mut self) -> Result<()> {
         self.uid_index.opportunistic_sync().await?;
         Ok(())
+    }
+
+    fn notifier(&self) -> std::sync::Weak<tokio::sync::Notify> {
+        self.uid_index.notifier()
     }
 
     // ---- Functions for reading the mailbox ----

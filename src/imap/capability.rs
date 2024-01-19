@@ -1,4 +1,4 @@
-use imap_codec::imap_types::command::{FetchModifier, StoreModifier, SelectExamineModifier};
+use imap_codec::imap_types::command::{FetchModifier, SelectExamineModifier, StoreModifier};
 use imap_codec::imap_types::core::NonEmptyVec;
 use imap_codec::imap_types::extensions::enable::{CapabilityEnable, Utf8Kind};
 use imap_codec::imap_types::response::Capability;
@@ -30,6 +30,7 @@ impl Default for ServerCapability {
             Capability::Enable,
             Capability::Move,
             Capability::LiteralPlus,
+            Capability::Idle,
             capability_unselect(),
             capability_condstore(),
             //capability_qresync(),
@@ -72,7 +73,6 @@ impl ClientStatus {
     }
 }
 
-
 pub struct ClientCapability {
     pub condstore: ClientStatus,
     pub utf8kind: Option<Utf8Kind>,
@@ -100,13 +100,19 @@ impl ClientCapability {
     }
 
     pub fn fetch_modifiers_enable(&mut self, mods: &[FetchModifier]) {
-        if mods.iter().any(|x| matches!(x, FetchModifier::ChangedSince(..))) {
+        if mods
+            .iter()
+            .any(|x| matches!(x, FetchModifier::ChangedSince(..)))
+        {
             self.enable_condstore()
         }
     }
 
     pub fn store_modifiers_enable(&mut self, mods: &[StoreModifier]) {
-        if mods.iter().any(|x| matches!(x, StoreModifier::UnchangedSince(..))) {
+        if mods
+            .iter()
+            .any(|x| matches!(x, StoreModifier::UnchangedSince(..)))
+        {
             self.enable_condstore()
         }
     }

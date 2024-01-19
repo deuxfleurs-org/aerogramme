@@ -1822,7 +1822,7 @@ dependencies = [
 [[package]]
 name = "imap-flow"
 version = "0.1.0"
-source = "git+https://github.com/superboum/imap-flow.git?branch=custom/aerogramme#0f548a2070aace09f9f9a0b6ef221efefb8b110b"
+source = "git+https://github.com/superboum/imap-flow.git?branch=custom/aerogramme#60ff9e082ccfcd10a042b616d8038a578fa0c8ff"
 dependencies = [
  "bounded-static",
  "bytes",

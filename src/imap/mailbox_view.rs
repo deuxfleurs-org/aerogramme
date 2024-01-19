@@ -1,6 +1,6 @@
+use std::collections::HashSet;
 use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::Arc;
-use std::collections::HashSet;
 
 use anyhow::{anyhow, Error, Result};
 
@@ -13,11 +13,11 @@ use imap_codec::imap_types::response::{Code, CodeOther, Data, Status};
 use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::SequenceSet;
 
-use crate::mail::unique_ident::UniqueIdent;
 use crate::mail::mailbox::Mailbox;
 use crate::mail::query::QueryScope;
 use crate::mail::snapshot::FrozenMailbox;
 use crate::mail::uidindex::{ImapUid, ImapUidvalidity, ModSeq};
+use crate::mail::unique_ident::UniqueIdent;
 
 use crate::imap::attributes::AttributesProxy;
 use crate::imap::flags;
@@ -64,7 +64,7 @@ pub struct MailboxView {
 impl MailboxView {
     /// Creates a new IMAP view into a mailbox.
     pub async fn new(mailbox: Arc<Mailbox>, is_cond: bool) -> Self {
-        Self { 
+        Self {
             internal: mailbox.frozen().await,
             is_condstore: is_cond,
         }
@@ -130,11 +130,9 @@ impl MailboxView {
                 let new_mail = new_snapshot.table.get(uuid);
                 if old_mail.is_some() && old_mail != new_mail {
                     if let Some((uid, modseq, flags)) = new_mail {
-                        let mut items = vec![
-                            MessageDataItem::Flags(
-                                flags.iter().filter_map(|f| flags::from_str(f)).collect(),
-                            ),
-                        ];
+                        let mut items = vec![MessageDataItem::Flags(
+                            flags.iter().filter_map(|f| flags::from_str(f)).collect(),
+                        )];
 
                         if params.with_uid {
                             items.push(MessageDataItem::Uid(*uid));
@@ -169,7 +167,7 @@ impl MailboxView {
             data.push(self.highestmodseq_status()?);
         }
         /*self.unseen_first_status()?
-            .map(|unseen_status| data.push(unseen_status));*/
+        .map(|unseen_status| data.push(unseen_status));*/
 
         Ok(data)
     }
@@ -188,8 +186,8 @@ impl MailboxView {
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
 
         let idx = self.index()?;
-        let (editable, in_conflict) = idx
-            .fetch_unchanged_since(sequence_set, unchanged_since, *is_uid_store)?;
+        let (editable, in_conflict) =
+            idx.fetch_unchanged_since(sequence_set, unchanged_since, *is_uid_store)?;
 
         for mi in editable.iter() {
             match kind {
@@ -215,13 +213,28 @@ impl MailboxView {
             _ => in_conflict.into_iter().map(|midx| midx.i).collect(),
         };
 
-        let summary = self.update(UpdateParameters {
-            with_uid: *is_uid_store,
-            with_modseq: unchanged_since.is_some(),
-            silence,
-        }).await?;
+        let summary = self
+            .update(UpdateParameters {
+                with_uid: *is_uid_store,
+                with_modseq: unchanged_since.is_some(),
+                silence,
+            })
+            .await?;
 
         Ok((summary, conflict_id_or_uid))
+    }
+
+    pub async fn idle_sync(&mut self) -> Result<Vec<Body<'static>>> {
+        self.internal
+            .mailbox
+            .notify()
+            .await
+            .upgrade()
+            .ok_or(anyhow!("test"))?
+            .notified()
+            .await;
+        self.internal.mailbox.opportunistic_sync().await?;
+        self.update(UpdateParameters::default()).await
     }
 
     pub async fn expunge(&mut self) -> Result<Vec<Body<'static>>> {
@@ -294,10 +307,12 @@ impl MailboxView {
             ret.push((mi.uid, dest_uid));
         }
 
-        let update = self.update(UpdateParameters {
-            with_uid: *is_uid_copy,
-            ..UpdateParameters::default()
-        }).await?;
+        let update = self
+            .update(UpdateParameters {
+                with_uid: *is_uid_copy,
+                ..UpdateParameters::default()
+            })
+            .await?;
 
         Ok((to_state.uidvalidity, ret, update))
     }
@@ -321,11 +336,7 @@ impl MailboxView {
         };
         tracing::debug!("Query scope {:?}", query_scope);
         let idx = self.index()?;
-        let mail_idx_list = idx.fetch_changed_since(
-            sequence_set, 
-            changed_since, 
-            *is_uid_fetch
-        )?;
+        let mail_idx_list = idx.fetch_changed_since(sequence_set, changed_since, *is_uid_fetch)?;
 
         // [2/6] Fetch the emails
         let uuids = mail_idx_list
@@ -414,12 +425,19 @@ impl MailboxView {
         let maybe_modseq = match is_modseq {
             true => {
                 let final_selection = kept_idx.iter().chain(kept_query.iter());
-                final_selection.map(|in_idx| in_idx.modseq).max().map(|r| NonZeroU64::try_from(r)).transpose()?
-            },
+                final_selection
+                    .map(|in_idx| in_idx.modseq)
+                    .max()
+                    .map(|r| NonZeroU64::try_from(r))
+                    .transpose()?
+            }
             _ => None,
         };
 
-        Ok((vec![Body::Data(Data::Search(selection_fmt, maybe_modseq))], is_modseq))
+        Ok((
+            vec![Body::Data(Data::Search(selection_fmt, maybe_modseq))],
+            is_modseq,
+        ))
     }
 
     // ----
@@ -463,8 +481,10 @@ impl MailboxView {
 
     pub(crate) fn highestmodseq_status(&self) -> Result<Body<'static>> {
         Ok(Body::Status(Status::ok(
-            None, 
-            Some(Code::Other(CodeOther::unvalidated(format!("HIGHESTMODSEQ {}", self.highestmodseq()).into_bytes()))),
+            None,
+            Some(Code::Other(CodeOther::unvalidated(
+                format!("HIGHESTMODSEQ {}", self.highestmodseq()).into_bytes(),
+            ))),
             "Highest",
         )?))
     }

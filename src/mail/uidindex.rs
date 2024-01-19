@@ -140,8 +140,7 @@ impl BayouState for UidIndex {
                     let bump_uid = new.internalseq.get() - uid.get();
                     let bump_modseq = (new.internalmodseq.get() - modseq.get()) as u32;
                     new.uidvalidity =
-                        NonZeroU32::new(new.uidvalidity.get() + bump_uid + bump_modseq)
-                            .unwrap();
+                        NonZeroU32::new(new.uidvalidity.get() + bump_uid + bump_modseq).unwrap();
                 }
 
                 // Assign the real uid of the email
@@ -179,10 +178,10 @@ impl BayouState for UidIndex {
                 if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
                     // Bump UIDValidity if required
                     if *candidate_modseq < new.internalmodseq {
-                        let bump_modseq = (new.internalmodseq.get() - candidate_modseq.get()) as u32;
+                        let bump_modseq =
+                            (new.internalmodseq.get() - candidate_modseq.get()) as u32;
                         new.uidvalidity =
-                            NonZeroU32::new(new.uidvalidity.get() + bump_modseq)
-                                .unwrap();
+                            NonZeroU32::new(new.uidvalidity.get() + bump_modseq).unwrap();
                     }
 
                     // Add flags to the source of trust and the cache
@@ -205,10 +204,10 @@ impl BayouState for UidIndex {
                 if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
                     // Bump UIDValidity if required
                     if *candidate_modseq < new.internalmodseq {
-                        let bump_modseq = (new.internalmodseq.get() - candidate_modseq.get()) as u32;
+                        let bump_modseq =
+                            (new.internalmodseq.get() - candidate_modseq.get()) as u32;
                         new.uidvalidity =
-                            NonZeroU32::new(new.uidvalidity.get() + bump_modseq)
-                                .unwrap();
+                            NonZeroU32::new(new.uidvalidity.get() + bump_modseq).unwrap();
                     }
 
                     // Remove flags from the source of trust and the cache
@@ -228,10 +227,10 @@ impl BayouState for UidIndex {
                 if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
                     // Bump UIDValidity if required
                     if *candidate_modseq < new.internalmodseq {
-                        let bump_modseq = (new.internalmodseq.get() - candidate_modseq.get()) as u32;
+                        let bump_modseq =
+                            (new.internalmodseq.get() - candidate_modseq.get()) as u32;
                         new.uidvalidity =
-                            NonZeroU32::new(new.uidvalidity.get() + bump_modseq)
-                                .unwrap();
+                            NonZeroU32::new(new.uidvalidity.get() + bump_modseq).unwrap();
                     }
 
                     // Remove flags from the source of trust and the cache
@@ -248,7 +247,7 @@ impl BayouState for UidIndex {
                     existing_flags.append(&mut to_add);
                     new.idx_by_flag.remove(*uid, &rm_flags);
                     new.idx_by_flag.insert(*uid, &to_add);
-                    
+
                     // Register that email has been modified
                     new.idx_by_modseq.insert(new.internalmodseq, *ident);
                     *email_modseq = new.internalmodseq;
@@ -448,7 +447,12 @@ mod tests {
         {
             let m = UniqueIdent([0x03; 24]);
             let f = vec!["\\Archive".to_string(), "\\Recent".to_string()];
-            let ev = UidIndexOp::MailAdd(m, NonZeroU32::new(1).unwrap(), NonZeroU64::new(1).unwrap(), f);
+            let ev = UidIndexOp::MailAdd(
+                m,
+                NonZeroU32::new(1).unwrap(),
+                NonZeroU64::new(1).unwrap(),
+                f,
+            );
             state = state.apply(&ev);
         }
 

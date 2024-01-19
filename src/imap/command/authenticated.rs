@@ -405,7 +405,7 @@ impl<'a> AuthenticatedContext<'a> {
                           it is therefore correct to not return it even if there are unseen messages
       RFC9051 (imap4rev2) says that OK [UNSEEN] responses are deprecated after SELECT and EXAMINE
       For Aerogramme, we just don't send the OK [UNSEEN], it's correct to do in both specifications.
-    
+
 
     20 select "INBOX.achats"
     * FLAGS (\Answered \Flagged \Deleted \Seen \Draft $Forwarded JUNK $label1)
@@ -453,7 +453,7 @@ impl<'a> AuthenticatedContext<'a> {
                 .code(Code::ReadWrite)
                 .set_body(data)
                 .ok()?,
-            flow::Transition::Select(mb),
+            flow::Transition::Select(mb, flow::MailboxPerm::ReadWrite),
         ))
     }
 
@@ -491,7 +491,7 @@ impl<'a> AuthenticatedContext<'a> {
                 .code(Code::ReadOnly)
                 .set_body(data)
                 .ok()?,
-            flow::Transition::Examine(mb),
+            flow::Transition::Select(mb, flow::MailboxPerm::ReadOnly),
         ))
     }
 
