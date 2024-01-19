@@ -155,8 +155,8 @@ pub fn create_mailbox(imap: &mut TcpStream, mbx: Mailbox) -> Result<()> {
 
     let mbx_str = match mbx {
         Mailbox::Inbox => "INBOX",
-        Mailbox::Archive => "Archive",
-        Mailbox::Drafts => "Drafts",
+        Mailbox::Archive => "ArchiveCustom",
+        Mailbox::Drafts => "DraftsCustom",
     };
 
     let cmd = format!("15 create {}\r\n", mbx_str);
@@ -172,8 +172,8 @@ pub fn select(imap: &mut TcpStream, mbx: Mailbox, modifier: SelectMod) -> Result
 
     let mbx_str = match mbx {
         Mailbox::Inbox => "INBOX",
-        Mailbox::Archive => "Archive",
-        Mailbox::Drafts => "Drafts",
+        Mailbox::Archive => "ArchiveCustom",
+        Mailbox::Drafts => "DraftsCustom",
     };
 
     let mod_str = match modifier {
@@ -209,8 +209,8 @@ pub fn check(imap: &mut TcpStream) -> Result<()> {
 pub fn status(imap: &mut TcpStream, mbx: Mailbox, sk: StatusKind) -> Result<String> {
     let mbx_str = match mbx {
         Mailbox::Inbox => "INBOX",
-        Mailbox::Archive => "Archive",
-        Mailbox::Drafts => "Drafts",
+        Mailbox::Archive => "ArchiveCustom",
+        Mailbox::Drafts => "DraftsCustom",
     };
     let sk_str = match sk {
         StatusKind::UidNext => "(UIDNEXT)",
@@ -325,7 +325,7 @@ pub fn copy(imap: &mut TcpStream, selection: Selection, to: Mailbox) -> Result<(
     assert!(matches!(selection, Selection::FirstId));
     assert!(matches!(to, Mailbox::Archive));
 
-    imap.write(&b"45 copy 1 Archive\r\n"[..])?;
+    imap.write(&b"45 copy 1 ArchiveCustom\r\n"[..])?;
     let read = read_lines(imap, &mut buffer, None)?;
     assert_eq!(&read[..5], &b"45 OK"[..]);
 
@@ -421,7 +421,7 @@ pub fn rename_mailbox(imap: &mut TcpStream, from: Mailbox, to: Mailbox) -> Resul
     assert!(matches!(from, Mailbox::Archive));
     assert!(matches!(to, Mailbox::Drafts));
 
-    imap.write(&b"70 rename Archive Drafts\r\n"[..])?;
+    imap.write(&b"70 rename ArchiveCustom DraftsCustom\r\n"[..])?;
     let mut buffer: [u8; 1500] = [0; 1500];
     let read = read_lines(imap, &mut buffer, None)?;
     assert_eq!(&read[..5], &b"70 OK"[..]);
@@ -429,9 +429,9 @@ pub fn rename_mailbox(imap: &mut TcpStream, from: Mailbox, to: Mailbox) -> Resul
     imap.write(&b"71 list \"\" *\r\n"[..])?;
     let read = read_lines(imap, &mut buffer, Some(&b"71 OK LIST"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
-    assert!(!srv_msg.contains(" Archive\r\n"));
+    assert!(!srv_msg.contains(" ArchiveCustom\r\n"));
     assert!(srv_msg.contains(" INBOX\r\n"));
-    assert!(srv_msg.contains(" Drafts\r\n"));
+    assert!(srv_msg.contains(" DraftsCustom\r\n"));
 
     Ok(())
 }
@@ -439,8 +439,8 @@ pub fn rename_mailbox(imap: &mut TcpStream, from: Mailbox, to: Mailbox) -> Resul
 pub fn delete_mailbox(imap: &mut TcpStream, mbx: Mailbox) -> Result<()> {
     let mbx_str = match mbx {
         Mailbox::Inbox => "INBOX",
-        Mailbox::Archive => "Archive",
-        Mailbox::Drafts => "Drafts",
+        Mailbox::Archive => "ArchiveCustom",
+        Mailbox::Drafts => "DraftsCustom",
     };
     let cmd = format!("80 delete {}\r\n", mbx_str);
 
@@ -471,7 +471,7 @@ pub fn r#move(imap: &mut TcpStream, selection: Selection, to: Mailbox) -> Result
     assert!(matches!(to, Mailbox::Archive));
     assert!(matches!(selection, Selection::FirstId));
 
-    imap.write(&b"35 move 1 Archive\r\n"[..])?;
+    imap.write(&b"35 move 1 ArchiveCustom\r\n"[..])?;
     let read = read_lines(imap, &mut buffer, Some(&b"35 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
     assert!(srv_msg.contains("* 1 EXPUNGE"));

@@ -27,6 +27,19 @@ pub const MAILBOX_HIERARCHY_DELIMITER: char = '.';
 /// INBOX), and we create a new empty mailbox for INBOX.
 pub const INBOX: &str = "INBOX";
 
+/// For convenience purpose, we also create some special mailbox
+/// that are described in RFC6154 SPECIAL-USE
+/// @FIXME maybe it should be a configuration parameter
+/// @FIXME maybe we should have a per-mailbox flag mechanism, either an enum or a string, so we
+/// track which mailbox is used for what.
+/// @FIXME Junk could be useful but we don't have any antispam solution yet so...
+/// @FIXME IMAP supports virtual mailbox. \All or \Flagged are intended to be virtual mailboxes.
+/// \Trash might be one, or not one. I don't know what we should do there.
+pub const DRAFTS: &str = "Drafts";
+pub const ARCHIVE: &str = "Archive";
+pub const SENT: &str = "Sent";
+pub const TRASH: &str = "Trash";
+
 const MAILBOX_LIST_PK: &str = "mailboxes";
 const MAILBOX_LIST_SK: &str = "list";
 
@@ -124,7 +137,7 @@ impl User {
 
         let (mut list, ct) = self.load_mailbox_list().await?;
         if list.has_mailbox(name) {
-            // TODO: actually delete mailbox contents
+            //@TODO: actually delete mailbox contents
             list.set_mailbox(name, None);
             self.save_mailbox_list(&list, ct).await?;
             Ok(())
@@ -256,7 +269,16 @@ impl User {
             }
         };
 
-        self.ensure_inbox_exists(&mut list, &row).await?;
+        let is_default_mbx_missing = [ DRAFTS, ARCHIVE, SENT, TRASH ]
+            .iter()
+            .map(|mbx| list.create_mailbox(mbx))
+            .fold(false, |acc, r| acc || matches!(r, CreatedMailbox::Created(..)));
+        let is_inbox_missing = self.ensure_inbox_exists(&mut list, &row).await?;
+        if is_default_mbx_missing && !is_inbox_missing {
+            // It's the only case where we created some mailboxes and not saved them
+            // So we save them!
+            self.save_mailbox_list(&list, row.clone()).await?;
+        }
 
         Ok((list, row))
     }

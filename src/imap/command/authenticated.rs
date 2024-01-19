@@ -235,11 +235,19 @@ impl<'a> AuthenticatedContext<'a> {
                     .to_string()
                     .try_into()
                     .map_err(|_| anyhow!("invalid mailbox name"))?;
-                let mut items = vec![FlagNameAttribute::try_from(Atom::unvalidated(
+                let mut items = vec![FlagNameAttribute::from(Atom::unvalidated(
                     "Subscribed",
-                ))?];
+                ))];
                 if !*is_real {
                     items.push(FlagNameAttribute::Noselect);
+                } else {
+                    match *mb {
+                        "Drafts" => items.push(Atom::unvalidated("Drafts").into()),
+                        "Archive" => items.push(Atom::unvalidated("Archive").into()),
+                        "Sent" => items.push(Atom::unvalidated("Sent").into()),
+                        "Trash" => items.push(Atom::unvalidated("Trash").into()),
+                        _ => (),
+                    };
                 }
                 if is_lsub {
                     ret.push(Data::Lsub {
