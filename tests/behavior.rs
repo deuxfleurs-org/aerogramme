@@ -241,7 +241,6 @@ fn rfc4551_imapext_condstore() {
     .expect("test fully run");
 }
 
-
 fn rfc2177_imapext_idle() {
     println!("🧪 rfc2177_imapext_idle");
     common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {

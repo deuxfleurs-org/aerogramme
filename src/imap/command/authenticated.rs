@@ -235,9 +235,7 @@ impl<'a> AuthenticatedContext<'a> {
                     .to_string()
                     .try_into()
                     .map_err(|_| anyhow!("invalid mailbox name"))?;
-                let mut items = vec![FlagNameAttribute::from(Atom::unvalidated(
-                    "Subscribed",
-                ))];
+                let mut items = vec![FlagNameAttribute::from(Atom::unvalidated("Subscribed"))];
                 if !*is_real {
                     items.push(FlagNameAttribute::Noselect);
                 } else {

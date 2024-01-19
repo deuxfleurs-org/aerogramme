@@ -237,19 +237,28 @@ impl MailboxView {
         self.update(UpdateParameters::default()).await
     }
 
-    pub async fn expunge(&mut self, maybe_seq_set: &Option<SequenceSet>) -> Result<Vec<Body<'static>>> {
+    pub async fn expunge(
+        &mut self,
+        maybe_seq_set: &Option<SequenceSet>,
+    ) -> Result<Vec<Body<'static>>> {
         // Get a recent view to apply our change
         self.internal.sync().await?;
         let state = self.internal.peek().await;
         let idx = Index::new(&state)?;
-        
+
         // Build a default sequence set for the default case
-        use imap_codec::imap_types::sequence::{Sequence, SeqOrUid};
+        use imap_codec::imap_types::sequence::{SeqOrUid, Sequence};
         let seq = match maybe_seq_set {
             Some(s) => s.clone(),
-            None => SequenceSet(vec![Sequence::Range(SeqOrUid::Value(NonZeroU32::MIN), SeqOrUid::Asterisk)].try_into().unwrap()),
+            None => SequenceSet(
+                vec![Sequence::Range(
+                    SeqOrUid::Value(NonZeroU32::MIN),
+                    SeqOrUid::Asterisk,
+                )]
+                .try_into()
+                .unwrap(),
+            ),
         };
-
 
         let deleted_flag = Flag::Deleted.to_string();
         let msgs = idx

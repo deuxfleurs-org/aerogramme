@@ -226,7 +226,10 @@ impl<'a> SelectedContext<'a> {
         ))
     }
 
-    async fn expunge(self, uid_sequence_set: &Option<SequenceSet>) -> Result<(Response<'static>, flow::Transition)> {
+    async fn expunge(
+        self,
+        uid_sequence_set: &Option<SequenceSet>,
+    ) -> Result<(Response<'static>, flow::Transition)> {
         if let Some(failed) = self.fail_read_only() {
             return Ok((failed, flow::Transition::None));
         }

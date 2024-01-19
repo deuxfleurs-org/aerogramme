@@ -269,10 +269,12 @@ impl User {
             }
         };
 
-        let is_default_mbx_missing = [ DRAFTS, ARCHIVE, SENT, TRASH ]
+        let is_default_mbx_missing = [DRAFTS, ARCHIVE, SENT, TRASH]
             .iter()
             .map(|mbx| list.create_mailbox(mbx))
-            .fold(false, |acc, r| acc || matches!(r, CreatedMailbox::Created(..)));
+            .fold(false, |acc, r| {
+                acc || matches!(r, CreatedMailbox::Created(..))
+            });
         let is_inbox_missing = self.ensure_inbox_exists(&mut list, &row).await?;
         if is_default_mbx_missing && !is_inbox_missing {
             // It's the only case where we created some mailboxes and not saved them
