@@ -37,6 +37,7 @@ pub enum Extension {
     Condstore,
     LiteralPlus,
     Idle,
+    UidPlus,
 }
 
 pub enum Enable {
@@ -116,6 +117,7 @@ pub fn capability(imap: &mut TcpStream, ext: Extension) -> Result<()> {
         Extension::Condstore => Some("CONDSTORE"),
         Extension::LiteralPlus => Some("LITERAL+"),
         Extension::Idle => Some("IDLE"),
+        Extension::UidPlus => Some("UIDPLUS"),
     };
 
     let mut buffer: [u8; 6000] = [0; 6000];
@@ -320,7 +322,7 @@ pub fn fetch(
     Ok(srv_msg.to_string())
 }
 
-pub fn copy(imap: &mut TcpStream, selection: Selection, to: Mailbox) -> Result<()> {
+pub fn copy(imap: &mut TcpStream, selection: Selection, to: Mailbox) -> Result<String> {
     let mut buffer: [u8; 65535] = [0; 65535];
     assert!(matches!(selection, Selection::FirstId));
     assert!(matches!(to, Mailbox::Archive));
@@ -328,11 +330,12 @@ pub fn copy(imap: &mut TcpStream, selection: Selection, to: Mailbox) -> Result<(
     imap.write(&b"45 copy 1 ArchiveCustom\r\n"[..])?;
     let read = read_lines(imap, &mut buffer, None)?;
     assert_eq!(&read[..5], &b"45 OK"[..]);
+    let srv_msg = std::str::from_utf8(read)?;
 
-    Ok(())
+    Ok(srv_msg.to_string())
 }
 
-pub fn append_email(imap: &mut TcpStream, content: Email) -> Result<()> {
+pub fn append(imap: &mut TcpStream, content: Email) -> Result<String> {
     let mut buffer: [u8; 6000] = [0; 6000];
 
     let ref_mail = match content {
@@ -353,8 +356,9 @@ pub fn append_email(imap: &mut TcpStream, content: Email) -> Result<()> {
     imap.write(&b"\r\n"[..])?;
     let read = read_lines(imap, &mut buffer, None)?;
     assert_eq!(&read[..5], &b"47 OK"[..]);
+    let srv_msg = std::str::from_utf8(read)?;
 
-    Ok(())
+    Ok(srv_msg.to_string())
 }
 
 pub fn search(imap: &mut TcpStream, sk: SearchKind) -> Result<String> {
@@ -417,6 +421,20 @@ pub fn expunge(imap: &mut TcpStream) -> Result<()> {
     Ok(())
 }
 
+pub fn uid_expunge(imap: &mut TcpStream, sel: Selection) -> Result<String> {
+    use Selection::*;
+    let mut buffer: [u8; 6000] = [0; 6000];
+    let selstr = match sel {
+        FirstId => "1",
+        SecondId => "2",
+        All => "1:*",
+    };
+    imap.write(format!("61 UID EXPUNGE {}\r\n", selstr).as_bytes())?;
+    let read = read_lines(imap, &mut buffer, Some(&b"61 OK"[..]))?;
+    let srv_msg = std::str::from_utf8(read)?;
+    Ok(srv_msg.to_string())
+}
+
 pub fn rename_mailbox(imap: &mut TcpStream, from: Mailbox, to: Mailbox) -> Result<()> {
     assert!(matches!(from, Mailbox::Archive));
     assert!(matches!(to, Mailbox::Drafts));
@@ -466,7 +484,7 @@ pub fn close(imap: &mut TcpStream) -> Result<()> {
     Ok(())
 }
 
-pub fn r#move(imap: &mut TcpStream, selection: Selection, to: Mailbox) -> Result<()> {
+pub fn r#move(imap: &mut TcpStream, selection: Selection, to: Mailbox) -> Result<String> {
     let mut buffer: [u8; 1500] = [0; 1500];
     assert!(matches!(to, Mailbox::Archive));
     assert!(matches!(selection, Selection::FirstId));
@@ -476,7 +494,7 @@ pub fn r#move(imap: &mut TcpStream, selection: Selection, to: Mailbox) -> Result
     let srv_msg = std::str::from_utf8(read)?;
     assert!(srv_msg.contains("* 1 EXPUNGE"));
 
-    Ok(())
+    Ok(srv_msg.to_string())
 }
 
 pub fn enable(imap: &mut TcpStream, ask: Enable, done: Option<Enable>) -> Result<()> {
