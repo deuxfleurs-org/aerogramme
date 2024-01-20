@@ -1,6 +1,6 @@
 [package]
 name = "aerogramme"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Alex Auvolat <alex@adnab.me>", "Quentin Dufour <quentin@dufour.io>"]
 edition = "2021"
 license = "AGPL-3.0"
