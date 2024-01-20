@@ -38,6 +38,7 @@ pub enum Extension {
     LiteralPlus,
     Idle,
     UidPlus,
+    ListStatus,
 }
 
 pub enum Enable {
@@ -107,6 +108,15 @@ pub enum StatusKind {
     HighestModSeq,
 }
 
+pub enum MbxSelect {
+    All,
+}
+
+pub enum ListReturn {
+    None,
+    StatusMessagesUnseen,
+}
+
 pub fn capability(imap: &mut TcpStream, ext: Extension) -> Result<()> {
     imap.write(&b"5 capability\r\n"[..])?;
 
@@ -118,6 +128,7 @@ pub fn capability(imap: &mut TcpStream, ext: Extension) -> Result<()> {
         Extension::LiteralPlus => Some("LITERAL+"),
         Extension::Idle => Some("IDLE"),
         Extension::UidPlus => Some("UIDPLUS"),
+        Extension::ListStatus => Some("LIST-STATUS"),
     };
 
     let mut buffer: [u8; 6000] = [0; 6000];
@@ -167,6 +178,25 @@ pub fn create_mailbox(imap: &mut TcpStream, mbx: Mailbox) -> Result<()> {
     assert_eq!(&read[..12], &b"15 OK CREATE"[..]);
 
     Ok(())
+}
+
+pub fn list(imap: &mut TcpStream, select: MbxSelect, mod_return: ListReturn) -> Result<String> {
+    let mut buffer: [u8; 6000] = [0; 6000];
+
+    let select_str = match select {
+        MbxSelect::All => "%",
+    };
+
+    let mod_return_str = match mod_return {
+        ListReturn::None => "",
+        ListReturn::StatusMessagesUnseen => " RETURN (STATUS (MESSAGES UNSEEN))",
+    };
+
+    imap.write(format!("19 LIST \"\" \"{}\"{}\r\n", select_str, mod_return_str).as_bytes())?;
+
+    let read = read_lines(imap, &mut buffer, Some(&b"19 OK"[..]))?;
+    let srv_msg = std::str::from_utf8(read)?;
+    Ok(srv_msg.to_string())
 }
 
 pub fn select(imap: &mut TcpStream, mbx: Mailbox, modifier: SelectMod) -> Result<String> {
