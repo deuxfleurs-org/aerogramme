@@ -60,6 +60,7 @@ smtp-message = { git = "http://github.com/Alexis211/kannader", branch = "feature
 smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 imap-codec = { version = "2.0.0", features = ["bounded-static", "ext_condstore_qresync"] }
 imap-flow = { git = "https://github.com/superboum/imap-flow.git", branch = "custom/aerogramme" }
+thiserror = "1.0.56"
 
 [dev-dependencies]
 

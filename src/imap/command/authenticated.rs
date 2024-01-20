@@ -1,8 +1,11 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use thiserror::Error;
 
 use anyhow::{anyhow, bail, Result};
-use imap_codec::imap_types::command::{Command, CommandBody, SelectExamineModifier};
+use imap_codec::imap_types::command::{
+    Command, CommandBody, ListReturnItem, SelectExamineModifier,
+};
 use imap_codec::imap_types::core::{Atom, Literal, NonEmptyVec, QuotedChar};
 use imap_codec::imap_types::datetime::DateTime;
 use imap_codec::imap_types::extensions::enable::CapabilityEnable;
@@ -30,7 +33,7 @@ pub struct AuthenticatedContext<'a> {
 }
 
 pub async fn dispatch<'a>(
-    ctx: AuthenticatedContext<'a>,
+    mut ctx: AuthenticatedContext<'a>,
 ) -> Result<(Response<'static>, flow::Transition)> {
     match &ctx.req.body {
         // Any state
@@ -47,11 +50,12 @@ pub async fn dispatch<'a>(
         CommandBody::Lsub {
             reference,
             mailbox_wildcard,
-        } => ctx.list(reference, mailbox_wildcard, true).await,
+        } => ctx.list(reference, mailbox_wildcard, &[], true).await,
         CommandBody::List {
             reference,
             mailbox_wildcard,
-        } => ctx.list(reference, mailbox_wildcard, false).await,
+            r#return,
+        } => ctx.list(reference, mailbox_wildcard, r#return, false).await,
         CommandBody::Status {
             mailbox,
             item_names,
@@ -163,9 +167,10 @@ impl<'a> AuthenticatedContext<'a> {
     }
 
     async fn list(
-        self,
+        &mut self,
         reference: &MailboxCodec<'a>,
         mailbox_wildcard: &ListMailbox<'a>,
+        must_return: &[ListReturnItem],
         is_lsub: bool,
     ) -> Result<(Response<'static>, flow::Transition)> {
         let mbx_hier_delim: QuotedChar = QuotedChar::unvalidated(MBX_HIER_DELIM_RAW);
@@ -180,6 +185,11 @@ impl<'a> AuthenticatedContext<'a> {
                 flow::Transition::None,
             ));
         }
+
+        let status_item_names = must_return.iter().find_map(|m| match m {
+            ListReturnItem::Status(v) => Some(v),
+            _ => None,
+        });
 
         // @FIXME would probably need a rewrite to better use the imap_codec library
         let wildcard = match mailbox_wildcard {
@@ -231,11 +241,13 @@ impl<'a> AuthenticatedContext<'a> {
         let mut ret = vec![];
         for (mb, is_real) in vmailboxes.iter() {
             if matches_wildcard(&wildcard, mb) {
-                let mailbox = mb
+                let mailbox: MailboxCodec = mb
                     .to_string()
                     .try_into()
                     .map_err(|_| anyhow!("invalid mailbox name"))?;
                 let mut items = vec![FlagNameAttribute::from(Atom::unvalidated("Subscribed"))];
+
+                // Decoration
                 if !*is_real {
                     items.push(FlagNameAttribute::Noselect);
                 } else {
@@ -247,18 +259,38 @@ impl<'a> AuthenticatedContext<'a> {
                         _ => (),
                     };
                 }
+
+                // Result type
                 if is_lsub {
                     ret.push(Data::Lsub {
                         items,
                         delimiter: Some(mbx_hier_delim),
-                        mailbox,
+                        mailbox: mailbox.clone(),
                     });
                 } else {
                     ret.push(Data::List {
                         items,
                         delimiter: Some(mbx_hier_delim),
-                        mailbox,
+                        mailbox: mailbox.clone(),
                     });
+                }
+
+                // Also collect status
+                if let Some(sin) = status_item_names {
+                    let ret_attrs = match self.status_items(mb, sin).await {
+                        Ok(a) => a,
+                        Err(e) => {
+                            tracing::error!(err=?e, mailbox=%mb, "Unable to fetch status for mailbox");
+                            continue;
+                        }
+                    };
+
+                    let data = Data::Status {
+                        mailbox,
+                        items: ret_attrs.into(),
+                    };
+
+                    ret.push(data);
                 }
             }
         }
@@ -279,23 +311,52 @@ impl<'a> AuthenticatedContext<'a> {
     }
 
     async fn status(
-        self,
+        &mut self,
         mailbox: &MailboxCodec<'static>,
         attributes: &[StatusDataItemName],
     ) -> Result<(Response<'static>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
+
+        let ret_attrs = match self.status_items(name, attributes).await {
+            Ok(v) => v,
+            Err(e) => match e.downcast_ref::<CommandError>() {
+                Some(CommandError::MailboxNotFound) => {
+                    return Ok((
+                        Response::build()
+                            .to_req(self.req)
+                            .message("Mailbox does not exist")
+                            .no()?,
+                        flow::Transition::None,
+                    ))
+                }
+                _ => return Err(e.into()),
+            },
+        };
+
+        let data = Data::Status {
+            mailbox: mailbox.clone(),
+            items: ret_attrs.into(),
+        };
+
+        Ok((
+            Response::build()
+                .to_req(self.req)
+                .message("STATUS completed")
+                .data(data)
+                .ok()?,
+            flow::Transition::None,
+        ))
+    }
+
+    async fn status_items(
+        &mut self,
+        name: &str,
+        attributes: &[StatusDataItemName],
+    ) -> Result<Vec<StatusDataItem>> {
         let mb_opt = self.user.open_mailbox(name).await?;
         let mb = match mb_opt {
             Some(mb) => mb,
-            None => {
-                return Ok((
-                    Response::build()
-                        .to_req(self.req)
-                        .message("Mailbox does not exist")
-                        .no()?,
-                    flow::Transition::None,
-                ))
-            }
+            None => return Err(CommandError::MailboxNotFound.into()),
         };
 
         let view = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await;
@@ -322,20 +383,7 @@ impl<'a> AuthenticatedContext<'a> {
                 },
             });
         }
-
-        let data = Data::Status {
-            mailbox: mailbox.clone(),
-            items: ret_attrs.into(),
-        };
-
-        Ok((
-            Response::build()
-                .to_req(self.req)
-                .message("STATUS completed")
-                .data(data)
-                .ok()?,
-            flow::Transition::None,
-        ))
+        Ok(ret_attrs)
     }
 
     async fn subscribe(
@@ -602,6 +650,12 @@ fn matches_wildcard(wildcard: &str, name: &str) -> bool {
     }
 
     matches[name.len()][wildcard.len()]
+}
+
+#[derive(Error, Debug)]
+pub enum CommandError {
+    #[error("Mailbox not found")]
+    MailboxNotFound,
 }
 
 #[cfg(test)]
