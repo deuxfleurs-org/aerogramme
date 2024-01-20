@@ -12,6 +12,7 @@ fn main() {
     rfc7888_imapext_literal();
     rfc4551_imapext_condstore();
     rfc2177_imapext_idle();
+    rfc4315_imapext_uidplus();
     println!("✅ SUCCESS 🌟🚀🥳🙏🥹");
 }
 
@@ -45,7 +46,7 @@ fn rfc3501_imap4rev1_base() {
 
         copy(imap_socket, Selection::FirstId, Mailbox::Archive)
             .context("copy message to the archive mailbox")?;
-        append_email(imap_socket, Email::Basic).context("insert email in INBOX")?;
+        append(imap_socket, Email::Basic).context("insert email in INBOX")?;
         noop_exists(imap_socket, 2).context("noop loop must detect a new email")?;
         search(imap_socket, SearchKind::Text("OoOoO")).expect("search should return something");
         store(
@@ -244,7 +245,7 @@ fn rfc4551_imapext_condstore() {
 fn rfc2177_imapext_idle() {
     println!("🧪 rfc2177_imapext_idle");
     common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {
-        // Test setup
+        // Test setup, check capability
         connect(imap_socket).context("server says hello")?;
         capability(imap_socket, Extension::Idle).context("check server capabilities")?;
         login(imap_socket, Account::Alice).context("login test")?;
@@ -256,6 +257,51 @@ fn rfc2177_imapext_idle() {
         lmtp_deliver_email(lmtp_socket, Email::Basic).context("mail delivered successfully")?;
         let srv_msg = stop_idle(imap_socket).context("stop idling")?;
         assert!(srv_msg.contains("* 1 EXISTS"));
+
+        Ok(())
+    })
+    .expect("test fully run");
+}
+
+fn rfc4315_imapext_uidplus() {
+    println!("🧪 rfc4315_imapext_uidplus");
+    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {
+        // Test setup, check capability, insert 2 emails
+        connect(imap_socket).context("server says hello")?;
+        capability(imap_socket, Extension::UidPlus).context("check server capabilities")?;
+        login(imap_socket, Account::Alice).context("login test")?;
+        select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
+        lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
+        lmtp_deliver_email(lmtp_socket, Email::Basic).context("mail delivered successfully")?;
+        lmtp_deliver_email(lmtp_socket, Email::Multipart).context("mail delivered successfully")?;
+        noop_exists(imap_socket, 2).context("noop loop must detect a new email")?;
+
+        // Check UID EXPUNGE seqset
+        store(
+            imap_socket,
+            Selection::All,
+            Flag::Deleted,
+            StoreAction::AddFlags,
+            StoreMod::None,
+        )?;
+        let res = uid_expunge(imap_socket, Selection::FirstId)?;
+        assert_eq!(res.lines().count(), 2);
+        assert!(res.contains("* 1 EXPUNGE"));
+
+        // APPENDUID check UID + UID VALIDITY
+        // Note: 4 and not 3, as we update the UID counter when we delete an email
+        // it's part of our UID proof
+        let res = append(imap_socket, Email::Multipart)?;
+        assert!(res.contains("[APPENDUID 1 4]"));
+
+        // COPYUID, check
+        create_mailbox(imap_socket, Mailbox::Archive).context("created mailbox archive")?;
+        let res = copy(imap_socket, Selection::FirstId, Mailbox::Archive)?;
+        assert!(res.contains("[COPYUID 1 2 1]"));
+
+        // MOVEUID, check
+        let res = r#move(imap_socket, Selection::FirstId, Mailbox::Archive)?;
+        assert!(res.contains("[COPYUID 1 2 2]"));
 
         Ok(())
     })

@@ -14,6 +14,10 @@ fn capability_condstore() -> Capability<'static> {
     Capability::try_from("CONDSTORE").unwrap()
 }
 
+fn capability_uidplus() -> Capability<'static> {
+    Capability::try_from("UIDPLUS").unwrap()
+}
+
 /*
 fn capability_qresync() -> Capability<'static> {
     Capability::try_from("QRESYNC").unwrap()
@@ -33,6 +37,7 @@ impl Default for ServerCapability {
             Capability::Idle,
             capability_unselect(),
             capability_condstore(),
+            capability_uidplus(),
             //capability_qresync(),
         ]))
     }
