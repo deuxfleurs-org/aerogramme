@@ -6,13 +6,14 @@ use crate::common::fragments::*;
 
 fn main() {
     rfc3501_imap4rev1_base();
-    rfc3691_imapext_unselect();
-    rfc5161_imapext_enable();
     rfc6851_imapext_move();
-    rfc7888_imapext_literal();
     rfc4551_imapext_condstore();
     rfc2177_imapext_idle();
-    rfc4315_imapext_uidplus();
+    rfc5161_imapext_enable(); // 1
+    rfc3691_imapext_unselect(); // 2
+    rfc7888_imapext_literal(); // 3
+    rfc4315_imapext_uidplus(); // 4
+    rfc5819_imapext_liststatus(); // 5
     println!("✅ SUCCESS 🌟🚀🥳🙏🥹");
 }
 
@@ -302,6 +303,53 @@ fn rfc4315_imapext_uidplus() {
         // MOVEUID, check
         let res = r#move(imap_socket, Selection::FirstId, Mailbox::Archive)?;
         assert!(res.contains("[COPYUID 1 2 2]"));
+
+        Ok(())
+    })
+    .expect("test fully run");
+}
+
+///
+/// Example
+///
+/// ```text
+/// 30 list "" "*" RETURN (STATUS (MESSAGES UNSEEN))
+/// * LIST (\Subscribed) "." INBOX
+/// * STATUS INBOX (MESSAGES 2 UNSEEN 1)
+/// 30 OK LIST completed
+/// ```
+fn rfc5819_imapext_liststatus() {
+    println!("🧪 rfc5819_imapext_liststatus");
+    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {
+        // Test setup, check capability, add 2 emails, read 1
+        connect(imap_socket).context("server says hello")?;
+        capability(imap_socket, Extension::ListStatus).context("check server capabilities")?;
+        login(imap_socket, Account::Alice).context("login test")?;
+        select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
+        lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
+        lmtp_deliver_email(lmtp_socket, Email::Basic).context("mail delivered successfully")?;
+        lmtp_deliver_email(lmtp_socket, Email::Multipart).context("mail delivered successfully")?;
+        noop_exists(imap_socket, 2).context("noop loop must detect a new email")?;
+        fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Rfc822,
+            FetchMod::None,
+        )
+        .context("read one message")?;
+        close(imap_socket).context("close inbox")?;
+
+        // Test return status MESSAGES UNSEEN
+        let ret = list(
+            imap_socket,
+            MbxSelect::All,
+            ListReturn::StatusMessagesUnseen,
+        )?;
+        assert!(ret.contains("* STATUS INBOX (MESSAGES 2 UNSEEN 1)"));
+
+        // Test that without RETURN, no status is sent
+        let ret = list(imap_socket, MbxSelect::All, ListReturn::None)?;
+        assert!(!ret.contains("* STATUS"));
 
         Ok(())
     })
