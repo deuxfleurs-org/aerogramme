@@ -4,7 +4,7 @@ version = "0.2.0"
 authors = ["Alex Auvolat <alex@adnab.me>", "Quentin Dufour <quentin@dufour.io>"]
 edition = "2021"
 license = "EUPL-1.2"
-description = "Encrypted mail storage over Garage"
+description = "A robust email server"
 
 [dependencies]
 # async runtime

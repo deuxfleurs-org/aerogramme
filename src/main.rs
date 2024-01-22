@@ -33,7 +33,7 @@ struct Args {
     #[clap(long)]
     dev: bool,
 
-    #[clap(short, long, env = "CONFIG_FILE", default_value = "aerogramme.toml")]
+    #[clap(short, long, env = "AEROGRAMME_CONFIG", default_value = "aerogramme.toml")]
     /// Path to the main Aerogramme configuration file
     config_file: PathBuf,
 }
