@@ -43,6 +43,9 @@ zstd = { version = "0.9", default-features = false }
 sodiumoxide = "0.2"
 argon2 = "0.5"
 rand = "0.8.5"
+rustls = "0.22"
+rustls-pemfile = "2.0"
+tokio-rustls = "0.25"
 hyper-rustls = { version = "0.24", features = ["http2"] }
 rpassword = "7.0"
 

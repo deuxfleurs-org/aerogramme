@@ -167,13 +167,14 @@ async fn main() -> Result<()> {
         use std::net::*;
         AnyConfig::Provider(ProviderConfig {
             pid: None,
-            imap: ImapConfig {
+            imap: None,
+            imap_unsecure: Some(ImapUnsecureConfig {
                 bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 1143),
-            },
-            lmtp: LmtpConfig {
+            }),
+            lmtp: Some(LmtpConfig {
                 bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 1025),
                 hostname: "example.tld".to_string(),
-            },
+            }),
             users: UserManagement::Demo,
         })
     } else {
