@@ -9,6 +9,7 @@ use tokio::sync::watch;
 
 use crate::config::*;
 use crate::imap;
+use crate::auth;
 use crate::lmtp::*;
 use crate::login::ArcLoginProvider;
 use crate::login::{demo_provider::*, ldap_provider::*, static_provider::*};
@@ -17,6 +18,7 @@ pub struct Server {
     lmtp_server: Option<Arc<LmtpServer>>,
     imap_unsecure_server: Option<imap::Server>,
     imap_server: Option<imap::Server>,
+    auth_server: Option<auth::AuthServer>,
     pid_file: Option<PathBuf>,
 }
 
@@ -31,6 +33,7 @@ impl Server {
             lmtp_server,
             imap_unsecure_server,
             imap_server: None,
+            auth_server: None,
             pid_file: config.pid,
         })
     }
@@ -51,6 +54,7 @@ impl Server {
             lmtp_server,
             imap_unsecure_server,
             imap_server,
+            auth_server: None,
             pid_file: config.pid,
         })
     }

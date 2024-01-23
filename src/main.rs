@@ -1,5 +1,6 @@
 #![feature(async_fn_in_trait)]
 
+mod auth;
 mod bayou;
 mod config;
 mod cryptoblob;
@@ -174,6 +175,9 @@ async fn main() -> Result<()> {
             lmtp: Some(LmtpConfig {
                 bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 1025),
                 hostname: "example.tld".to_string(),
+            }),
+            auth: Some(AuthConfig {
+                bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 12345),
             }),
             users: UserManagement::Demo,
         })

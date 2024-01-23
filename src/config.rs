@@ -21,6 +21,7 @@ pub struct ProviderConfig {
     pub imap: Option<ImapConfig>,
     pub imap_unsecure: Option<ImapUnsecureConfig>,
     pub lmtp: Option<LmtpConfig>,
+    pub auth: Option<AuthConfig>,
     pub users: UserManagement,
 }
 
@@ -30,6 +31,11 @@ pub enum UserManagement {
     Demo,
     Static(LoginStaticConfig),
     Ldap(LoginLdapConfig),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AuthConfig {
+    pub bind_addr: SocketAddr,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
