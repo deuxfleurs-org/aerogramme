@@ -82,7 +82,7 @@ impl AuthServer {
             };
 
             tracing::info!("AUTH: accepted connection from {}", remote_addr);
-            let conn = tokio::spawn(NetLoop::new(socket).run_error());
+            let conn = tokio::spawn(NetLoop::new(socket, must_exit.clone()).run_error());
 
 
             connections.push(conn);
@@ -98,12 +98,14 @@ impl AuthServer {
 
 struct NetLoop {
     stream: BufStream<TcpStream>,
+    stop:  watch::Receiver<bool>,
 }
 
 impl NetLoop {
-    fn new(stream: TcpStream) -> Self{
+    fn new(stream: TcpStream, stop: watch::Receiver<bool>) -> Self {
         Self {
             stream: BufStream::new(stream),
+            stop,
         }
     }
 
@@ -118,9 +120,21 @@ impl NetLoop {
         let mut buff: Vec<u8> = Vec::new();
         loop {
             buff.clear();
-            self.stream.read_until(b'\n', &mut buff).await?;
-            let (input, cmd) = client_command(&buff).map_err(|_| anyhow!("Unable to parse command"))?;
-            println!("input: {:?}, cmd: {:?}", input, cmd);
+            tokio::select! {
+                read_res = self.stream.read_until(b'\n', &mut buff) => {
+                    let bread = read_res?;
+                    if bread == 0 {
+                        tracing::info!("Reading buffer empty, connection has been closed. Exiting AUTH session.");
+                        return Ok(())
+                    }
+                    let (input, cmd) = client_command(&buff).map_err(|_| anyhow!("Unable to parse command"))?;
+                    println!("input: {:?}, cmd: {:?}", input, cmd);
+                },
+                _ = self.stop.changed() => {
+                    tracing::debug!("Server is stopping, quitting this runner");
+                    return Ok(())
+                }
+            }
         }
     }
 }
