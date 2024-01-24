@@ -4,7 +4,7 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use futures::stream::{FuturesUnordered, StreamExt};
 use tokio::io::BufStream;
-use tokio::io::AsyncBufReadExt;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 
@@ -117,6 +117,7 @@ impl NetLoop {
     }
 
     async fn run(mut self) -> Result<()> {
+        let mut resp_buff = BytesMut::new();
         let mut buff: Vec<u8> = Vec::new();
         loop {
             buff.clear();
@@ -129,6 +130,12 @@ impl NetLoop {
                     }
                     let (input, cmd) = client_command(&buff).map_err(|_| anyhow!("Unable to parse command"))?;
                     println!("input: {:?}, cmd: {:?}", input, cmd);
+                    ServerCommand::Version {
+                        major: 1,
+                        minor: 2,
+                    }.encode(&mut resp_buff)?;
+                    self.stream.write_all(&resp_buff).await?;
+                    self.stream.flush().await?;
                 },
                 _ = self.stop.changed() => {
                     tracing::debug!("Server is stopping, quitting this runner");
@@ -508,3 +515,39 @@ fn server_command(buf: &u8) -> IResult<&u8, ServerCommand> {
 // DOVECOT AUTH ENCODING
 //
 // ------------------------------------------------------------------
+use tokio_util::bytes::{BufMut, BytesMut};
+trait Encode {
+    fn encode(&self, out: &mut BytesMut) -> Result<()>;
+}
+
+fn tab_enc(out: &mut BytesMut) {
+    out.put(&[0x09][..])
+}
+
+fn lf_enc(out: &mut BytesMut) {
+    out.put(&[0x0A][..])
+}
+
+impl Encode for ServerCommand {
+    fn encode(&self, out: &mut BytesMut) -> Result<()> {
+        match self {
+            Self::Version { major, minor } => {
+                out.put(&b"VERSION"[..]);
+                tab_enc(out);
+                out.put(major.to_string().as_bytes());
+                tab_enc(out);
+                out.put(minor.to_string().as_bytes());
+                lf_enc(out);
+            },
+            Self::Spid(v) => unimplemented!(),
+            Self::Cuid(v) => unimplemented!(),
+            Self::Mech { kind, parameters } => unimplemented!(),
+            Self::Cookie(v) => unimplemented!(),
+            Self::Done => unimplemented!(),
+            Self::Fail {id, user_id, code } => unimplemented!(),
+            Self::Cont { id, data } => unimplemented!(),
+            Self::Ok { id, user_id, parameters } => unimplemented!(),
+        }
+        Ok(())
+    }
+}
