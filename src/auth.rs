@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use futures::stream::{FuturesUnordered, StreamExt};
 use tokio::io::BufStream;
 use tokio::io::AsyncBufReadExt;
@@ -60,7 +60,7 @@ impl AuthServer {
     }
 
 
-    pub async fn run(self: &Arc<Self>, mut must_exit: watch::Receiver<bool>) -> Result<()> {
+    pub async fn run(self: Self, mut must_exit: watch::Receiver<bool>) -> Result<()> {
         let tcp = TcpListener::bind(self.bind_addr).await?;
         tracing::info!("SASL Authentication Protocol listening on {:#}", self.bind_addr);
 
@@ -82,7 +82,7 @@ impl AuthServer {
             };
 
             tracing::info!("AUTH: accepted connection from {}", remote_addr);
-            let conn = tokio::spawn(NetLoop::new(socket).run());
+            let conn = tokio::spawn(NetLoop::new(socket).run_error());
 
 
             connections.push(conn);
@@ -107,24 +107,39 @@ impl NetLoop {
         }
     }
 
-    async fn run(self) -> Result<()> {
-        let mut lines = self.stream.lines();
-        while let Some(line) = lines.next_line().await? {
+    async fn run_error(self) {
+        match self.run().await {
+            Ok(()) => tracing::info!("Auth session succeeded"),
+            Err(e) => tracing::error!(err=?e, "Auth session failed"),
         }
+    }
 
-        Ok(())
+    async fn run(mut self) -> Result<()> {
+        let mut buff: Vec<u8> = Vec::new();
+        loop {
+            buff.clear();
+            self.stream.read_until(b'\n', &mut buff).await?;
+            let (input, cmd) = client_command(&buff).map_err(|_| anyhow!("Unable to parse command"))?;
+            println!("input: {:?}, cmd: {:?}", input, cmd);
+        }
     }
 }
 
-#[derive(Debug)]
+// -----------------------------------------------------------------
+//
+// DOVECOT AUTH TYPES
+//
+// ------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
 enum Mechanism {
     Plain,
     Login,
 }
 
 
-#[derive(Debug)]
-enum AuthOptions {
+#[derive(Clone, Debug)]
+enum AuthOption {
     /// Unique session ID. Mainly used for logging.
     Session(u64),
     /// Local IP connected to by the client. In standard string format, e.g. 127.0.0.1 or ::1.
@@ -176,7 +191,7 @@ enum AuthOptions {
 }
 
 #[derive(Debug)]
-enum ClientCommands {
+enum ClientCommand {
     /// Both client and server should check that they support the same major version number. If they don’t, the other side isn’t expected to be talking the same protocol and should be disconnected. Minor version can be ignored. This document specifies the version number 1.2.
     Version {
         major: u64,
@@ -189,11 +204,11 @@ enum ClientCommands {
         id: u64,
         /// A SASL mechanism (eg. LOGIN, PLAIN, etc.)
         /// See: https://doc.dovecot.org/configuration_manual/authentication/authentication_mechanisms/#authentication-authentication-mechanisms
-        mechanism: Mechanism,
+        mech: Mechanism,
         /// Service is the service requesting authentication, eg. pop3, imap, smtp.
         service: String,
         /// All the optional parameters
-        options: Vec<AuthOptions>,
+        options: Vec<AuthOption>,
 
     },
     Cont {
@@ -235,7 +250,7 @@ enum FailCode {
 }
 
 #[derive(Debug)]
-enum ServerCommands {
+enum ServerCommand {
     /// Both client and server should check that they support the same major version number. If they don’t, the other side isn’t expected to be talking the same protocol and should be disconnected. Minor version can be ignored. This document specifies the version number 1.2.
     Version {
         major: u64,
@@ -273,3 +288,149 @@ enum ServerCommands {
         parameters: Vec<u8>,
     },
 }
+
+// -----------------------------------------------------------------
+//
+// DOVECOT AUTH DECODING
+//
+// ------------------------------------------------------------------
+
+use nom::{
+  IResult,
+  branch::alt,
+  error::{ErrorKind, Error},
+  character::complete::{tab,  u64},
+  bytes::complete::{tag, tag_no_case, take, take_while, take_while1},
+  multi::{many1, separated_list0},
+  combinator::{map, opt, recognize, value,},
+  sequence::{pair, preceded, tuple},
+};
+use base64::Engine;
+
+fn version_command<'a>(input: &'a [u8]) -> IResult<&'a [u8], ClientCommand> {
+    let mut parser = tuple((
+        tag_no_case(b"VERSION"),
+        tab,
+        u64,
+        tab,
+        u64
+    ));
+
+    let (input, (_, _, major, _, minor)) = parser(input)?;
+    Ok((input, ClientCommand::Version { major, minor }))
+}
+
+fn cpid_command<'a>(input: &'a [u8]) -> IResult<&'a [u8], ClientCommand> {
+    preceded(
+        pair(tag_no_case(b"CPID"), tab),
+        map(u64, |v| ClientCommand::Cpid(v))
+    )(input)
+}
+
+fn mechanism<'a>(input: &'a [u8]) -> IResult<&'a [u8], Mechanism> {
+    alt((
+        value(Mechanism::Plain, tag_no_case(b"PLAIN")),
+        value(Mechanism::Login, tag_no_case(b"LOGIN")),
+    ))(input)
+}
+
+fn is_not_tab_or_esc_or_lf(c: u8) -> bool {
+    c != 0x09 && c != 0x01 && c != 0x0a // TAB or 0x01 or LF
+}
+
+fn is_esc<'a>(input: &'a [u8]) -> IResult<&'a [u8], &[u8]> {
+    preceded(tag(&[0x01]), take(1usize))(input)
+}
+
+fn parameter<'a>(input: &'a [u8]) -> IResult<&'a [u8], &[u8]> {
+    recognize(many1(alt((
+        take_while1(is_not_tab_or_esc_or_lf),
+        is_esc
+    ))))(input)
+}
+
+fn service<'a>(input: &'a [u8]) -> IResult<&'a [u8], String> {
+    let (input, buf) = preceded(
+        tag_no_case("service="),
+        parameter
+    )(input)?;
+
+    std::str::from_utf8(buf)
+        .map(|v| (input, v.to_string()))
+        .map_err(|_| nom::Err::Failure(Error::new(input, ErrorKind::TakeWhile1)))
+}
+
+fn auth_option<'a>(input: &'a [u8]) -> IResult<&'a [u8], AuthOption> {
+    alt((
+        value(AuthOption::Debug, tag_no_case(b"debug")),
+        value(AuthOption::NoPenalty, tag_no_case(b"no-penalty")),
+        value(AuthOption::CertUsername, tag_no_case(b"cert_username")),
+    ))(input)
+}
+
+fn auth_command<'a>(input: &'a [u8]) -> IResult<&'a [u8], ClientCommand> {
+    let mut parser = tuple((
+        tag_no_case(b"AUTH"),
+        tab,
+        u64,
+        tab,
+        mechanism,
+        tab,
+        service,
+        map(
+            opt(preceded(tab, separated_list0(tab, auth_option))),
+            |o| o.unwrap_or(vec![])
+        ), 
+    ));
+    let (input, (_, _, id, _, mech, _, service, options)) = parser(input)?;
+    Ok((input, ClientCommand::Auth { id, mech, service, options }))
+}
+
+fn is_base64_core(c: u8) -> bool {
+    c >= 0x30 && c <= 0x39 // 0-9 
+        || c >= 0x41 && c <= 0x5a // A-Z
+        || c >= 0x61 && c <= 0x7a // a-z
+        || c == 0x2b // +
+        || c == 0x2f // /
+}
+
+fn is_base64_pad(c: u8) -> bool {
+    c == 0x3d
+}
+
+/// @FIXME Dovecot does not say if base64 content must be padded or not
+fn cont_command<'a>(input: &'a [u8]) ->  IResult<&'a [u8], ClientCommand> {
+    let mut parser = tuple((
+        tag_no_case(b"CONT"),
+        tab,
+        u64,
+        tab,
+        take_while1(is_base64_core),
+        take_while(is_base64_pad),
+    ));
+
+    let (input, (_, _, id, _, b64, _)) = parser(input)?;
+    let data = base64::engine::general_purpose::STANDARD_NO_PAD.decode(b64).map_err(|_| nom::Err::Failure(Error::new(input, ErrorKind::TakeWhile1)))?;
+    Ok((input, ClientCommand::Cont { id, data }))
+}
+
+fn client_command<'a>(input: &'a [u8]) -> IResult<&'a [u8], ClientCommand> {
+    alt((
+        version_command,
+        cpid_command,
+        auth_command,
+        cont_command,
+    ))(input)
+}
+
+/*
+fn server_command(buf: &u8) -> IResult<&u8, ServerCommand> {
+    unimplemented!();
+}
+*/
+
+// -----------------------------------------------------------------
+//
+// DOVECOT AUTH ENCODING
+//
+// ------------------------------------------------------------------

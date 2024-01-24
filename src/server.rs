@@ -49,12 +49,13 @@ impl Server {
         let lmtp_server = config.lmtp.map(|lmtp| LmtpServer::new(lmtp, login.clone()));
         let imap_unsecure_server = config.imap_unsecure.map(|imap| imap::new_unsecure(imap, login.clone()));
         let imap_server = config.imap.map(|imap| imap::new(imap, login.clone())).transpose()?;
+        let auth_server = config.auth.map(|auth| auth::AuthServer::new(auth, login.clone()));
 
         Ok(Self {
             lmtp_server,
             imap_unsecure_server,
             imap_server,
-            auth_server: None,
+            auth_server,
             pid_file: config.pid,
         })
     }
@@ -97,6 +98,12 @@ impl Server {
                 match self.imap_server {
                     None => Ok(()),
                     Some(s) => s.run(exit_signal.clone()).await,
+                }
+            },
+            async {
+                match self.auth_server {
+                    None => Ok(()),
+                    Some(a) => a.run(exit_signal.clone()).await,
                 }
             }
         )?;
