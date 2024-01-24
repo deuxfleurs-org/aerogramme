@@ -144,7 +144,7 @@ impl NetLoop {
 
                     // Parse command
                     let (_, cmd) = client_command(&self.read_buf).map_err(|_| anyhow!("Unable to parse command"))?;
-                    tracing::debug!(cmd=?cmd, "Received command");
+                    tracing::trace!(cmd=?cmd, "Received command");
 
                     // Make some progress in our local state
                     self.state.progress(cmd, &self.login).await;
@@ -154,7 +154,10 @@ impl NetLoop {
 
                     // Build response
                     let srv_cmds = self.state.response();
-                    srv_cmds.iter().try_for_each(|r| r.encode(&mut self.write_buf))?;
+                    srv_cmds.iter().try_for_each(|r| {
+                        tracing::trace!(cmd=?r, "Sent command");
+                        r.encode(&mut self.write_buf)
+                    })?;
 
                     // Send responses if at least one command response has been generated
                     if !srv_cmds.is_empty() {
@@ -282,17 +285,19 @@ impl State {
         match self {
             Self::HandshakeDone { .. } => {
                 srv_cmd.push(ServerCommand::Version(Version { major: SERVER_MAJOR, minor: SERVER_MINOR }));
-                srv_cmd.push(ServerCommand::Spid(1u64));
-                srv_cmd.push(ServerCommand::Cuid(1u64));
-
-                let mut cookie = [0u8; 16];
-                thread_rng().fill(&mut cookie);
-                srv_cmd.push(ServerCommand::Cookie(cookie));
 
                 srv_cmd.push(ServerCommand::Mech {
                     kind: Mechanism::Plain,
                     parameters: vec![MechanismParameters::PlainText],
                 });
+
+                srv_cmd.push(ServerCommand::Spid(15u64));
+                srv_cmd.push(ServerCommand::Cuid(19350u64));
+
+                let mut cookie = [0u8; 16];
+                thread_rng().fill(&mut cookie);
+                srv_cmd.push(ServerCommand::Cookie(cookie));
+
                 srv_cmd.push(ServerCommand::Done);
             },
             Self::AuthPlainProgress { id } => {
@@ -366,6 +371,8 @@ enum AuthOption {
     ValidClientCert(String),
     /// Ignore auth penalty tracking for this request
     NoPenalty,
+    /// Unknown option sent by Postfix
+    NoLogin,
     /// Username taken from client’s SSL certificate.
     CertUsername,
     /// IMAP ID string
@@ -574,6 +581,7 @@ fn auth_option<'a>(input: &'a [u8]) -> IResult<&'a [u8], AuthOption> {
             value(Debug, tag_no_case(b"debug")),
             value(NoPenalty, tag_no_case(b"no-penalty")),
             value(ClientId, tag_no_case(b"client_id")),
+            value(NoLogin, tag_no_case(b"nologin")),
             map(preceded(tag_no_case(b"session="), u64), |id| Session(id)),
             map(preceded(tag_no_case(b"lip="), parameter_str), |ip| LocalIp(ip)),
             map(preceded(tag_no_case(b"rip="), parameter_str), |ip| RemoteIp(ip)),
@@ -799,8 +807,8 @@ impl Encode for ServerCommand {
                 out.put(&b"CONT"[..]);
                 tab_enc(out);
                 out.put(id.to_string().as_bytes());
+                tab_enc(out);
                 if let Some(rdata) = data {
-                    tab_enc(out);
                     let b64 = base64::engine::general_purpose::STANDARD.encode(rdata);
                     out.put(b64.as_bytes());
                 }
