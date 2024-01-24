@@ -19,10 +19,18 @@ A resilient & standards-compliant open-source IMAP server with built-in encrypti
 ## Roadmap
 
   - ✅ 0.1 Better emails parsing (july '23, see [eml-codec](https://git.deuxfleurs.fr/Deuxfleurs/eml-codec)).
-  - ⌛0.2 Support of IMAP4rev1. (~september '23).
-  - ⌛0.3 Subset of IMAP4rev2. (~december '23).
-  - ⌛0.4 CalDAV support. (~february '24).
-  - ⌛0.5 CardDAV support.
+  - ✅ 0.2 Support of IMAP4. (~january '24).
+  - ⌛0.3 CalDAV support. (~february '24).
+  - ⌛0.4 CardDAV support.
+  - ⌛0.5 Public beta.
+
+## A note about cargo2nix
+
+Currently, you must edit Cargo.nix by hand after running `cargo2nix`.
+Find the `tokio` dependency declaration. 
+Look at tokio's dependencies, the `tracing` is disable through a `if false` logic.
+Activate it by replacing the condition with `if true`.
+
 
 ## Sponsors and funding
 

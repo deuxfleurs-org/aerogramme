@@ -148,6 +148,16 @@ enum AccountManagement {
     },
 }
 
+#[cfg(tokio_unstable)]
+fn tracer() {
+    console_subscriber::init();
+}
+
+#[cfg(not(tokio_unstable))]
+fn tracer() {
+    tracing_subscriber::fmt::init();
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     if std::env::var("RUST_LOG").is_err() {
@@ -161,7 +171,7 @@ async fn main() -> Result<()> {
         std::process::abort();
     }));
 
-    tracing_subscriber::fmt::init();
+    tracer();
 
     let args = Args::parse();
     let any_config = if args.dev {
