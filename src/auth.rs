@@ -177,7 +177,7 @@ enum AuthOption {
     /// Note: we do not unescape the tabulation, and thus we don't parse the data
     ForwardViews(Vec<u8>),
     /// Remote user has secured transport to auth client (e.g. localhost, SSL, TLS).
-    Secured(String),
+    Secured(Option<String>),
     /// The value can be “insecure”, “trusted” or “TLS”.
     Transport(String),
     /// TLS cipher being used.
@@ -197,6 +197,9 @@ enum AuthOption {
     CertUsername,
     /// IMAP ID string
     ClientId,
+    /// An unknown key
+    UnknownPair(String, Vec<u8>),
+    UnknownBool(Vec<u8>),
     /// Initial response for authentication mechanism. 
     /// NOTE: This must be the last parameter. Everything after it is ignored. 
     /// This is to avoid accidental security holes if user-given data is directly put to base64 string without filtering out tabs.
@@ -313,7 +316,7 @@ use nom::{
   IResult,
   branch::alt,
   error::{ErrorKind, Error},
-  character::complete::{tab,  u64},
+  character::complete::{tab, u64, u16},
   bytes::complete::{tag, tag_no_case, take, take_while, take_while1},
   multi::{many1, separated_list0},
   combinator::{map, opt, recognize, value,},
@@ -363,22 +366,68 @@ fn parameter<'a>(input: &'a [u8]) -> IResult<&'a [u8], &[u8]> {
     ))))(input)
 }
 
-fn service<'a>(input: &'a [u8]) -> IResult<&'a [u8], String> {
-    let (input, buf) = preceded(
-        tag_no_case("service="),
-        parameter
-    )(input)?;
+fn parameter_str(input: &[u8]) -> IResult<&[u8], String> {
+    let (input, buf) = parameter(input)?;
 
     std::str::from_utf8(buf)
         .map(|v| (input, v.to_string()))
         .map_err(|_| nom::Err::Failure(Error::new(input, ErrorKind::TakeWhile1)))
 }
 
+fn is_param_name_char(c: u8) -> bool {
+    is_not_tab_or_esc_or_lf(c) && c != 0x3d // =
+}
+
+fn parameter_name(input: &[u8]) -> IResult<&[u8], String> {
+    let (input, buf) = take_while1(is_param_name_char)(input)?;
+
+    std::str::from_utf8(buf)
+        .map(|v| (input, v.to_string()))
+        .map_err(|_| nom::Err::Failure(Error::new(input, ErrorKind::TakeWhile1)))
+}
+
+fn service<'a>(input: &'a [u8]) -> IResult<&'a [u8], String> {
+    preceded(
+        tag_no_case("service="),
+        parameter_str
+    )(input)
+}
+
 fn auth_option<'a>(input: &'a [u8]) -> IResult<&'a [u8], AuthOption> {
+    use AuthOption::*;
     alt((
-        value(AuthOption::Debug, tag_no_case(b"debug")),
-        value(AuthOption::NoPenalty, tag_no_case(b"no-penalty")),
-        value(AuthOption::CertUsername, tag_no_case(b"cert_username")),
+        alt((
+            value(Debug, tag_no_case(b"debug")),
+            value(NoPenalty, tag_no_case(b"no-penalty")),
+            value(ClientId, tag_no_case(b"client_id")),
+            map(preceded(tag_no_case(b"session="), u64), |id| Session(id)),
+            map(preceded(tag_no_case(b"lip="), parameter_str), |ip| LocalIp(ip)),
+            map(preceded(tag_no_case(b"rip="), parameter_str), |ip| RemoteIp(ip)),
+            map(preceded(tag_no_case(b"lport="), u16), |port| LocalPort(port)),
+            map(preceded(tag_no_case(b"rport="), u16), |port| RemotePort(port)),
+            map(preceded(tag_no_case(b"real_rip="), parameter_str), |ip| RealRemoteIp(ip)),
+            map(preceded(tag_no_case(b"real_lip="), parameter_str), |ip| RealLocalIp(ip)),
+            map(preceded(tag_no_case(b"real_lport="), u16), |port| RealLocalPort(port)),
+            map(preceded(tag_no_case(b"real_rport="), u16), |port| RealRemotePort(port)),
+        )),
+        alt((
+            map(preceded(tag_no_case(b"local_name="), parameter_str), |name| LocalName(name)),
+            map(preceded(tag_no_case(b"forward_views="), parameter), |views| ForwardViews(views.into())),
+            map(preceded(tag_no_case(b"secured="), parameter_str), |info| Secured(Some(info))),
+            value(Secured(None), tag_no_case(b"secured")),
+            value(CertUsername, tag_no_case(b"cert_username")),
+            map(preceded(tag_no_case(b"transport="), parameter_str), |ts| Transport(ts)),
+            map(preceded(tag_no_case(b"tls_cipher="), parameter_str), |cipher| TlsCipher(cipher)),
+            map(preceded(tag_no_case(b"tls_cipher_bits="), parameter_str), |bits| TlsCipherBits(bits)),
+            map(preceded(tag_no_case(b"tls_pfs="), parameter_str), |pfs| TlsPfs(pfs)),
+            map(preceded(tag_no_case(b"tls_protocol="), parameter_str), |proto| TlsProtocol(proto)),
+            map(preceded(tag_no_case(b"valid-client-cert="), parameter_str), |cert| ValidClientCert(cert)),
+        )),
+        alt((
+            map(preceded(tag_no_case(b"resp="), base64), |data| Resp(data)),
+            map(tuple((parameter_name, tag(b"="), parameter)), |(n, _, v)| UnknownPair(n, v.into())),
+            map(parameter, |v| UnknownBool(v.into())),
+        )),
     ))(input)
 }
 
@@ -409,7 +458,20 @@ fn is_base64_core(c: u8) -> bool {
 }
 
 fn is_base64_pad(c: u8) -> bool {
-    c == 0x3d
+    c == 0x3d // =
+}
+
+fn base64(input: &[u8]) -> IResult<&[u8], Vec<u8>> {
+    let (input, (b64, _)) = tuple((
+        take_while1(is_base64_core),
+        take_while(is_base64_pad),
+    ))(input)?;
+
+    let data = base64::engine::general_purpose::STANDARD_NO_PAD
+        .decode(b64)
+        .map_err(|_| nom::Err::Failure(Error::new(input, ErrorKind::TakeWhile1)))?;
+
+    Ok((input, data))
 }
 
 /// @FIXME Dovecot does not say if base64 content must be padded or not
@@ -419,12 +481,10 @@ fn cont_command<'a>(input: &'a [u8]) ->  IResult<&'a [u8], ClientCommand> {
         tab,
         u64,
         tab,
-        take_while1(is_base64_core),
-        take_while(is_base64_pad),
+        base64
     ));
 
-    let (input, (_, _, id, _, b64, _)) = parser(input)?;
-    let data = base64::engine::general_purpose::STANDARD_NO_PAD.decode(b64).map_err(|_| nom::Err::Failure(Error::new(input, ErrorKind::TakeWhile1)))?;
+    let (input, (_, _, id, _, data)) = parser(input)?;
     Ok((input, ClientCommand::Cont { id, data }))
 }
 
