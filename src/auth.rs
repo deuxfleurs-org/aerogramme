@@ -683,9 +683,16 @@ fn server_command(buf: &u8) -> IResult<&u8, ServerCommand> {
 //
 // -----------------------------------------------------------------
 
+fn not_null(c: u8) -> bool {
+    c != 0x0
+}
+
 // impersonated user, login, password
 fn auth_plain<'a>(input: &'a [u8]) -> IResult<&'a [u8], (&'a [u8], &'a [u8], &'a [u8])> {
-    tuple((is_not([0x0]), is_not([0x0]), rest))(input)
+    map(
+        tuple((take_while(not_null), take(1usize), take_while(not_null), take(1usize), rest)),
+        |(imp, _, user, _, pass)| (imp, user, pass),
+    )(input)
 }
 
 // -----------------------------------------------------------------
