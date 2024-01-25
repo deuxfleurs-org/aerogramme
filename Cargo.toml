@@ -60,7 +60,7 @@ aws-config = { version = "1.1.1", features = ["behavior-version-latest"] }
 aws-sdk-s3 = "1.9.0"
 
 # email protocols
-eml-codec = { git = "https://git.deuxfleurs.fr/Deuxfleurs/eml-codec.git", branch = "main" }
+eml-codec = "0.1.2"
 smtp-message = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 imap-codec = { version = "2.0.0", features = ["bounded-static", "ext_condstore_qresync"] }

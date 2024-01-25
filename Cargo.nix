@@ -23,7 +23,7 @@ args@{
   ignoreLockHash,
 }:
 let
-  nixifiedLockHash = "ea339b5c54a377a1e652d47aad8b162dcd36f49df6199862261787379e362fdf";
+  nixifiedLockHash = "20c06a1b3b8a8118e1170c8c1dc5b494a644d85b8a068cc2c7ffccad03f58d28";
   workspaceSrc = if args.workspaceSrc == null then ./. else args.workspaceSrc;
   currentLockHash = builtins.hashFile "sha256" (workspaceSrc + /Cargo.lock);
   lockHashIgnored = if ignoreLockHash
@@ -91,7 +91,7 @@ in
       clap = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".clap."3.2.25" { inherit profileName; }).out;
       console_subscriber = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".console-subscriber."0.2.0" { inherit profileName; }).out;
       duplexify = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".duplexify."1.2.2" { inherit profileName; }).out;
-      eml_codec = (rustPackages."git+https://git.deuxfleurs.fr/Deuxfleurs/eml-codec.git".eml-codec."0.1.2" { inherit profileName; }).out;
+      eml_codec = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".eml-codec."0.1.2" { inherit profileName; }).out;
       futures = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".futures."0.3.30" { inherit profileName; }).out;
       hex = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".hex."0.4.3" { inherit profileName; }).out;
       hyper_rustls = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".hyper-rustls."0.24.2" { inherit profileName; }).out;
@@ -1938,16 +1938,11 @@ in
     };
   });
   
-  "git+https://git.deuxfleurs.fr/Deuxfleurs/eml-codec.git".eml-codec."0.1.2" = overridableMkRustCrate (profileName: rec {
+  "registry+https://github.com/rust-lang/crates.io-index".eml-codec."0.1.2" = overridableMkRustCrate (profileName: rec {
     name = "eml-codec";
     version = "0.1.2";
-    registry = "git+https://git.deuxfleurs.fr/Deuxfleurs/eml-codec.git";
-    src = fetchCrateGit {
-      url = https://git.deuxfleurs.fr/Deuxfleurs/eml-codec.git;
-      name = "eml-codec";
-      version = "0.1.2";
-      rev = "a7bd3c475a58e42b86c163ec075ce01ddae7e60a";
-      ref = "main";};
+    registry = "registry+https://github.com/rust-lang/crates.io-index";
+    src = fetchCratesIo { inherit name version; sha256 = "d4499124d87abce26a57ef96ece800fa8babc38fbedd81c607c340ae83d46d2e"; };
     dependencies = {
       base64 = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".base64."0.21.7" { inherit profileName; }).out;
       chrono = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".chrono."0.4.31" { inherit profileName; }).out;

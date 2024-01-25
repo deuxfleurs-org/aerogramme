@@ -132,7 +132,8 @@
       dontUnpack = true;
       dontBuild = true;
       installPhase = ''
-        cp ${(rustRelease.workspace.aerogramme {}).bin}/bin/aerogramme $out
+      	mkdir -p $out/bin
+        cp ${(rustRelease.workspace.aerogramme {}).bin}/bin/aerogramme $out/bin/
       '';
     };
 
@@ -151,8 +152,10 @@
     container = pkgs.dockerTools.buildImage {
       name = "dxflrs/aerogramme";
       architecture = (builtins.getAttr targetHost archMap).GOARCH;
+      copyToRoot = bin;
       config = {
-       Cmd = [ "${bin}" "server" ];
+      	Env = [ "PATH=/bin" ];
+        Cmd = [ "aerogramme" "--dev" "provider" "daemon" ];
       };
     };
 
