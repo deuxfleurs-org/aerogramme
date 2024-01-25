@@ -1,5 +1,6 @@
 #![feature(async_fn_in_trait)]
 
+mod auth;
 mod bayou;
 mod config;
 mod cryptoblob;
@@ -33,7 +34,7 @@ struct Args {
     #[clap(long)]
     dev: bool,
 
-    #[clap(short, long, env = "CONFIG_FILE", default_value = "aerogramme.toml")]
+    #[clap(short, long, env = "AEROGRAMME_CONFIG", default_value = "aerogramme.toml")]
     /// Path to the main Aerogramme configuration file
     config_file: PathBuf,
 }
@@ -147,6 +148,16 @@ enum AccountManagement {
     },
 }
 
+#[cfg(tokio_unstable)]
+fn tracer() {
+    console_subscriber::init();
+}
+
+#[cfg(not(tokio_unstable))]
+fn tracer() {
+    tracing_subscriber::fmt::init();
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     if std::env::var("RUST_LOG").is_err() {
@@ -160,20 +171,24 @@ async fn main() -> Result<()> {
         std::process::abort();
     }));
 
-    tracing_subscriber::fmt::init();
+    tracer();
 
     let args = Args::parse();
     let any_config = if args.dev {
         use std::net::*;
         AnyConfig::Provider(ProviderConfig {
             pid: None,
-            imap: ImapConfig {
+            imap: None,
+            imap_unsecure: Some(ImapUnsecureConfig {
                 bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 1143),
-            },
-            lmtp: LmtpConfig {
+            }),
+            lmtp: Some(LmtpConfig {
                 bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 1025),
                 hostname: "example.tld".to_string(),
-            },
+            }),
+            auth: Some(AuthConfig {
+                bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 12345),
+            }),
             users: UserManagement::Demo,
         })
     } else {

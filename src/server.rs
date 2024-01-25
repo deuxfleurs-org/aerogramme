@@ -9,13 +9,16 @@ use tokio::sync::watch;
 
 use crate::config::*;
 use crate::imap;
+use crate::auth;
 use crate::lmtp::*;
 use crate::login::ArcLoginProvider;
 use crate::login::{demo_provider::*, ldap_provider::*, static_provider::*};
 
 pub struct Server {
     lmtp_server: Option<Arc<LmtpServer>>,
+    imap_unsecure_server: Option<imap::Server>,
     imap_server: Option<imap::Server>,
+    auth_server: Option<auth::AuthServer>,
     pid_file: Option<PathBuf>,
 }
 
@@ -25,10 +28,12 @@ impl Server {
         let login = Arc::new(StaticLoginProvider::new(config.users).await?);
 
         let lmtp_server = None;
-        let imap_server = Some(imap::new(config.imap, login.clone()));
+        let imap_unsecure_server = Some(imap::new_unsecure(config.imap, login.clone()));
         Ok(Self {
             lmtp_server,
-            imap_server,
+            imap_unsecure_server,
+            imap_server: None,
+            auth_server: None,
             pid_file: config.pid,
         })
     }
@@ -41,12 +46,16 @@ impl Server {
             UserManagement::Ldap(x) => Arc::new(LdapLoginProvider::new(x)?),
         };
 
-        let lmtp_server = Some(LmtpServer::new(config.lmtp, login.clone()));
-        let imap_server = Some(imap::new(config.imap, login.clone()));
+        let lmtp_server = config.lmtp.map(|lmtp| LmtpServer::new(lmtp, login.clone()));
+        let imap_unsecure_server = config.imap_unsecure.map(|imap| imap::new_unsecure(imap, login.clone()));
+        let imap_server = config.imap.map(|imap| imap::new(imap, login.clone())).transpose()?;
+        let auth_server = config.auth.map(|auth| auth::AuthServer::new(auth, login.clone()));
 
         Ok(Self {
             lmtp_server,
+            imap_unsecure_server,
             imap_server,
+            auth_server,
             pid_file: config.pid,
         })
     }
@@ -80,9 +89,21 @@ impl Server {
                 }
             },
             async {
+                match self.imap_unsecure_server {
+                    None => Ok(()),
+                    Some(s) => s.run(exit_signal.clone()).await,
+                }
+            },
+            async {
                 match self.imap_server {
                     None => Ok(()),
                     Some(s) => s.run(exit_signal.clone()).await,
+                }
+            },
+            async {
+                match self.auth_server {
+                    None => Ok(()),
+                    Some(a) => a.run(exit_signal.clone()).await,
                 }
             }
         )?;

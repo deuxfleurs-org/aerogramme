@@ -4,7 +4,7 @@ version = "0.2.0"
 authors = ["Alex Auvolat <alex@adnab.me>", "Quentin Dufour <quentin@dufour.io>"]
 edition = "2021"
 license = "EUPL-1.2"
-description = "Encrypted mail storage over Garage"
+description = "A robust email server"
 
 [dependencies]
 # async runtime
@@ -15,6 +15,7 @@ futures = "0.3"
 # debug
 log = "0.4"
 backtrace = "0.3"
+console-subscriber = "0.2"
 tracing-subscriber = "0.3"
 tracing = "0.1"
 
@@ -31,18 +32,22 @@ chrono = { version = "0.4", default-features = false, features = ["alloc"] }
 nix = { version = "0.27", features = ["signal"] }
 clap = { version = "3.1.18", features = ["derive", "env"] }
 
-# serialization
+# serialization & parsing
 serde = "1.0.137"
 rmp-serde = "0.15"
 toml = "0.5"
 base64 = "0.21"
 hex = "0.4"
+nom = "7.1"
 zstd = { version = "0.9", default-features = false }
 
 # cryptography & security
 sodiumoxide = "0.2"
 argon2 = "0.5"
 rand = "0.8.5"
+rustls = "0.22"
+rustls-pemfile = "2.0"
+tokio-rustls = "0.25"
 hyper-rustls = { version = "0.24", features = ["http2"] }
 rpassword = "7.0"
 

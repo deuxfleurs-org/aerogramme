@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CompanionConfig {
     pub pid: Option<PathBuf>,
-    pub imap: ImapConfig,
+    pub imap: ImapUnsecureConfig,
 
     #[serde(flatten)]
     pub users: LoginStaticConfig,
@@ -18,8 +18,10 @@ pub struct CompanionConfig {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ProviderConfig {
     pub pid: Option<PathBuf>,
-    pub imap: ImapConfig,
-    pub lmtp: LmtpConfig,
+    pub imap: Option<ImapConfig>,
+    pub imap_unsecure: Option<ImapUnsecureConfig>,
+    pub lmtp: Option<LmtpConfig>,
+    pub auth: Option<AuthConfig>,
     pub users: UserManagement,
 }
 
@@ -32,6 +34,11 @@ pub enum UserManagement {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AuthConfig {
+    pub bind_addr: SocketAddr,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LmtpConfig {
     pub bind_addr: SocketAddr,
     pub hostname: String,
@@ -39,6 +46,13 @@ pub struct LmtpConfig {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ImapConfig {
+    pub bind_addr: SocketAddr,
+    pub certs: PathBuf,
+    pub key: PathBuf,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ImapUnsecureConfig {
     pub bind_addr: SocketAddr,
 }
 

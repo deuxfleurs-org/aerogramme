@@ -26,8 +26,10 @@ use imap_codec::imap_types::response::{Code, CommandContinuationRequest, Respons
 use imap_codec::imap_types::{core::Text, response::Greeting};
 use imap_flow::server::{ServerFlow, ServerFlowEvent, ServerFlowOptions};
 use imap_flow::stream::AnyStream;
+use tokio_rustls::TlsAcceptor;
+use rustls_pemfile::{certs, private_key};
 
-use crate::config::ImapConfig;
+use crate::config::{ImapConfig, ImapUnsecureConfig};
 use crate::imap::capability::ServerCapability;
 use crate::imap::request::Request;
 use crate::imap::response::{Body, ResponseOrIdle};
@@ -39,6 +41,7 @@ pub struct Server {
     bind_addr: SocketAddr,
     login_provider: ArcLoginProvider,
     capabilities: ServerCapability,
+    tls: Option<TlsAcceptor>,
 }
 
 #[derive(Clone)]
@@ -49,11 +52,29 @@ struct ClientContext {
     server_capabilities: ServerCapability,
 }
 
-pub fn new(config: ImapConfig, login: ArcLoginProvider) -> Server {
+pub fn new(config: ImapConfig, login: ArcLoginProvider) -> Result<Server> {
+    let loaded_certs = certs(&mut std::io::BufReader::new(std::fs::File::open(config.certs)?)).collect::<Result<Vec<_>, _>>()?;
+    let loaded_key = private_key(&mut std::io::BufReader::new(std::fs::File::open(config.key)?))?.unwrap();
+
+    let tls_config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(loaded_certs, loaded_key)?;
+    let acceptor = TlsAcceptor::from(Arc::new(tls_config));
+
+    Ok(Server {
+        bind_addr: config.bind_addr,
+        login_provider: login,
+        capabilities: ServerCapability::default(),
+        tls: Some(acceptor),
+    })
+}
+
+pub fn new_unsecure(config: ImapUnsecureConfig, login: ArcLoginProvider) -> Server {
     Server {
         bind_addr: config.bind_addr,
         login_provider: login,
         capabilities: ServerCapability::default(),
+        tls: None,
     }
 }
 
@@ -78,6 +99,19 @@ impl Server {
                 _ = must_exit.changed() => continue,
             };
             tracing::info!("IMAP: accepted connection from {}", remote_addr);
+            let stream = match self.tls.clone() {
+                Some(acceptor) => {
+                    let stream = match acceptor.accept(socket).await {
+                        Ok(v) => v,
+                        Err(e) => {
+                            tracing::error!(err=?e, "TLS negociation failed");
+                            continue;
+                        }
+                    };
+                    AnyStream::new(stream)
+                },
+                None => AnyStream::new(socket),
+            };
 
             let client = ClientContext {
                 addr: remote_addr.clone(),
@@ -85,7 +119,7 @@ impl Server {
                 must_exit: must_exit.clone(),
                 server_capabilities: self.capabilities.clone(),
             };
-            let conn = tokio::spawn(NetLoop::handler(client, AnyStream::new(socket)));
+            let conn = tokio::spawn(NetLoop::handler(client, stream));
             connections.push(conn);
         }
         drop(tcp);
