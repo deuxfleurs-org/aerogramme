@@ -23,7 +23,7 @@ args@{
   ignoreLockHash,
 }:
 let
-  nixifiedLockHash = "20c06a1b3b8a8118e1170c8c1dc5b494a644d85b8a068cc2c7ffccad03f58d28";
+  nixifiedLockHash = "b6917a6912cb688a03fcd22a08a839511149aa674783919303a56f5577742bfd";
   workspaceSrc = if args.workspaceSrc == null then ./. else args.workspaceSrc;
   currentLockHash = builtins.hashFile "sha256" (workspaceSrc + /Cargo.lock);
   lockHashIgnored = if ignoreLockHash
@@ -2898,7 +2898,7 @@ in
       url = https://git.deuxfleurs.fr/Deuxfleurs/garage.git;
       name = "k2v-client";
       version = "0.0.4";
-      rev = "952c9570c494468643353ee1ae9052b510353665";};
+      rev = "ee57dd922b9c396298473b41e4046c8d00ee77d5";};
     dependencies = {
       aws_sigv4 = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".aws-sigv4."0.55.3" { inherit profileName; }).out;
       base64 = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".base64."0.21.7" { inherit profileName; }).out;
