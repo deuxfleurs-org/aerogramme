@@ -60,6 +60,9 @@ impl LdapLoginProvider {
         let specific = match config.storage {
             LdapStorage::InMemory => StorageSpecific::InMemory,
             LdapStorage::Garage(grgconf) => {
+                attrs_to_retrieve.push(grgconf.aws_access_key_id_attr.clone());
+                attrs_to_retrieve.push(grgconf.aws_secret_access_key_attr.clone());
+
                 let bucket_source =
                     match (grgconf.default_bucket.clone(), grgconf.bucket_attr.clone()) {
                         (Some(b), None) => BucketSource::Constant(b),
