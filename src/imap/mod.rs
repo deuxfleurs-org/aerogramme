@@ -26,8 +26,8 @@ use imap_codec::imap_types::response::{Code, CommandContinuationRequest, Respons
 use imap_codec::imap_types::{core::Text, response::Greeting};
 use imap_flow::server::{ServerFlow, ServerFlowEvent, ServerFlowOptions};
 use imap_flow::stream::AnyStream;
-use tokio_rustls::TlsAcceptor;
 use rustls_pemfile::{certs, private_key};
+use tokio_rustls::TlsAcceptor;
 
 use crate::config::{ImapConfig, ImapUnsecureConfig};
 use crate::imap::capability::ServerCapability;
@@ -53,8 +53,14 @@ struct ClientContext {
 }
 
 pub fn new(config: ImapConfig, login: ArcLoginProvider) -> Result<Server> {
-    let loaded_certs = certs(&mut std::io::BufReader::new(std::fs::File::open(config.certs)?)).collect::<Result<Vec<_>, _>>()?;
-    let loaded_key = private_key(&mut std::io::BufReader::new(std::fs::File::open(config.key)?))?.unwrap();
+    let loaded_certs = certs(&mut std::io::BufReader::new(std::fs::File::open(
+        config.certs,
+    )?))
+    .collect::<Result<Vec<_>, _>>()?;
+    let loaded_key = private_key(&mut std::io::BufReader::new(std::fs::File::open(
+        config.key,
+    )?))?
+    .unwrap();
 
     let tls_config = rustls::ServerConfig::builder()
         .with_no_client_auth()
@@ -109,7 +115,7 @@ impl Server {
                         }
                     };
                     AnyStream::new(stream)
-                },
+                }
                 None => AnyStream::new(socket),
             };
 

@@ -34,7 +34,12 @@ struct Args {
     #[clap(long)]
     dev: bool,
 
-    #[clap(short, long, env = "AEROGRAMME_CONFIG", default_value = "aerogramme.toml")]
+    #[clap(
+        short,
+        long,
+        env = "AEROGRAMME_CONFIG",
+        default_value = "aerogramme.toml"
+    )]
     /// Path to the main Aerogramme configuration file
     config_file: PathBuf,
 }
@@ -187,7 +192,10 @@ async fn main() -> Result<()> {
                 hostname: "example.tld".to_string(),
             }),
             auth: Some(AuthConfig {
-                bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 12345),
+                bind_addr: SocketAddr::new(
+                    IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
+                    12345,
+                ),
             }),
             users: UserManagement::Demo,
         })
