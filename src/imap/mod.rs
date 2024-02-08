@@ -368,7 +368,8 @@ impl NetLoop {
             },
 
             // User is trying to interact with us
-            _read_client_bytes = self.server.stream.read(&mut buff) => {
+            read_client_result = self.server.stream.read(&mut buff) =>  {
+                let _bytes_read = read_client_result?;
                 use imap_codec::decode::Decoder;
                 let codec = imap_codec::IdleDoneCodec::new();
                 tracing::trace!("client sent some data for the server IMAP session");
