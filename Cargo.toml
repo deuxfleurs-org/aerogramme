@@ -1,6 +1,6 @@
 [package]
 name = "aerogramme"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Alex Auvolat <alex@adnab.me>", "Quentin Dufour <quentin@dufour.io>"]
 edition = "2021"
 license = "EUPL-1.2"
