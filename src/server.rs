@@ -7,9 +7,9 @@ use futures::try_join;
 use log::*;
 use tokio::sync::watch;
 
+use crate::auth;
 use crate::config::*;
 use crate::imap;
-use crate::auth;
 use crate::lmtp::*;
 use crate::login::ArcLoginProvider;
 use crate::login::{demo_provider::*, ldap_provider::*, static_provider::*};
@@ -47,9 +47,16 @@ impl Server {
         };
 
         let lmtp_server = config.lmtp.map(|lmtp| LmtpServer::new(lmtp, login.clone()));
-        let imap_unsecure_server = config.imap_unsecure.map(|imap| imap::new_unsecure(imap, login.clone()));
-        let imap_server = config.imap.map(|imap| imap::new(imap, login.clone())).transpose()?;
-        let auth_server = config.auth.map(|auth| auth::AuthServer::new(auth, login.clone()));
+        let imap_unsecure_server = config
+            .imap_unsecure
+            .map(|imap| imap::new_unsecure(imap, login.clone()));
+        let imap_server = config
+            .imap
+            .map(|imap| imap::new(imap, login.clone()))
+            .transpose()?;
+        let auth_server = config
+            .auth
+            .map(|auth| auth::AuthServer::new(auth, login.clone()));
 
         Ok(Self {
             lmtp_server,
