@@ -17,10 +17,10 @@
     fenix.url = "github:nix-community/fenix/monthly";
 
     # import alba releasing tool
-    #albatros.url = "git+https://git.deuxfleurs.fr/Deuxfleurs/albatros.git?ref=main";
+    albatros.url = "git+https://git.deuxfleurs.fr/Deuxfleurs/albatros.git?ref=main";
   };
 
-  outputs = { self, nixpkgs, cargo2nix, flake-utils, fenix /*, alabtros */ }: 
+  outputs = { self, nixpkgs, cargo2nix, flake-utils, fenix, albatros }: 
     let platformArtifacts = flake-utils.lib.eachSystem [
       "x86_64-unknown-linux-musl"
       "aarch64-unknown-linux-musl"
@@ -127,15 +127,29 @@
       ];
     });
 
+
+    crate = (rustRelease.workspace.aerogramme {});
+
     # binary extract
     bin = pkgs.stdenv.mkDerivation {
-      pname = "aerogramme-bin";
-      version = "0.1.0";
+      pname = "${crate.name}-bin";
+      version = crate.version;
+      dontUnpack = true;
+      dontBuild = true;
+      installPhase = ''
+        cp ${crate.bin}/bin/aerogramme $out
+      '';
+    };
+
+    # fhs extract
+    fhs = pkgs.stdenv.mkDerivation {
+      pname = "${crate.name}-fhs";
+      version = crate.version;
       dontUnpack = true;
       dontBuild = true;
       installPhase = ''
       	mkdir -p $out/bin
-        cp ${(rustRelease.workspace.aerogramme {}).bin}/bin/aerogramme $out/bin/
+        cp ${crate.bin}/bin/aerogramme $out/bin/
       '';
     };
 
@@ -154,7 +168,7 @@
     container = pkgs.dockerTools.buildImage {
       name = "dxflrs/aerogramme";
       architecture = (builtins.getAttr targetHost archMap).GOARCH;
-      copyToRoot = bin;
+      copyToRoot = fhs;
       config = {
       	Env = [ "PATH=/bin" ];
         Cmd = [ "aerogramme" "--dev" "provider" "daemon" ];
@@ -162,6 +176,9 @@
     };
 
     in {
+      meta = {
+        version = crate.version;
+      };
       packages = {
         debug = (rustDebug.workspace.aerogramme {}).bin;
         aerogramme = bin;
@@ -169,13 +186,21 @@
         default = self.packages.${targetHost}.aerogramme;
       };
     });
-    
+
+    ###
+    #
+    # RELEASE STUFF
+    #
+    ###
     gpkgs = import nixpkgs {
       system = "x86_64-linux"; # hardcoded as we will cross compile
     };
-    #alba = albatros.packages.x86_64-linux.alba;
+    alba = albatros.packages.x86_64-linux.alba;
 
-    build = gpkgs.writeScriptBin "aerogramme-build-static" ''
+    # Used only to fetch the "version"
+    version = platformArtifacts.meta.x86_64-unknown-linux-musl.version;
+
+    build = gpkgs.writeScriptBin "aerogramme-build" ''
         set -euxo pipefail
 
         # static
@@ -188,11 +213,20 @@
         nix build --print-build-logs .#packages.aarch64-unknown-linux-musl.container -o docker/linux.arm64.tar.gz
         nix build --print-build-logs .#packages.armv6l-unknown-linux-musleabihf.container  -o docker/linux.arm.tar.gz
         '';
+
+    push = gpkgs.writeScriptBin "aerogramme-publish" ''
+        set -euxo pipefail
+
+        ${alba} static push -t aerogramme:${version} static/ 's3://download.deuxfleurs.org?endpoint=garage.deuxfleurs.fr&s3ForcePathStyle=true&region=garage' 1>&2
+        ${alba} container push -t aerogramme:${version} docker/ 's3://registry.deuxfleurs.org?endpoint=garage.deuxfleurs.fr&s3ForcePathStyle=true&region=garage' 1>&2
+        ${alba} container push -t aerogramme:${version} docker/ "docker://docker.io/dxflrs/aerogramme:$RTAG" 1>&2
+        '';
+
     in
     {
         packages = {
           x86_64-linux = {
-            inherit build;
+            inherit build push;
           };
         } // platformArtifacts.packages;
     };
