@@ -15,11 +15,13 @@
 
     # use rust project builds 
     fenix.url = "github:nix-community/fenix/monthly";
+
+    # import alba releasing tool
+    #albatros.url = "git+https://git.deuxfleurs.fr/Deuxfleurs/albatros.git?ref=main";
   };
 
-  outputs = { self, nixpkgs, cargo2nix, flake-utils, fenix }: 
-    flake-utils.lib.eachSystem [
-      "x86_64-linux"
+  outputs = { self, nixpkgs, cargo2nix, flake-utils, fenix /*, alabtros */ }: 
+    let platformArtifacts = flake-utils.lib.eachSystem [
       "x86_64-unknown-linux-musl"
       "aarch64-unknown-linux-musl"
       "armv6l-unknown-linux-musleabihf"
@@ -160,10 +162,38 @@
     };
 
     in {
-      devShells.default = shell;
-      packages.debug = (rustDebug.workspace.aerogramme {}).bin;
-      packages.aerogramme = bin;
-      packages.container = container;
-      packages.default = self.packages.${targetHost}.aerogramme;
+      packages = {
+        debug = (rustDebug.workspace.aerogramme {}).bin;
+        aerogramme = bin;
+        container = container;
+        default = self.packages.${targetHost}.aerogramme;
+      };
     });
+    
+    gpkgs = import nixpkgs {
+      system = "x86_64-linux"; # hardcoded as we will cross compile
+    };
+    #alba = albatros.packages.x86_64-linux.alba;
+
+    build = gpkgs.writeScriptBin "aerogramme-build-static" ''
+        set -euxo pipefail
+
+        # static
+        nix build --print-build-logs .#packages.x86_64-unknown-linux-musl.aerogramme  -o static/linux/amd64/aerogramme
+        nix build --print-build-logs .#packages.aarch64-unknown-linux-musl.aerogramme -o static/linux/arm64/aerogramme
+        nix build --print-build-logs .#packages.armv6l-unknown-linux-musleabihf.aerogramme  -o static/linux/arm/aerogramme
+
+        # containers
+        nix build --print-build-logs .#packages.x86_64-unknown-linux-musl.container  -o docker/linux.amd64.tar.gz
+        nix build --print-build-logs .#packages.aarch64-unknown-linux-musl.container -o docker/linux.arm64.tar.gz
+        nix build --print-build-logs .#packages.armv6l-unknown-linux-musleabihf.container  -o docker/linux.arm.tar.gz
+        '';
+    in
+    {
+        packages = {
+          x86_64-linux = {
+            inherit build;
+          };
+        } // platformArtifacts.packages;
+    };
 }
