@@ -202,11 +202,12 @@ enum State {
 
 const SERVER_MAJOR: u64 = 1;
 const SERVER_MINOR: u64 = 2;
+const EMPTY_AUTHZ: &[u8] = &[];
 impl State {
     async fn try_auth_plain<'a>(&self, data: &'a [u8], login: &ArcLoginProvider) -> AuthRes {
         // Check that we can extract user's login+pass
         let (ubin, pbin) = match auth_plain(&data) {
-            Ok(([], ([], user, pass))) => (user, pass),
+            Ok(([], (authz, user, pass))) if authz == user || authz == EMPTY_AUTHZ => (user, pass),
             Ok(_) => {
                 tracing::error!("Impersonating user is not supported");
                 return AuthRes::Failed(None, None);
