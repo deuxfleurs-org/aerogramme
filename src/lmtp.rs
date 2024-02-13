@@ -16,7 +16,7 @@ use tokio::select;
 use tokio::sync::watch;
 use tokio_util::compat::*;
 
-use smtp_message::{Email, EscapedDataReader, DataUnescaper, Reply, ReplyCode};
+use smtp_message::{DataUnescaper, Email, EscapedDataReader, Reply, ReplyCode};
 use smtp_server::{reply, Config, ConnectionMetadata, Decision, MailMetadata};
 
 use crate::config::*;
@@ -186,7 +186,7 @@ impl Config for LmtpServer {
         // Unescape email, shrink it also to remove last dot
         let unesc_res = DataUnescaper::new(true).unescape(&mut text);
         text.truncate(unesc_res.written);
-        tracing::debug!(prev_sz=raw_size, new_sz=text.len(), "unescaped");
+        tracing::debug!(prev_sz = raw_size, new_sz = text.len(), "unescaped");
 
         let encrypted_message = match EncryptedMessage::new(text) {
             Ok(x) => Arc::new(x),

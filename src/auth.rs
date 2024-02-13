@@ -202,7 +202,41 @@ enum State {
 
 const SERVER_MAJOR: u64 = 1;
 const SERVER_MINOR: u64 = 2;
+const EMPTY_AUTHZ: &[u8] = &[];
 impl State {
+    async fn try_auth_plain<'a>(&self, data: &'a [u8], login: &ArcLoginProvider) -> AuthRes {
+        // Check that we can extract user's login+pass
+        let (ubin, pbin) = match auth_plain(&data) {
+            Ok(([], (authz, user, pass))) if authz == user || authz == EMPTY_AUTHZ => (user, pass),
+            Ok(_) => {
+                tracing::error!("Impersonating user is not supported");
+                return AuthRes::Failed(None, None);
+            }
+            Err(e) => {
+                tracing::error!(err=?e, "Could not parse the SASL PLAIN data chunk");
+                return AuthRes::Failed(None, None);
+            }
+        };
+
+        // Try to convert it to UTF-8
+        let (user, password) = match (std::str::from_utf8(ubin), std::str::from_utf8(pbin)) {
+            (Ok(u), Ok(p)) => (u, p),
+            _ => {
+                tracing::error!("Username or password contain invalid UTF-8 characters");
+                return AuthRes::Failed(None, None);
+            }
+        };
+
+        // Try to connect user
+        match login.login(user, password).await {
+            Ok(_) => AuthRes::Success(user.to_string()),
+            Err(e) => {
+                tracing::warn!(err=?e, "login failed");
+                AuthRes::Failed(Some(user.to_string()), None)
+            }
+        }
+    }
+
     async fn progress(&mut self, cmd: ClientCommand, login: &ArcLoginProvider) {
         let new_state = 'state: {
             match (std::mem::replace(self, State::Error), cmd) {
@@ -219,8 +253,18 @@ impl State {
 
                     Self::HandshakeDone
                 }
-                (Self::HandshakeDone { .. }, ClientCommand::Auth { id, mech, .. })
-                | (Self::AuthDone { .. }, ClientCommand::Auth { id, mech, .. }) => {
+                (
+                    Self::HandshakeDone { .. },
+                    ClientCommand::Auth {
+                        id, mech, options, ..
+                    },
+                )
+                | (
+                    Self::AuthDone { .. },
+                    ClientCommand::Auth {
+                        id, mech, options, ..
+                    },
+                ) => {
                     if mech != Mechanism::Plain {
                         tracing::error!(mechanism=?mech, "Unsupported Authentication Mechanism");
                         break 'state Self::AuthDone {
@@ -229,7 +273,13 @@ impl State {
                         };
                     }
 
-                    Self::AuthPlainProgress { id }
+                    match options.last() {
+                        Some(AuthOption::Resp(data)) => Self::AuthDone {
+                            id,
+                            res: self.try_auth_plain(&data, login).await,
+                        },
+                        _ => Self::AuthPlainProgress { id },
+                    }
                 }
                 (Self::AuthPlainProgress { id }, ClientCommand::Cont { id: cid, data }) => {
                     // Check that ID matches
@@ -245,53 +295,9 @@ impl State {
                         };
                     }
 
-                    // Check that we can extract user's login+pass
-                    let (ubin, pbin) = match auth_plain(&data) {
-                        Ok(([], ([], user, pass))) => (user, pass),
-                        Ok(_) => {
-                            tracing::error!("Impersonating user is not supported");
-                            break 'state Self::AuthDone {
-                                id,
-                                res: AuthRes::Failed(None, None),
-                            };
-                        }
-                        Err(e) => {
-                            tracing::error!(err=?e, "Could not parse the SASL PLAIN data chunk");
-                            break 'state Self::AuthDone {
-                                id,
-                                res: AuthRes::Failed(None, None),
-                            };
-                        }
-                    };
-
-                    // Try to convert it to UTF-8
-                    let (user, password) =
-                        match (std::str::from_utf8(ubin), std::str::from_utf8(pbin)) {
-                            (Ok(u), Ok(p)) => (u, p),
-                            _ => {
-                                tracing::error!(
-                                    "Username or password contain invalid UTF-8 characters"
-                                );
-                                break 'state Self::AuthDone {
-                                    id,
-                                    res: AuthRes::Failed(None, None),
-                                };
-                            }
-                        };
-
-                    // Try to connect user
-                    match login.login(user, password).await {
-                        Ok(_) => Self::AuthDone {
-                            id,
-                            res: AuthRes::Success(user.to_string()),
-                        },
-                        Err(e) => {
-                            tracing::warn!(err=?e, "login failed");
-                            Self::AuthDone {
-                                id,
-                                res: AuthRes::Failed(Some(user.to_string()), None),
-                            }
-                        }
+                    Self::AuthDone {
+                        id,
+                        res: self.try_auth_plain(&data, login).await,
                     }
                 }
                 _ => {
