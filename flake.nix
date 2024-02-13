@@ -54,21 +54,6 @@
       ];
     };
 
-    pkgVanilla = import nixpkgs { system = "x86_64-linux"; };
-
-    shell = pkgVanilla.mkShell {
-      buildInputs = [
-        cargo2nix.packages.x86_64-linux.default
-        fenix.packages.x86_64-linux.minimal.toolchain
-        fenix.packages.x86_64-linux.rust-analyzer
-      ];
-      shellHook = ''
-        echo "AEROGRAME DEVELOPMENT SHELL ${fenix.packages.x86_64-linux.minimal.rustc}"
-        export RUST_SRC_PATH="${fenix.packages.x86_64-linux.latest.rust-src}/lib/rustlib/src/rust/library"
-        export RUST_ANALYZER_INTERNALS_DO_NOT_USE='this is unstable'
-      '';
-    };
-
     rustTarget = if targetHost == "armv6l-unknown-linux-musleabihf" then "arm-unknown-linux-musleabihf" else targetHost;
 
     # release builds
@@ -180,9 +165,9 @@
         version = crate.version;
       };
       packages = {
+        inherit fhs container;
         debug = (rustDebug.workspace.aerogramme {}).bin;
         aerogramme = bin;
-        container = container;
         default = self.packages.${targetHost}.aerogramme;
       };
     });
@@ -196,6 +181,20 @@
       system = "x86_64-linux"; # hardcoded as we will cross compile
     };
     alba = albatros.packages.x86_64-linux.alba;
+
+    # Shell
+    shell = gpkgs.mkShell {
+      buildInputs = [
+        cargo2nix.packages.x86_64-linux.default
+        fenix.packages.x86_64-linux.minimal.toolchain
+        fenix.packages.x86_64-linux.rust-analyzer
+      ];
+      shellHook = ''
+        echo "AEROGRAME DEVELOPMENT SHELL ${fenix.packages.x86_64-linux.minimal.rustc}"
+        export RUST_SRC_PATH="${fenix.packages.x86_64-linux.latest.rust-src}/lib/rustlib/src/rust/library"
+        export RUST_ANALYZER_INTERNALS_DO_NOT_USE='this is unstable'
+      '';
+    };
 
     # Used only to fetch the "version"
     version = platformArtifacts.meta.x86_64-unknown-linux-musl.version;
@@ -224,6 +223,7 @@
 
     in
     {
+        devShells.x86_64-linux.default = shell;
         packages = {
           x86_64-linux = {
             inherit build push;
