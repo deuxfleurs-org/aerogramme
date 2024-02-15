@@ -142,6 +142,8 @@ use tokio::sync::mpsc::*;
 use tokio::sync::Notify;
 use tokio_util::bytes::BytesMut;
 
+const PIPELINABLE_COMMANDS: usize = 64;
+
 #[derive(Debug)]
 enum LoopMode {
     Quit,
@@ -201,7 +203,7 @@ impl NetLoop {
         .await?;
 
         // Start a mailbox session in background
-        let (cmd_tx, cmd_rx) = mpsc::channel::<Request>(3);
+        let (cmd_tx, cmd_rx) = mpsc::channel::<Request>(PIPELINABLE_COMMANDS);
         let (resp_tx, resp_rx) = mpsc::unbounded_channel::<ResponseOrIdle>();
         tokio::spawn(Self::session(ctx.clone(), cmd_rx, resp_tx));
 
