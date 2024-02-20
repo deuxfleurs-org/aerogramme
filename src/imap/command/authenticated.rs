@@ -549,6 +549,8 @@ impl<'a> AuthenticatedContext<'a> {
         ))
     }
 
+    //@FIXME we should write a specific version for the "selected" state
+    //that returns some unsollicited responses
     async fn append(
         self,
         mailbox: &MailboxCodec<'a>,
@@ -560,10 +562,9 @@ impl<'a> AuthenticatedContext<'a> {
         match self.append_internal(mailbox, flags, date, message).await {
              
 
-            Ok((_mb_view, unsollicited, uidvalidity, uid, _modseq)) => Ok((
+            Ok((_mb_view, uidvalidity, uid, _modseq)) => Ok((
                 Response::build()
                     .tag(append_tag)
-                    .set_body(unsollicited)
                     .message("APPEND completed")
                     .code(Code::Other(CodeOther::unvalidated(
                         format!("APPENDUID {} {}", uidvalidity, uid).into_bytes(),
@@ -603,7 +604,7 @@ impl<'a> AuthenticatedContext<'a> {
         flags: &[Flag<'a>],
         date: &Option<DateTime>,
         message: &Literal<'a>,
-    ) -> Result<(MailboxView, Vec<Body<'static>>, ImapUidvalidity, ImapUid, ModSeq)> {
+    ) -> Result<(MailboxView, ImapUidvalidity, ImapUid, ModSeq)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
@@ -623,9 +624,9 @@ impl<'a> AuthenticatedContext<'a> {
         // TODO: filter allowed flags? ping @Quentin
 
         let (uidvalidity, uid, modseq) = view.internal.mailbox.append(msg, None, &flags[..]).await?;
-        let unsollicited = view.update(UpdateParameters::default()).await?; 
+        //let unsollicited = view.update(UpdateParameters::default()).await?; 
 
-        Ok((view, unsollicited, uidvalidity, uid, modseq))
+        Ok((view, uidvalidity, uid, modseq))
     }
 }
 

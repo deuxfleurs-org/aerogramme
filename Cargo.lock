@@ -1869,7 +1869,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite 0.2.13",
- "socket2 0.5.5",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -1980,13 +1980,15 @@ dependencies = [
 [[package]]
 name = "imap-flow"
 version = "0.1.0"
-source = "git+https://github.com/superboum/imap-flow.git?branch=custom/aerogramme#60ff9e082ccfcd10a042b616d8038a578fa0c8ff"
+source = "git+https://github.com/superboum/imap-flow.git?branch=custom/aerogramme#2bea066da1e09ad04bb5fb71b0dd8d6e5d9e3d19"
 dependencies = [
  "bounded-static",
  "bytes",
  "imap-codec",
+ "imap-types",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

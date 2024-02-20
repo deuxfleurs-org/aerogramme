@@ -185,15 +185,15 @@ impl NetLoop {
     }
 
     async fn new(ctx: ClientContext, sock: AnyStream) -> Result<Self> {
+        let mut opts = ServerFlowOptions::default();
+        opts.crlf_relaxed = false;
+        opts.literal_accept_text = Text::unvalidated("OK");
+        opts.literal_reject_text = Text::unvalidated("Literal rejected");
+
         // Send greeting
         let (server, _) = ServerFlow::send_greeting(
             sock,
-            ServerFlowOptions {
-                crlf_relaxed: false,
-                literal_accept_text: Text::unvalidated("OK"),
-                literal_reject_text: Text::unvalidated("Literal rejected"),
-                ..ServerFlowOptions::default()
-            },
+            opts,
             Greeting::ok(
                 Some(Code::Capability(ctx.server_capabilities.to_vec())),
                 "Aerogramme",
