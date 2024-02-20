@@ -23,7 +23,7 @@ args@{
   ignoreLockHash,
 }:
 let
-  nixifiedLockHash = "92030f2aa1c723f2d8dc8fb6d98a261fbc7ba40c61a6426fa0b55448dd0d3ad1";
+  nixifiedLockHash = "3b8bcf5ea054b1e2cc4267f418aa02f3982a7bd534f12f13be2cd956aaebf0f2";
   workspaceSrc = if args.workspaceSrc == null then ./. else args.workspaceSrc;
   currentLockHash = builtins.hashFile "sha256" (workspaceSrc + /Cargo.lock);
   lockHashIgnored = if ignoreLockHash
@@ -2594,7 +2594,7 @@ in
       httpdate = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".httpdate."1.0.3" { inherit profileName; }).out;
       itoa = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".itoa."1.0.10" { inherit profileName; }).out;
       pin_project_lite = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".pin-project-lite."0.2.13" { inherit profileName; }).out;
-      socket2 = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".socket2."0.5.5" { inherit profileName; }).out;
+      socket2 = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".socket2."0.4.10" { inherit profileName; }).out;
       tokio = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".tokio."1.35.1" { inherit profileName; }).out;
       tower_service = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".tower-service."0.3.2" { inherit profileName; }).out;
       tracing = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".tracing."0.1.40" { inherit profileName; }).out;
@@ -2755,14 +2755,16 @@ in
       url = https://github.com/superboum/imap-flow.git;
       name = "imap-flow";
       version = "0.1.0";
-      rev = "60ff9e082ccfcd10a042b616d8038a578fa0c8ff";
+      rev = "2bea066da1e09ad04bb5fb71b0dd8d6e5d9e3d19";
       ref = "custom/aerogramme";};
     dependencies = {
       bounded_static = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".bounded-static."0.5.0" { inherit profileName; }).out;
       bytes = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".bytes."1.5.0" { inherit profileName; }).out;
       imap_codec = (rustPackages."git+https://github.com/superboum/imap-codec".imap-codec."2.0.0" { inherit profileName; }).out;
+      imap_types = (rustPackages."git+https://github.com/superboum/imap-codec".imap-types."2.0.0" { inherit profileName; }).out;
       thiserror = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".thiserror."1.0.56" { inherit profileName; }).out;
       tokio = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".tokio."1.35.1" { inherit profileName; }).out;
+      tracing = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".tracing."0.1.40" { inherit profileName; }).out;
     };
   });
   
