@@ -14,13 +14,13 @@ use imap_codec::imap_types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
 use imap_codec::imap_types::response::{Code, CodeOther, Data};
 use imap_codec::imap_types::status::{StatusDataItem, StatusDataItemName};
 
+use crate::imap::Body;
 use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anystate, MailboxName};
 use crate::imap::flow;
-use crate::imap::mailbox_view::MailboxView;
+use crate::imap::mailbox_view::{MailboxView, UpdateParameters};
 use crate::imap::response::Response;
 
-use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::*;
 use crate::mail::user::{User, MAILBOX_HIERARCHY_DELIMITER as MBX_HIER_DELIM_RAW};
 use crate::mail::IMF;
@@ -558,9 +558,12 @@ impl<'a> AuthenticatedContext<'a> {
     ) -> Result<(Response<'static>, flow::Transition)> {
         let append_tag = self.req.tag.clone();
         match self.append_internal(mailbox, flags, date, message).await {
-            Ok((_mb, uidvalidity, uid, _modseq)) => Ok((
+             
+
+            Ok((_mb_view, unsollicited, uidvalidity, uid, _modseq)) => Ok((
                 Response::build()
                     .tag(append_tag)
+                    .set_body(unsollicited)
                     .message("APPEND completed")
                     .code(Code::Other(CodeOther::unvalidated(
                         format!("APPENDUID {} {}", uidvalidity, uid).into_bytes(),
@@ -593,13 +596,14 @@ impl<'a> AuthenticatedContext<'a> {
         ))
     }
 
+    //@FIXME should be refactored and integrated to the mailbox view
     pub(crate) async fn append_internal(
         self,
         mailbox: &MailboxCodec<'a>,
         flags: &[Flag<'a>],
         date: &Option<DateTime>,
         message: &Literal<'a>,
-    ) -> Result<(Arc<Mailbox>, ImapUidvalidity, ImapUid, ModSeq)> {
+    ) -> Result<(MailboxView, Vec<Body<'static>>, ImapUidvalidity, ImapUid, ModSeq)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.open_mailbox(&name).await?;
@@ -607,6 +611,7 @@ impl<'a> AuthenticatedContext<'a> {
             Some(mb) => mb,
             None => bail!("Mailbox does not exist"),
         };
+        let mut view = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await;
 
         if date.is_some() {
             tracing::warn!("Cannot set date when appending message");
@@ -617,9 +622,10 @@ impl<'a> AuthenticatedContext<'a> {
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         // TODO: filter allowed flags? ping @Quentin
 
-        let (uidvalidity, uid, modseq) = mb.append(msg, None, &flags[..]).await?;
+        let (uidvalidity, uid, modseq) = view.internal.mailbox.append(msg, None, &flags[..]).await?;
+        let unsollicited = view.update(UpdateParameters::default()).await?; 
 
-        Ok((mb, uidvalidity, uid, modseq))
+        Ok((view, unsollicited, uidvalidity, uid, modseq))
     }
 }
 

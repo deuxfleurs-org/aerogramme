@@ -384,8 +384,7 @@ pub fn append(imap: &mut TcpStream, content: Email) -> Result<String> {
     // write our stuff
     imap.write(ref_mail)?;
     imap.write(&b"\r\n"[..])?;
-    let read = read_lines(imap, &mut buffer, None)?;
-    assert_eq!(&read[..5], &b"47 OK"[..]);
+    let read = read_lines(imap, &mut buffer, Some(&b"47 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
 
     Ok(srv_msg.to_string())
