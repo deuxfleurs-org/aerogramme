@@ -4,8 +4,8 @@ use crate::imap::flow;
 use crate::imap::request::Request;
 use crate::imap::response::{Response, ResponseOrIdle};
 use crate::login::ArcLoginProvider;
-use anyhow::{anyhow, bail, Result};
-use imap_codec::imap_types::command::Command;
+use anyhow::{anyhow, bail, Result, Context};
+use imap_codec::imap_types::{core::Tag, command::Command};
 
 //-----
 pub struct Instance {
@@ -27,13 +27,44 @@ impl Instance {
 
     pub async fn request(&mut self, req: Request) -> ResponseOrIdle {
         match req {
-            Request::Idle => self.idle().await,
+            Request::IdleStart(tag) => self.idle_init(tag),
+            Request::IdlePoll => self.idle_poll().await,
             Request::ImapCommand(cmd) => self.command(cmd).await,
         }
     }
 
-    pub async fn idle(&mut self) -> ResponseOrIdle {
-        match self.idle_happy().await {
+    pub fn idle_init(&mut self, tag: Tag<'static>) -> ResponseOrIdle {
+        // Build transition
+        //@FIXME the notifier should be hidden inside the state and thus not part of the transition!
+        let transition = flow::Transition::Idle(tag.clone(), tokio::sync::Notify::new());
+
+        // Try to apply the transition and get the stop notifier
+        let maybe_stop = self
+            .state
+            .apply(transition)
+            .context("IDLE transition failed")
+            .and_then(|_| self.state.notify().ok_or(anyhow!("IDLE state has no Notify object")));
+
+        // Build an appropriate response
+        match maybe_stop {
+            Ok(stop) => ResponseOrIdle::IdleAccept(stop),
+            Err(e) => {
+                tracing::error!(err=?e, "unable to init idle due to a transition error");
+                //ResponseOrIdle::IdleReject(tag)
+                let no = Response::build()
+                    .tag(tag)
+                    .message(
+                        "Internal error, processing command triggered an illegal IMAP state transition",
+                    )
+                    .no()
+                    .unwrap();
+                ResponseOrIdle::IdleReject(no)
+            }
+        }
+    }
+
+    pub async fn idle_poll(&mut self) -> ResponseOrIdle {
+        match self.idle_poll_happy().await {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!(err=?e, "something bad happened in idle");
@@ -42,7 +73,7 @@ impl Instance {
         }
     }
 
-    pub async fn idle_happy(&mut self) -> Result<ResponseOrIdle> {
+    pub async fn idle_poll_happy(&mut self) -> Result<ResponseOrIdle> {
         let (mbx, tag, stop) = match &mut self.state {
             flow::State::Idle(_, ref mut mbx, _, tag, stop) => (mbx, tag.clone(), stop.clone()),
             _ => bail!("Invalid session state, can't idle"),
@@ -128,10 +159,11 @@ impl Instance {
                 .bad()
                 .unwrap());
         }
+        ResponseOrIdle::Response(resp)
 
-        match &self.state {
+        /*match &self.state {
             flow::State::Idle(_, _, _, _, n) => ResponseOrIdle::StartIdle(n.clone()),
             _ => ResponseOrIdle::Response(resp),
-        }
+        }*/
     }
 }

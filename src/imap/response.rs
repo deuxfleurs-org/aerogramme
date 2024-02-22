@@ -118,6 +118,7 @@ impl<'a> Response<'a> {
 #[derive(Debug)]
 pub enum ResponseOrIdle {
     Response(Response<'static>),
-    StartIdle(Arc<Notify>),
+    IdleAccept(Arc<Notify>),
+    IdleReject(Response<'static>),
     IdleEvent(Vec<Body<'static>>),
 }

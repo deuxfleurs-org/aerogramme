@@ -1,6 +1,6 @@
 use std::num::{NonZeroU32, NonZeroU64};
 
-use imap_codec::imap_types::core::NonEmptyVec;
+use imap_codec::imap_types::core::Vec1;
 use imap_codec::imap_types::search::{MetadataItemSearch, SearchKey};
 use imap_codec::imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
 
@@ -48,7 +48,7 @@ impl<'a> Criteria<'a> {
                         let mut new_vec = base.0.into_inner();
                         new_vec.extend_from_slice(ext.0.as_ref());
                         let seq = SequenceSet(
-                            NonEmptyVec::try_from(new_vec)
+                            Vec1::try_from(new_vec)
                                 .expect("merging non empty vec lead to non empty vec"),
                         );
                         (seq, x)

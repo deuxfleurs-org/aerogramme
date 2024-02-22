@@ -6,7 +6,7 @@ use anyhow::{anyhow, Error, Result};
 
 use futures::stream::{StreamExt, TryStreamExt};
 
-use imap_codec::imap_types::core::Charset;
+use imap_codec::imap_types::core::{Charset, Vec1};
 use imap_codec::imap_types::fetch::MessageDataItem;
 use imap_codec::imap_types::flag::{Flag, FlagFetch, FlagPerm, StoreResponse, StoreType};
 use imap_codec::imap_types::response::{Code, CodeOther, Data, Status};
@@ -629,7 +629,7 @@ impl MailboxView {
 mod tests {
     use super::*;
     use imap_codec::encode::Encoder;
-    use imap_codec::imap_types::core::NonEmptyVec;
+    use imap_codec::imap_types::core::Vec1;
     use imap_codec::imap_types::fetch::Section;
     use imap_codec::imap_types::fetch::{MacroOrMessageDataItemNames, MessageDataItemName};
     use imap_codec::imap_types::response::Response;
@@ -749,7 +749,7 @@ mod tests {
 
             let test_repr = Response::Data(Data::Fetch {
                 seq: NonZeroU32::new(1).unwrap(),
-                items: NonEmptyVec::from(MessageDataItem::Body(mime_view::bodystructure(
+                items: Vec1::from(MessageDataItem::Body(mime_view::bodystructure(
                     &message.child,
                     false,
                 )?)),

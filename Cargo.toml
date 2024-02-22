@@ -64,7 +64,7 @@ eml-codec = "0.1.2"
 smtp-message = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 imap-codec = { version = "2.0.0", features = ["bounded-static", "ext_condstore_qresync"] }
-imap-flow = { git = "https://github.com/superboum/imap-flow.git", branch = "custom/aerogramme" }
+imap-flow = { git = "https://github.com/duesee/imap-flow.git", branch = "main" }
 thiserror = "1.0.56"
 
 [dev-dependencies]

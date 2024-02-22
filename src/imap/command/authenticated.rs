@@ -6,7 +6,7 @@ use anyhow::{anyhow, bail, Result};
 use imap_codec::imap_types::command::{
     Command, CommandBody, ListReturnItem, SelectExamineModifier,
 };
-use imap_codec::imap_types::core::{Atom, Literal, NonEmptyVec, QuotedChar};
+use imap_codec::imap_types::core::{Atom, Literal, Vec1, QuotedChar};
 use imap_codec::imap_types::datetime::DateTime;
 use imap_codec::imap_types::extensions::enable::CapabilityEnable;
 use imap_codec::imap_types::flag::{Flag, FlagNameAttribute};
@@ -584,7 +584,7 @@ impl<'a> AuthenticatedContext<'a> {
 
     fn enable(
         self,
-        cap_enable: &NonEmptyVec<CapabilityEnable<'static>>,
+        cap_enable: &Vec1<CapabilityEnable<'static>>,
     ) -> Result<(Response<'static>, flow::Transition)> {
         let mut response_builder = Response::build().to_req(self.req);
         let capabilities = self.client_capabilities.try_enable(cap_enable.as_ref());
