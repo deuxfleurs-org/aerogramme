@@ -15,7 +15,7 @@ mod session;
 
 use std::net::SocketAddr;
 
-use anyhow::{anyhow, bail, Result, Context};
+use anyhow::{anyhow, bail, Context, Result};
 use futures::stream::{FuturesUnordered, StreamExt};
 
 use tokio::net::TcpListener;

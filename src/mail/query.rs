@@ -2,8 +2,8 @@ use super::mailbox::MailMeta;
 use super::snapshot::FrozenMailbox;
 use super::unique_ident::UniqueIdent;
 use anyhow::Result;
-use futures::stream::{Stream, StreamExt, BoxStream};
 use futures::future::FutureExt;
+use futures::stream::{BoxStream, Stream, StreamExt};
 
 /// Query is in charge of fetching efficiently
 /// requested data for a list of emails
@@ -34,7 +34,10 @@ impl QueryScope {
 impl<'a, 'b> Query<'a, 'b> {
     pub fn fetch(&self) -> BoxStream<Result<QueryResult>> {
         match self.scope {
-            QueryScope::Index => Box::pin(futures::stream::iter(self.emails).map(|&uuid| Ok(QueryResult::IndexResult { uuid }))),
+            QueryScope::Index => Box::pin(
+                futures::stream::iter(self.emails)
+                    .map(|&uuid| Ok(QueryResult::IndexResult { uuid })),
+            ),
             QueryScope::Partial => Box::pin(self.partial()),
             QueryScope::Full => Box::pin(self.full()),
         }
@@ -42,40 +45,42 @@ impl<'a, 'b> Query<'a, 'b> {
 
     // --- functions below are private *for reasons*
     fn partial<'d>(&'d self) -> impl Stream<Item = Result<QueryResult>> + 'd + Send {
-        async move { 
-            let maybe_meta_list: Result<Vec<MailMeta>> = self.frozen.mailbox.fetch_meta(self.emails).await;
+        async move {
+            let maybe_meta_list: Result<Vec<MailMeta>> =
+                self.frozen.mailbox.fetch_meta(self.emails).await;
             let list_res = maybe_meta_list
-                .map(|meta_list| meta_list
-                     .into_iter()
-                     .zip(self.emails)
-                     .map(|(metadata, &uuid)| Ok(QueryResult::PartialResult { uuid, metadata }))
-                     .collect()
-                    )
+                .map(|meta_list| {
+                    meta_list
+                        .into_iter()
+                        .zip(self.emails)
+                        .map(|(metadata, &uuid)| Ok(QueryResult::PartialResult { uuid, metadata }))
+                        .collect()
+                })
                 .unwrap_or_else(|e| vec![Err(e)]);
 
             futures::stream::iter(list_res)
-        }.flatten_stream()
+        }
+        .flatten_stream()
     }
 
     fn full<'d>(&'d self) -> impl Stream<Item = Result<QueryResult>> + 'd + Send {
-        self.partial()
-            .then(move |maybe_meta| async move {
-                let meta = maybe_meta?;
+        self.partial().then(move |maybe_meta| async move {
+            let meta = maybe_meta?;
 
-                let content = self
-                    .frozen
-                    .mailbox
-                    .fetch_full(
-                        *meta.uuid(),
-                        &meta
+            let content = self
+                .frozen
+                .mailbox
+                .fetch_full(
+                    *meta.uuid(),
+                    &meta
                         .metadata()
                         .expect("meta to be PartialResult")
                         .message_key,
-                        )
-                    .await?;
+                )
+                .await?;
 
-                Ok(meta.into_full(content).expect("meta to be PartialResult"))
-            })
+            Ok(meta.into_full(content).expect("meta to be PartialResult"))
+        })
     }
 }
 

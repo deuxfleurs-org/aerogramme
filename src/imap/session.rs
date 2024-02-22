@@ -4,8 +4,8 @@ use crate::imap::flow;
 use crate::imap::request::Request;
 use crate::imap::response::{Response, ResponseOrIdle};
 use crate::login::ArcLoginProvider;
-use anyhow::{anyhow, bail, Result, Context};
-use imap_codec::imap_types::{core::Tag, command::Command};
+use anyhow::{anyhow, bail, Context, Result};
+use imap_codec::imap_types::{command::Command, core::Tag};
 
 //-----
 pub struct Instance {
@@ -43,7 +43,11 @@ impl Instance {
             .state
             .apply(transition)
             .context("IDLE transition failed")
-            .and_then(|_| self.state.notify().ok_or(anyhow!("IDLE state has no Notify object")));
+            .and_then(|_| {
+                self.state
+                    .notify()
+                    .ok_or(anyhow!("IDLE state has no Notify object"))
+            });
 
         // Build an appropriate response
         match maybe_stop {

@@ -6,7 +6,7 @@ use anyhow::{anyhow, bail, Result};
 use imap_codec::imap_types::command::{
     Command, CommandBody, ListReturnItem, SelectExamineModifier,
 };
-use imap_codec::imap_types::core::{Atom, Literal, Vec1, QuotedChar};
+use imap_codec::imap_types::core::{Atom, Literal, QuotedChar, Vec1};
 use imap_codec::imap_types::datetime::DateTime;
 use imap_codec::imap_types::extensions::enable::CapabilityEnable;
 use imap_codec::imap_types::flag::{Flag, FlagNameAttribute};
@@ -14,12 +14,12 @@ use imap_codec::imap_types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
 use imap_codec::imap_types::response::{Code, CodeOther, Data};
 use imap_codec::imap_types::status::{StatusDataItem, StatusDataItemName};
 
-use crate::imap::Body;
 use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anystate, MailboxName};
 use crate::imap::flow;
 use crate::imap::mailbox_view::{MailboxView, UpdateParameters};
 use crate::imap::response::Response;
+use crate::imap::Body;
 
 use crate::mail::uidindex::*;
 use crate::mail::user::{User, MAILBOX_HIERARCHY_DELIMITER as MBX_HIER_DELIM_RAW};
@@ -560,8 +560,6 @@ impl<'a> AuthenticatedContext<'a> {
     ) -> Result<(Response<'static>, flow::Transition)> {
         let append_tag = self.req.tag.clone();
         match self.append_internal(mailbox, flags, date, message).await {
-             
-
             Ok((_mb_view, uidvalidity, uid, _modseq)) => Ok((
                 Response::build()
                     .tag(append_tag)
@@ -623,8 +621,9 @@ impl<'a> AuthenticatedContext<'a> {
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         // TODO: filter allowed flags? ping @Quentin
 
-        let (uidvalidity, uid, modseq) = view.internal.mailbox.append(msg, None, &flags[..]).await?;
-        //let unsollicited = view.update(UpdateParameters::default()).await?; 
+        let (uidvalidity, uid, modseq) =
+            view.internal.mailbox.append(msg, None, &flags[..]).await?;
+        //let unsollicited = view.update(UpdateParameters::default()).await?;
 
         Ok((view, uidvalidity, uid, modseq))
     }

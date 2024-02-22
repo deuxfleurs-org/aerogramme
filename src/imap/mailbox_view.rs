@@ -370,7 +370,7 @@ impl MailboxView {
             .fetch()
             .zip(futures::stream::iter(mail_idx_list))
             // [3/6] Derive an IMAP-specific view from the results, apply the filters
-            .map(|(maybe_qr, midx)|  match maybe_qr {
+            .map(|(maybe_qr, midx)| match maybe_qr {
                 Ok(qr) => Ok((MailView::new(&qr, midx)?.filter(&ap)?, midx)),
                 Err(e) => Err(e),
             })
@@ -381,7 +381,10 @@ impl MailboxView {
                 // [5/6] Register the \Seen flags
                 if matches!(seen, SeenFlag::MustAdd) {
                     let seen_flag = Flag::Seen.to_string();
-                    self.internal.mailbox.add_flags(midx.uuid, &[seen_flag]).await?;
+                    self.internal
+                        .mailbox
+                        .add_flags(midx.uuid, &[seen_flag])
+                        .await?;
                 }
 
                 Ok::<_, anyhow::Error>(body)
@@ -429,12 +432,11 @@ impl MailboxView {
                         Ok(true) => Some(Ok(*midx)),
                         Ok(_) => None,
                         Err(e) => Some(Err(e)),
-                    }
+                    },
                     Err(e) => Some(Err(e)),
                 };
                 futures::future::ready(r)
             });
-
 
         // 7. Chain both streams (part resolved from index, part resolved from metadata+body)
         let main_stream = futures::stream::iter(kept_idx)

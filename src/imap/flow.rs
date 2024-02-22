@@ -2,8 +2,8 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::sync::Arc;
 
-use tokio::sync::Notify;
 use imap_codec::imap_types::core::Tag;
+use tokio::sync::Notify;
 
 use crate::imap::mailbox_view::MailboxView;
 use crate::mail::user::User;

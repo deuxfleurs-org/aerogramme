@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use imap_codec::imap_types::command::{Command, CommandBody, FetchModifier, StoreModifier};
-use imap_codec::imap_types::core::{Vec1, Charset};
+use imap_codec::imap_types::core::{Charset, Vec1};
 use imap_codec::imap_types::fetch::MacroOrMessageDataItemNames;
 use imap_codec::imap_types::flag::{Flag, StoreResponse, StoreType};
 use imap_codec::imap_types::mailbox::Mailbox as MailboxCodec;
@@ -59,7 +59,10 @@ pub async fn dispatch<'a>(
             charset,
             criteria,
             uid,
-        } => ctx.search(charset, &SearchKey::And(criteria.clone()), uid).await,
+        } => {
+            ctx.search(charset, &SearchKey::And(criteria.clone()), uid)
+                .await
+        }
         CommandBody::Expunge {
             // UIDPLUS (rfc4315)
             uid_sequence_set,
