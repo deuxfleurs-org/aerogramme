@@ -23,7 +23,7 @@ args@{
   ignoreLockHash,
 }:
 let
-  nixifiedLockHash = "3b8bcf5ea054b1e2cc4267f418aa02f3982a7bd534f12f13be2cd956aaebf0f2";
+  nixifiedLockHash = "5973cfc48eed6a8da96c5bccd1af1407d6e66a4ab986132f761669fdd0ecd688";
   workspaceSrc = if args.workspaceSrc == null then ./. else args.workspaceSrc;
   currentLockHash = builtins.hashFile "sha256" (workspaceSrc + /Cargo.lock);
   lockHashIgnored = if ignoreLockHash
@@ -97,7 +97,7 @@ in
       hyper_rustls = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".hyper-rustls."0.24.2" { inherit profileName; }).out;
       im = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".im."15.1.0" { inherit profileName; }).out;
       imap_codec = (rustPackages."git+https://github.com/superboum/imap-codec".imap-codec."2.0.0" { inherit profileName; }).out;
-      imap_flow = (rustPackages."git+https://github.com/superboum/imap-flow.git".imap-flow."0.1.0" { inherit profileName; }).out;
+      imap_flow = (rustPackages."git+https://github.com/duesee/imap-flow.git".imap-flow."0.1.0" { inherit profileName; }).out;
       itertools = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".itertools."0.10.5" { inherit profileName; }).out;
       k2v_client = (rustPackages."git+https://git.deuxfleurs.fr/Deuxfleurs/garage.git".k2v-client."0.0.4" { inherit profileName; }).out;
       lazy_static = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".lazy_static."1.4.0" { inherit profileName; }).out;
@@ -2725,7 +2725,7 @@ in
       url = https://github.com/superboum/imap-codec;
       name = "imap-codec";
       version = "2.0.0";
-      rev = "0adcc244282c64cc7874ffa9cd22e4a451ee19f8";
+      rev = "d8a5afc03fb771232e94c73af6a05e79dc80bbed";
       ref = "custom/aerogramme";};
     features = builtins.concatLists [
       [ "bounded-static" ]
@@ -2747,16 +2747,16 @@ in
     };
   });
   
-  "git+https://github.com/superboum/imap-flow.git".imap-flow."0.1.0" = overridableMkRustCrate (profileName: rec {
+  "git+https://github.com/duesee/imap-flow.git".imap-flow."0.1.0" = overridableMkRustCrate (profileName: rec {
     name = "imap-flow";
     version = "0.1.0";
-    registry = "git+https://github.com/superboum/imap-flow.git";
+    registry = "git+https://github.com/duesee/imap-flow.git";
     src = fetchCrateGit {
-      url = https://github.com/superboum/imap-flow.git;
+      url = https://github.com/duesee/imap-flow.git;
       name = "imap-flow";
       version = "0.1.0";
-      rev = "2bea066da1e09ad04bb5fb71b0dd8d6e5d9e3d19";
-      ref = "custom/aerogramme";};
+      rev = "68c1da5d1c56dbe543d9736de9683259d1d28191";
+      ref = "main";};
     dependencies = {
       bounded_static = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".bounded-static."0.5.0" { inherit profileName; }).out;
       bytes = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".bytes."1.5.0" { inherit profileName; }).out;
@@ -2776,7 +2776,7 @@ in
       url = https://github.com/superboum/imap-codec;
       name = "imap-types";
       version = "2.0.0";
-      rev = "0adcc244282c64cc7874ffa9cd22e4a451ee19f8";
+      rev = "d8a5afc03fb771232e94c73af6a05e79dc80bbed";
       ref = "custom/aerogramme";};
     features = builtins.concatLists [
       [ "bounded-static" ]
