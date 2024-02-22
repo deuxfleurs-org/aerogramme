@@ -681,7 +681,7 @@ mod tests {
             content: rfc822.to_vec(),
         };
 
-        let mv = MailView::new(std::borrow::Cow::Borrowed(&qr), &mail_in_idx)?;
+        let mv = MailView::new(&qr, &mail_in_idx)?;
         let (res_body, _seen) = mv.filter(&ap)?;
 
         let fattr = match res_body {
