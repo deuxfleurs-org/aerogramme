@@ -1,6 +1,37 @@
 use crate::storage::*;
 use aws_sdk_s3::{self as s3, error::SdkError, operation::get_object::GetObjectError};
+use aws_smithy_runtime::client::http::hyper_014::HyperClientBuilder;
+use aws_smithy_runtime_api::client::http::SharedHttpClient;
+//use hyper_rustls::HttpsConnector;
+//use hyper_util::client::legacy::connect::HttpConnector;
+
+
 use serde::Serialize;
+
+pub struct GarageRoot {
+    aws_http: SharedHttpClient,
+}
+
+impl GarageRoot {
+    pub fn new() -> Self {
+        /*let http = hyper_rustls::HttpsConnectorBuilder::new()
+            .https_or_http()
+            .with_native_roots()
+            .enable_http1()
+            .enable_http2()
+            .build();*/
+        let aws_http = HyperClientBuilder::new().build_https();
+        Self { aws_http }
+    }
+
+    pub fn user(&self, conf: GarageConf) -> anyhow::Result<Arc<GarageUser>> {
+        let mut unicity: Vec<u8> = vec![];
+        unicity.extend_from_slice(file!().as_bytes());
+        unicity.append(&mut rmp_serde::to_vec(&conf)?);
+
+        Ok(Arc::new(GarageUser { conf, aws_http: self.aws_http.clone(), unicity }))
+    }
+}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct GarageConf {
@@ -12,23 +43,18 @@ pub struct GarageConf {
     pub bucket: String,
 }
 
+//@FIXME we should get rid of this builder
+//and allocate a S3 + K2V client only once per user
+//(and using a shared HTTP client)
 #[derive(Clone, Debug)]
-pub struct GarageBuilder {
+pub struct GarageUser {
     conf: GarageConf,
+    aws_http: SharedHttpClient,
     unicity: Vec<u8>,
 }
 
-impl GarageBuilder {
-    pub fn new(conf: GarageConf) -> anyhow::Result<Arc<Self>> {
-        let mut unicity: Vec<u8> = vec![];
-        unicity.extend_from_slice(file!().as_bytes());
-        unicity.append(&mut rmp_serde::to_vec(&conf)?);
-        Ok(Arc::new(Self { conf, unicity }))
-    }
-}
-
 #[async_trait]
-impl IBuilder for GarageBuilder {
+impl IBuilder for GarageUser {
     async fn build(&self) -> Result<Store, StorageError> {
         let s3_creds = s3::config::Credentials::new(
             self.conf.aws_access_key_id.clone(),
@@ -41,6 +67,7 @@ impl IBuilder for GarageBuilder {
         let sdk_config = aws_config::from_env()
             .region(aws_config::Region::new(self.conf.region.clone()))
             .credentials_provider(s3_creds)
+            .http_client(self.aws_http.clone())
             .endpoint_url(self.conf.s3_endpoint.clone())
             .load()
             .await;

@@ -21,6 +21,7 @@ pub struct LdapLoginProvider {
 
     storage_specific: StorageSpecific,
     in_memory_store: storage::in_memory::MemDb,
+    garage_store: storage::garage::GarageRoot,
 }
 
 enum BucketSource {
@@ -91,7 +92,11 @@ impl LdapLoginProvider {
             mail_attr: config.mail_attr,
             crypto_root_attr: config.crypto_root_attr,
             storage_specific: specific,
+            //@FIXME should be created outside of the login provider
+            //Login provider should return only a cryptoroot + a storage URI
+            //storage URI that should be resolved outside...
             in_memory_store: storage::in_memory::MemDb::new(),
+            garage_store: storage::garage::GarageRoot::new(),
         })
     }
 
@@ -114,7 +119,7 @@ impl LdapLoginProvider {
                     BucketSource::Attr(a) => get_attr(user, &a)?,
                 };
 
-                storage::garage::GarageBuilder::new(storage::garage::GarageConf {
+                self.garage_store.user(storage::garage::GarageConf {
                     region: from_config.aws_region.clone(),
                     s3_endpoint: from_config.s3_endpoint.clone(),
                     k2v_endpoint: from_config.k2v_endpoint.clone(),
