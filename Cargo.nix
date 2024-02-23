@@ -23,7 +23,7 @@ args@{
   ignoreLockHash,
 }:
 let
-  nixifiedLockHash = "94ca89fbaba4455fedcad9404b2f26e06837c2e23d491d5cb3e0bcbdf6132d05";
+  nixifiedLockHash = "1636bcbca38619e40eeddcb9e9c0af1240654ca176fe1a6fb3444b21526b53c2";
   workspaceSrc = if args.workspaceSrc == null then ./. else args.workspaceSrc;
   currentLockHash = builtins.hashFile "sha256" (workspaceSrc + /Cargo.lock);
   lockHashIgnored = if ignoreLockHash
@@ -45,7 +45,7 @@ in
 {
   cargo2nixVersion = "0.11.0";
   workspace = {
-    aerogramme = rustPackages.unknown.aerogramme."0.2.1";
+    aerogramme = rustPackages.unknown.aerogramme."0.2.2";
   };
   "registry+https://github.com/rust-lang/crates.io-index".abnf-core."0.6.0" = overridableMkRustCrate (profileName: rec {
     name = "abnf-core";
@@ -74,9 +74,9 @@ in
     src = fetchCratesIo { inherit name version; sha256 = "f26201604c87b1e01bd3d98f8d5d9a8fcbb815e8cedb41ffccbeb4bf593a35fe"; };
   });
   
-  "unknown".aerogramme."0.2.1" = overridableMkRustCrate (profileName: rec {
+  "unknown".aerogramme."0.2.2" = overridableMkRustCrate (profileName: rec {
     name = "aerogramme";
-    version = "0.2.1";
+    version = "0.2.2";
     registry = "unknown";
     src = fetchCrateLocal workspaceSrc;
     dependencies = {
