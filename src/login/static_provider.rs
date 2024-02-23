@@ -85,7 +85,7 @@ impl StaticLoginProvider {
         Ok(Self {
             user_db: rx,
             in_memory_store: storage::in_memory::MemDb::new(),
-            garage_store: storage::garage::GarageRoot::new(),
+            garage_store: storage::garage::GarageRoot::new()?,
         })
     }
 }

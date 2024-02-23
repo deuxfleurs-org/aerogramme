@@ -1,27 +1,29 @@
-use crate::storage::*;
 use aws_sdk_s3::{self as s3, error::SdkError, operation::get_object::GetObjectError};
 use aws_smithy_runtime::client::http::hyper_014::HyperClientBuilder;
 use aws_smithy_runtime_api::client::http::SharedHttpClient;
-//use hyper_rustls::HttpsConnector;
-//use hyper_util::client::legacy::connect::HttpConnector;
-
-
+use hyper_rustls::HttpsConnector;
+use hyper_util::rt::TokioExecutor;
+use hyper_util::client::legacy::{connect::HttpConnector, Client as HttpClient};
 use serde::Serialize;
 
+use crate::storage::*;
+
 pub struct GarageRoot {
+    k2v_http: HttpClient<HttpsConnector<HttpConnector>, k2v_client::Body>,
     aws_http: SharedHttpClient,
 }
 
 impl GarageRoot {
-    pub fn new() -> Self {
-        /*let http = hyper_rustls::HttpsConnectorBuilder::new()
-            .https_or_http()
-            .with_native_roots()
-            .enable_http1()
-            .enable_http2()
-            .build();*/
+    pub fn new() -> anyhow::Result<Self> {
+    let connector = hyper_rustls::HttpsConnectorBuilder::new()
+			.with_native_roots()?
+			.https_or_http()
+			.enable_http1()
+			.enable_http2()
+			.build();
+		let k2v_http = HttpClient::builder(TokioExecutor::new()).build(connector);
         let aws_http = HyperClientBuilder::new().build_https();
-        Self { aws_http }
+        Ok(Self { k2v_http, aws_http })
     }
 
     pub fn user(&self, conf: GarageConf) -> anyhow::Result<Arc<GarageUser>> {
@@ -29,7 +31,12 @@ impl GarageRoot {
         unicity.extend_from_slice(file!().as_bytes());
         unicity.append(&mut rmp_serde::to_vec(&conf)?);
 
-        Ok(Arc::new(GarageUser { conf, aws_http: self.aws_http.clone(), unicity }))
+        Ok(Arc::new(GarageUser { 
+            conf, 
+            aws_http: self.aws_http.clone(), 
+            k2v_http: self.k2v_http.clone(),
+            unicity 
+        }))
     }
 }
 
@@ -50,6 +57,7 @@ pub struct GarageConf {
 pub struct GarageUser {
     conf: GarageConf,
     aws_http: SharedHttpClient,
+    k2v_http: HttpClient<HttpsConnector<HttpConnector>, k2v_client::Body>,
     unicity: Vec<u8>,
 }
 
@@ -87,7 +95,7 @@ impl IBuilder for GarageUser {
             user_agent: None,
         };
 
-        let k2v_client = match k2v_client::K2vClient::new(k2v_config) {
+        let k2v_client = match k2v_client::K2vClient::new_with_client(k2v_config, self.k2v_http.clone()) {
             Err(e) => {
                 tracing::error!("unable to build k2v client: {}", e);
                 return Err(StorageError::Internal);

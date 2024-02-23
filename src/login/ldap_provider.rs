@@ -96,7 +96,7 @@ impl LdapLoginProvider {
             //Login provider should return only a cryptoroot + a storage URI
             //storage URI that should be resolved outside...
             in_memory_store: storage::in_memory::MemDb::new(),
-            garage_store: storage::garage::GarageRoot::new(),
+            garage_store: storage::garage::GarageRoot::new()?,
         })
     }
 
