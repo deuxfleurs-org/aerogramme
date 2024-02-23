@@ -1,13 +1,12 @@
 use std::num::{NonZeroU32, NonZeroU64};
 
-use anyhow::Result;
-use imap_codec::imap_types::core::NonEmptyVec;
+use imap_codec::imap_types::core::Vec1;
 use imap_codec::imap_types::search::{MetadataItemSearch, SearchKey};
 use imap_codec::imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
 
 use crate::imap::index::MailIndex;
 use crate::imap::mail_view::MailView;
-use crate::mail::query::{QueryResult, QueryScope};
+use crate::mail::query::QueryScope;
 
 pub enum SeqType {
     Undefined,
@@ -49,7 +48,7 @@ impl<'a> Criteria<'a> {
                         let mut new_vec = base.0.into_inner();
                         new_vec.extend_from_slice(ext.0.as_ref());
                         let seq = SequenceSet(
-                            NonEmptyVec::try_from(new_vec)
+                            Vec1::try_from(new_vec)
                                 .expect("merging non empty vec lead to non empty vec"),
                         );
                         (seq, x)
@@ -145,22 +144,6 @@ impl<'a> Criteria<'a> {
         (to_keep, to_fetch)
     }
 
-    pub fn filter_on_query<'b>(
-        &self,
-        midx_list: &[&'b MailIndex<'b>],
-        query_result: &'b Vec<QueryResult>,
-    ) -> Result<Vec<&'b MailIndex<'b>>> {
-        Ok(midx_list
-            .iter()
-            .zip(query_result.iter())
-            .map(|(midx, qr)| MailView::new(qr, midx))
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .filter(|mail_view| self.is_keep_on_query(mail_view))
-            .map(|mail_view| mail_view.in_idx)
-            .collect())
-    }
-
     // ----
 
     /// Here we are doing a partial filtering: we do not have access
@@ -213,7 +196,7 @@ impl<'a> Criteria<'a> {
     /// the email, as body(x) might be false. So we need to check it. But as seqid(x) is true,
     /// we could simplify the request to just body(x) and truncate the first OR. Today, we are
     /// not doing that, and thus we reevaluate everything.
-    fn is_keep_on_query(&self, mail_view: &MailView) -> bool {
+    pub fn is_keep_on_query(&self, mail_view: &MailView) -> bool {
         use SearchKey::*;
         match self.0 {
             // Combinator logic

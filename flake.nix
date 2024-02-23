@@ -61,8 +61,8 @@
       packageFun = import ./Cargo.nix;
       target = rustTarget;
       release = true;
-      rustcLinkFlags = [ "--cfg" "tokio_unstable" ];
-      rustcBuildFlags = [ "--cfg" "tokio_unstable" ];
+      #rustcLinkFlags = [ "--cfg" "tokio_unstable" ];
+      #rustcBuildFlags = [ "--cfg" "tokio_unstable" ];
       rustToolchain = with fenix.packages.x86_64-linux; combine [
         minimal.cargo
         minimal.rustc

@@ -8,7 +8,7 @@ use imap_codec::imap_types::body::{
     BasicFields, Body as FetchBody, BodyStructure, MultiPartExtensionData, SinglePartExtensionData,
     SpecificFields,
 };
-use imap_codec::imap_types::core::{AString, IString, NString, NonEmptyVec};
+use imap_codec::imap_types::core::{AString, IString, NString, Vec1};
 use imap_codec::imap_types::fetch::{Part as FetchPart, Section as FetchSection};
 
 use eml_codec::{
@@ -141,8 +141,8 @@ impl<'a> NodeMime<'a> {
 enum SubsettedSection<'a> {
     Part,
     Header,
-    HeaderFields(&'a NonEmptyVec<AString<'a>>),
-    HeaderFieldsNot(&'a NonEmptyVec<AString<'a>>),
+    HeaderFields(&'a Vec1<AString<'a>>),
+    HeaderFieldsNot(&'a Vec1<AString<'a>>),
     Text,
     Mime,
 }
@@ -238,7 +238,7 @@ impl<'a> SelectedMime<'a> {
     /// case-insensitive but otherwise exact.
     fn header_fields(
         &self,
-        fields: &'a NonEmptyVec<AString<'a>>,
+        fields: &'a Vec1<AString<'a>>,
         invert: bool,
     ) -> Result<ExtractedFull<'a>> {
         // Build a lowercase ascii hashset with the fields to fetch
@@ -398,8 +398,8 @@ impl<'a> NodeMult<'a> {
             .filter_map(|inner| NodeMime(&inner).structure(is_ext).ok())
             .collect::<Vec<_>>();
 
-        NonEmptyVec::validate(&inner_bodies)?;
-        let bodies = NonEmptyVec::unvalidated(inner_bodies);
+        Vec1::validate(&inner_bodies)?;
+        let bodies = Vec1::unvalidated(inner_bodies);
 
         Ok(BodyStructure::Multi {
             bodies,

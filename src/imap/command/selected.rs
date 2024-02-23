@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use imap_codec::imap_types::command::{Command, CommandBody, FetchModifier, StoreModifier};
-use imap_codec::imap_types::core::Charset;
+use imap_codec::imap_types::core::{Charset, Vec1};
 use imap_codec::imap_types::fetch::MacroOrMessageDataItemNames;
 use imap_codec::imap_types::flag::{Flag, StoreResponse, StoreType};
 use imap_codec::imap_types::mailbox::Mailbox as MailboxCodec;
@@ -54,11 +54,15 @@ pub async fn dispatch<'a>(
             ctx.fetch(sequence_set, macro_or_item_names, modifiers, uid)
                 .await
         }
+        //@FIXME SearchKey::And is a legacy hack, should be refactored
         CommandBody::Search {
             charset,
             criteria,
             uid,
-        } => ctx.search(charset, criteria, uid).await,
+        } => {
+            ctx.search(charset, &SearchKey::And(criteria.clone()), uid)
+                .await
+        }
         CommandBody::Expunge {
             // UIDPLUS (rfc4315)
             uid_sequence_set,
@@ -87,15 +91,6 @@ pub async fn dispatch<'a>(
 
         // UNSELECT extension (rfc3691)
         CommandBody::Unselect => ctx.unselect().await,
-
-        // IDLE extension (rfc2177)
-        CommandBody::Idle => Ok((
-            Response::build()
-                .to_req(ctx.req)
-                .message("DUMMY command due to anti-pattern in the code")
-                .ok()?,
-            flow::Transition::Idle(ctx.req.tag.clone(), tokio::sync::Notify::new()),
-        )),
 
         // In selected mode, we fallback to authenticated when needed
         _ => {

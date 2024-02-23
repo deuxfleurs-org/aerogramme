@@ -225,7 +225,7 @@ fn rfc4551_imapext_condstore() {
             FetchKind::Rfc822Size,
             FetchMod::ChangedSince(2),
         )?;
-        assert!(fetch_res.contains("* 1 FETCH (RFC822.SIZE 84 MODSEQ (3))"));
+        assert!(fetch_res.contains("* 1 FETCH (RFC822.SIZE 81 MODSEQ (3))"));
         assert!(!fetch_res.contains("* 2 FETCH"));
         assert_eq!(store_res.lines().count(), 2);
 

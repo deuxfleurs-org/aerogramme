@@ -25,6 +25,7 @@ pub struct UserDatabase {
 pub struct StaticLoginProvider {
     user_db: watch::Receiver<UserDatabase>,
     in_memory_store: storage::in_memory::MemDb,
+    garage_store: storage::garage::GarageRoot,
 }
 
 pub async fn update_user_list(config: PathBuf, up: watch::Sender<UserDatabase>) -> Result<()> {
@@ -84,6 +85,7 @@ impl StaticLoginProvider {
         Ok(Self {
             user_db: rx,
             in_memory_store: storage::in_memory::MemDb::new(),
+            garage_store: storage::garage::GarageRoot::new()?,
         })
     }
 }
@@ -109,7 +111,7 @@ impl LoginProvider for StaticLoginProvider {
         let storage: storage::Builder = match &user.config.storage {
             StaticStorage::InMemory => self.in_memory_store.builder(username).await,
             StaticStorage::Garage(grgconf) => {
-                storage::garage::GarageBuilder::new(storage::garage::GarageConf {
+                self.garage_store.user(storage::garage::GarageConf {
                     region: grgconf.aws_region.clone(),
                     k2v_endpoint: grgconf.k2v_endpoint.clone(),
                     s3_endpoint: grgconf.s3_endpoint.clone(),
@@ -140,7 +142,7 @@ impl LoginProvider for StaticLoginProvider {
         let storage: storage::Builder = match &user.config.storage {
             StaticStorage::InMemory => self.in_memory_store.builder(&user.username).await,
             StaticStorage::Garage(grgconf) => {
-                storage::garage::GarageBuilder::new(storage::garage::GarageConf {
+                self.garage_store.user(storage::garage::GarageConf {
                     region: grgconf.aws_region.clone(),
                     k2v_endpoint: grgconf.k2v_endpoint.clone(),
                     s3_endpoint: grgconf.s3_endpoint.clone(),

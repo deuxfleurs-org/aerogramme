@@ -1,5 +1,5 @@
 use imap_codec::imap_types::command::{FetchModifier, SelectExamineModifier, StoreModifier};
-use imap_codec::imap_types::core::NonEmptyVec;
+use imap_codec::imap_types::core::Vec1;
 use imap_codec::imap_types::extensions::enable::{CapabilityEnable, Utf8Kind};
 use imap_codec::imap_types::response::Capability;
 use std::collections::HashSet;
@@ -49,7 +49,7 @@ impl Default for ServerCapability {
 }
 
 impl ServerCapability {
-    pub fn to_vec(&self) -> NonEmptyVec<Capability<'static>> {
+    pub fn to_vec(&self) -> Vec1<Capability<'static>> {
         self.0
             .iter()
             .map(|v| v.clone())

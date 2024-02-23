@@ -1,0 +1,240 @@
+Append { mailbox: Other(MailboxOther(Atom(AtomExt("Sent")))), flags: [Seen], date: None, message: REDACTED } }
+Append { mailbox: Other(MailboxOther(String(Quoted(Quoted("Drafts"))))), flags: [Seen, Draft], date: None, message: REDACTED } }
+Append { mailbox: Other(MailboxOther(String(Quoted(Quoted("Sent"))))), flags: [Seen], date: None, message: REDACTED } }
+Append { mailbox: Other(MailboxOther(String(Quoted(Quoted("Sent"))))), flags: [Seen], date: Some(2024-02-14T14:12:35+01:00), message: REDACTED } }
+Capability 
+Check 
+Close 
+Create { mailbox: Other(MailboxOther(Atom(AtomExt("Mailspring")))) } }
+Create { mailbox: Other(MailboxOther(String(Quoted(Quoted("Dataset"))))) } }
+Create { mailbox: Other(MailboxOther(String(Quoted(Quoted("Mailspring.Snoozed"))))) } }
+Enable { capabilities: [CondStore]+ } }
+Enable { capabilities: [Utf8(Accept)]+ } }
+Examine { mailbox: Inbox, modifiers: [] } }
+Expunge { uid_sequence_set: None } }
+Fetch { sequence_set: SequenceSet([Range(Asterisk, Value(5))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Envelope, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("References"))]+)), partial: None, peek: true }]), uid: false } }
+Fetch { sequence_set: SequenceSet([Range(Value(12), Value(13))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([InternalDate, Uid, Rfc822Size, Flags, ModSeq, BodyExt { section: Some(Header(None)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Asterisk)]+), modifiers: [ChangedSince(22)], macro_or_item_names: MessageDataItemNames([Uid, Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Asterisk)]+), modifiers: [ChangedSince(24)], macro_or_item_names: MessageDataItemNames([Uid, Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Asterisk)]+), modifiers: [ChangedSince(5)], macro_or_item_names: MessageDataItemNames([Uid, Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Asterisk)]+), modifiers: [ChangedSince(638435220681800000)], macro_or_item_names: MessageDataItemNames([Uid, Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Asterisk)]+), modifiers: [ChangedSince(638435229950250000)], macro_or_item_names: MessageDataItemNames([Uid, Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Asterisk)]+), modifiers: [ChangedSince(638435249520030000)], macro_or_item_names: MessageDataItemNames([Uid, Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Asterisk)]+), modifiers: [ChangedSince(6)], macro_or_item_names: MessageDataItemNames([Uid, Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Asterisk)]+), modifiers: [ChangedSince(7)], macro_or_item_names: MessageDataItemNames([Uid, Flags, Envelope, InternalDate, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("References"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Asterisk)]+), modifiers: [ChangedSince(8)], macro_or_item_names: MessageDataItemNames([Uid, Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Asterisk)]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Asterisk)]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(1))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags, InternalDate, Rfc822Size, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("DATE")), Atom(AtomExt("FROM")), Atom(AtomExt("SENDER")), Atom(AtomExt("SUBJECT")), Atom(AtomExt("TO")), Atom(AtomExt("CC")), Atom(AtomExt("MESSAGE-ID")), Atom(AtomExt("REFERENCES")), Atom(AtomExt("CONTENT-TYPE")), Atom(AtomExt("CONTENT-DESCRIPTION")), Atom(AtomExt("IN-REPLY-TO")), Atom(AtomExt("REPLY-TO")), Atom(AtomExt("LINES")), Atom(AtomExt("LIST-POST")), Atom(AtomExt("X-LABEL"))]+)), partial: None, peek: true }]), uid: false } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(20))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags, Envelope, InternalDate, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("References"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(20))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(23))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(2))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Flags, Uid]), uid: false } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(2))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([InternalDate, Uid, Flags, Rfc822Size, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("DATE")), Atom(AtomExt("FROM")), Atom(AtomExt("SUBJECT")), Atom(AtomExt("CONTENT-TYPE")), Atom(AtomExt("X-MS-TNEF-Correlator")), Atom(AtomExt("CONTENT-CLASS")), Atom(AtomExt("IMPORTANCE")), Atom(AtomExt("PRIORITY")), Atom(AtomExt("X-PRIORITY")), Atom(AtomExt("THREAD-TOPIC")), Atom(AtomExt("REPLY-TO"))]+)), partial: None, peek: true }, BodyStructure]), uid: false } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(2))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags, InternalDate, Rfc822Size, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("DATE")), Atom(AtomExt("FROM")), Atom(AtomExt("SENDER")), Atom(AtomExt("SUBJECT")), Atom(AtomExt("TO")), Atom(AtomExt("CC")), Atom(AtomExt("MESSAGE-ID")), Atom(AtomExt("REFERENCES")), Atom(AtomExt("CONTENT-TYPE")), Atom(AtomExt("CONTENT-DESCRIPTION")), Atom(AtomExt("IN-REPLY-TO")), Atom(AtomExt("REPLY-TO")), Atom(AtomExt("LINES")), Atom(AtomExt("LIST-POST")), Atom(AtomExt("X-LABEL"))]+)), partial: None, peek: true }]), uid: false } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(2))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, Flags, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("From")), Atom(AtomExt("To")), Atom(AtomExt("Cc")), Atom(AtomExt("Bcc")), Atom(AtomExt("Subject")), Atom(AtomExt("Date")), Atom(AtomExt("Message-ID")), Atom(AtomExt("Priority")), Atom(AtomExt("X-Priority")), Atom(AtomExt("References")), Atom(AtomExt("Newsgroups")), Atom(AtomExt("In-Reply-To")), Atom(AtomExt("Content-Type")), Atom(AtomExt("Reply-To"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(2))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid]), uid: false } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(2)), Range(Value(11), Value(13)), Range(Value(18), Value(19)), Range(Value(22), Value(26))]+), modifiers: [ChangedSince(68)], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(2)), Range(Value(11), Value(13)), Range(Value(18), Value(19)), Range(Value(22), Value(26))]+), modifiers: [ChangedSince(69)], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(2)), Range(Value(11), Value(13)), Range(Value(18), Value(19)), Range(Value(22), Value(26)), Range(Value(33), Value(34))]+), modifiers: [ChangedSince(102)], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(2)), Range(Value(11), Value(13)), Range(Value(18), Value(19)), Range(Value(22), Value(26)), Range(Value(33), Value(34))]+), modifiers: [ChangedSince(189)], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(2)), Range(Value(11), Value(13)), Range(Value(18), Value(19)), Range(Value(22), Value(26)), Range(Value(33), Value(34))]+), modifiers: [ChangedSince(81)], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(2)), Range(Value(11), Value(13)), Range(Value(18), Value(19)), Range(Value(22), Value(26)), Range(Value(33), Value(34)), Range(Value(60), Value(62))]+), modifiers: [ChangedSince(165)], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(2)), Range(Value(11), Value(13)), Range(Value(18), Value(19)), Range(Value(22), Value(26)), Range(Value(33), Value(34)), Range(Value(60), Value(62))]+), modifiers: [ChangedSince(166)], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(2)), Range(Value(11), Value(13)), Range(Value(18), Value(19)), Range(Value(22), Value(26)), Range(Value(33), Value(34)), Range(Value(60), Value(62))]+), modifiers: [ChangedSince(168)], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(3))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Flags, Uid]), uid: false } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(3))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags]), uid: false } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(4))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([InternalDate, Uid, Flags, Rfc822Size, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("DATE")), Atom(AtomExt("FROM")), Atom(AtomExt("SUBJECT")), Atom(AtomExt("CONTENT-TYPE")), Atom(AtomExt("X-MS-TNEF-Correlator")), Atom(AtomExt("CONTENT-CLASS")), Atom(AtomExt("IMPORTANCE")), Atom(AtomExt("PRIORITY")), Atom(AtomExt("X-PRIORITY")), Atom(AtomExt("THREAD-TOPIC")), Atom(AtomExt("REPLY-TO"))]+)), partial: None, peek: true }, BodyStructure]), uid: false } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(4))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags, Envelope, InternalDate, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("References"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(4))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(6))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags, Envelope, InternalDate, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("References"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(7))]+), modifiers: [ChangedSince(9)], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(7))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags]), uid: false } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(7))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(1), Value(7))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, BodyExt { section: None, partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(20), Value(23))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags, Envelope, InternalDate, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("References"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(27), Asterisk)]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(2), Asterisk)]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(30), Asterisk)]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(3), Asterisk)]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(3), Asterisk)]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(4), Asterisk)]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(5), Asterisk)]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(5), Value(7))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([InternalDate, Uid, Flags, Rfc822Size, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("DATE")), Atom(AtomExt("FROM")), Atom(AtomExt("SUBJECT")), Atom(AtomExt("CONTENT-TYPE")), Atom(AtomExt("X-MS-TNEF-Correlator")), Atom(AtomExt("CONTENT-CLASS")), Atom(AtomExt("IMPORTANCE")), Atom(AtomExt("PRIORITY")), Atom(AtomExt("X-PRIORITY")), Atom(AtomExt("THREAD-TOPIC")), Atom(AtomExt("REPLY-TO"))]+)), partial: None, peek: true }, BodyStructure]), uid: false } }
+Fetch { sequence_set: SequenceSet([Range(Value(5), Value(7))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, Flags, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("From")), Atom(AtomExt("To")), Atom(AtomExt("Cc")), Atom(AtomExt("Bcc")), Atom(AtomExt("Subject")), Atom(AtomExt("Date")), Atom(AtomExt("Message-ID")), Atom(AtomExt("Priority")), Atom(AtomExt("X-Priority")), Atom(AtomExt("References")), Atom(AtomExt("Newsgroups")), Atom(AtomExt("In-Reply-To")), Atom(AtomExt("Content-Type")), Atom(AtomExt("Reply-To"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(60), Value(62))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([InternalDate, Uid, Rfc822Size, Flags, ModSeq, BodyExt { section: Some(Header(None)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(60), Value(62))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, BodyExt { section: None, partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(63), Asterisk)]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(6), Asterisk)]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(6), Value(7))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags, Envelope, InternalDate, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("References"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(6), Value(7))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags, InternalDate, Envelope, BodyStructure, Rfc822Size, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("REFERENCES")), Atom(AtomExt("THREAD-TOPIC")), Atom(AtomExt("FROM")), Atom(AtomExt("SENDER")), Atom(AtomExt("REPLY-TO"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(6), Value(7))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, Flags, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("From")), Atom(AtomExt("To")), Atom(AtomExt("Cc")), Atom(AtomExt("Bcc")), Atom(AtomExt("Subject")), Atom(AtomExt("Date")), Atom(AtomExt("Message-ID")), Atom(AtomExt("Priority")), Atom(AtomExt("X-Priority")), Atom(AtomExt("References")), Atom(AtomExt("Newsgroups")), Atom(AtomExt("In-Reply-To")), Atom(AtomExt("Content-Type")), Atom(AtomExt("Reply-To"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(86), Asterisk)]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(8), Asterisk)]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Range(Value(9), Asterisk)]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(13))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyExt { section: Some(Header(None)), partial: None, peek: true }, BodyExt { section: Some(Text(None)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(1))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyExt { section: None, partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(1))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Flags, Uid]), uid: false } }
+Fetch { sequence_set: SequenceSet([Single(Value(1))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Rfc822Header, BodyExt { section: Some(Part(Part([1]+))), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(1))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(1))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, BodyExt { section: None, partial: None, peek: false }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(1))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, BodyExt { section: None, partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(1))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, Flags, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("From")), Atom(AtomExt("To")), Atom(AtomExt("Cc")), Atom(AtomExt("Bcc")), Atom(AtomExt("Resent-Message-ID")), Atom(AtomExt("Subject")), Atom(AtomExt("Date")), Atom(AtomExt("Message-ID")), Atom(AtomExt("Priority")), Atom(AtomExt("X-Priority")), Atom(AtomExt("References")), Atom(AtomExt("Newsgroups")), Atom(AtomExt("In-Reply-To")), Atom(AtomExt("Content-Type")), Atom(AtomExt("Reply-To")), Atom(AtomExt("List-Unsubscribe")), Atom(AtomExt("Received")), Atom(AtomExt("Delivery-Date"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(1))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(1)), Single(Value(2))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("bcc")), Atom(AtomExt("cc")), Atom(AtomExt("date")), Atom(AtomExt("from")), Atom(AtomExt("reply-to")), Atom(AtomExt("sender")), Atom(AtomExt("subject")), Atom(AtomExt("to"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(1)), Single(Value(2))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("in-reply-to")), Atom(AtomExt("message-id")), Atom(AtomExt("references"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(1)), Single(Value(2))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyExt { section: Some(Text(None)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(1)), Single(Value(2))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([InternalDate, Rfc822Size, Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(1)), Single(Value(2))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Rfc822Header]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(22))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyExt { section: None, partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(24))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, BodyExt { section: Some(Text(None)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(24))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags, InternalDate, Envelope, BodyStructure, Rfc822Size, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("REFERENCES")), Atom(AtomExt("THREAD-TOPIC")), Atom(AtomExt("FROM")), Atom(AtomExt("SENDER")), Atom(AtomExt("REPLY-TO"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(24))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, BodyExt { section: None, partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(24))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, Flags, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("From")), Atom(AtomExt("To")), Atom(AtomExt("Cc")), Atom(AtomExt("Bcc")), Atom(AtomExt("Subject")), Atom(AtomExt("Date")), Atom(AtomExt("Message-ID")), Atom(AtomExt("Priority")), Atom(AtomExt("X-Priority")), Atom(AtomExt("References")), Atom(AtomExt("Newsgroups")), Atom(AtomExt("In-Reply-To")), Atom(AtomExt("Content-Type")), Atom(AtomExt("Reply-To"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(24)), Single(Value(1))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, Flags, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("From")), Atom(AtomExt("To")), Atom(AtomExt("Cc")), Atom(AtomExt("Bcc")), Atom(AtomExt("Resent-Message-ID")), Atom(AtomExt("Subject")), Atom(AtomExt("Date")), Atom(AtomExt("Message-ID")), Atom(AtomExt("Priority")), Atom(AtomExt("X-Priority")), Atom(AtomExt("References")), Atom(AtomExt("Newsgroups")), Atom(AtomExt("In-Reply-To")), Atom(AtomExt("Content-Type")), Atom(AtomExt("Reply-To")), Atom(AtomExt("List-Unsubscribe")), Atom(AtomExt("Received")), Atom(AtomExt("Delivery-Date"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(29))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, BodyExt { section: None, partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(29))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, Flags, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("From")), Atom(AtomExt("To")), Atom(AtomExt("Cc")), Atom(AtomExt("Bcc")), Atom(AtomExt("Subject")), Atom(AtomExt("Date")), Atom(AtomExt("Message-ID")), Atom(AtomExt("Priority")), Atom(AtomExt("X-Priority")), Atom(AtomExt("References")), Atom(AtomExt("Newsgroups")), Atom(AtomExt("In-Reply-To")), Atom(AtomExt("Content-Type")), Atom(AtomExt("Reply-To"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(2))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyExt { section: None, partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(2))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyExt { section: Some(Text(None)), partial: None, peek: true }]), uid: false } }
+Fetch { sequence_set: SequenceSet([Single(Value(2))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Envelope, InternalDate, Rfc822Size, Flags, BodyStructure, Uid, BodyExt { section: Some(Header(None)), partial: None, peek: true }, Rfc822Size, InternalDate]), uid: false } }
+Fetch { sequence_set: SequenceSet([Single(Value(2))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Rfc822Header, BodyExt { section: Some(Part(Part([1]+))), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(2))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Rfc822Header, BodyExt { section: Some(Part(Part([2]+))), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(2))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, BodyExt { section: None, partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(2)), Single(Value(8))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, Flags, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("From")), Atom(AtomExt("To")), Atom(AtomExt("Cc")), Atom(AtomExt("Bcc")), Atom(AtomExt("Subject")), Atom(AtomExt("Date")), Atom(AtomExt("Message-ID")), Atom(AtomExt("Priority")), Atom(AtomExt("X-Priority")), Atom(AtomExt("References")), Atom(AtomExt("Newsgroups")), Atom(AtomExt("In-Reply-To")), Atom(AtomExt("Content-Type")), Atom(AtomExt("Reply-To"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(3))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyExt { section: None, partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(3))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([InternalDate, Uid, Flags, Rfc822Size, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("DATE")), Atom(AtomExt("FROM")), Atom(AtomExt("SUBJECT")), Atom(AtomExt("CONTENT-TYPE")), Atom(AtomExt("X-MS-TNEF-Correlator")), Atom(AtomExt("CONTENT-CLASS")), Atom(AtomExt("IMPORTANCE")), Atom(AtomExt("PRIORITY")), Atom(AtomExt("X-PRIORITY")), Atom(AtomExt("THREAD-TOPIC")), Atom(AtomExt("REPLY-TO"))]+)), partial: None, peek: true }, BodyStructure]), uid: false } }
+Fetch { sequence_set: SequenceSet([Single(Value(3))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Rfc822Header, BodyExt { section: Some(Part(Part([1]+))), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(3))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Rfc822Header, BodyExt { section: Some(Part(Part([2]+))), partial: Some((0, 10240)), peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(3))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, BodyStructure, InternalDate, Rfc822Size]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(3))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags, InternalDate, Envelope, BodyStructure, Rfc822Size, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("REFERENCES")), Atom(AtomExt("THREAD-TOPIC")), Atom(AtomExt("FROM")), Atom(AtomExt("SENDER")), Atom(AtomExt("REPLY-TO")), Atom(AtomExt("AUTO-SUBMITTED")), Atom(AtomExt("BOUNCES-TO")), Atom(AtomExt("LIST-ARCHIVE")), Atom(AtomExt("LIST-HELP")), Atom(AtomExt("LIST-ID")), Atom(AtomExt("LIST-OWNER")), Atom(AtomExt("LIST-POST")), Atom(AtomExt("LIST-SUBSCRIBE")), Atom(AtomExt("LIST-UNSUBSCRIBE")), Atom(AtomExt("PRECEDENCE")), Atom(AtomExt("RESENT-FROM")), Atom(AtomExt("RETURN-PATH"))]+)), partial: None, peek: true }, BodyExt { section: Some(Text(None)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(3))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, BodyExt { section: None, partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(3))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, Flags, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("From")), Atom(AtomExt("To")), Atom(AtomExt("Cc")), Atom(AtomExt("Bcc")), Atom(AtomExt("Subject")), Atom(AtomExt("Date")), Atom(AtomExt("Message-ID")), Atom(AtomExt("Priority")), Atom(AtomExt("X-Priority")), Atom(AtomExt("References")), Atom(AtomExt("Newsgroups")), Atom(AtomExt("In-Reply-To")), Atom(AtomExt("Content-Type")), Atom(AtomExt("Reply-To"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(3)), Single(Value(2)), Single(Value(1))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, Flags, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("From")), Atom(AtomExt("To")), Atom(AtomExt("Cc")), Atom(AtomExt("Bcc")), Atom(AtomExt("Resent-Message-ID")), Atom(AtomExt("Subject")), Atom(AtomExt("Date")), Atom(AtomExt("Message-ID")), Atom(AtomExt("Priority")), Atom(AtomExt("X-Priority")), Atom(AtomExt("References")), Atom(AtomExt("Newsgroups")), Atom(AtomExt("In-Reply-To")), Atom(AtomExt("Content-Type")), Atom(AtomExt("Reply-To")), Atom(AtomExt("List-Unsubscribe")), Atom(AtomExt("Received")), Atom(AtomExt("Delivery-Date"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(4))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyExt { section: None, partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(4))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Rfc822Header, BodyExt { section: Some(Part(Part([2, 1]+))), partial: None, peek: true }, BodyExt { section: Some(Part(Part([2, 2]+))), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(4))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(4)), Single(Value(3)), Single(Value(2)), Single(Value(1))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(5))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyExt { section: None, partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(5))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Rfc822Header, BodyExt { section: Some(Part(Part([1, 2]+))), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(5))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, BodyExt { section: None, partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(5))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, Flags, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("From")), Atom(AtomExt("To")), Atom(AtomExt("Cc")), Atom(AtomExt("Bcc")), Atom(AtomExt("Subject")), Atom(AtomExt("Date")), Atom(AtomExt("Message-ID")), Atom(AtomExt("Priority")), Atom(AtomExt("X-Priority")), Atom(AtomExt("References")), Atom(AtomExt("Newsgroups")), Atom(AtomExt("In-Reply-To")), Atom(AtomExt("Content-Type")), Atom(AtomExt("Reply-To"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(60))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyExt { section: Some(Part(Part([1, 2]+))), partial: Some((0, 2227)), peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(60))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyExt { section: Some(Part(Part([2]+))), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(60))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyStructure, BodyExt { section: Some(Header(None)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(60))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, BodyExt { section: None, partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(61))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyExt { section: Some(Header(None)), partial: None, peek: true }, BodyExt { section: Some(Text(None)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(62))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyExt { section: Some(Part(Part([1, 2]+))), partial: Some((0, 711)), peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(62))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyExt { section: Some(Part(Part([2]+))), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(62))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyStructure, BodyExt { section: Some(Header(None)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(62))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, BodyExt { section: None, partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(6))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Rfc822Header, BodyExt { section: Some(Part(Part([2]+))), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(6))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, BodyExt { section: Some(Part(Part([2]+))), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(6))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Flags, Envelope, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("References"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(6))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, BodyExt { section: None, partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(7))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyExt { section: Some(Header(None)), partial: None, peek: true }, BodyExt { section: Some(Text(None)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(7))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([InternalDate, Uid, Rfc822Size, Flags, ModSeq, BodyExt { section: Some(Header(None)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(7))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Rfc822Header, BodyExt { section: Some(Part(Part([1, 2]+))), partial: None, peek: true }, BodyExt { section: Some(Part(Part([2]+))), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(7))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, BodyExt { section: Some(Part(Part([1, 2]+))), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(7))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, BodyExt { section: None, partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(7)), Single(Value(6)), Single(Value(5)), Single(Value(4)), Single(Value(3)), Single(Value(2)), Single(Value(1))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([Uid, Rfc822Size, Flags, BodyExt { section: Some(HeaderFields(None, [Atom(AtomExt("From")), Atom(AtomExt("To")), Atom(AtomExt("Cc")), Atom(AtomExt("Bcc")), Atom(AtomExt("Resent-Message-ID")), Atom(AtomExt("Subject")), Atom(AtomExt("Date")), Atom(AtomExt("Message-ID")), Atom(AtomExt("Priority")), Atom(AtomExt("X-Priority")), Atom(AtomExt("References")), Atom(AtomExt("Newsgroups")), Atom(AtomExt("In-Reply-To")), Atom(AtomExt("Content-Type")), Atom(AtomExt("Reply-To")), Atom(AtomExt("List-Unsubscribe")), Atom(AtomExt("Received")), Atom(AtomExt("Delivery-Date"))]+)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(83))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([BodyExt { section: Some(Header(None)), partial: None, peek: true }, BodyExt { section: Some(Text(None)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(83))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([InternalDate, Uid, Rfc822Size, Flags, ModSeq, BodyExt { section: Some(Header(None)), partial: None, peek: true }]), uid: true } }
+Fetch { sequence_set: SequenceSet([Single(Value(85))]+), modifiers: [], macro_or_item_names: MessageDataItemNames([InternalDate, Uid, Rfc822Size, Flags, ModSeq, BodyExt { section: Some(Header(None)), partial: None, peek: true }]), uid: true } }
+Idle 
+List { reference: Other(MailboxOther(String(Quoted(Quoted("Archive."))))), mailbox_wildcard: Token(ListCharString("*")), return: [] } }
+List { reference: Other(MailboxOther(String(Quoted(Quoted("INBOX."))))), mailbox_wildcard: Token(ListCharString("*")), return: [] } }
+List { reference: Other(MailboxOther(String(Quoted(Quoted(""))))), mailbox_wildcard: String(Quoted(Quoted("Dataset"))), return: [] } }
+List { reference: Other(MailboxOther(String(Quoted(Quoted(""))))), mailbox_wildcard: String(Quoted(Quoted("INBOX"))), return: [] } }
+List { reference: Other(MailboxOther(String(Quoted(Quoted(""))))), mailbox_wildcard: String(Quoted(Quoted(""))), return: [] } }
+List { reference: Other(MailboxOther(String(Quoted(Quoted(""))))), mailbox_wildcard: String(Quoted(Quoted("*"))), return: [] } }
+List { reference: Other(MailboxOther(String(Quoted(Quoted(""))))), mailbox_wildcard: String(Quoted(Quoted("*"))), return: [Status([Unseen])] } }
+List { reference: Other(MailboxOther(String(Quoted(Quoted(""))))), mailbox_wildcard: Token(ListCharString("INBOX")), return: [] } }
+List { reference: Other(MailboxOther(String(Quoted(Quoted(""))))), mailbox_wildcard: Token(ListCharString("%")), return: [] } }
+List { reference: Other(MailboxOther(String(Quoted(Quoted("Mailspring."))))), mailbox_wildcard: Token(ListCharString("*")), return: [] } }
+List { reference: Other(MailboxOther(String(Quoted(Quoted("Sent."))))), mailbox_wildcard: Token(ListCharString("*")), return: [] } }
+List { reference: Other(MailboxOther(String(Quoted(Quoted("Trash."))))), mailbox_wildcard: Token(ListCharString("*")), return: [] } }
+Login { username: Atom(AtomExt("REDACTED")), password: /* REDACTED */ } }
+Login { username: String(Quoted(Quoted("REDACTED"))), password: /* REDACTED */ } }
+Login { username: String(Quoted(Quoted("REDACTED@saint-ex.deuxfleurs.org"))), password: /* REDACTED */ } }
+Logout 
+Lsub { reference: Other(MailboxOther(String(Quoted(Quoted(""))))), mailbox_wildcard: String(Quoted(Quoted("*"))) } }
+Move { sequence_set: SequenceSet([Range(Value(20), Value(21))]+), mailbox: Other(MailboxOther(String(Quoted(Quoted("Dataset"))))), uid: true } }
+Move { sequence_set: SequenceSet([Single(Value(29))]+), mailbox: Other(MailboxOther(String(Quoted(Quoted("Dataset"))))), uid: true } }
+Noop 
+Search { charset: None, criteria: And([Header(Atom(AtomExt("Message-ID")), Atom(AtomExt("<Mailbird-8d3b03f5-7737-479e-b8d7-a3cae013e72f@saint-ex.deuxfleurs.org>"))), Undeleted]+), uid: true } }
+Search { charset: None, criteria: And([SequenceSet(SequenceSet([Range(Value(1), Asterisk)]+)), Deleted]+), uid: true } }
+Search { charset: None, criteria: And([SequenceSet(SequenceSet([Range(Value(1), Asterisk)]+)), Not(Deleted)]+), uid: true } }
+Search { charset: None, criteria: And([SequenceSet(SequenceSet([Range(Value(1), Asterisk)]+)), Since(2023-11-16)]+), uid: true } }
+Search { charset: None, criteria: And([SequenceSet(SequenceSet([Range(Value(1), Asterisk)]+)), Unseen]+), uid: true } }
+Search { charset: None, criteria: And([SequenceSet(SequenceSet([Range(Value(1), Value(1))]+)), Not(Deleted)]+), uid: true } }
+Search { charset: None, criteria: And([SequenceSet(SequenceSet([Range(Value(1), Value(4))]+)), Not(Deleted)]+), uid: true } }
+Search { charset: None, criteria: And([Since(2024-02-07), All]+), uid: false } }
+Search { charset: None, criteria: And([Since(2024-02-08), All]+), uid: false } }
+Search { charset: None, criteria: And([Since(2024-02-09), All]+), uid: false } }
+Search { charset: None, criteria: And([Undeleted, Since(2023-11-17)]+), uid: false } }
+Search { charset: None, criteria: And([Undeleted, Since(2024-02-13)]+), uid: false } }
+Search { charset: None, criteria: Before(2024-02-09), uid: true } }
+Search { charset: None, criteria: Since(2024-01-31), uid: true } }
+Select { mailbox: Inbox, modifiers: [] } }
+Select { mailbox: Inbox, modifiers: [Condstore] } }
+Select { mailbox: Other(MailboxOther(Atom(AtomExt("Archive")))), modifiers: [] } }
+Select { mailbox: Other(MailboxOther(Atom(AtomExt("Drafts")))), modifiers: [] } }
+Select { mailbox: Other(MailboxOther(Atom(AtomExt("Mailspring")))), modifiers: [] } }
+Select { mailbox: Other(MailboxOther(Atom(AtomExt("Sent")))), modifiers: [] } }
+Select { mailbox: Other(MailboxOther(Atom(AtomExt("Test.Coucou")))), modifiers: [] } }
+Select { mailbox: Other(MailboxOther(Atom(AtomExt("Test")))), modifiers: [] } }
+Select { mailbox: Other(MailboxOther(Atom(AtomExt("Trash")))), modifiers: [] } }
+Select { mailbox: Other(MailboxOther(String(Quoted(Quoted("Archive"))))), modifiers: [] } }
+Select { mailbox: Other(MailboxOther(String(Quoted(Quoted("Dataset"))))), modifiers: [] } }
+Select { mailbox: Other(MailboxOther(String(Quoted(Quoted("Drafts"))))), modifiers: [] } }
+Select { mailbox: Other(MailboxOther(String(Quoted(Quoted("INBOX.Pourriel"))))), modifiers: [] } }
+Select { mailbox: Other(MailboxOther(String(Quoted(Quoted("Mailspring"))))), modifiers: [] } }
+Select { mailbox: Other(MailboxOther(String(Quoted(Quoted("Mailspring.Snoozed"))))), modifiers: [] } }
+Select { mailbox: Other(MailboxOther(String(Quoted(Quoted("Sent"))))), modifiers: [] } }
+Select { mailbox: Other(MailboxOther(String(Quoted(Quoted("Sent"))))), modifiers: [Condstore] } }
+Select { mailbox: Other(MailboxOther(String(Quoted(Quoted("Trash"))))), modifiers: [] } }
+Status { mailbox: Inbox, item_names: [Messages, Recent, UidNext, UidValidity, Unseen] } }
+Status { mailbox: Inbox, item_names: [Unseen, Messages, Recent, UidNext, UidValidity, HighestModSeq] } }
+Status { mailbox: Other(MailboxOther(Atom(AtomExt("Archive")))), item_names: [Unseen, Messages, Recent, UidNext, UidValidity, HighestModSeq] } }
+Status { mailbox: Other(MailboxOther(Atom(AtomExt("Drafts")))), item_names: [Unseen, Messages, Recent, UidNext, UidValidity, HighestModSeq] } }
+Status { mailbox: Other(MailboxOther(Atom(AtomExt("Mailspring")))), item_names: [Unseen, Messages, Recent, UidNext, UidValidity, HighestModSeq] } }
+Status { mailbox: Other(MailboxOther(Atom(AtomExt("Sent")))), item_names: [Unseen, Messages, Recent, UidNext, UidValidity, HighestModSeq] } }
+Status { mailbox: Other(MailboxOther(Atom(AtomExt("Trash")))), item_names: [Unseen, Messages, Recent, UidNext, UidValidity, HighestModSeq] } }
+Status { mailbox: Other(MailboxOther(String(Quoted(Quoted("Archive"))))), item_names: [UidNext, Messages, Unseen, Recent] } }
+Status { mailbox: Other(MailboxOther(String(Quoted(Quoted("Archive"))))), item_names: [UidNext, UidValidity, Unseen, Recent] } }
+Status { mailbox: Other(MailboxOther(String(Quoted(Quoted("Drafts"))))), item_names: [Messages] } }
+Status { mailbox: Other(MailboxOther(String(Quoted(Quoted("Drafts"))))), item_names: [UidNext, Messages, Unseen, Recent] } }
+Status { mailbox: Other(MailboxOther(String(Quoted(Quoted("Drafts"))))), item_names: [UidNext, UidValidity, Unseen, Recent] } }
+Status { mailbox: Other(MailboxOther(String(Quoted(Quoted("INBOX.Pourriel"))))), item_names: [UidNext, Messages, Unseen, Recent] } }
+Status { mailbox: Other(MailboxOther(String(Quoted(Quoted("INBOX.Pourriel"))))), item_names: [Unseen, Messages, Recent, UidNext, UidValidity, HighestModSeq] } }
+Status { mailbox: Other(MailboxOther(String(Quoted(Quoted("Mailspring"))))), item_names: [UidNext, Messages, Unseen, Recent] } }
+Status { mailbox: Other(MailboxOther(String(Quoted(Quoted("Mailspring.Snoozed"))))), item_names: [UidNext, Messages, Unseen, Recent] } }
+Status { mailbox: Other(MailboxOther(String(Quoted(Quoted("Mailspring.Snoozed"))))), item_names: [Unseen, Messages, Recent, UidNext, UidValidity, HighestModSeq] } }
+Status { mailbox: Other(MailboxOther(String(Quoted(Quoted("Sent"))))), item_names: [UidNext, Messages, Unseen, Recent] } }
+Status { mailbox: Other(MailboxOther(String(Quoted(Quoted("Sent"))))), item_names: [UidNext, UidValidity, Unseen, Recent] } }
+Status { mailbox: Other(MailboxOther(String(Quoted(Quoted("Test.Coucou"))))), item_names: [UidNext, UidValidity, Unseen, Recent] } }
+Status { mailbox: Other(MailboxOther(String(Quoted(Quoted("Test"))))), item_names: [UidNext, UidValidity, Unseen, Recent] } }
+Status { mailbox: Other(MailboxOther(String(Quoted(Quoted("Trash"))))), item_names: [UidNext, UidValidity, Unseen, Recent] } }
+Store { sequence_set: SequenceSet([Range(Value(60), Value(62))]+), kind: Add, response: Answer, flags: [Deleted], modifiers: [], uid: true } }
+Store { sequence_set: SequenceSet([Range(Value(60), Value(62))]+), kind: Add, response: Answer, flags: [Deleted, Seen], modifiers: [], uid: true } }
+Store { sequence_set: SequenceSet([Range(Value(60), Value(62))]+), kind: Add, response: Answer, flags: [Seen, Deleted], modifiers: [], uid: true } }
+Store { sequence_set: SequenceSet([Single(Value(1))]+), kind: Add, response: Answer, flags: [Seen], modifiers: [], uid: true } }
+Store { sequence_set: SequenceSet([Single(Value(24))]+), kind: Add, response: Answer, flags: [Seen, Deleted], modifiers: [], uid: true } }
+Store { sequence_set: SequenceSet([Single(Value(24))]+), kind: Add, response: Answer, flags: [Seen], modifiers: [], uid: true } }
+Store { sequence_set: SequenceSet([Single(Value(26))]+), kind: Add, response: Answer, flags: [Answered], modifiers: [], uid: true } }
+Store { sequence_set: SequenceSet([Single(Value(29))]+), kind: Add, response: Answer, flags: [Keyword(Atom("NonJunk"))], modifiers: [], uid: true } }
+Store { sequence_set: SequenceSet([Single(Value(29))]+), kind: Add, response: Answer, flags: [Seen], modifiers: [], uid: true } }
+Store { sequence_set: SequenceSet([Single(Value(2))]+), kind: Add, response: Answer, flags: [Seen], modifiers: [], uid: false } }
+Store { sequence_set: SequenceSet([Single(Value(2))]+), kind: Add, response: Silent, flags: [Deleted], modifiers: [], uid: true } }
+Store { sequence_set: SequenceSet([Single(Value(3))]+), kind: Add, response: Answer, flags: [Seen], modifiers: [], uid: true } }
+Store { sequence_set: SequenceSet([Single(Value(3))]+), kind: Add, response: Silent, flags: [Seen], modifiers: [], uid: true } }
+Store { sequence_set: SequenceSet([Single(Value(5))]+), kind: Add, response: Answer, flags: [Keyword(Atom("NonJunk"))], modifiers: [], uid: true } }
+Store { sequence_set: SequenceSet([Single(Value(60))]+), kind: Add, response: Answer, flags: [Seen, Deleted], modifiers: [], uid: true } }
+Store { sequence_set: SequenceSet([Single(Value(60))]+), kind: Add, response: Silent, flags: [Seen], modifiers: [], uid: true } }
+Store { sequence_set: SequenceSet([Single(Value(61))]+), kind: Add, response: Answer, flags: [Seen, Deleted], modifiers: [], uid: true } }
+Store { sequence_set: SequenceSet([Single(Value(61))]+), kind: Add, response: Silent, flags: [Seen], modifiers: [], uid: true } }
+Store { sequence_set: SequenceSet([Single(Value(62))]+), kind: Add, response: Silent, flags: [Seen], modifiers: [], uid: true } }
+Subscribe { mailbox: Other(MailboxOther(Atom(AtomExt("Mailspring")))) } }
+Subscribe { mailbox: Other(MailboxOther(String(Quoted(Quoted("Dataset"))))) } }
+Subscribe { mailbox: Other(MailboxOther(String(Quoted(Quoted("Mailspring.Snoozed"))))) } }
+Unselect 

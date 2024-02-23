@@ -1,6 +1,6 @@
 [package]
 name = "aerogramme"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Alex Auvolat <alex@adnab.me>", "Quentin Dufour <quentin@dufour.io>"]
 edition = "2021"
 license = "EUPL-1.2"
@@ -48,23 +48,26 @@ rand = "0.8.5"
 rustls = "0.22"
 rustls-pemfile = "2.0"
 tokio-rustls = "0.25"
-hyper-rustls = { version = "0.24", features = ["http2"] }
+hyper-rustls = { version = "0.26", features = ["http2"] }
+hyper-util = { version = "0.1", features = ["full"] }
 rpassword = "7.0"
 
 # login
 ldap3 = { version = "0.10", default-features = false, features = ["tls-rustls"] }
 
 # storage
-k2v-client = { git = "https://git.deuxfleurs.fr/Deuxfleurs/garage.git", tag = "v0.9.1" }
-aws-config = { version = "1.1.1", features = ["behavior-version-latest"] }
-aws-sdk-s3 = "1.9.0"
+k2v-client = { git = "https://git.deuxfleurs.fr/Deuxfleurs/garage.git", branch = "k2v/shared_http_client" }
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1"
+aws-smithy-runtime = "1"
+aws-smithy-runtime-api = "1"
 
 # email protocols
 eml-codec = "0.1.2"
 smtp-message = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 imap-codec = { version = "2.0.0", features = ["bounded-static", "ext_condstore_qresync"] }
-imap-flow = { git = "https://github.com/superboum/imap-flow.git", branch = "custom/aerogramme" }
+imap-flow = { git = "https://github.com/duesee/imap-flow.git", branch = "main" }
 thiserror = "1.0.56"
 
 [dev-dependencies]
