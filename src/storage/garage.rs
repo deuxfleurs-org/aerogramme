@@ -2,8 +2,8 @@ use aws_sdk_s3::{self as s3, error::SdkError, operation::get_object::GetObjectEr
 use aws_smithy_runtime::client::http::hyper_014::HyperClientBuilder;
 use aws_smithy_runtime_api::client::http::SharedHttpClient;
 use hyper_rustls::HttpsConnector;
-use hyper_util::rt::TokioExecutor;
 use hyper_util::client::legacy::{connect::HttpConnector, Client as HttpClient};
+use hyper_util::rt::TokioExecutor;
 use serde::Serialize;
 
 use crate::storage::*;
@@ -15,13 +15,13 @@ pub struct GarageRoot {
 
 impl GarageRoot {
     pub fn new() -> anyhow::Result<Self> {
-    let connector = hyper_rustls::HttpsConnectorBuilder::new()
-			.with_native_roots()?
-			.https_or_http()
-			.enable_http1()
-			.enable_http2()
-			.build();
-		let k2v_http = HttpClient::builder(TokioExecutor::new()).build(connector);
+        let connector = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_native_roots()?
+            .https_or_http()
+            .enable_http1()
+            .enable_http2()
+            .build();
+        let k2v_http = HttpClient::builder(TokioExecutor::new()).build(connector);
         let aws_http = HyperClientBuilder::new().build_https();
         Ok(Self { k2v_http, aws_http })
     }
@@ -31,11 +31,11 @@ impl GarageRoot {
         unicity.extend_from_slice(file!().as_bytes());
         unicity.append(&mut rmp_serde::to_vec(&conf)?);
 
-        Ok(Arc::new(GarageUser { 
-            conf, 
-            aws_http: self.aws_http.clone(), 
+        Ok(Arc::new(GarageUser {
+            conf,
+            aws_http: self.aws_http.clone(),
             k2v_http: self.k2v_http.clone(),
-            unicity 
+            unicity,
         }))
     }
 }
@@ -95,13 +95,14 @@ impl IBuilder for GarageUser {
             user_agent: None,
         };
 
-        let k2v_client = match k2v_client::K2vClient::new_with_client(k2v_config, self.k2v_http.clone()) {
-            Err(e) => {
-                tracing::error!("unable to build k2v client: {}", e);
-                return Err(StorageError::Internal);
-            }
-            Ok(v) => v,
-        };
+        let k2v_client =
+            match k2v_client::K2vClient::new_with_client(k2v_config, self.k2v_http.clone()) {
+                Err(e) => {
+                    tracing::error!("unable to build k2v client: {}", e);
+                    return Err(StorageError::Internal);
+                }
+                Ok(v) => v,
+            };
 
         Ok(Box::new(GarageStore {
             bucket: self.conf.bucket.clone(),
