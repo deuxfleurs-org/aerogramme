@@ -14,7 +14,7 @@
     };
 
     # use rust project builds 
-    fenix.url = "github:nix-community/fenix/monthly";
+    fenix.url = "github:nix-community/fenix";
 
     # import alba releasing tool
     albatros.url = "git+https://git.deuxfleurs.fr/Deuxfleurs/albatros.git?ref=main";
@@ -218,7 +218,7 @@
 
         ${alba} static push -t aerogramme:${version} static/ 's3://download.deuxfleurs.org?endpoint=garage.deuxfleurs.fr&s3ForcePathStyle=true&region=garage' 1>&2
         ${alba} container push -t aerogramme:${version} docker/ 's3://registry.deuxfleurs.org?endpoint=garage.deuxfleurs.fr&s3ForcePathStyle=true&region=garage' 1>&2
-        ${alba} container push -t aerogramme:${version} docker/ "docker://docker.io/dxflrs/aerogramme:$RTAG" 1>&2
+        ${alba} container push -t aerogramme:${version} docker/ "docker://docker.io/dxflrs/aerogramme:${version}" 1>&2
         '';
 
     in
