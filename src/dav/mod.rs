@@ -67,8 +67,13 @@ impl Server {
 }
 
 async fn router(req: Request<impl hyper::body::Body>) -> Result<Response<Full<Bytes>>> {
-    let url_exploded: Vec<_> = req.uri().path().split(",").collect();
-    match url_exploded {
+    let path_segments: Vec<_> = req.uri().path().split("/").filter(|s| *s != "").collect();
+    match path_segments.as_slice() {
+        [] => tracing::info!("root"),
+        [ user ] => tracing::info!(user=user, "user home"),
+        [ user, coltype ] => tracing::info!(user=user, cat=coltype, "user cat of coll"),
+        [ user, coltype, colname ] => tracing::info!(user=user, cat=coltype, name=colname, "user coll"),
+        [ user, coltype, colname, member ] => tracing::info!(user=user, cat=coltype, name=colname, obj=member, "accessing file"),
         _ => unimplemented!(),
     }
     Ok(Response::new(Full::new(Bytes::from("Hello World!"))))
