@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 pub struct CompanionConfig {
     pub pid: Option<PathBuf>,
     pub imap: ImapUnsecureConfig,
+    // @FIXME Add DAV
 
     #[serde(flatten)]
     pub users: LoginStaticConfig,
@@ -22,6 +23,7 @@ pub struct ProviderConfig {
     pub imap_unsecure: Option<ImapUnsecureConfig>,
     pub lmtp: Option<LmtpConfig>,
     pub auth: Option<AuthConfig>,
+    pub dav_unsecure: Option<DavUnsecureConfig>,
     pub users: UserManagement,
 }
 
@@ -49,6 +51,11 @@ pub struct ImapConfig {
     pub bind_addr: SocketAddr,
     pub certs: PathBuf,
     pub key: PathBuf,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DavUnsecureConfig {
+    pub bind_addr: SocketAddr,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -4,6 +4,7 @@ mod auth;
 mod bayou;
 mod config;
 mod cryptoblob;
+mod dav;
 mod imap;
 mod k2v_util;
 mod lmtp;
@@ -186,6 +187,9 @@ async fn main() -> Result<()> {
             imap: None,
             imap_unsecure: Some(ImapUnsecureConfig {
                 bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 1143),
+            }),
+            dav_unsecure: Some(DavUnsecureConfig {
+                bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 8087),
             }),
             lmtp: Some(LmtpConfig {
                 bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 1025),

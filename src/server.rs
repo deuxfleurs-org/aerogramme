@@ -9,6 +9,7 @@ use tokio::sync::watch;
 
 use crate::auth;
 use crate::config::*;
+use crate::dav;
 use crate::imap;
 use crate::lmtp::*;
 use crate::login::ArcLoginProvider;
@@ -19,6 +20,7 @@ pub struct Server {
     imap_unsecure_server: Option<imap::Server>,
     imap_server: Option<imap::Server>,
     auth_server: Option<auth::AuthServer>,
+    dav_unsecure_server: Option<dav::Server>,
     pid_file: Option<PathBuf>,
 }
 
@@ -34,6 +36,7 @@ impl Server {
             imap_unsecure_server,
             imap_server: None,
             auth_server: None,
+            dav_unsecure_server: None,
             pid_file: config.pid,
         })
     }
@@ -57,11 +60,15 @@ impl Server {
         let auth_server = config
             .auth
             .map(|auth| auth::AuthServer::new(auth, login.clone()));
+        let dav_unsecure_server = config
+            .dav_unsecure
+            .map(|dav_config| dav::new_unsecure(dav_config, login.clone()));
 
         Ok(Self {
             lmtp_server,
             imap_unsecure_server,
             imap_server,
+            dav_unsecure_server,
             auth_server,
             pid_file: config.pid,
         })
@@ -111,6 +118,12 @@ impl Server {
                 match self.auth_server {
                     None => Ok(()),
                     Some(a) => a.run(exit_signal.clone()).await,
+                }
+            },
+            async {
+                match self.dav_unsecure_server {
+                    None => Ok(()),
+                    Some(s) => s.run(exit_signal.clone()).await,
                 }
             }
         )?;
