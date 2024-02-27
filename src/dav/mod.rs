@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use base64::Engine;
 use hyper::service::service_fn;
 use hyper::{Request, Response, body::Bytes};
 use hyper::server::conn::http1 as http;
@@ -46,11 +47,17 @@ impl Server {
             };
             tracing::info!("DAV: accepted connection from {}", remote_addr);
             let stream = TokioIo::new(socket);
-            let conn = tokio::spawn(async {
+            let login = self.login_provider.clone();
+            let conn = tokio::spawn(async move {
                 //@FIXME should create a generic "public web" server on which "routers" could be
                 //abitrarily bound
                 //@FIXME replace with a handler supporting http2 and TLS
-                match http::Builder::new().serve_connection(stream, service_fn(router)).await {
+                match http::Builder::new().serve_connection(stream, service_fn(|req: Request<hyper::body::Incoming>| {
+                    let login = login.clone();
+                    async move {
+                        auth(login, req).await
+                    }
+                })).await {
                     Err(e) => tracing::warn!(err=?e, "connection failed"),
                     Ok(()) => tracing::trace!("connection terminated with success"),
                 }
@@ -64,6 +71,45 @@ impl Server {
 
         Ok(())
     }
+}
+
+async fn auth(
+    login: ArcLoginProvider,
+    req: Request<impl hyper::body::Body>, 
+) -> Result<Response<Full<Bytes>>> {
+
+    let auth_val = match req.headers().get("Authorization") {
+        Some(hv) => hv.to_str()?,
+        None => return Ok(Response::builder()
+            .status(401)
+            .body(Full::new(Bytes::from("Missing Authorization field")))?),
+    };
+
+    let b64_creds_maybe_padded = match auth_val.split_once(" ") {
+        Some(("Basic", b64)) => b64,
+        _ => return Ok(Response::builder()
+            .status(400)
+            .body(Full::new(Bytes::from("Unsupported Authorization field")))?),
+    };
+
+    // base64urlencoded may have trailing equals, base64urlsafe has not
+    // theoretically authorization is padded but "be liberal in what you accept"
+    let b64_creds_clean = b64_creds_maybe_padded.trim_end_matches('=');
+
+    // Decode base64
+    let creds = base64::engine::general_purpose::STANDARD_NO_PAD.decode(b64_creds_clean)?;
+    let str_creds = std::str::from_utf8(&creds)?;
+    
+    // Split username and password
+    let (username, password) = str_creds
+        .split_once(':')
+        .ok_or(anyhow!("Missing colon in Authorization, can't split decoded value into a username/password pair"))?;
+
+    // Call login provider
+    
+    // Call router with user
+    
+    unimplemented!();
 }
 
 async fn router(req: Request<impl hyper::body::Body>) -> Result<Response<Full<Bytes>>> {
