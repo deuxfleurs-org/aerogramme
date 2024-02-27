@@ -13,6 +13,7 @@ mod mail;
 mod server;
 mod storage;
 mod timestamp;
+mod user;
 
 use std::io::Read;
 use std::path::PathBuf;

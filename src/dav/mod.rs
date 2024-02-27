@@ -106,6 +106,13 @@ async fn auth(
         .ok_or(anyhow!("Missing colon in Authorization, can't split decoded value into a username/password pair"))?;
 
     // Call login provider
+    let creds = match login.login(username, password).await {
+        Ok(c) => c,
+        Err(e) => return Ok(Response::builder()
+            .status(401)
+            .body(Full::new(Bytes::from("Wrong credentials")))?),
+    };
+
     
     // Call router with user
     

@@ -22,8 +22,9 @@ use crate::imap::response::Response;
 use crate::imap::Body;
 
 use crate::mail::uidindex::*;
-use crate::mail::user::{User, MAILBOX_HIERARCHY_DELIMITER as MBX_HIER_DELIM_RAW};
+use crate::user::User;
 use crate::mail::IMF;
+use crate::mail::namespace::MAILBOX_HIERARCHY_DELIMITER as MBX_HIER_DELIM_RAW;
 
 pub struct AuthenticatedContext<'a> {
     pub req: &'a Command<'static>,

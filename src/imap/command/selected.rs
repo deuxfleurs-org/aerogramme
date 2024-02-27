@@ -17,7 +17,7 @@ use crate::imap::command::{anystate, authenticated, MailboxName};
 use crate::imap::flow;
 use crate::imap::mailbox_view::{MailboxView, UpdateParameters};
 use crate::imap::response::Response;
-use crate::mail::user::User;
+use crate::user::User;
 
 pub struct SelectedContext<'a> {
     pub req: &'a Command<'static>,

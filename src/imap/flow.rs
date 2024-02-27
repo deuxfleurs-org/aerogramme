@@ -6,7 +6,7 @@ use imap_codec::imap_types::core::Tag;
 use tokio::sync::Notify;
 
 use crate::imap::mailbox_view::MailboxView;
-use crate::mail::user::User;
+use crate::user::User;
 
 #[derive(Debug)]
 pub enum Error {

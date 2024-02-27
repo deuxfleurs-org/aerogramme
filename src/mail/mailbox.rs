@@ -17,7 +17,7 @@ pub struct Mailbox {
 }
 
 impl Mailbox {
-    pub(super) async fn open(
+    pub(crate) async fn open(
         creds: &Credentials,
         id: UniqueIdent,
         min_uidvalidity: ImapUidvalidity,

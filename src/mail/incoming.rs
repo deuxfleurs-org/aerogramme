@@ -16,7 +16,7 @@ use crate::login::{Credentials, PublicCredentials};
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::ImapUidvalidity;
 use crate::mail::unique_ident::*;
-use crate::mail::user::User;
+use crate::user::User;
 use crate::mail::IMF;
 use crate::storage;
 use crate::timestamp::now_msec;

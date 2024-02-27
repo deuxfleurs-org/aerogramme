@@ -9,7 +9,7 @@ use crate::imap::command::anystate;
 use crate::imap::flow;
 use crate::imap::response::Response;
 use crate::login::ArcLoginProvider;
-use crate::mail::user::User;
+use crate::user::User;
 
 //--- dispatching
 
