@@ -13,6 +13,7 @@ use tokio::sync::watch;
 
 use crate::config::DavUnsecureConfig;
 use crate::login::ArcLoginProvider;
+use crate::user::User;
 
 pub struct Server {
     bind_addr: SocketAddr,
@@ -45,7 +46,7 @@ impl Server {
                 _ = wait_conn_finished => continue,
                 _ = must_exit.changed() => continue,
             };
-            tracing::info!("DAV: accepted connection from {}", remote_addr);
+            tracing::info!("Accepted connection from {}", remote_addr);
             let stream = TokioIo::new(socket);
             let login = self.login_provider.clone();
             let conn = tokio::spawn(async move {
@@ -66,13 +67,14 @@ impl Server {
         }
         drop(tcp);
 
-        tracing::info!("DAV server shutting down, draining remaining connections...");
+        tracing::info!("Server shutting down, draining remaining connections...");
         while connections.next().await.is_some() {}
 
         Ok(())
     }
 }
 
+//@FIXME We should not support only BasicAuth
 async fn auth(
     login: ArcLoginProvider,
     req: Request<impl hyper::body::Body>, 
@@ -113,21 +115,27 @@ async fn auth(
             .body(Full::new(Bytes::from("Wrong credentials")))?),
     };
 
-    
+    // Build a user
+    let user = User::new(username.into(), creds).await?;
+
     // Call router with user
-    
-    unimplemented!();
+    router(user, req).await 
 }
 
-async fn router(req: Request<impl hyper::body::Body>) -> Result<Response<Full<Bytes>>> {
+async fn router(user: std::sync::Arc<User>, req: Request<impl hyper::body::Body>) -> Result<Response<Full<Bytes>>> {
     let path_segments: Vec<_> = req.uri().path().split("/").filter(|s| *s != "").collect();
     match path_segments.as_slice() {
         [] => tracing::info!("root"),
-        [ user ] => tracing::info!(user=user, "user home"),
-        [ user, coltype ] => tracing::info!(user=user, cat=coltype, "user cat of coll"),
-        [ user, coltype, colname ] => tracing::info!(user=user, cat=coltype, name=colname, "user coll"),
-        [ user, coltype, colname, member ] => tracing::info!(user=user, cat=coltype, name=colname, obj=member, "accessing file"),
-        _ => unimplemented!(),
+        [ username, ..] if *username != user.username => return Ok(Response::builder()
+            .status(403)
+            .body(Full::new(Bytes::from("Accessing other user ressources is not allowed")))?),
+        [ _ ] => tracing::info!(user=username, "user home"),
+        [ _, "calendar" ] => tracing::info!(user=username, cat=coltype, "user cat of coll"),
+        [ _, "calendar", colname ] => tracing::info!(user=username, cat=coltype, name=colname, "user coll"),
+        [ _, "calendar", colname, member ] => tracing::info!(user=username, cat=coltype, name=colname, obj=member, "accessing file"),
+        _ => return Ok(Response::builder()
+            .status(404)
+            .body(Full::new(Bytes::from("Resource not found")))?),
     }
     Ok(Response::new(Full::new(Bytes::from("Hello World!"))))
 }
