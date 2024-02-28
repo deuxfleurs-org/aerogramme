@@ -1,3 +1,6 @@
+mod types;
+mod encoder;
+
 use std::net::SocketAddr;
 
 use anyhow::{anyhow, Result};
@@ -129,13 +132,17 @@ async fn router(user: std::sync::Arc<User>, req: Request<impl hyper::body::Body>
         [ username, ..] if *username != user.username => return Ok(Response::builder()
             .status(403)
             .body(Full::new(Bytes::from("Accessing other user ressources is not allowed")))?),
-        [ _ ] => tracing::info!(user=username, "user home"),
-        [ _, "calendar" ] => tracing::info!(user=username, cat=coltype, "user cat of coll"),
-        [ _, "calendar", colname ] => tracing::info!(user=username, cat=coltype, name=colname, "user coll"),
-        [ _, "calendar", colname, member ] => tracing::info!(user=username, cat=coltype, name=colname, obj=member, "accessing file"),
+        [ _ ] => tracing::info!("user home"),
+        [ _, "calendar" ] => tracing::info!("user calendars"),
+        [ _, "calendar", colname ] => tracing::info!(name=colname, "selected calendar"),
+        [ _, "calendar", colname, member ] => tracing::info!(name=colname, obj=member, "selected event"),
         _ => return Ok(Response::builder()
             .status(404)
             .body(Full::new(Bytes::from("Resource not found")))?),
     }
     Ok(Response::new(Full::new(Bytes::from("Hello World!"))))
+}
+
+async fn collections(user: std::sync::Arc<User>, req: Request<impl hyper::body::Body>) -> Result<Response<Full<Bytes>>> {
+    unimplemented!();
 }
