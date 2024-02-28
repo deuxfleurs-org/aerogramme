@@ -41,6 +41,7 @@ imap-codec = { version = "2.0.0", features = ["bounded-static", "ext_condstore_q
 imap-flow = { git = "https://github.com/duesee/imap-flow.git", branch = "main" }
 
 # http & web
+http = "1.0"
 http-body-util = "0.1"
 hyper = "1.2"
 hyper-rustls = { version = "0.26", features = ["http2"] }
@@ -53,7 +54,7 @@ toml = "0.5"
 base64 = "0.21"
 hex = "0.4"
 nom = "7.1"
-quick-xml = "0.31"
+quick-xml = { version = "0.31", features = ["async-tokio"] }
 zstd = { version = "0.9", default-features = false }
 
 # cryptography & security
