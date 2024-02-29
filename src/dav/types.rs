@@ -2,6 +2,34 @@
 
 use chrono::{DateTime,FixedOffset};
 
+/// Extension utilities
+pub struct Disabled(());
+pub trait Extension {
+    type Error;
+    type Namespace;
+
+    fn namespaces() -> &'static [(&'static str, &'static str)];
+    fn short_ns(ns: Self::Namespace) -> &'static str;
+}
+
+/// No extension
+pub struct NoExtension {}
+pub enum Namespace {
+    Dav
+}
+impl Extension for NoExtension {
+    type Error = Disabled;
+    type Namespace = Namespace;
+
+    fn namespaces() -> &'static [(&'static str, &'static str)] {
+        return &[ ("D", "DAV:") ][..]
+    }
+
+    fn short_ns(ns: Self::Namespace) -> &'static str {
+        "D"
+    }
+}
+
 /// 14.1.  activelock XML Element
 ///
 /// Name:   activelock
@@ -10,11 +38,11 @@ use chrono::{DateTime,FixedOffset};
 /// <!ELEMENT activelock (lockscope, locktype, depth, owner?, timeout?,
 ///           locktoken?, lockroot)>
 pub struct ActiveLock {
-    lockscope: u64,
-    locktype: u64,
+    lockscope: LockScope,
+    locktype: LockType,
     depth: Depth,
-    owner: Option<u64>,
-    timeout: Option<u64>,
+    owner: Option<Owner>,
+    timeout: Option<Timeout>,
 }
 
 /// 14.2 allprop XML Element
@@ -72,7 +100,8 @@ pub enum Depth {
 ///   postcondition code.  Unrecognized elements MUST be ignored.
 ///
 /// <!ELEMENT error ANY >
-pub enum Error<T> {
+pub struct Error<T: Extension>(pub Vec<Violation<T>>);
+pub enum Violation<T: Extension> {
     /// Name:  lock-token-matches-request-uri
     ///
     /// Use with:  409 Conflict
@@ -156,7 +185,7 @@ pub enum Error<T> {
     CannotModifyProtectedProperty,
 
     /// Specific errors
-    Extensions(T),
+    Extension(T::Error),
 }
 
 /// 14.6.  exclusive XML Element
@@ -312,7 +341,7 @@ pub enum LockType {
 /// response descriptions contained within the responses.
 ///
 /// <!ELEMENT multistatus (response*, responsedescription?)  >
-pub struct Multistatus<T> {
+pub struct Multistatus<T: Extension> {
     pub responses: Vec<Response<T>>,
     pub responsedescription: Option<ResponseDescription>,
 }
@@ -416,7 +445,7 @@ pub struct PropName {}
 /// the properties named in 'prop'.
 ///
 /// <!ELEMENT propstat (prop, status, error?, responsedescription?) >
-pub struct PropStat<T> {
+pub struct PropStat<T: Extension> {
     prop: Prop,
     status: Status,
     error: Option<Error<T>>,
@@ -460,13 +489,16 @@ pub struct Remove(Prop);
 ///
 /// <!ELEMENT response (href, ((href*, status)|(propstat+)),
 ///                     error?, responsedescription? , location?) >
-pub struct Response<T> {
-    href: Vec<Href>,
-    status: Status,
-    propstat: Vec<PropStat<T>>,
-    error: Option<Error<T>>,
-    responsedescription: Option<ResponseDescription>,
-    location: Option<u64>,
+pub enum StatusOrPropstat<T: Extension> {
+    Status(Status),
+    PropStat(Vec<PropStat<T>>),
+}
+pub struct Response<T: Extension> {
+    pub href: Href, // It's wrong according to the spec, but I don't understand why there is an href*
+    pub status_or_propstat: StatusOrPropstat<T>,
+    pub error: Option<Error<T>>,
+    pub responsedescription: Option<ResponseDescription>,
+    pub location: Option<Location>,
 }
 
 /// 14.25.  responsedescription XML Element
@@ -521,7 +553,7 @@ pub struct Shared {}
 /// 
 /// <!ELEMENT status (#PCDATA) >
 //@FIXME: Better typing is possible with an enum for example
-pub struct Status(http::status::StatusCode);
+pub struct Status(pub http::status::StatusCode);
 
 /// 14.29.  timeout XML Element
 ///
