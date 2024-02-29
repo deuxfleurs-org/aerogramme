@@ -38,25 +38,34 @@ impl Context<CalExtension> for CalCtx {
         Self { root: false }
     }
     fn create_dav_element(&self, name: &str) -> BytesStart {
-        let mut start = BytesStart::new(format!("D:{}", name));
-        if self.root {
-            start.push_attribute(("xmlns:D", "DAV:"));
-            start.push_attribute(("xmlns:C", "urn:ietf:params:xml:ns:caldav"));
-        }
-        start
+        self.create_ns_element("D", name)
     }
 
     async fn hook_error(&self, err: &Violation, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
         err.write(xml, self.child()).await
     }
 }
+impl CalCtx {
+    fn create_ns_element(&self, ns: &str, name: &str) -> BytesStart {
+        let mut start = BytesStart::new(format!("{}:{}", ns, name));
+        if self.root {
+            start.push_attribute(("xmlns:D", "DAV:"));
+            start.push_attribute(("xmlns:C", "urn:ietf:params:xml:ns:caldav"));
+        }
+        start
+    }
+    fn create_cal_element(&self, name: &str) -> BytesStart {
+        self.create_ns_element("C", name)
+    }
+}
 
 impl QuickWritable<CalExtension, CalCtx> for Violation {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, _ctx: CalCtx) -> Result<(), QError> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: CalCtx) -> Result<(), QError> {
         match self {
-            Self::SupportedFilter => xml
-                .create_element("supported-filter")
-                .write_empty_async().await?,
+            Self::SupportedFilter => {
+                let start = ctx.create_cal_element("supported-filter");
+                xml.write_event_async(Event::Empty(start)).await?;
+           },
         };
         Ok(())
     }
