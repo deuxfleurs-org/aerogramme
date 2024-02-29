@@ -313,8 +313,8 @@ pub enum LockType {
 ///
 /// <!ELEMENT multistatus (response*, responsedescription?)  >
 pub struct Multistatus<T> {
-    responses: Vec<Response<T>>,
-    responsedescription: Option<ResponseDescription>,
+    pub responses: Vec<Response<T>>,
+    pub responsedescription: Option<ResponseDescription>,
 }
 
 /// 14.17.  owner XML Element
@@ -480,7 +480,7 @@ pub struct Response<T> {
 /// user.
 ///
 /// <!ELEMENT responsedescription (#PCDATA) >
-pub struct ResponseDescription(String);
+pub struct ResponseDescription(pub String);
 
 /// 14.26.  set XML Element
 ///
@@ -573,6 +573,7 @@ pub enum PropertyRequest {
     GetLastModified,
     LockDiscovery,
     ResourceType,
+    SupportedLock,
 }
 pub enum Property {
     /// 15.1.  creationdate Property
