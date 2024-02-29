@@ -149,15 +149,67 @@ impl<E: Extension, C: Context<E>> QuickWritable<E,C> for ResponseDescription {
 
 impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Location {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let start = ctx.create_dav_element("location");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        self.0.write(xml, ctx.child()).await?;
+        xml.write_event_async(Event::End(end)).await?;
+
+        Ok(())
     }
 }
 
 impl<E: Extension, C: Context<E>> QuickWritable<E,C> for PropStat<E> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let start = ctx.create_dav_element("propstat");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        self.prop.write(xml, ctx.child()).await?;
+        self.status.write(xml, ctx.child()).await?;
+        if let Some(error) = &self.error {
+            error.write(xml, ctx.child()).await?;
+        }
+        if let Some(description) = &self.responsedescription {
+            description.write(xml, ctx.child()).await?;
+        }
+        xml.write_event_async(Event::End(end)).await?;
+
+        Ok(())
     }
 }
+
+impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Prop<E> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        let start = ctx.create_dav_element("prop");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        for property in &self.0 {
+            property.write(xml, ctx.child()).await?;
+        }
+        xml.write_event_async(Event::End(end)).await?;
+
+        Ok(())
+    }
+}
+
+
+impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Property<E> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        use Property::*;
+        match self {
+            CreationDate(date) => unimplemented!(),
+            DisplayName(name) => unimplemented!(),
+            //@FIXME not finished
+            _ => unimplemented!(),
+        };
+        Ok(())
+    }
+}
+
+
 
 impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Error<E> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {

@@ -8,28 +8,6 @@ use quick_xml::writer::{ElementWriter, Writer};
 use quick_xml::name::PrefixDeclaration;
 use tokio::io::AsyncWrite;
 
-/*pub trait CalWriter<E: Extension>: DavWriter<E> {
-    fn create_cal_element(&mut self, name: &str) -> ElementWriter<impl AsyncWrite + Unpin>;
-}
-
-impl<'a, W: AsyncWrite+Unpin> DavWriter<CalExtension> for Writer<'a, W, CalExtension> {
-    fn create_dav_element(&mut self, name: &str) -> ElementWriter<impl AsyncWrite + Unpin> {
-        self.create_ns_element(name, Namespace::Dav)
-    }
-    fn child(w: &'a mut QWriter<W>) -> impl DavWriter<CalExtension> {
-        Self::child(w)
-    }
-    async fn error(&mut self, err: &Violation) -> Result<(), QError> {
-       err.write(self).await 
-    }
-}
-
-impl<'a, W: AsyncWrite+Unpin> CalWriter<CalExtension> for Writer<'a, W, CalExtension> {
-    fn create_cal_element(&mut self, name: &str) -> ElementWriter<impl AsyncWrite + Unpin> {
-        self.create_ns_element(name, Namespace::CalDav)
-    }
-}*/
-
 pub struct CalCtx {
     root: bool
 }

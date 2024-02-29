@@ -1,25 +1,11 @@
 use super::types::*;
 
-pub enum Namespace {
-    Dav,
-    CalDav,
-}
 
 pub struct CalExtension {}
 impl Extension for CalExtension {
     type Error = Violation;
-    type Namespace = Namespace;
-
-    fn namespaces() -> &'static [(&'static str, &'static str)] {
-        return &[ ("D", "DAV:"), ("C", "urn:ietf:params:xml:ns:caldav") ][..]
-    }
-
-    fn short_ns(ns: Self::Namespace) -> &'static str {
-        match ns {
-            Namespace::Dav => "D",
-            Namespace::CalDav => "C",
-        }
-    }
+    type Property = Property;
+    type PropertyRequest = Property; //@FIXME
 }
 
 pub enum Violation {
@@ -38,4 +24,10 @@ pub enum Violation {
     ///                             prop-filter*,
     ///                             param-filter*)>
     SupportedFilter,
+}
+
+
+pub enum Property {
+    CalendarDescription,
+    CalendarTimezone,
 }

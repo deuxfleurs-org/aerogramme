@@ -6,10 +6,8 @@ use chrono::{DateTime,FixedOffset};
 pub struct Disabled(());
 pub trait Extension {
     type Error;
-    type Namespace;
-
-    fn namespaces() -> &'static [(&'static str, &'static str)];
-    fn short_ns(ns: Self::Namespace) -> &'static str;
+    type Property;
+    type PropertyRequest;
 }
 
 /// No extension
@@ -19,16 +17,9 @@ pub enum Namespace {
 }
 impl Extension for NoExtension {
     type Error = Disabled;
-    type Namespace = Namespace;
-
-    fn namespaces() -> &'static [(&'static str, &'static str)] {
-        return &[ ("D", "DAV:") ][..]
-    }
-
-    fn short_ns(ns: Self::Namespace) -> &'static str {
-        "D"
-    }
-}
+    type Property = Disabled;
+    type PropertyRequest = Disabled;
+ }
 
 /// 14.1.  activelock XML Element
 ///
@@ -38,11 +29,11 @@ impl Extension for NoExtension {
 /// <!ELEMENT activelock (lockscope, locktype, depth, owner?, timeout?,
 ///           locktoken?, lockroot)>
 pub struct ActiveLock {
-    lockscope: LockScope,
-    locktype: LockType,
-    depth: Depth,
-    owner: Option<Owner>,
-    timeout: Option<Timeout>,
+    pub lockscope: LockScope,
+    pub locktype: LockType,
+    pub depth: Depth,
+    pub owner: Option<Owner>,
+    pub timeout: Option<Timeout>,
 }
 
 /// 14.2 allprop XML Element
@@ -225,7 +216,7 @@ pub struct Href(pub String);
 /// standards.  This element MUST NOT contain text or mixed content.
 ///
 /// <!ELEMENT include ANY >
-pub struct Include(Vec<Property>);
+pub struct Include<T: Extension>(pub Vec<Property<T>>);
 
 /// 14.9.  location XML Element
 ///
@@ -241,7 +232,7 @@ pub struct Include(Vec<Property>);
 /// that would be used in a Location header.
 ///
 /// <!ELEMENT location (href)>
-pub struct Location(Href);
+pub struct Location(pub Href);
 
 /// 14.10.  lockentry XML Element
 ///
@@ -252,8 +243,8 @@ pub struct Location(Href);
 ///
 /// <!ELEMENT lockentry (lockscope, locktype) >
 pub struct LockEntry {
-    lokscope: LockScope,
-    locktype: LockType,
+    pub lokscope: LockScope,
+    pub locktype: LockType,
 }
 
 /// 14.11.  lockinfo XML Element
@@ -265,9 +256,9 @@ pub struct LockEntry {
 ///
 /// <!ELEMENT lockinfo (lockscope, locktype, owner?)  >
 pub struct LockInfo {
-    lockscope: LockScope,
-    locktype: LockType,
-    owner: Option<Owner>,
+    pub lockscope: LockScope,
+    pub locktype: LockType,
+    pub owner: Option<Owner>,
 }
 
 /// 14.12.  lockroot XML Element
@@ -282,7 +273,7 @@ pub struct LockInfo {
 /// values and the response to LOCK requests.
 ///
 /// <!ELEMENT lockroot (href) >
-pub struct LockRoot(Href);
+pub struct LockRoot(pub Href);
 
 /// 14.13.  lockscope XML Element
 ///
@@ -369,7 +360,7 @@ pub struct Multistatus<T: Extension> {
 /// text content or attributes.
 ///
 /// <!ELEMENT owner ANY >
-pub struct Owner(String);
+pub struct Owner(pub String);
 
 /// 14.18.  prop XML Element
 ///
@@ -385,7 +376,7 @@ pub struct Owner(String);
 /// text or mixed content.
 ///
 /// <!ELEMENT prop ANY >
-pub struct Prop(Vec<Property>);
+pub struct Prop<T: Extension>(pub Vec<Property<T>>);
 
 /// 14.19.  propertyupdate XML Element
 ///
@@ -397,10 +388,10 @@ pub struct Prop(Vec<Property>);
 /// required to modify the properties on the resource.
 ///
 /// <!ELEMENT propertyupdate (remove | set)+ >
-pub struct PropertyUpdate(Vec<PropertyUpdateItem>);
-pub enum PropertyUpdateItem {
-    Remove(Remove),
-    Set(Set),
+pub struct PropertyUpdate<T: Extension>(Vec<PropertyUpdateItem<T>>);
+pub enum PropertyUpdateItem<T: Extension> {
+    Remove(Remove<T>),
+    Set(Set<T>),
 }
 
 /// 14.20.  propfind XML Element
@@ -414,10 +405,10 @@ pub enum PropertyUpdateItem {
 /// values.
 ///
 /// <!ELEMENT propfind ( propname | (allprop, include?) | prop ) >
-pub enum PropFind {
+pub enum PropFind<T: Extension> {
     PropName(PropName),
-    AllProp(AllProp, Option<Include>),
-    Prop(Prop),
+    AllProp(AllProp, Option<Include<T>>),
+    Prop(Prop<T>),
 }
 
 /// 14.21.  propname XML Element
@@ -446,10 +437,10 @@ pub struct PropName {}
 ///
 /// <!ELEMENT propstat (prop, status, error?, responsedescription?) >
 pub struct PropStat<T: Extension> {
-    prop: Prop,
-    status: Status,
-    error: Option<Error<T>>,
-    responsedescription: Option<ResponseDescription>,
+    pub prop: Prop<T>,
+    pub status: Status,
+    pub error: Option<Error<T>>,
+    pub responsedescription: Option<ResponseDescription>,
 }
 
 /// 14.23.  remove XML Element
@@ -465,7 +456,7 @@ pub struct PropStat<T: Extension> {
 /// the names of properties to be removed are required.
 ///
 /// <!ELEMENT remove (prop) >
-pub struct Remove(Prop);
+pub struct Remove<T: Extension>(pub Prop<T>);
 
 /// 14.24.  response XML Element
 ///
@@ -530,7 +521,7 @@ pub struct ResponseDescription(pub String);
 /// property, and MUST be subsequently retrievable using PROPFIND.
 ///
 /// <!ELEMENT set (prop) >
-pub struct Set(Prop);
+pub struct Set<T: Extension>(pub Prop<T>);
 
 /// 14.27.  shared XML Element
 ///
@@ -595,7 +586,7 @@ pub struct Timeout(u64);
 /// the header value could include LWS as defined in [RFC2616], Section
 /// 4.2.  Server implementors SHOULD strip LWS from these values before
 /// using as WebDAV property values.
-pub enum PropertyRequest {
+pub enum PropertyRequest<T: Extension> {
     CreationDate,
     DisplayName,
     GetContentLanguage,
@@ -606,8 +597,9 @@ pub enum PropertyRequest {
     LockDiscovery,
     ResourceType,
     SupportedLock,
+    Extension(T::PropertyRequest),
 }
-pub enum Property {
+pub enum Property<T: Extension> {
     /// 15.1.  creationdate Property
     ///
     /// Name:   creationdate
@@ -884,6 +876,9 @@ pub enum Property {
     ///
     /// <!ELEMENT supportedlock (lockentry)* >
     SupportedLock(Vec<LockEntry>),
+
+    /// Any extension
+    Extension(T::Property),
 }
 
 
