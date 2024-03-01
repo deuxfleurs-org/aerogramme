@@ -20,6 +20,7 @@ pub trait Context: Extension {
     fn child(&self) -> Self;
     fn create_dav_element(&self, name: &str) -> BytesStart;
     async fn hook_error(&self, err: &Self::Error, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError>;
+    async fn hook_property(&self, prop: &Self::Property, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError>;
 }
 
 /// -------------- NoExtension Encoding Context
@@ -35,6 +36,9 @@ impl Context for NoExtension {
         start
     }
     async fn hook_error(&self, err: &Disabled, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
+        unreachable!();
+    }
+    async fn hook_property(&self, prop: &Disabled, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
         unreachable!();
     }
 }
@@ -196,23 +200,143 @@ impl<C: Context> QuickWritable<C> for Property<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         use Property::*;
         match self {
-            CreationDate(date) => unimplemented!(),
-            DisplayName(name) => unimplemented!(),
-            GetContentLanguage(lang) => unimplemented!(),
-            GetContentLength(len) => unimplemented!(),
-            GetContentType(ct) => unimplemented!(),
-            GetEtag(et) => unimplemented!(),
-            GetLastModified(dt) => unimplemented!(),
-            LockDiscovery(locks) => unimplemented!(),
-            ResourceType(res) => unimplemented!(),
-            SupportedLock(sup) => unimplemented!(),
-            Extension(inner) => unimplemented!(),
+            CreationDate(date) => {
+                // <D:creationdate>1997-12-01T17:42:21-08:00</D:creationdate>
+                let start = ctx.create_dav_element("creationdate");
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.write_event_async(Event::Text(BytesText::new(&date.to_rfc3339()))).await?;
+                xml.write_event_async(Event::End(end)).await?;
+            },
+            DisplayName(name) => {
+                // <D:displayname>Example collection</D:displayname>
+                let start = ctx.create_dav_element("displayname");
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.write_event_async(Event::Text(BytesText::new(name))).await?;
+                xml.write_event_async(Event::End(end)).await?;
+            },
+            GetContentLanguage(lang) => {
+                let start = ctx.create_dav_element("getcontentlanguage");
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.write_event_async(Event::Text(BytesText::new(lang))).await?;
+                xml.write_event_async(Event::End(end)).await?;
+            },
+            GetContentLength(len) => {
+                // <D:getcontentlength>4525</D:getcontentlength>
+                let start = ctx.create_dav_element("getcontentlength");
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.write_event_async(Event::Text(BytesText::new(&len.to_string()))).await?;
+                xml.write_event_async(Event::End(end)).await?;
+            },
+            GetContentType(ct) => {
+                // <D:getcontenttype>text/html</D:getcontenttype>
+                let start = ctx.create_dav_element("getcontenttype");
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.write_event_async(Event::Text(BytesText::new(&ct))).await?;
+                xml.write_event_async(Event::End(end)).await?;
+            },
+            GetEtag(et) => {
+                // <D:getetag>"zzyzx"</D:getetag>
+                let start = ctx.create_dav_element("getetag");
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.write_event_async(Event::Text(BytesText::new(et))).await?;
+                xml.write_event_async(Event::End(end)).await?;
+            },
+            GetLastModified(date) => {
+                // <D:getlastmodified>Mon, 12 Jan 1998 09:25:56 GMT</D:getlastmodified>
+                let start = ctx.create_dav_element("getlastmodified");
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.write_event_async(Event::Text(BytesText::new(&date.to_rfc3339()))).await?;
+                xml.write_event_async(Event::End(end)).await?;
+            },
+            LockDiscovery(many_locks) => {
+                // <D:lockdiscovery><D:activelock> ... </D:activelock></D:lockdiscovery>
+                let start = ctx.create_dav_element("lockdiscovery");
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                for lock in many_locks.iter() {
+                    lock.write(xml, ctx.child()).await?;
+                }
+                xml.write_event_async(Event::End(end)).await?;
+            },
+            ResourceType(many_types) => {
+                // <D:resourcetype><D:collection/></D:resourcetype>
+                
+                // <D:resourcetype/>
+                
+                // <x:resourcetype xmlns:x="DAV:">
+                //   <x:collection/>
+                //   <f:search-results xmlns:f="http://www.example.com/ns"/>
+                // </x:resourcetype>
+    
+                let start = ctx.create_dav_element("resourcetype");
+                if many_types.is_empty() {
+                    xml.write_event_async(Event::Empty(start)).await?;
+                } else {
+                    let end = start.to_end();
+                    xml.write_event_async(Event::Start(start.clone())).await?;
+                    for restype in many_types.iter() {
+                        restype.write(xml, ctx.child()).await?;
+                    }
+                    xml.write_event_async(Event::End(end)).await?;
+                }
+            },
+            SupportedLock(many_entries) => {
+                // <D:supportedlock/>
+
+                //  <D:supportedlock> <D:lockentry> ... </D:lockentry> </D:supportedlock>
+
+                let start = ctx.create_dav_element("supportedlock");
+                if many_entries.is_empty() {
+                    xml.write_event_async(Event::Empty(start)).await?;
+                } else {
+                    let end = start.to_end();
+                    xml.write_event_async(Event::Start(start.clone())).await?;
+                    for entry in many_entries.iter() {
+                        entry.write(xml, ctx.child()).await?;
+                    }
+                    xml.write_event_async(Event::End(end)).await?;
+                }
+            },
+            Extension(inner) => {
+                ctx.hook_property(inner, xml).await?;
+            },
         };
         Ok(())
     }
 }
 
+impl<C: Context> QuickWritable<C> for ActiveLock {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
 
+impl<C: Context> QuickWritable<C> for ResourceType<C> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: Context> QuickWritable<C> for LockEntry {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
 
 impl<C: Context> QuickWritable<C> for Error<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {

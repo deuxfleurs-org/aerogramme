@@ -19,6 +19,10 @@ impl Context for CalExtension {
     async fn hook_error(&self, err: &Violation, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
         err.write(xml, self.child()).await
     }
+
+    async fn hook_property(&self, prop: &Self::Property, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
+        prop.write(xml, self.child()).await 
+    }
 }
 
 impl CalExtension {
@@ -47,14 +51,14 @@ impl QuickWritable<CalExtension> for Violation {
     }
 }
 
-/*
- <?xml version="1.0" encoding="utf-8" ?>
-   <D:error>
-     <C:supported-filter>
-       <C:prop-filter name="X-ABC-GUID"/>
-     </C:supported-filter>
-   </D:error>
-*/
+
+impl QuickWritable<CalExtension> for Property {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: CalExtension) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+
 
 #[cfg(test)]
 mod tests {
