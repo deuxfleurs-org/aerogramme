@@ -372,7 +372,10 @@ pub struct Owner {
 /// text or mixed content.
 ///
 /// <!ELEMENT prop ANY >
-pub struct Prop<T: Extension>(pub Vec<Property<T>>);
+pub enum Prop<T: Extension> {
+    Name(Vec<PropertyRequest<T>>),
+    Value(Vec<Property<T>>),
+}
 
 /// 14.19.  propertyupdate XML Element
 ///

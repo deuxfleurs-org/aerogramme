@@ -61,6 +61,7 @@ impl<C: Context> QuickWritable<C> for PropFind<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         let start = ctx.create_dav_element("propfind");
         let end = start.to_end();
+        let ctx = ctx.child();
 
         xml.write_event_async(Event::Start(start.clone())).await?;
         match self {
@@ -129,9 +130,18 @@ impl<C: Context> QuickWritable<C> for Prop<C> {
         let end = start.to_end();
 
         xml.write_event_async(Event::Start(start.clone())).await?;
-        for property in &self.0 {
-            property.write(xml, ctx.child()).await?;
-        }
+        match self {
+            Self::Name(many_names) => {
+                for propname in many_names {
+                    propname.write(xml, ctx.child()).await?;
+                }
+            },
+            Self::Value(many_values) => {
+                for propval in many_values {
+                    propval.write(xml, ctx.child()).await?;
+                }
+            }
+        };
         xml.write_event_async(Event::End(end)).await?;
 
         Ok(())
@@ -154,7 +164,7 @@ impl<C: Context> QuickWritable<C> for Href {
 
 impl<C: Context> QuickWritable<C> for Response<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("href");
+        let start = ctx.create_dav_element("response");
         let end = start.to_end();
 
         xml.write_event_async(Event::Start(start.clone())).await?;
@@ -463,6 +473,7 @@ impl<C: Context> QuickWritable<C> for LockType {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         let start = ctx.create_dav_element("locktype");
         let end = start.to_end();
+        let ctx = ctx.child();
 
         xml.write_event_async(Event::Start(start.clone())).await?;
         match self {
@@ -476,6 +487,7 @@ impl<C: Context> QuickWritable<C> for LockScope {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         let start = ctx.create_dav_element("lockscope");
         let end = start.to_end();
+        let ctx = ctx.child();
 
         xml.write_event_async(Event::Start(start.clone())).await?;
         match self {
@@ -626,37 +638,164 @@ mod tests {
 
     /// To run only the unit tests and avoid the behavior ones:
     /// cargo test --bin aerogramme
-
-    #[tokio::test]
-    async fn test_href() {
+    
+    async fn serialize<C: Context, Q: QuickWritable<C>>(ctx: C, elem: &Q) -> String {
         let mut buffer = Vec::new();
         let mut tokio_buffer = tokio::io::BufWriter::new(&mut buffer);
         let mut writer = Writer::new_with_indent(&mut tokio_buffer, b' ', 4);
-
-        let ctx = NoExtension { root: false };
-        Href("/SOGo/dav/so/".into()).write(&mut writer, ctx).await.expect("xml serialization");
+        elem.write(&mut writer, ctx).await.expect("xml serialization");
         tokio_buffer.flush().await.expect("tokio buffer flush");
+        let got = std::str::from_utf8(buffer.as_slice()).unwrap();
 
-        assert_eq!(buffer.as_slice(), &b"<D:href>/SOGo/dav/so/</D:href>"[..]);
+        return got.into()
+    }
+
+    #[tokio::test]
+    async fn basic_href() {
+
+        let got = serialize(
+            NoExtension { root: false },
+            &Href("/SOGo/dav/so/".into())
+        ).await;
+        let expected = "<D:href>/SOGo/dav/so/</D:href>";
+
+        assert_eq!(&got, expected);
     }
 
 
     #[tokio::test]
-    async fn test_multistatus() {
-        let mut buffer = Vec::new();
-        let mut tokio_buffer = tokio::io::BufWriter::new(&mut buffer);
-        let mut writer = Writer::new_with_indent(&mut tokio_buffer, b' ', 4);
-
-        let ctx = NoExtension { root: true };
-        let xml = Multistatus { responses: vec![], responsedescription: Some(ResponseDescription("Hello world".into())) };
-        xml.write(&mut writer, ctx).await.expect("xml serialization");
-        tokio_buffer.flush().await.expect("tokio buffer flush");
+    async fn basic_multistatus() {
+        let got = serialize(
+            NoExtension { root: true },
+            &Multistatus { 
+                responses: vec![], 
+                responsedescription: Some(ResponseDescription("Hello world".into())) 
+            },
+        ).await;
 
         let expected = r#"<D:multistatus xmlns:D="DAV:">
     <D:responsedescription>Hello world</D:responsedescription>
 </D:multistatus>"#;
-        let got = std::str::from_utf8(buffer.as_slice()).unwrap();
 
-        assert_eq!(got, expected);
+        assert_eq!(&got, expected);
+    }
+
+
+    #[tokio::test]
+    async fn rfc_error_delete_locked() {
+        let got = serialize(
+            NoExtension { root: true },
+            &Error(vec![
+                Violation::LockTokenSubmitted(vec![
+                    Href("/locked/".into())
+                ])
+            ]),
+        ).await;
+
+        let expected = r#"<D:error xmlns:D="DAV:">
+    <D:lock-token-submitted>
+        <D:href>/locked/</D:href>
+    </D:lock-token-submitted>
+</D:error>"#;
+
+        assert_eq!(&got, expected);
+    }
+
+    #[tokio::test]
+    async fn rfc_propname_req() {
+        let got = serialize(
+            NoExtension { root: true },
+            &PropFind::PropName,
+        ).await;
+
+        let expected = r#"<D:propfind xmlns:D="DAV:">
+    <D:propname/>
+</D:propfind>"#;
+
+        assert_eq!(&got, expected);
+    }
+
+    #[tokio::test]
+    async fn rfc_propname_res() {
+        let got = serialize(
+            NoExtension { root: true },
+            &Multistatus {
+                responses: vec![
+                    Response {
+                        href: Href("http://www.example.com/container/".into()),
+                        status_or_propstat: StatusOrPropstat::PropStat(vec![PropStat {
+                            prop: Prop::Name(vec![
+                                PropertyRequest::CreationDate,
+                                PropertyRequest::DisplayName,
+                                PropertyRequest::ResourceType,
+                                PropertyRequest::SupportedLock,
+                            ]),
+                            status: Status(http::status::StatusCode::OK),
+                            error: None,
+                            responsedescription: None,
+                        }]),
+                        error: None,
+                        responsedescription: None,
+                        location: None,
+                    },
+                    Response {
+                        href: Href("http://www.example.com/container/front.html".into()),
+                        status_or_propstat: StatusOrPropstat::PropStat(vec![PropStat {
+                            prop: Prop::Name(vec![
+                                PropertyRequest::CreationDate,
+                                PropertyRequest::DisplayName,
+                                PropertyRequest::GetContentLength,
+                                PropertyRequest::GetContentType,
+                                PropertyRequest::GetEtag,
+                                PropertyRequest::GetLastModified,
+                                PropertyRequest::ResourceType,
+                                PropertyRequest::SupportedLock,
+                            ]),
+                            status: Status(http::status::StatusCode::OK),
+                            error: None,
+                            responsedescription: None,
+                        }]),
+                        error: None,
+                        responsedescription: None,
+                        location: None,
+                    },
+                ],
+                responsedescription: None,
+            },
+        ).await;
+
+        let expected = r#"<D:multistatus xmlns:D="DAV:">
+    <D:response>
+        <D:href>http://www.example.com/container/</D:href>
+        <D:propstat>
+            <D:prop>
+                <D:creationdate/>
+                <D:displayname/>
+                <D:resourcetype/>
+                <D:supportedlock/>
+            </D:prop>
+            <D:status>HTTP/1.1 200 OK</D:status>
+        </D:propstat>
+    </D:response>
+    <D:response>
+        <D:href>http://www.example.com/container/front.html</D:href>
+        <D:propstat>
+            <D:prop>
+                <D:creationdate/>
+                <D:displayname/>
+                <D:getcontentlength/>
+                <D:getcontenttype/>
+                <D:getetag/>
+                <D:getlastmodified/>
+                <D:resourcetype/>
+                <D:supportedlock/>
+            </D:prop>
+            <D:status>HTTP/1.1 200 OK</D:status>
+        </D:propstat>
+    </D:response>
+</D:multistatus>"#;
+
+
+        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
     }
 }
