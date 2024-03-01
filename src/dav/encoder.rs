@@ -81,7 +81,14 @@ impl<C: Context> QuickWritable<C> for PropFind<C> {
 /// PROPPATCH REQUEST
 impl<C: Context> QuickWritable<C> for PropertyUpdate<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let start = ctx.create_dav_element("propertyupdate");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        for update in self.0.iter() {
+            update.write(xml, ctx.child()).await?;
+        }
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
@@ -137,6 +144,36 @@ impl<C: Context> QuickWritable<C> for PropValue<C> {
 }
 
 // --- XML inner elements
+impl<C: Context> QuickWritable<C> for PropertyUpdateItem<C> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        match self {
+            Self::Set(set) => set.write(xml, ctx).await,
+            Self::Remove(rm) => rm.write(xml, ctx).await,
+        }
+    }
+}
+
+impl<C: Context> QuickWritable<C> for Set<C> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        let start = ctx.create_dav_element("set");
+        let end = start.to_end();
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        self.0.write(xml, ctx.child()).await?;
+        xml.write_event_async(Event::End(end)).await
+    }
+}
+
+impl<C: Context> QuickWritable<C> for Remove<C> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        let start = ctx.create_dav_element("remove");
+        let end = start.to_end();
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        self.0.write(xml, ctx.child()).await?;
+        xml.write_event_async(Event::End(end)).await
+    }
+}
+
+
 impl<C: Context> QuickWritable<C> for AnyProp<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         match self {
@@ -998,8 +1035,12 @@ mod tests {
         let got = serialize(
             NoExtension { root: true },
             &PropertyUpdate(vec![
-                PropertyUpdateItem::Set(Set(PropValue(vec![ ]))),
-                PropertyUpdateItem::Remove(Remove(PropName(vec![]))),
+                PropertyUpdateItem::Set(Set(PropValue(vec![
+                    Property::GetContentLanguage("fr-FR".into()),
+                ]))),
+                PropertyUpdateItem::Remove(Remove(PropName(vec![
+                    PropertyRequest::DisplayName,
+                ]))),
             ]),
         ).await;
 
