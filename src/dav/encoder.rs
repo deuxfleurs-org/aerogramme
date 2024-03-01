@@ -959,4 +959,26 @@ mod tests {
 
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
     }
+
+
+    #[tokio::test]
+    async fn rfc_allprop_include() {
+        let got = serialize(
+            NoExtension { root: true },
+            &PropFind::AllProp(Some(Include(vec![
+               PropertyRequest::DisplayName,
+               PropertyRequest::ResourceType,
+            ]))),
+        ).await;
+
+        let expected = r#"<D:propfind xmlns:D="DAV:">
+    <D:allprop/>
+    <D:include>
+        <D:displayname/>
+        <D:resourcetype/>
+    </D:include>
+</D:propfind>"#;
+
+        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+    }
 }
