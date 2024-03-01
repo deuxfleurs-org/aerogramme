@@ -23,6 +23,10 @@ impl Context for CalExtension {
     async fn hook_property(&self, prop: &Self::Property, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
         prop.write(xml, self.child()).await 
     }
+
+    async fn hook_resourcetype(&self, restype: &Self::ResourceType, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
+        restype.write(xml, self.child()).await
+    }
 }
 
 impl CalExtension {
@@ -58,7 +62,13 @@ impl QuickWritable<CalExtension> for Property {
     }
 }
 
-
+impl QuickWritable<CalExtension> for ResourceType {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: CalExtension) -> Result<(), QError> {
+        match self {
+            Self::Calendar => xml.write_event_async(Event::Empty(ctx.create_dav_element("calendar"))).await,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

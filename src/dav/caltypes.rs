@@ -8,7 +8,7 @@ impl Extension for CalExtension {
     type Error = Violation;
     type Property = Property;
     type PropertyRequest = Property; //@FIXME
-    type ResourceType = Property; //@FIXME
+    type ResourceType = ResourceType;
 }
 
 pub enum Violation {
@@ -33,4 +33,8 @@ pub enum Violation {
 pub enum Property {
     CalendarDescription,
     CalendarTimezone,
+}
+
+pub enum ResourceType {
+    Calendar,
 }

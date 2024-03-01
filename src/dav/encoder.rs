@@ -21,6 +21,7 @@ pub trait Context: Extension {
     fn create_dav_element(&self, name: &str) -> BytesStart;
     async fn hook_error(&self, err: &Self::Error, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError>;
     async fn hook_property(&self, prop: &Self::Property, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError>;
+    async fn hook_resourcetype(&self, prop: &Self::ResourceType, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError>;
 }
 
 /// -------------- NoExtension Encoding Context
@@ -39,6 +40,9 @@ impl Context for NoExtension {
         unreachable!();
     }
     async fn hook_property(&self, prop: &Disabled, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
+        unreachable!();
+    }
+    async fn hook_resourcetype(&self, restype: &Disabled, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
         unreachable!();
     }
 }
@@ -320,13 +324,17 @@ impl<C: Context> QuickWritable<C> for Property<C> {
     }
 }
 
-impl<C: Context> QuickWritable<C> for ActiveLock {
+impl<C: Context> QuickWritable<C> for ResourceType<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        match self {
+            Self::Collection => xml.write_event_async(Event::Empty(ctx.create_dav_element("collection"))).await?,
+            Self::Extension(inner) => ctx.hook_resourcetype(inner, xml).await?,
+        };
+        Ok(())
     }
 }
 
-impl<C: Context> QuickWritable<C> for ResourceType<C> {
+impl<C: Context> QuickWritable<C> for ActiveLock {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         unimplemented!();
     }
