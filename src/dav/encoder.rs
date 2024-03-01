@@ -647,6 +647,9 @@ impl<C: Context> QuickWritable<C> for Violation<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         match self {
             Violation::LockTokenMatchesRequestUri => xml.write_event_async(Event::Empty(ctx.create_dav_element("lock-token-matches-request-uri"))).await?, 
+            Violation::LockTokenSubmitted(hrefs) if hrefs.is_empty() => {
+                xml.write_event_async(Event::Empty(ctx.create_dav_element("lock-token-submitted"))).await?
+            },
             Violation::LockTokenSubmitted(hrefs) => {
                 let start = ctx.create_dav_element("lock-token-submitted");
                 let end = start.to_end();
@@ -656,6 +659,9 @@ impl<C: Context> QuickWritable<C> for Violation<C> {
                     href.write(xml, ctx.child()).await?;
                 }
                 xml.write_event_async(Event::End(end)).await?;
+            },
+            Violation::NoConflictingLock(hrefs) if hrefs.is_empty() => {
+                xml.write_event_async(Event::Empty(ctx.create_dav_element("no-conflicting-lock"))).await?
             },
             Violation::NoConflictingLock(hrefs) => {
                 let start = ctx.create_dav_element("no-conflicting-lock");
@@ -1056,6 +1062,35 @@ mod tests {
         </D:prop>
     </D:remove>
 </D:propertyupdate>"#;
+
+        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+    }
+
+    #[tokio::test]
+    async fn rfc_delete_locked2() {
+        let got = serialize(
+            NoExtension { root: true },
+            &Multistatus {
+                responses: vec![Response {
+                    href: Href("http://www.example.com/container/resource3".into()),
+                    status_or_propstat: StatusOrPropstat::Status(Status(http::status::StatusCode::from_u16(423).unwrap())),
+                    error: Some(Error(vec![Violation::LockTokenSubmitted(vec![])])),
+                    responsedescription: None,
+                    location: None,
+                }],
+                responsedescription: None,
+            },
+        ).await;
+
+        let expected = r#"<D:multistatus xmlns:D="DAV:">
+    <D:response>
+        <D:href>http://www.example.com/container/resource3</D:href>
+        <D:status>HTTP/1.1 423 Locked</D:status>
+        <D:error>
+            <D:lock-token-submitted/>
+        </D:error>
+    </D:response>
+</D:multistatus>"#;
 
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
     }
