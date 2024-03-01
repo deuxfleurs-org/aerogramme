@@ -246,7 +246,7 @@ pub struct Location(pub Href);
 ///
 /// <!ELEMENT lockentry (lockscope, locktype) >
 pub struct LockEntry {
-    pub lokscope: LockScope,
+    pub lockscope: LockScope,
     pub locktype: LockType,
 }
 
@@ -300,7 +300,7 @@ pub enum LockScope {
 ///    refers to the lock.
 ///
 /// <!ELEMENT locktoken (href) >
-pub struct LockToken(Href);
+pub struct LockToken(pub Href);
 
 /// 14.15.  locktype XML Element
 ///
@@ -363,7 +363,11 @@ pub struct Multistatus<T: Extension> {
 /// text content or attributes.
 ///
 /// <!ELEMENT owner ANY >
-pub struct Owner(pub String);
+//@FIXME might need support for an extension
+pub struct Owner {
+    pub txt: Option<String>,
+    pub url: Option<Href>,
+}
 
 /// 14.18.  prop XML Element
 ///
@@ -559,7 +563,25 @@ pub struct Status(pub http::status::StatusCode);
 ///
 ///
 /// <!ELEMENT timeout (#PCDATA) >
-pub struct Timeout(u64);
+///
+/// TimeOut = "Timeout" ":" 1#TimeType
+/// TimeType = ("Second-" DAVTimeOutVal | "Infinite")
+///             ; No LWS allowed within TimeType
+/// DAVTimeOutVal = 1*DIGIT
+///
+/// Clients MAY include Timeout request headers in their LOCK requests.
+/// However, the server is not required to honor or even consider these
+/// requests.  Clients MUST NOT submit a Timeout request header with any
+/// method other than a LOCK method.
+///
+/// The "Second" TimeType specifies the number of seconds that will
+/// elapse between granting of the lock at the server, and the automatic
+/// removal of the lock.  The timeout value for TimeType "Second" MUST
+/// NOT be greater than 2^32-1.
+pub enum Timeout {
+    Seconds(u32),
+    Infinite,
+}
 
 
 /// 15.  DAV Properties

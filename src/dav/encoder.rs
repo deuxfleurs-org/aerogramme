@@ -391,43 +391,98 @@ impl<C: Context> QuickWritable<C> for ActiveLock {
 
 impl<C: Context> QuickWritable<C> for LockType {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let start = ctx.create_dav_element("locktype");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        match self {
+            Self::Write => xml.write_event_async(Event::Empty(ctx.create_dav_element("write"))).await?,
+        }; 
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
 impl<C: Context> QuickWritable<C> for LockScope {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let start = ctx.create_dav_element("lockscope");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        match self {
+            Self::Exclusive => xml.write_event_async(Event::Empty(ctx.create_dav_element("exclusive"))).await?,
+            Self::Shared => xml.write_event_async(Event::Empty(ctx.create_dav_element("shared"))).await?,
+        }; 
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
 impl<C: Context> QuickWritable<C> for Owner {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let start = ctx.create_dav_element("owner");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        if let Some(txt) = &self.txt {
+            xml.write_event_async(Event::Text(BytesText::new(&txt))).await?;
+        }
+        if let Some(href) = &self.url {
+            href.write(xml, ctx.child()).await?;
+        }
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
 impl<C: Context> QuickWritable<C> for Depth {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let start = ctx.create_dav_element("depth");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        match self {
+            Self::Zero => xml.write_event_async(Event::Text(BytesText::new("0"))).await?,
+            Self::One => xml.write_event_async(Event::Text(BytesText::new("1"))).await?,
+            Self::Infinity => xml.write_event_async(Event::Text(BytesText::new("infinity"))).await?,
+        };
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
 impl<C: Context> QuickWritable<C> for Timeout {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let start = ctx.create_dav_element("timeout");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        match self {
+            Self::Seconds(count) => {
+                let txt = format!("Second-{}", count);
+                xml.write_event_async(Event::Text(BytesText::new(&txt))).await?
+            },
+            Self::Infinite => xml.write_event_async(Event::Text(BytesText::new("Infinite"))).await?
+        };
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
 impl<C: Context> QuickWritable<C> for LockToken {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let start = ctx.create_dav_element("locktoken");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        self.0.write(xml, ctx.child()).await?;
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
 impl<C: Context> QuickWritable<C> for LockRoot {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let start = ctx.create_dav_element("lockroot");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        self.0.write(xml, ctx.child()).await?;
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
@@ -435,7 +490,11 @@ impl<C: Context> QuickWritable<C> for LockEntry {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         let start = ctx.create_dav_element("lockentry");
         let end = start.to_end();
-        unimplemented!();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        self.lockscope.write(xml, ctx.child()).await?;
+        self.locktype.write(xml, ctx.child()).await?;
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
