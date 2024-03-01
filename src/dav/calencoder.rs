@@ -27,6 +27,10 @@ impl Context for CalExtension {
     async fn hook_resourcetype(&self, restype: &Self::ResourceType, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
         restype.write(xml, self.child()).await
     }
+
+    async fn hook_propertyrequest(&self, propreq: &Self::PropertyRequest, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
+        propreq.write(xml, self.child()).await 
+    }
 }
 
 impl CalExtension {
@@ -57,6 +61,12 @@ impl QuickWritable<CalExtension> for Violation {
 
 
 impl QuickWritable<CalExtension> for Property {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: CalExtension) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl QuickWritable<CalExtension> for PropertyRequest {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: CalExtension) -> Result<(), QError> {
         unimplemented!();
     }

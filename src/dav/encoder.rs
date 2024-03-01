@@ -21,6 +21,7 @@ pub trait Context: Extension {
     fn create_dav_element(&self, name: &str) -> BytesStart;
     async fn hook_error(&self, err: &Self::Error, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError>;
     async fn hook_property(&self, prop: &Self::Property, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError>;
+    async fn hook_propertyrequest(&self, prop: &Self::PropertyRequest, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError>;
     async fn hook_resourcetype(&self, prop: &Self::ResourceType, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError>;
 }
 
@@ -42,6 +43,9 @@ impl Context for NoExtension {
     async fn hook_property(&self, prop: &Disabled, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
         unreachable!();
     }
+    async fn hook_propertyrequest(&self, prop: &Disabled, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
+        unreachable!();
+    }
     async fn hook_resourcetype(&self, restype: &Disabled, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
         unreachable!();
     }
@@ -55,7 +59,30 @@ impl Context for NoExtension {
 /// PROPFIND REQUEST
 impl<C: Context> QuickWritable<C> for PropFind<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let start = ctx.create_dav_element("propfind");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        match self {
+            Self::PropName => xml.write_event_async(Event::Empty(ctx.create_dav_element("propname"))).await?,
+            Self::AllProp(maybe_include) => {
+                xml.write_event_async(Event::Empty(ctx.create_dav_element("allprop"))).await?;
+                if let Some(include) = maybe_include {
+                    include.write(xml, ctx.child()).await?;
+                }
+            },
+            Self::Prop(many_propreq) => {
+                let start = ctx.create_dav_element("prop");
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                for propreq in many_propreq.iter() {
+                    propreq.write(xml, ctx.child()).await?;
+                }
+                xml.write_event_async(Event::End(end)).await?;
+            },
+        }
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
@@ -82,7 +109,16 @@ impl<C: Context> QuickWritable<C> for Multistatus<C> {
 /// LOCK REQUEST
 impl<C: Context> QuickWritable<C> for LockInfo {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let start = ctx.create_dav_element("lockinfo");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        self.lockscope.write(xml, ctx.child()).await?;
+        self.locktype.write(xml, ctx.child()).await?;
+        if let Some(owner) = &self.owner {
+            owner.write(xml, ctx.child()).await?;
+        }
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
@@ -345,6 +381,40 @@ impl<C: Context> QuickWritable<C> for ResourceType<C> {
         match self {
             Self::Collection => xml.write_event_async(Event::Empty(ctx.create_dav_element("collection"))).await,
             Self::Extension(inner) => ctx.hook_resourcetype(inner, xml).await,
+        }
+    }
+}
+
+impl<C: Context> QuickWritable<C> for Include<C> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        let start = ctx.create_dav_element("include");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;  
+        for prop in self.0.iter() {
+            prop.write(xml, ctx.child()).await?;
+        }
+        xml.write_event_async(Event::End(end)).await
+    }
+}
+
+impl<C: Context> QuickWritable<C> for PropertyRequest<C> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        use PropertyRequest::*;
+        let mut atom = (async |c| xml.write_event_async(Event::Empty(ctx.create_dav_element(c))).await);
+
+        match self {
+            CreationDate => atom("creationdate").await,
+            DisplayName => atom("displayname").await,
+            GetContentLanguage => atom("getcontentlanguage").await,
+            GetContentLength => atom("getcontentlength").await,
+            GetContentType => atom("getcontenttype").await,
+            GetEtag => atom("getetag").await,
+            GetLastModified => atom("getlastmodified").await,
+            LockDiscovery => atom("lockdiscovery").await,
+            ResourceType => atom("resourcetype").await,
+            SupportedLock => atom("supportedlock").await,
+            Extension(inner) => ctx.hook_propertyrequest(inner, xml).await,
         }
     }
 }

@@ -1,5 +1,6 @@
 #![feature(type_alias_impl_trait)]
 #![feature(async_fn_in_trait)]
+#![feature(async_closure)]
 
 mod auth;
 mod bayou;

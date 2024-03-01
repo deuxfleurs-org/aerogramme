@@ -29,6 +29,10 @@ pub enum Violation {
     SupportedFilter,
 }
 
+pub enum PropertyRequest {
+    CalendarDescription,
+    CalendarTimezone,
+}
 
 pub enum Property {
     CalendarDescription,

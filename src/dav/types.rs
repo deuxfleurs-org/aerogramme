@@ -39,17 +39,6 @@ pub struct ActiveLock {
     pub lockroot: LockRoot,
 }
 
-/// 14.2 allprop XML Element
-///
-/// Name:   allprop
-///
-/// Purpose:   Specifies that all names and values of dead properties and
-/// the live properties defined by this document existing on the
-/// resource are to be returned.
-///
-/// <!ELEMENT allprop EMPTY >
-pub struct AllProp{}
-
 /// 14.3 collection XML Element
 ///
 /// Name:   collection
@@ -219,7 +208,7 @@ pub struct Href(pub String);
 /// standards.  This element MUST NOT contain text or mixed content.
 ///
 /// <!ELEMENT include ANY >
-pub struct Include<T: Extension>(pub Vec<Property<T>>);
+pub struct Include<T: Extension>(pub Vec<PropertyRequest<T>>);
 
 /// 14.9.  location XML Element
 ///
@@ -401,6 +390,29 @@ pub enum PropertyUpdateItem<T: Extension> {
     Set(Set<T>),
 }
 
+/// 14.2 allprop XML Element
+///
+/// Name:   allprop
+///
+/// Purpose:   Specifies that all names and values of dead properties and
+/// the live properties defined by this document existing on the
+/// resource are to be returned.
+///
+/// <!ELEMENT allprop EMPTY >
+///
+/// ---
+///
+/// 14.21.  propname XML Element
+///
+/// Name:   propname
+///
+/// Purpose:   Specifies that only a list of property names on the
+/// resource is to be returned.
+///
+/// <!ELEMENT propname EMPTY >
+///
+/// ---
+///
 /// 14.20.  propfind XML Element
 ///
 /// Name:   propfind
@@ -413,20 +425,12 @@ pub enum PropertyUpdateItem<T: Extension> {
 ///
 /// <!ELEMENT propfind ( propname | (allprop, include?) | prop ) >
 pub enum PropFind<T: Extension> {
-    PropName(PropName),
-    AllProp(AllProp, Option<Include<T>>),
-    Prop(Prop<T>),
+    PropName,
+    AllProp(Option<Include<T>>),
+    Prop(Vec<PropertyRequest<T>>),
 }
 
-/// 14.21.  propname XML Element
-///
-/// Name:   propname
-///
-/// Purpose:   Specifies that only a list of property names on the
-/// resource is to be returned.
-///
-/// <!ELEMENT propname EMPTY >
-pub struct PropName {}
+
 
 /// 14.22 propstat XML Element
 ///
