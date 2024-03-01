@@ -372,10 +372,12 @@ pub struct Owner {
 /// text or mixed content.
 ///
 /// <!ELEMENT prop ANY >
-pub enum Prop<T: Extension> {
-    Name(Vec<PropertyRequest<T>>),
-    Value(Vec<Property<T>>),
+pub enum AnyProp<T: Extension> {
+    Name(PropName<T>),
+    Value(PropValue<T>),
 }
+pub struct PropName<T: Extension>(pub Vec<PropertyRequest<T>>);
+pub struct PropValue<T: Extension>(pub Vec<Property<T>>);
 
 /// 14.19.  propertyupdate XML Element
 ///
@@ -387,7 +389,7 @@ pub enum Prop<T: Extension> {
 /// required to modify the properties on the resource.
 ///
 /// <!ELEMENT propertyupdate (remove | set)+ >
-pub struct PropertyUpdate<T: Extension>(Vec<PropertyUpdateItem<T>>);
+pub struct PropertyUpdate<T: Extension>(pub Vec<PropertyUpdateItem<T>>);
 pub enum PropertyUpdateItem<T: Extension> {
     Remove(Remove<T>),
     Set(Set<T>),
@@ -430,7 +432,7 @@ pub enum PropertyUpdateItem<T: Extension> {
 pub enum PropFind<T: Extension> {
     PropName,
     AllProp(Option<Include<T>>),
-    Prop(Vec<PropertyRequest<T>>),
+    Prop(PropName<T>),
 }
 
 
@@ -451,7 +453,7 @@ pub enum PropFind<T: Extension> {
 ///
 /// <!ELEMENT propstat (prop, status, error?, responsedescription?) >
 pub struct PropStat<T: Extension> {
-    pub prop: Prop<T>,
+    pub prop: AnyProp<T>,
     pub status: Status,
     pub error: Option<Error<T>>,
     pub responsedescription: Option<ResponseDescription>,
@@ -470,7 +472,7 @@ pub struct PropStat<T: Extension> {
 /// the names of properties to be removed are required.
 ///
 /// <!ELEMENT remove (prop) >
-pub struct Remove<T: Extension>(pub Prop<T>);
+pub struct Remove<T: Extension>(pub PropName<T>);
 
 /// 14.24.  response XML Element
 ///
@@ -535,7 +537,7 @@ pub struct ResponseDescription(pub String);
 /// property, and MUST be subsequently retrievable using PROPFIND.
 ///
 /// <!ELEMENT set (prop) >
-pub struct Set<T: Extension>(pub Prop<T>);
+pub struct Set<T: Extension>(pub PropValue<T>);
 
 /// 14.27.  shared XML Element
 ///

@@ -72,20 +72,19 @@ impl<C: Context> QuickWritable<C> for PropFind<C> {
                     include.write(xml, ctx.child()).await?;
                 }
             },
-            Self::Prop(many_propreq) => {
-                let start = ctx.create_dav_element("prop");
-                let end = start.to_end();
-
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                for propreq in many_propreq.iter() {
-                    propreq.write(xml, ctx.child()).await?;
-                }
-                xml.write_event_async(Event::End(end)).await?;
-            },
+            Self::Prop(propname) => propname.write(xml, ctx.child()).await?,
         }
         xml.write_event_async(Event::End(end)).await
     }
 }
+
+/// PROPPATCH REQUEST
+impl<C: Context> QuickWritable<C> for PropertyUpdate<C> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
 
 /// PROPFIND RESPONSE, PROPPATCH RESPONSE, COPY RESPONSE, MOVE RESPONSE
 /// DELETE RESPONSE, 
@@ -124,31 +123,43 @@ impl<C: Context> QuickWritable<C> for LockInfo {
 }
 
 /// SOME LOCK RESPONSES
-impl<C: Context> QuickWritable<C> for Prop<C> {
+impl<C: Context> QuickWritable<C> for PropValue<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         let start = ctx.create_dav_element("prop");
         let end = start.to_end();
 
         xml.write_event_async(Event::Start(start.clone())).await?;
-        match self {
-            Self::Name(many_names) => {
-                for propname in many_names {
-                    propname.write(xml, ctx.child()).await?;
-                }
-            },
-            Self::Value(many_values) => {
-                for propval in many_values {
-                    propval.write(xml, ctx.child()).await?;
-                }
-            }
-        };
-        xml.write_event_async(Event::End(end)).await?;
-
-        Ok(())
+        for propval in &self.0 {
+            propval.write(xml, ctx.child()).await?;
+        }
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
 // --- XML inner elements
+impl<C: Context> QuickWritable<C> for AnyProp<C> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        match self {
+            Self::Name(propname) => propname.write(xml, ctx).await,
+            Self::Value(propval) => propval.write(xml, ctx).await,
+        }
+    }
+}
+
+impl<C: Context> QuickWritable<C> for PropName<C> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        let start = ctx.create_dav_element("prop");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        for propname in &self.0 {
+            propname.write(xml, ctx.child()).await?;
+        }
+        xml.write_event_async(Event::End(end)).await
+    }
+}
+
+
 impl<C: Context> QuickWritable<C> for Href {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         let start = ctx.create_dav_element("href");
@@ -411,7 +422,7 @@ impl<C: Context> QuickWritable<C> for Include<C> {
 impl<C: Context> QuickWritable<C> for PropertyRequest<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         use PropertyRequest::*;
-        let mut atom = (async |c| xml.write_event_async(Event::Empty(ctx.create_dav_element(c))).await);
+        let mut atom = async |c| xml.write_event_async(Event::Empty(ctx.create_dav_element(c))).await;
 
         match self {
             CreationDate => atom("creationdate").await,
@@ -724,12 +735,12 @@ mod tests {
                     Response {
                         href: Href("http://www.example.com/container/".into()),
                         status_or_propstat: StatusOrPropstat::PropStat(vec![PropStat {
-                            prop: Prop::Name(vec![
+                            prop: AnyProp::Name(PropName(vec![
                                 PropertyRequest::CreationDate,
                                 PropertyRequest::DisplayName,
                                 PropertyRequest::ResourceType,
                                 PropertyRequest::SupportedLock,
-                            ]),
+                            ])),
                             status: Status(http::status::StatusCode::OK),
                             error: None,
                             responsedescription: None,
@@ -741,7 +752,7 @@ mod tests {
                     Response {
                         href: Href("http://www.example.com/container/front.html".into()),
                         status_or_propstat: StatusOrPropstat::PropStat(vec![PropStat {
-                            prop: Prop::Name(vec![
+                            prop: AnyProp::Name(PropName(vec![
                                 PropertyRequest::CreationDate,
                                 PropertyRequest::DisplayName,
                                 PropertyRequest::GetContentLength,
@@ -750,7 +761,7 @@ mod tests {
                                 PropertyRequest::GetLastModified,
                                 PropertyRequest::ResourceType,
                                 PropertyRequest::SupportedLock,
-                            ]),
+                            ])),
                             status: Status(http::status::StatusCode::OK),
                             error: None,
                             responsedescription: None,
@@ -823,7 +834,7 @@ mod tests {
                     Response {
                         href: Href("/container/".into()),
                         status_or_propstat: StatusOrPropstat::PropStat(vec![PropStat {
-                            prop: Prop::Value(vec![
+                            prop: AnyProp::Value(PropValue(vec![
                                 Property::CreationDate(FixedOffset::west_opt(8 * 3600)
                                                        .unwrap()
                                                        .with_ymd_and_hms(1997, 12, 1, 17, 42, 21)
@@ -840,7 +851,7 @@ mod tests {
                                         locktype: LockType::Write,
                                     },
                                 ]),
-                            ]),
+                            ])),
                             status: Status(http::status::StatusCode::OK),
                             error: None,
                             responsedescription: None,
@@ -852,7 +863,7 @@ mod tests {
                     Response {
                         href: Href("/container/front.html".into()),
                         status_or_propstat: StatusOrPropstat::PropStat(vec![PropStat {
-                            prop: Prop::Value(vec![
+                            prop: AnyProp::Value(PropValue(vec![
                                 Property::CreationDate(FixedOffset::west_opt(8 * 3600)
                                     .unwrap()
                                     .with_ymd_and_hms(1997, 12, 1, 18, 27, 21)
@@ -876,7 +887,7 @@ mod tests {
                                         locktype: LockType::Write,
                                     },
                                 ]),
-                            ]),
+                            ])),
                             status: Status(http::status::StatusCode::OK),
                             error: None,
                             responsedescription: None,
@@ -978,6 +989,32 @@ mod tests {
         <D:resourcetype/>
     </D:include>
 </D:propfind>"#;
+
+        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+    }
+
+    #[tokio::test]
+    async fn rfc_propertyupdate() {
+        let got = serialize(
+            NoExtension { root: true },
+            &PropertyUpdate(vec![
+                PropertyUpdateItem::Set(Set(PropValue(vec![ ]))),
+                PropertyUpdateItem::Remove(Remove(PropName(vec![]))),
+            ]),
+        ).await;
+
+        let expected = r#"<D:propertyupdate xmlns:D="DAV:">
+    <D:set>
+        <D:prop>
+            <D:getcontentlanguage>fr-FR</D:getcontentlanguage>
+        </D:prop>
+    </D:set>
+    <D:remove>
+        <D:prop>
+            <D:displayname/>
+        </D:prop>
+    </D:remove>
+</D:propertyupdate>"#;
 
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
     }
