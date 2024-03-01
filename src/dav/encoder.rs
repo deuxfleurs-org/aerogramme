@@ -325,7 +325,7 @@ impl<C: Context> QuickWritable<C> for Property<C> {
                 let end = start.to_end();
 
                 xml.write_event_async(Event::Start(start.clone())).await?;
-                xml.write_event_async(Event::Text(BytesText::new(&date.to_rfc3339()))).await?;
+                xml.write_event_async(Event::Text(BytesText::new(&date.to_rfc2822()))).await?;
                 xml.write_event_async(Event::End(end)).await?;
             },
             LockDiscovery(many_locks) => {
@@ -795,6 +795,167 @@ mod tests {
     </D:response>
 </D:multistatus>"#;
 
+
+        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+    }
+
+    #[tokio::test]
+    async fn rfc_allprop_req() {
+        let got = serialize(
+            NoExtension { root: true },
+            &PropFind::AllProp(None),
+        ).await;
+
+    let expected = r#"<D:propfind xmlns:D="DAV:">
+    <D:allprop/>
+</D:propfind>"#;
+
+        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+    }
+
+    #[tokio::test]
+    async fn rfc_allprop_res() {
+        use chrono::{DateTime,FixedOffset,TimeZone};
+        let got = serialize(
+            NoExtension { root: true },
+            &Multistatus {
+                responses: vec![
+                    Response {
+                        href: Href("/container/".into()),
+                        status_or_propstat: StatusOrPropstat::PropStat(vec![PropStat {
+                            prop: Prop::Value(vec![
+                                Property::CreationDate(FixedOffset::west_opt(8 * 3600)
+                                                       .unwrap()
+                                                       .with_ymd_and_hms(1997, 12, 1, 17, 42, 21)
+                                                       .unwrap()),
+                                Property::DisplayName("Example collection".into()),
+                                Property::ResourceType(vec![ResourceType::Collection]),
+                                Property::SupportedLock(vec![
+                                    LockEntry {
+                                        lockscope: LockScope::Exclusive,
+                                        locktype: LockType::Write,
+                                    },
+                                    LockEntry {
+                                        lockscope: LockScope::Shared,
+                                        locktype: LockType::Write,
+                                    },
+                                ]),
+                            ]),
+                            status: Status(http::status::StatusCode::OK),
+                            error: None,
+                            responsedescription: None,
+                        }]),
+                        error: None,
+                        responsedescription: None,
+                        location: None,
+                    },
+                    Response {
+                        href: Href("/container/front.html".into()),
+                        status_or_propstat: StatusOrPropstat::PropStat(vec![PropStat {
+                            prop: Prop::Value(vec![
+                                Property::CreationDate(FixedOffset::west_opt(8 * 3600)
+                                    .unwrap()
+                                    .with_ymd_and_hms(1997, 12, 1, 18, 27, 21)
+                                    .unwrap()),
+                                Property::DisplayName("Example HTML resource".into()),
+                                Property::GetContentLength(4525),
+                                Property::GetContentType("text/html".into()),
+                                Property::GetEtag(r#""zzyzx""#.into()),
+                                Property::GetLastModified(FixedOffset::east_opt(0)
+                                    .unwrap()
+                                    .with_ymd_and_hms(1998, 1, 12, 9, 25, 56)
+                                    .unwrap()),
+                                Property::ResourceType(vec![]),
+                                Property::SupportedLock(vec![
+                                    LockEntry {
+                                        lockscope: LockScope::Exclusive,
+                                        locktype: LockType::Write,
+                                    },
+                                    LockEntry {
+                                        lockscope: LockScope::Shared,
+                                        locktype: LockType::Write,
+                                    },
+                                ]),
+                            ]),
+                            status: Status(http::status::StatusCode::OK),
+                            error: None,
+                            responsedescription: None,
+                        }]),
+                        error: None,
+                        responsedescription: None,
+                        location: None,
+                    },
+                ],
+                responsedescription: None,
+            }
+        ).await;
+
+        let expected = r#"<D:multistatus xmlns:D="DAV:">
+    <D:response>
+        <D:href>/container/</D:href>
+        <D:propstat>
+            <D:prop>
+                <D:creationdate>1997-12-01T17:42:21-08:00</D:creationdate>
+                <D:displayname>Example collection</D:displayname>
+                <D:resourcetype>
+                    <D:collection/>
+                </D:resourcetype>
+                <D:supportedlock>
+                    <D:lockentry>
+                        <D:lockscope>
+                            <D:exclusive/>
+                        </D:lockscope>
+                        <D:locktype>
+                            <D:write/>
+                        </D:locktype>
+                    </D:lockentry>
+                    <D:lockentry>
+                        <D:lockscope>
+                            <D:shared/>
+                        </D:lockscope>
+                        <D:locktype>
+                            <D:write/>
+                        </D:locktype>
+                    </D:lockentry>
+                </D:supportedlock>
+            </D:prop>
+            <D:status>HTTP/1.1 200 OK</D:status>
+        </D:propstat>
+    </D:response>
+    <D:response>
+        <D:href>/container/front.html</D:href>
+        <D:propstat>
+            <D:prop>
+                <D:creationdate>1997-12-01T18:27:21-08:00</D:creationdate>
+                <D:displayname>Example HTML resource</D:displayname>
+                <D:getcontentlength>4525</D:getcontentlength>
+                <D:getcontenttype>text/html</D:getcontenttype>
+                <D:getetag>&quot;zzyzx&quot;</D:getetag>
+                <D:getlastmodified>Mon, 12 Jan 1998 09:25:56 +0000</D:getlastmodified>
+                <D:resourcetype/>
+                <D:supportedlock>
+                    <D:lockentry>
+                        <D:lockscope>
+                            <D:exclusive/>
+                        </D:lockscope>
+                        <D:locktype>
+                            <D:write/>
+                        </D:locktype>
+                    </D:lockentry>
+                    <D:lockentry>
+                        <D:lockscope>
+                            <D:shared/>
+                        </D:lockscope>
+                        <D:locktype>
+                            <D:write/>
+                        </D:locktype>
+                    </D:lockentry>
+                </D:supportedlock>
+            </D:prop>
+            <D:status>HTTP/1.1 200 OK</D:status>
+        </D:propstat>
+    </D:response>
+</D:multistatus>"#;
 
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
     }
