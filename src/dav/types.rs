@@ -35,6 +35,8 @@ pub struct ActiveLock {
     pub depth: Depth,
     pub owner: Option<Owner>,
     pub timeout: Option<Timeout>,
+    pub locktoken: Option<LockToken>,
+    pub lockroot: LockRoot,
 }
 
 /// 14.2 allprop XML Element

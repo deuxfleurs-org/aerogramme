@@ -51,6 +51,16 @@ impl Context for NoExtension {
 //--------------------- ENCODING --------------------
 
 // --- XML ROOTS
+
+/// PROPFIND REQUEST
+impl<C: Context> QuickWritable<C> for PropFind<C> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+/// PROPFIND RESPONSE, PROPPATCH RESPONSE, COPY RESPONSE, MOVE RESPONSE
+/// DELETE RESPONSE, 
 impl<C: Context> QuickWritable<C> for Multistatus<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         let start = ctx.create_dav_element("multistatus");
@@ -69,6 +79,28 @@ impl<C: Context> QuickWritable<C> for Multistatus<C> {
     }
 }
 
+/// LOCK REQUEST
+impl<C: Context> QuickWritable<C> for LockInfo {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+/// SOME LOCK RESPONSES
+impl<C: Context> QuickWritable<C> for Prop<C> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        let start = ctx.create_dav_element("prop");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        for property in &self.0 {
+            property.write(xml, ctx.child()).await?;
+        }
+        xml.write_event_async(Event::End(end)).await?;
+
+        Ok(())
+    }
+}
 
 // --- XML inner elements
 impl<C: Context> QuickWritable<C> for Href {
@@ -183,22 +215,6 @@ impl<C: Context> QuickWritable<C> for PropStat<C> {
         Ok(())
     }
 }
-
-impl<C: Context> QuickWritable<C> for Prop<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("prop");
-        let end = start.to_end();
-
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        for property in &self.0 {
-            property.write(xml, ctx.child()).await?;
-        }
-        xml.write_event_async(Event::End(end)).await?;
-
-        Ok(())
-    }
-}
-
 
 impl<C: Context> QuickWritable<C> for Property<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
@@ -327,14 +343,89 @@ impl<C: Context> QuickWritable<C> for Property<C> {
 impl<C: Context> QuickWritable<C> for ResourceType<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         match self {
-            Self::Collection => xml.write_event_async(Event::Empty(ctx.create_dav_element("collection"))).await?,
-            Self::Extension(inner) => ctx.hook_resourcetype(inner, xml).await?,
-        };
-        Ok(())
+            Self::Collection => xml.write_event_async(Event::Empty(ctx.create_dav_element("collection"))).await,
+            Self::Extension(inner) => ctx.hook_resourcetype(inner, xml).await,
+        }
     }
 }
 
 impl<C: Context> QuickWritable<C> for ActiveLock {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        // <D:activelock>
+        //   <D:locktype><D:write/></D:locktype>
+        //   <D:lockscope><D:exclusive/></D:lockscope>
+        //   <D:depth>infinity</D:depth>
+        //   <D:owner>
+        //     <D:href>http://example.org/~ejw/contact.html</D:href>
+        //   </D:owner>
+        //   <D:timeout>Second-604800</D:timeout>
+        //   <D:locktoken>
+        //     <D:href>urn:uuid:e71d4fae-5dec-22d6-fea5-00a0c91e6be4</D:href>
+        //   </D:locktoken>
+        //   <D:lockroot>
+        //     <D:href>http://example.com/workspace/webdav/proposal.doc</D:href>
+        //   </D:lockroot>
+        // </D:activelock>
+        let start = ctx.create_dav_element("activelock");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        self.locktype.write(xml, ctx.child()).await?;
+        self.lockscope.write(xml, ctx.child()).await?;
+        self.depth.write(xml, ctx.child()).await?;
+        if let Some(owner) = &self.owner {
+            owner.write(xml, ctx.child()).await?;
+        }
+        if let Some(timeout) = &self.timeout {
+            timeout.write(xml, ctx.child()).await?;
+        }
+        if let Some(locktoken) = &self.locktoken {
+            locktoken.write(xml, ctx.child()).await?;
+        }
+        self.lockroot.write(xml, ctx.child()).await?;
+        xml.write_event_async(Event::End(end)).await?;
+
+        Ok(())
+    }
+}
+
+impl<C: Context> QuickWritable<C> for LockType {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: Context> QuickWritable<C> for LockScope {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: Context> QuickWritable<C> for Owner {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: Context> QuickWritable<C> for Depth {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: Context> QuickWritable<C> for Timeout {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: Context> QuickWritable<C> for LockToken {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: Context> QuickWritable<C> for LockRoot {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         unimplemented!();
     }
@@ -342,6 +433,8 @@ impl<C: Context> QuickWritable<C> for ActiveLock {
 
 impl<C: Context> QuickWritable<C> for LockEntry {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        let start = ctx.create_dav_element("lockentry");
+        let end = start.to_end();
         unimplemented!();
     }
 }
