@@ -198,8 +198,15 @@ impl<C: Context> QuickWritable<C> for Property<C> {
         match self {
             CreationDate(date) => unimplemented!(),
             DisplayName(name) => unimplemented!(),
-            //@FIXME not finished
-            _ => unimplemented!(),
+            GetContentLanguage(lang) => unimplemented!(),
+            GetContentLength(len) => unimplemented!(),
+            GetContentType(ct) => unimplemented!(),
+            GetEtag(et) => unimplemented!(),
+            GetLastModified(dt) => unimplemented!(),
+            LockDiscovery(locks) => unimplemented!(),
+            ResourceType(res) => unimplemented!(),
+            SupportedLock(sup) => unimplemented!(),
+            Extension(inner) => unimplemented!(),
         };
         Ok(())
     }

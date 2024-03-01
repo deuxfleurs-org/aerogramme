@@ -8,6 +8,7 @@ pub trait Extension {
     type Error;
     type Property;
     type PropertyRequest;
+    type ResourceType;
 }
 
 /// No extension
@@ -18,6 +19,7 @@ impl Extension for NoExtension {
     type Error = Disabled;
     type Property = Disabled;
     type PropertyRequest = Disabled;
+    type ResourceType = Disabled;
  }
 
 /// 14.1.  activelock XML Element
@@ -849,7 +851,7 @@ pub enum Property<T: Extension> {
     ///       <x:collection/>
     ///       <f:search-results xmlns:f="http://www.example.com/ns"/>
     ///   </x:resourcetype>
-    ResourceType(Collection),
+    ResourceType(Vec<ResourceType<T>>),
 
     /// 15.10.  supportedlock Property
     ///
@@ -880,4 +882,7 @@ pub enum Property<T: Extension> {
     Extension(T::Property),
 }
 
-
+pub enum ResourceType<T: Extension> {
+    Collection,
+    Extension(T::ResourceType),
+}

@@ -8,6 +8,7 @@ impl Extension for CalExtension {
     type Error = Violation;
     type Property = Property;
     type PropertyRequest = Property; //@FIXME
+    type ResourceType = Property; //@FIXME
 }
 
 pub enum Violation {
