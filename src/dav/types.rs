@@ -353,9 +353,9 @@ pub struct Multistatus<T: Extension> {
 ///
 /// <!ELEMENT owner ANY >
 //@FIXME might need support for an extension
-pub struct Owner {
-    pub txt: Option<String>,
-    pub url: Option<Href>,
+pub enum Owner {
+    Txt(String),
+    Href(Href),
 }
 
 /// 14.18.  prop XML Element

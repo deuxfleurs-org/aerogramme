@@ -552,11 +552,9 @@ impl<C: Context> QuickWritable<C> for Owner {
         let end = start.to_end();
 
         xml.write_event_async(Event::Start(start.clone())).await?;
-        if let Some(txt) = &self.txt {
-            xml.write_event_async(Event::Text(BytesText::new(&txt))).await?;
-        }
-        if let Some(href) = &self.url {
-            href.write(xml, ctx.child()).await?;
+        match self {
+            Self::Txt(txt) => xml.write_event_async(Event::Text(BytesText::new(&txt))).await?,
+            Self::Href(href) => href.write(xml, ctx.child()).await?,
         }
         xml.write_event_async(Event::End(end)).await
     }
@@ -1091,6 +1089,76 @@ mod tests {
         </D:error>
     </D:response>
 </D:multistatus>"#;
+
+        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+    }
+
+    #[tokio::test]
+    async fn rfc_simple_lock_request() {
+        let got = serialize(
+            NoExtension { root: true },
+            &LockInfo {
+                lockscope: LockScope::Exclusive,
+                locktype: LockType::Write,
+                owner: Some(Owner::Href(Href("http://example.org/~ejw/contact.html".into()))),
+            },
+        ).await;
+
+        let expected = r#"<D:lockinfo xmlns:D="DAV:">
+    <D:lockscope>
+        <D:exclusive/>
+    </D:lockscope>
+    <D:locktype>
+        <D:write/>
+    </D:locktype>
+    <D:owner>
+        <D:href>http://example.org/~ejw/contact.html</D:href>
+    </D:owner>
+</D:lockinfo>"#;
+
+        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+    }
+
+    #[tokio::test]
+    async fn rfc_simple_lock_response() {
+        let got = serialize(
+            NoExtension { root: true },
+            &PropValue(vec![
+                Property::LockDiscovery(vec![ActiveLock {
+                    lockscope: LockScope::Exclusive,
+                    locktype: LockType::Write,
+                    depth: Depth::Infinity,
+                    owner: Some(Owner::Href(Href("http://example.org/~ejw/contact.html".into()))),
+                    timeout: Some(Timeout::Seconds(604800)),
+                    locktoken: Some(LockToken(Href("urn:uuid:e71d4fae-5dec-22d6-fea5-00a0c91e6be4".into()))),
+                    lockroot: LockRoot(Href("http://example.com/workspace/webdav/proposal.doc".into())),
+                }]),
+            ]),
+        ).await;
+
+        let expected = r#"<D:prop xmlns:D="DAV:">
+    <D:lockdiscovery>
+        <D:activelock>
+            <D:locktype>
+                <D:write/>
+            </D:locktype>
+            <D:lockscope>
+                <D:exclusive/>
+            </D:lockscope>
+            <D:depth>infinity</D:depth>
+            <D:owner>
+                <D:href>http://example.org/~ejw/contact.html</D:href>
+            </D:owner>
+            <D:timeout>Second-604800</D:timeout>
+            <D:locktoken>
+                <D:href>urn:uuid:e71d4fae-5dec-22d6-fea5-00a0c91e6be4</D:href>
+            </D:locktoken>
+            <D:lockroot>
+                <D:href>http://example.com/workspace/webdav/proposal.doc</D:href>
+            </D:lockroot>
+        </D:activelock>
+    </D:lockdiscovery>
+</D:prop>"#;
 
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
     }
