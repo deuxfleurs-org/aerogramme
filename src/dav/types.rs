@@ -11,9 +11,8 @@ pub trait Extension {
 }
 
 /// No extension
-pub struct NoExtension {}
-pub enum Namespace {
-    Dav
+pub struct NoExtension {
+    pub root: bool
 }
 impl Extension for NoExtension {
     type Error = Disabled;

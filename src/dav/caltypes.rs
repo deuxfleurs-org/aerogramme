@@ -1,7 +1,9 @@
 use super::types::*;
 
 
-pub struct CalExtension {}
+pub struct CalExtension {
+    pub root: bool
+}
 impl Extension for CalExtension {
     type Error = Violation;
     type Property = Property;

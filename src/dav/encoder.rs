@@ -11,23 +11,19 @@ use super::types::*;
 //-------------- TRAITS ----------------------
 
 /// Basic encode trait to make a type encodable
-pub trait QuickWritable<E: Extension, C: Context<E>> {
+pub trait QuickWritable<C: Context> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError>; 
 }
 
 /// Encoding context
-pub trait Context<E: Extension> {
+pub trait Context: Extension {
     fn child(&self) -> Self;
     fn create_dav_element(&self, name: &str) -> BytesStart;
-    async fn hook_error(&self, err: &E::Error, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError>;
+    async fn hook_error(&self, err: &Self::Error, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError>;
 }
 
 /// -------------- NoExtension Encoding Context
-/// (Might be tied to the type maybe)
-pub struct NoExtCtx {
-    root: bool
-}
-impl Context<NoExtension> for NoExtCtx {
+impl Context for NoExtension {
     fn child(&self) -> Self {
         Self { root: false }
     }
@@ -47,7 +43,7 @@ impl Context<NoExtension> for NoExtCtx {
 //--------------------- ENCODING --------------------
 
 // --- XML ROOTS
-impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Multistatus<E> {
+impl<C: Context> QuickWritable<C> for Multistatus<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         let start = ctx.create_dav_element("multistatus");
         let end = start.to_end();
@@ -67,7 +63,7 @@ impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Multistatus<E> {
 
 
 // --- XML inner elements
-impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Href {
+impl<C: Context> QuickWritable<C> for Href {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         let start = ctx.create_dav_element("href");
         let end = start.to_end();
@@ -80,7 +76,7 @@ impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Href {
     }
 }
 
-impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Response<E> {
+impl<C: Context> QuickWritable<C> for Response<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         let start = ctx.create_dav_element("href");
         let end = start.to_end();
@@ -103,7 +99,7 @@ impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Response<E> {
     }
 }
 
-impl<E: Extension, C: Context<E>> QuickWritable<E,C> for StatusOrPropstat<E> {
+impl<C: Context> QuickWritable<C> for StatusOrPropstat<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         match self {
             Self::Status(status) => status.write(xml, ctx.child()).await,
@@ -118,7 +114,7 @@ impl<E: Extension, C: Context<E>> QuickWritable<E,C> for StatusOrPropstat<E> {
     }
 }
 
-impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Status {
+impl<C: Context> QuickWritable<C> for Status {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         let start = ctx.create_dav_element("status");
         let end = start.to_end();
@@ -134,7 +130,7 @@ impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Status {
     }
 }
 
-impl<E: Extension, C: Context<E>> QuickWritable<E,C> for ResponseDescription {
+impl<C: Context> QuickWritable<C> for ResponseDescription {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         let start = ctx.create_dav_element("responsedescription");
         let end = start.to_end();
@@ -147,7 +143,7 @@ impl<E: Extension, C: Context<E>> QuickWritable<E,C> for ResponseDescription {
     }
 }
 
-impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Location {
+impl<C: Context> QuickWritable<C> for Location {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         let start = ctx.create_dav_element("location");
         let end = start.to_end();
@@ -160,7 +156,7 @@ impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Location {
     }
 }
 
-impl<E: Extension, C: Context<E>> QuickWritable<E,C> for PropStat<E> {
+impl<C: Context> QuickWritable<C> for PropStat<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         let start = ctx.create_dav_element("propstat");
         let end = start.to_end();
@@ -180,7 +176,7 @@ impl<E: Extension, C: Context<E>> QuickWritable<E,C> for PropStat<E> {
     }
 }
 
-impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Prop<E> {
+impl<C: Context> QuickWritable<C> for Prop<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         let start = ctx.create_dav_element("prop");
         let end = start.to_end();
@@ -196,7 +192,7 @@ impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Prop<E> {
 }
 
 
-impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Property<E> {
+impl<C: Context> QuickWritable<C> for Property<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         use Property::*;
         match self {
@@ -211,7 +207,7 @@ impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Property<E> {
 
 
 
-impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Error<E> {
+impl<C: Context> QuickWritable<C> for Error<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         let start = ctx.create_dav_element("error");
         let end = start.to_end();
@@ -226,7 +222,7 @@ impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Error<E> {
     }
 }
 
-impl<E: Extension, C: Context<E>> QuickWritable<E,C> for Violation<E> {
+impl<C: Context> QuickWritable<C> for Violation<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         match self {
             Violation::LockTokenMatchesRequestUri => xml.write_event_async(Event::Empty(ctx.create_dav_element("lock-token-matches-request-uri"))).await?, 
@@ -276,7 +272,7 @@ mod tests {
         let mut tokio_buffer = tokio::io::BufWriter::new(&mut buffer);
         let mut writer = Writer::new_with_indent(&mut tokio_buffer, b' ', 4);
 
-        let ctx = NoExtCtx{ root: false };
+        let ctx = NoExtension { root: false };
         Href("/SOGo/dav/so/".into()).write(&mut writer, ctx).await.expect("xml serialization");
         tokio_buffer.flush().await.expect("tokio buffer flush");
 
@@ -290,8 +286,8 @@ mod tests {
         let mut tokio_buffer = tokio::io::BufWriter::new(&mut buffer);
         let mut writer = Writer::new_with_indent(&mut tokio_buffer, b' ', 4);
 
-        let ctx = NoExtCtx{ root: true };
-        let xml: Multistatus<NoExtension> = Multistatus { responses: vec![], responsedescription: Some(ResponseDescription("Hello world".into())) };
+        let ctx = NoExtension { root: true };
+        let xml = Multistatus { responses: vec![], responsedescription: Some(ResponseDescription("Hello world".into())) };
         xml.write(&mut writer, ctx).await.expect("xml serialization");
         tokio_buffer.flush().await.expect("tokio buffer flush");
 

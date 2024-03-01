@@ -8,10 +8,7 @@ use quick_xml::writer::{ElementWriter, Writer};
 use quick_xml::name::PrefixDeclaration;
 use tokio::io::AsyncWrite;
 
-pub struct CalCtx {
-    root: bool
-}
-impl Context<CalExtension> for CalCtx {
+impl Context for CalExtension {
     fn child(&self) -> Self {
         Self { root: false }
     }
@@ -23,7 +20,8 @@ impl Context<CalExtension> for CalCtx {
         err.write(xml, self.child()).await
     }
 }
-impl CalCtx {
+
+impl CalExtension {
     fn create_ns_element(&self, ns: &str, name: &str) -> BytesStart {
         let mut start = BytesStart::new(format!("{}:{}", ns, name));
         if self.root {
@@ -37,8 +35,8 @@ impl CalCtx {
     }
 }
 
-impl QuickWritable<CalExtension, CalCtx> for Violation {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: CalCtx) -> Result<(), QError> {
+impl QuickWritable<CalExtension> for Violation {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: CalExtension) -> Result<(), QError> {
         match self {
             Self::SupportedFilter => {
                 let start = ctx.create_cal_element("supported-filter");
@@ -70,11 +68,11 @@ mod tests {
         let mut tokio_buffer = tokio::io::BufWriter::new(&mut buffer);
         let mut writer = Writer::new_with_indent(&mut tokio_buffer, b' ', 4);
 
-        let res: Error<CalExtension> = Error(vec![
+        let res = Error(vec![
             DavViolation::Extension(Violation::SupportedFilter),
         ]);
 
-        res.write(&mut writer, CalCtx{ root: true }).await.expect("xml serialization");
+        res.write(&mut writer, CalExtension { root: true }).await.expect("xml serialization");
         tokio_buffer.flush().await.expect("tokio buffer flush");
 
         let expected = r#"<D:error xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
