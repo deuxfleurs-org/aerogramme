@@ -435,8 +435,6 @@ pub enum PropFind<T: Extension> {
     Prop(PropName<T>),
 }
 
-
-
 /// 14.22 propstat XML Element
 ///
 /// Name:   propstat

@@ -50,10 +50,11 @@ impl CalExtension {
 impl QuickWritable<CalExtension> for Violation {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: CalExtension) -> Result<(), QError> {
         match self {
-            Self::SupportedFilter => {
-                let start = ctx.create_cal_element("supported-filter");
+            Self::ResourceMustBeNull => {
+                let start = ctx.create_cal_element("resource-must-be-null");
                 xml.write_event_async(Event::Empty(start)).await?;
            },
+            _ => unimplemented!(),
         };
         Ok(())
     }
@@ -93,14 +94,14 @@ mod tests {
         let mut writer = Writer::new_with_indent(&mut tokio_buffer, b' ', 4);
 
         let res = Error(vec![
-            DavViolation::Extension(Violation::SupportedFilter),
+            DavViolation::Extension(Violation::ResourceMustBeNull),
         ]);
 
         res.write(&mut writer, CalExtension { root: true }).await.expect("xml serialization");
         tokio_buffer.flush().await.expect("tokio buffer flush");
 
         let expected = r#"<D:error xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-    <C:supported-filter/>
+    <C:resource-must-be-null/>
 </D:error>"#;
         let got = std::str::from_utf8(buffer.as_slice()).unwrap();
 
