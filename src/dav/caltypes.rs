@@ -1,8 +1,11 @@
-use chrono::{DateTime,Utc};
+#![allow(dead_code)]
 
+use chrono::{DateTime,Utc};
 use super::types as Dav;
 
-//@FIXME for now, we skip the ACL part
+//@FIXME ACL part is missing, required
+//@FIXME Versioning part is missing, required
+//@FIXME WebDAV sync (rfc6578) is missing, optional
 
 pub struct CalExtension {
     pub root: bool
@@ -10,7 +13,7 @@ pub struct CalExtension {
 impl Dav::Extension for CalExtension {
     type Error = Violation;
     type Property = Property;
-    type PropertyRequest = Property; //@FIXME
+    type PropertyRequest = PropertyRequest; 
     type ResourceType = ResourceType;
 }
 
@@ -33,7 +36,16 @@ pub struct MkCalendar<E: Dav::Extension>(Dav::Set<E>);
 /// be a CALDAV:mkcalendar-response XML element.
 ///
 /// <!ELEMENT mkcalendar-response ANY>
-pub struct MkCalendarResponse(());
+///
+/// ----
+/// 
+/// ANY is not satisfying, so looking at RFC5689
+/// https://www.rfc-editor.org/rfc/rfc5689.html#section-5.2
+/// 
+/// Definition:
+///
+/// <!ELEMENT mkcol-response (propstat+)>
+pub struct MkCalendarResponse<T: Dav::Extension>(Vec<Dav::PropStat<T>>);
 
 /// Name:  calendar-query
 ///
@@ -59,9 +71,19 @@ pub enum ResourceType {
     Calendar,
 }
 
+/// Check the matching Property object for documentation
 pub enum PropertyRequest {
     CalendarDescription,
     CalendarTimezone,
+    SupportedCalendarComponentSet,
+    SupportedCalendarData,
+    MaxResourceSize,
+    MinDateTime,
+    MaxDateTime,
+    MaxInstances,
+    MaxAttendeesPerInstance,
+    SupportedCollationSet,    
+    CalendarData(CalendarDataRequest),
 }
 pub enum Property {
     /// Name:  calendar-description
@@ -206,7 +228,7 @@ pub enum Property {
     ///     <C:comp name="VEVENT"/>
     ///     <C:comp name="VTODO"/>
     /// </C:supported-calendar-component-set>
-    SupportedCalendarComponentSet(Vec<Component>),
+    SupportedCalendarComponentSet(Vec<CompSupport>),
 
     ///  Name:  supported-calendar-data
     ///
@@ -249,7 +271,7 @@ pub enum Property {
     /// when nested in the CALDAV:supported-calendar-data property
     /// to specify a supported media type for calendar object
     /// resources;
-    SupportedCalendarData(Vec<CalendarDataSupport>),
+    SupportedCalendarData(Vec<CalendarDataEmpty>),
 
     ///  Name:  max-resource-size
     ///
@@ -480,6 +502,59 @@ pub enum Property {
     ///   <C:supported-collation>i;octet</C:supported-collation>
     /// </C:supported-collation-set>
     SupportedCollationSet(Vec<SupportedCollation>),
+
+    /// Name:  calendar-data
+    ///
+    /// Namespace:  urn:ietf:params:xml:ns:caldav
+    ///
+    /// Purpose:  Specified one of the following:
+    ///
+    /// 1.  A supported media type for calendar object resources when
+    ///     nested in the CALDAV:supported-calendar-data property;
+    ///
+    /// 2.  The parts of a calendar object resource should be returned by
+    ///     a calendaring report;
+    ///
+    /// 3.  The content of a calendar object resource in a response to a
+    ///     calendaring report.
+    ///
+    /// Description:  When nested in the CALDAV:supported-calendar-data
+    /// property, the CALDAV:calendar-data XML element specifies a media
+    /// type supported by the CalDAV server for calendar object resources.
+    ///
+    /// When used in a calendaring REPORT request, the CALDAV:calendar-
+    /// data XML element specifies which parts of calendar object
+    /// resources need to be returned in the response.  If the CALDAV:
+    /// calendar-data XML element doesn't contain any CALDAV:comp element,
+    /// calendar object resources will be returned in their entirety.
+    ///
+    /// Finally, when used in a calendaring REPORT response, the CALDAV:
+    /// calendar-data XML element specifies the content of a calendar
+    /// object resource.  Given that XML parsers normalize the two-
+    /// character sequence CRLF (US-ASCII decimal 13 and US-ASCII decimal
+    /// 10) to a single LF character (US-ASCII decimal 10), the CR
+    /// character (US-ASCII decimal 13) MAY be omitted in calendar object
+    /// resources specified in the CALDAV:calendar-data XML element.
+    /// Furthermore, calendar object resources specified in the CALDAV:
+    /// calendar-data XML element MAY be invalid per their media type
+    /// specification if the CALDAV:calendar-data XML element part of the
+    /// calendaring REPORT request did not specify required properties
+    /// (e.g., UID, DTSTAMP, etc.), or specified a CALDAV:prop XML element
+    /// with the "novalue" attribute set to "yes".
+    ///
+    /// Note:  The CALDAV:calendar-data XML element is specified in requests
+    /// and responses inside the DAV:prop XML element as if it were a
+    /// WebDAV property.  However, the CALDAV:calendar-data XML element is
+    /// not a WebDAV property and, as such, is not returned in PROPFIND
+    /// responses, nor used in PROPPATCH requests.
+    /// 
+    /// Note:  The iCalendar data embedded within the CALDAV:calendar-data
+    /// XML element MUST follow the standard XML character data encoding
+    /// rules, including use of &lt;, &gt;, &amp; etc. entity encoding or
+    /// the use of a <![CDATA[ ... ]]> construct.  In the later case, the
+    /// iCalendar data cannot contain the character sequence "]]>", which
+    /// is the end delimiter for the CDATA section.
+    CalendarData(CalendarDataPayload),
 }
 
 pub enum Violation {
@@ -650,13 +725,292 @@ pub enum Violation {
 /// If the client chooses a collation not supported by the server, the
 /// server MUST respond with a CALDAV:supported-collation precondition
 /// error response.
-pub struct SupportedCollation(String);
+pub struct SupportedCollation(Collation);
+#[derive(Default)]
+pub enum Collation {
+    #[default]
+    AsciiCaseMap,
+    Octet,
+    Unknown(String),
+}
+
+
+/// <!ELEMENT calendar-data (#PCDATA)>
+/// PCDATA value: iCalendar object
+///
+/// when nested in the DAV:prop XML element in a calendaring
+/// REPORT response to specify the content of a returned
+/// calendar object resource.
+pub struct CalendarDataPayload(String);
+
+/// <!ELEMENT calendar-data (comp?,
+///                          (expand | limit-recurrence-set)?,
+///                          limit-freebusy-set?)>
+///
+/// when nested in the DAV:prop XML element in a calendaring
+/// REPORT request to specify which parts of calendar object
+/// resources should be returned in the response;
+pub struct CalendarDataRequest {
+    comp: Option<Comp>,
+    reccurence: Option<RecurrenceModifier>,
+    limit_freebusy_set: Option<LimitFreebusySet>,
+}
 
 /// calendar-data specialization for Property
+///
+/// <!ELEMENT calendar-data EMPTY>
+///
+/// when nested in the CALDAV:supported-calendar-data property
+/// to specify a supported media type for calendar object
+/// resources;
+pub struct CalendarDataEmpty(Option<CalendarDataSupport>);
+
+/// <!ATTLIST calendar-data content-type CDATA "text/calendar"
+///                         version CDATA "2.0">
+/// content-type value: a MIME media type
+/// version value: a version string
+/// attributes can be used on all three variants of the
+/// CALDAV:calendar-data XML element.
 pub struct CalendarDataSupport {
     content_type: String,
     version: String,
 }
+
+/// Name:  comp
+///
+/// Namespace:  urn:ietf:params:xml:ns:caldav
+///
+/// Purpose:  Defines which component types to return.
+///
+/// Description:  The name value is a calendar component name (e.g.,
+/// VEVENT).
+///
+/// Definition:
+///
+/// <!ELEMENT comp ((allprop | prop*), (allcomp | comp*))>
+/// <!ATTLIST comp name CDATA #REQUIRED>
+/// name value: a calendar component name
+///
+/// Note:  The CALDAV:prop and CALDAV:allprop elements have the same name
+/// as the DAV:prop and DAV:allprop elements defined in [RFC2518].
+/// However, the CALDAV:prop and CALDAV:allprop elements are defined
+/// in the "urn:ietf:params:xml:ns:caldav" namespace instead of the
+/// "DAV:" namespace.
+pub struct Comp {
+    name: Component,
+    prop_kind: PropKind,
+    comp_kind: CompKind,
+}
+
+/// For SupportedCalendarComponentSet
+///
+/// Definition:
+///
+/// <!ELEMENT supported-calendar-component-set (comp+)>
+///
+/// Example:
+///
+/// <C:supported-calendar-component-set
+///     xmlns:C="urn:ietf:params:xml:ns:caldav">
+///     <C:comp name="VEVENT"/>
+///     <C:comp name="VTODO"/>
+/// </C:supported-calendar-component-set>
+pub struct CompSupport(Component);
+
+/// Name:  allcomp
+///
+/// Namespace:  urn:ietf:params:xml:ns:caldav
+///
+/// Purpose:  Specifies that all components shall be returned.
+///
+/// Description:  The CALDAV:allcomp XML element can be used when the
+/// client wants all types of components returned by a calendaring
+/// REPORT request.
+/// 
+/// Definition:
+///
+/// <!ELEMENT allcomp EMPTY>
+pub enum CompKind {
+    AllComp,
+    Comp(Vec<Comp>),
+}
+
+/// Name:  allprop
+///
+/// Namespace:  urn:ietf:params:xml:ns:caldav
+///
+/// Purpose:  Specifies that all properties shall be returned.
+///
+/// Description:  The CALDAV:allprop XML element can be used when the
+/// client wants all properties of components returned by a
+/// calendaring REPORT request.
+///
+/// Definition:
+///
+/// <!ELEMENT allprop EMPTY>
+///
+/// Note:  The CALDAV:allprop element has the same name as the DAV:
+/// allprop element defined in [RFC2518].  However, the CALDAV:allprop
+/// element is defined in the "urn:ietf:params:xml:ns:caldav"
+/// namespace instead of the "DAV:" namespace.
+pub enum PropKind {
+    AllProp,
+    Prop(Vec<CalProp>),
+}
+
+/// Name:  prop
+///
+/// Namespace:  urn:ietf:params:xml:ns:caldav
+///
+/// Purpose:  Defines which properties to return in the response.
+///
+/// Description:  The "name" attribute specifies the name of the calendar
+/// property to return (e.g., ATTENDEE).  The "novalue" attribute can
+/// be used by clients to request that the actual value of the
+/// property not be returned (if the "novalue" attribute is set to
+/// "yes").  In that case, the server will return just the iCalendar
+/// property name and any iCalendar parameters and a trailing ":"
+/// without the subsequent value data.
+///
+/// Definition:
+/// <!ELEMENT prop EMPTY>
+/// <!ATTLIST prop name CDATA #REQUIRED novalue (yes | no) "no">
+/// name value: a calendar property name
+/// novalue value: "yes" or "no"
+///
+/// Note:  The CALDAV:prop element has the same name as the DAV:prop
+/// element defined in [RFC2518].  However, the CALDAV:prop element is
+/// defined in the "urn:ietf:params:xml:ns:caldav" namespace instead
+/// of the "DAV:" namespace.
+pub struct CalProp {
+    name: ComponentProperty,
+    novalue: bool,
+}
+
+pub enum RecurrenceModifier {
+    Expand(Expand),
+    LimitRecurrenceSet(LimitRecurrenceSet),
+}
+
+/// Name:  expand
+///
+/// Namespace:  urn:ietf:params:xml:ns:caldav
+///
+/// Purpose:  Forces the server to expand recurring components into
+/// individual recurrence instances.
+///
+/// Description:  The CALDAV:expand XML element specifies that for a
+/// given calendaring REPORT request, the server MUST expand the
+/// recurrence set into calendar components that define exactly one
+/// recurrence instance, and MUST return only those whose scheduled
+/// time intersect a specified time range.
+/// 
+/// The "start" attribute specifies the inclusive start of the time
+/// range, and the "end" attribute specifies the non-inclusive end of
+/// the time range.  Both attributes are specified as date with UTC
+/// time value.  The value of the "end" attribute MUST be greater than
+/// the value of the "start" attribute.
+///
+/// The server MUST use the same logic as defined for CALDAV:time-
+/// range to determine if a recurrence instance intersects the
+/// specified time range.
+///
+/// Recurring components, other than the initial instance, MUST
+/// include a RECURRENCE-ID property indicating which instance they
+/// refer to.
+///
+/// The returned calendar components MUST NOT use recurrence
+/// properties (i.e., EXDATE, EXRULE, RDATE, and RRULE) and MUST NOT
+/// have reference to or include VTIMEZONE components.  Date and local
+/// time with reference to time zone information MUST be converted
+/// into date with UTC time.
+///
+/// Definition:
+///
+/// <!ELEMENT expand EMPTY>
+/// <!ATTLIST expand start CDATA #REQUIRED
+///                  end   CDATA #REQUIRED>
+/// start value: an iCalendar "date with UTC time"
+/// end value: an iCalendar "date with UTC time"
+pub struct Expand(DateTime<Utc>, DateTime<Utc>);
+
+/// CALDAV:limit-recurrence-set XML Element
+///
+/// Name:  limit-recurrence-set
+///
+/// Namespace:  urn:ietf:params:xml:ns:caldav
+///
+/// Purpose:  Specifies a time range to limit the set of "overridden
+/// components" returned by the server.
+///
+/// Description:  The CALDAV:limit-recurrence-set XML element specifies
+/// that for a given calendaring REPORT request, the server MUST
+/// return, in addition to the "master component", only the
+/// "overridden components" that impact a specified time range.  An
+/// overridden component impacts a time range if its current start and
+/// end times overlap the time range, or if the original start and end
+/// times -- the ones that would have been used if the instance were
+/// not overridden -- overlap the time range.
+///
+/// The "start" attribute specifies the inclusive start of the time
+/// range, and the "end" attribute specifies the non-inclusive end of
+/// the time range.  Both attributes are specified as date with UTC
+/// time value.  The value of the "end" attribute MUST be greater than
+/// the value of the "start" attribute.
+///
+/// The server MUST use the same logic as defined for CALDAV:time-
+/// range to determine if the current or original scheduled time of an
+/// "overridden" recurrence instance intersects the specified time
+/// range.
+///
+/// Overridden components that have a RANGE parameter on their
+/// RECURRENCE-ID property may specify one or more instances in the
+/// recurrence set, and some of those instances may fall within the
+/// specified time range or may have originally fallen within the
+/// specified time range prior to being overridden.  If that is the
+/// case, the overridden component MUST be included in the results, as
+/// it has a direct impact on the interpretation of instances within
+/// the specified time range.
+///
+/// Definition:
+///
+/// <!ELEMENT limit-recurrence-set EMPTY>
+/// <!ATTLIST limit-recurrence-set start CDATA #REQUIRED
+///                                end   CDATA #REQUIRED>
+/// start value: an iCalendar "date with UTC time"
+/// end value: an iCalendar "date with UTC time"
+pub struct LimitRecurrenceSet(DateTime<Utc>, DateTime<Utc>);
+
+/// Name:  limit-freebusy-set
+///
+/// Namespace:  urn:ietf:params:xml:ns:caldav
+///
+/// Purpose:  Specifies a time range to limit the set of FREEBUSY values
+/// returned by the server.
+///
+/// Description:  The CALDAV:limit-freebusy-set XML element specifies
+/// that for a given calendaring REPORT request, the server MUST only
+/// return the FREEBUSY property values of a VFREEBUSY component that
+/// intersects a specified time range.
+///
+/// The "start" attribute specifies the inclusive start of the time
+/// range, and the "end" attribute specifies the non-inclusive end of
+/// the time range.  Both attributes are specified as "date with UTC
+/// time" value.  The value of the "end" attribute MUST be greater
+/// than the value of the "start" attribute.
+///
+/// The server MUST use the same logic as defined for CALDAV:time-
+/// range to determine if a FREEBUSY property value intersects the
+/// specified time range.
+///
+/// Definition:
+/// <!ELEMENT limit-freebusy-set EMPTY>
+/// <!ATTLIST limit-freebusy-set start CDATA #REQUIRED
+///                              end   CDATA #REQUIRED>
+/// start value: an iCalendar "date with UTC time"
+/// end value: an iCalendar "date with UTC time"
+pub struct LimitFreebusySet(DateTime<Utc>, DateTime<Utc>);
+
 
 pub enum CalendarSelector<T: Dav::Extension> {
     AllProp,
@@ -664,11 +1018,229 @@ pub enum CalendarSelector<T: Dav::Extension> {
     Prop(Dav::PropName<T>),
 }
 
-pub struct CompFilter {}
+/// Name:  comp-filter
+///
+/// Namespace:  urn:ietf:params:xml:ns:caldav
+///
+/// Purpose:  Specifies search criteria on calendar components.
+///
+/// Description:  The CALDAV:comp-filter XML element specifies a query
+/// targeted at the calendar object (i.e., VCALENDAR) or at a specific
+/// calendar component type (e.g., VEVENT).  The scope of the
+/// CALDAV:comp-filter XML element is the calendar object when used as
+/// a child of the CALDAV:filter XML element.  The scope of the
+/// CALDAV:comp-filter XML element is the enclosing calendar component
+/// when used as a child of another CALDAV:comp-filter XML element.  A
+/// CALDAV:comp-filter is said to match if:
+///
+///   *  The CALDAV:comp-filter XML element is empty and the calendar
+///      object or calendar component type specified by the "name"
+///      attribute exists in the current scope;
+///
+///   or:
+///
+///   *  The CALDAV:comp-filter XML element contains a CALDAV:is-not-
+///      defined XML element and the calendar object or calendar
+///      component type specified by the "name" attribute does not exist
+///      in the current scope;
+///
+///   or:
+///
+///   *  The CALDAV:comp-filter XML element contains a CALDAV:time-range
+///      XML element and at least one recurrence instance in the
+///      targeted calendar component is scheduled to overlap the
+///      specified time range, and all specified CALDAV:prop-filter and
+///      CALDAV:comp-filter child XML elements also match the targeted
+///      calendar component;
+///
+///   or:
+///
+///   *  The CALDAV:comp-filter XML element only contains CALDAV:prop-
+///      filter and CALDAV:comp-filter child XML elements that all match
+///      the targeted calendar component.
+///
+/// Definition:
+/// <!ELEMENT comp-filter (is-not-defined | (time-range?,
+///                        prop-filter*, comp-filter*))>
+///
+///      <!ATTLIST comp-filter name CDATA #REQUIRED>
+///      name value: a calendar object or calendar component
+///                  type (e.g., VEVENT)
+pub struct CompFilter {
+    name: Component,
+    inner: CompFilterInner,
+}
+pub enum CompFilterInner {
+    // Option 1
+    Empty,
+    // Option 2
+    IsNotDefined,
+    // Options 3 & 4
+    Matches(CompFilterMatch),
+}
+pub struct CompFilterMatch {
+    time_range: Option<TimeRange>,
+    prop_filter: Vec<PropFilter>,
+    comp_filter: Vec<CompFilter>,
+}
 
-pub struct ParamFilter {}
+/// Name:  prop-filter
+///
+/// Namespace:  urn:ietf:params:xml:ns:caldav
+/// 
+/// Purpose:  Specifies search criteria on calendar properties.
+///
+/// Description:  The CALDAV:prop-filter XML element specifies a query
+/// targeted at a specific calendar property (e.g., CATEGORIES) in the
+/// scope of the enclosing calendar component.  A calendar property is
+/// said to match a CALDAV:prop-filter if:
+///
+///   *  The CALDAV:prop-filter XML element is empty and a property of
+///      the type specified by the "name" attribute exists in the
+///      enclosing calendar component;
+///
+///   or:
+///
+///   *  The CALDAV:prop-filter XML element contains a CALDAV:is-not-
+///      defined XML element and no property of the type specified by
+///      the "name" attribute exists in the enclosing calendar
+///      component;
+///
+///   or:
+///
+///   *  The CALDAV:prop-filter XML element contains a CALDAV:time-range
+///      XML element and the property value overlaps the specified time
+///      range, and all specified CALDAV:param-filter child XML elements
+///      also match the targeted property;
+///
+///   or:
+///
+///   *  The CALDAV:prop-filter XML element contains a CALDAV:text-match
+///      XML element and the property value matches it, and all
+///      specified CALDAV:param-filter child XML elements also match the
+///      targeted property;
+///
+/// Definition:
+///
+///      <!ELEMENT prop-filter (is-not-defined |
+///                             ((time-range | text-match)?,
+///                               param-filter*))>
+///
+///      <!ATTLIST prop-filter name CDATA #REQUIRED>
+///      name value: a calendar property name (e.g., ATTENDEE)
+pub struct PropFilter {
+    name: Component,
+    inner: PropFilterInner,
+}
+pub enum PropFilterInner {
+    // Option 1
+    Empty,
+    // Option 2
+    IsNotDefined,
+    // Options 3 & 4
+    Match(PropFilterMatch),
+}
+pub struct PropFilterMatch {
+    time_range: Option<TimeRange>,
+    time_or_text: Option<TimeOrText>,
+    param_filter: Vec<ParamFilter>,
+}
+pub enum TimeOrText {
+    Time(TimeRange),
+    Text(TextMatch),
+}
 
-pub struct PropFilter {}
+///  Name:  text-match
+///
+/// Namespace:  urn:ietf:params:xml:ns:caldav
+///
+/// Purpose:  Specifies a substring match on a property or parameter
+/// value.
+///
+/// Description:  The CALDAV:text-match XML element specifies text used
+/// for a substring match against the property or parameter value
+/// specified in a calendaring REPORT request.
+///
+/// The "collation" attribute is used to select the collation that the
+/// server MUST use for character string matching.  In the absence of
+/// this attribute, the server MUST use the "i;ascii-casemap"
+/// collation.
+///
+/// The "negate-condition" attribute is used to indicate that this
+/// test returns a match if the text matches when the attribute value
+/// is set to "no", or return a match if the text does not match, if
+/// the attribute value is set to "yes".  For example, this can be
+/// used to match components with a STATUS property not set to
+/// CANCELLED.
+///
+/// Definition:
+/// <!ELEMENT text-match (#PCDATA)>
+/// PCDATA value: string
+///  <!ATTLIST text-match collation        CDATA "i;ascii-casemap"
+///  negate-condition (yes | no) "no">
+pub struct TextMatch {
+    collation: Option<Collation>,
+    negate_condition: bool,
+    text: String,
+}
+
+/// Name:  param-filter
+///
+/// Namespace:  urn:ietf:params:xml:ns:caldav
+///
+/// Purpose:  Limits the search to specific parameter values.
+///
+/// Description:  The CALDAV:param-filter XML element specifies a query
+/// targeted at a specific calendar property parameter (e.g.,
+/// PARTSTAT) in the scope of the calendar property on which it is
+/// defined.  A calendar property parameter is said to match a CALDAV:
+/// param-filter if:
+///
+///   *  The CALDAV:param-filter XML element is empty and a parameter of
+///      the type specified by the "name" attribute exists on the
+///      calendar property being examined;
+///
+///   or:
+///
+///   *  The CALDAV:param-filter XML element contains a CALDAV:is-not-
+///      defined XML element and no parameter of the type specified by
+///      the "name" attribute exists on the calendar property being
+///      examined;
+///
+/// Definition:
+///
+///      <!ELEMENT param-filter (is-not-defined | text-match?)>
+///
+///      <!ATTLIST param-filter name CDATA #REQUIRED>
+///        name value: a property parameter name (e.g., PARTSTAT)
+pub struct ParamFilter {
+    name: PropertyParameter,
+    inner: Option<ParamFilterMatch>,
+}
+pub enum ParamFilterMatch {
+    IsNotDefined,
+    Match(TextMatch),
+}
+
+/// CALDAV:is-not-defined XML Element
+///
+/// Name:  is-not-defined
+///
+/// Namespace:  urn:ietf:params:xml:ns:caldav
+///
+/// Purpose:  Specifies that a match should occur if the enclosing
+/// component, property, or parameter does not exist.
+///
+/// Description:  The CALDAV:is-not-defined XML element specifies that a
+/// match occurs if the enclosing component, property, or parameter
+/// value specified in a calendaring REPORT request does not exist in
+/// the calendar data being tested.
+///
+/// Definition:
+/// <!ELEMENT is-not-defined EMPTY>
+/* CURRENTLY INLINED */
+
+
 
 /// Name:  timezone
 ///
@@ -702,9 +1274,51 @@ pub struct PropFilter {}
 /// PCDATA value: an iCalendar object with exactly one VTIMEZONE
 pub struct TimeZone(String);
 
-pub struct Filter {}
+/// Name:  filter
+///
+/// Namespace:  urn:ietf:params:xml:ns:caldav
+///
+/// Purpose:  Specifies a filter to limit the set of calendar components
+/// returned by the server.
+///
+/// Description:  The CALDAV:filter XML element specifies the search
+/// filter used to limit the calendar components returned by a
+/// calendaring REPORT request.
+///
+/// Definition:
+/// <!ELEMENT filter (comp-filter)>
+pub struct Filter(CompFilter);
 
+/// Known components
 pub enum Component {
+    VCalendar,
+    VJournal,
+    VFreeBusy,
     VEvent,
     VTodo,
+    VAlarm,
+    Unknown(String),
+}
+
+/// name="VERSION", name="SUMMARY", etc.
+/// Can be set on different objects: VCalendar, VEvent, etc.
+/// Might be replaced by an enum later
+pub struct ComponentProperty(String);
+
+/// like PARSTAT
+pub struct PropertyParameter(String);
+
+/// Name: time-range
+///
+/// Definition:
+///
+/// <!ELEMENT time-range EMPTY>
+/// <!ATTLIST time-range start CDATA #IMPLIED
+///                      end   CDATA #IMPLIED>
+/// start value: an iCalendar "date with UTC time"
+/// end value: an iCalendar "date with UTC time"
+pub enum TimeRange {
+    OnlyStart(DateTime<Utc>),
+    OnlyEnd(DateTime<Utc>),
+    FullRange(DateTime<Utc>, DateTime<Utc>),
 }
