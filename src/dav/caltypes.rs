@@ -614,9 +614,11 @@ pub enum Violation {
     /// containing a single valid VTIMEZONE component.
     ValidCalendarData,
 
-    /// (DAV:needs-privilege): The DAV:bind privilege MUST be granted to
+    ///@FIXME should not be here but in RFC3744
+    /// !!! ERRATA 1002 !!!
+    /// (DAV:need-privileges): The DAV:bind privilege MUST be granted to
     /// the current user on the parent collection of the Request-URI.
-    NeedsPrivilege,
+    NeedPrivileges,
 
     ///  (CALDAV:initialize-calendar-collection): A new calendar collection
     /// exists at the Request-URI.  The DAV:resourcetype of the calendar
@@ -693,7 +695,7 @@ pub enum Violation {
     /// the resource will be stored;
     MaxAttendeesPerInstance,
 
-    /// The CALDAV:filter XML element (see
+    /// (CALDAV:valid-filter): The CALDAV:filter XML element (see
     /// Section 9.7) specified in the REPORT request MUST be valid.  For
     /// instance, a CALDAV:filter cannot nest a <C:comp name="VEVENT">
     /// element in a <C:comp name="VTODO"> element, and a CALDAV:filter

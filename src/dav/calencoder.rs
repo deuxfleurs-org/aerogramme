@@ -262,14 +262,56 @@ impl<C: CalContext> QuickWritable<C> for ResourceType {
 // --------------------------- DAV::error ------------------------------------
 impl<C: CalContext> QuickWritable<C> for Violation {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        let mut atom = async |c| xml.write_event_async(Event::Empty(ctx.create_cal_element(c))).await;
+
         match self {
-            Self::ResourceMustBeNull => {
-                let start = ctx.create_cal_element("resource-must-be-null");
-                xml.write_event_async(Event::Empty(start)).await?;
-           },
-            _ => unimplemented!(),
-        };
-        Ok(())
+            //@FIXME
+            // DAV elements, should not be here but in RFC3744 on ACLs
+            // (we do not use atom as this error is in the DAV namespace, not the caldav one)
+            Self::NeedPrivileges => xml.write_event_async(Event::Empty(ctx.create_dav_element("need-privileges"))).await,
+
+            // Regular CalDAV errors
+            Self::ResourceMustBeNull => atom("resource-must-be-null").await,
+            Self::CalendarCollectionLocationOk => atom("calendar-collection-location-ok").await,
+            Self::ValidCalendarData => atom("valid-calendar-data").await,
+            Self::InitializeCalendarCollection => atom("initialize-calendar-collection").await,
+            Self::SupportedCalendarData => atom("supported-calendar-data").await,
+            Self::ValidCalendarObjectResource => atom("valid-calendar-object-resource").await,
+            Self::SupportedCalendarComponent => atom("supported-calendar-component").await,
+            Self::ValidCalendarObjectResource => atom("valid-calendar-object-resource").await,
+            Self::SupportedCalendarComponent => atom("SupportedCalendarComponent").await,
+            Self::NoUidConflict(href) => {
+                let start = ctx.create_cal_element("no-uid-conflict");
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                href.write(xml, ctx.child()).await?;
+                xml.write_event_async(Event::End(end)).await
+            },
+            Self::MaxResourceSize => atom("max-resource-size").await,
+            Self::MinDateTime => atom("min-date-time").await,
+            Self::MaxDateTime => atom("max-date-time").await,
+            Self::MaxInstances => atom("max-instances").await,
+            Self::MaxAttendeesPerInstance => atom("max-attendees-per-instance").await,
+            Self::ValidFilter => atom("valid-filter").await,
+            Self::SupportedFilter { comp, prop, param } => {
+                let start = ctx.create_cal_element("supported-filter");
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                for comp_item in comp.iter() {
+                    comp_item.write(xml, ctx.child()).await?;
+                }
+                for prop_item in prop.iter() {
+                    prop_item.write(xml, ctx.child()).await?;
+                }
+                for param_item in param.iter() {
+                    param_item.write(xml, ctx.child()).await?;
+                }
+                xml.write_event_async(Event::End(end)).await
+            },
+            Self::NumberOfMatchesWithinLimits => atom("number-of-matches-within-limits").await,
+        }
     }
 }
 
