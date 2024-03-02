@@ -35,7 +35,7 @@ impl Dav::Extension for CalExtension {
 /// instruction in Section 12.13.2 of [RFC2518].
 ///
 /// <!ELEMENT mkcalendar (DAV:set)>
-pub struct MkCalendar<E: Dav::Extension>(Dav::Set<E>);
+pub struct MkCalendar<E: Dav::Extension>(pub Dav::Set<E>);
 
 
 /// If a response body for a successful request is included, it MUST
@@ -51,7 +51,7 @@ pub struct MkCalendar<E: Dav::Extension>(Dav::Set<E>);
 /// Definition:
 ///
 /// <!ELEMENT mkcol-response (propstat+)>
-pub struct MkCalendarResponse<T: Dav::Extension>(Vec<Dav::PropStat<T>>);
+pub struct MkCalendarResponse<T: Dav::Extension>(pub Vec<Dav::PropStat<T>>);
 
 // --- (REPORT PART) ---
 
@@ -69,9 +69,9 @@ pub struct MkCalendarResponse<T: Dav::Extension>(Vec<Dav::PropStat<T>>);
 ///                            DAV:propname |
 ///                            DAV:prop)?, filter, timezone?)>
 pub struct CalendarQuery<T: Dav::Extension> {
-    selector: Option<CalendarSelector<T>>,
-    filter: Filter,
-    timezone: Option<TimeZone>,
+    pub selector: Option<CalendarSelector<T>>,
+    pub filter: Filter,
+    pub timezone: Option<TimeZone>,
 }
 
 ///   Name:  calendar-multiget
@@ -89,8 +89,8 @@ pub struct CalendarQuery<T: Dav::Extension> {
 ///                               DAV:propname |
 ///                               DAV:prop)?, DAV:href+)>
 pub struct CalendarMultiget<T: Dav::Extension> {
-    selector: Option<CalendarSelector<T>>,
-    href: Vec<Dav::Href>,
+    pub selector: Option<CalendarSelector<T>>,
+    pub href: Vec<Dav::Href>,
 }
 
 /// Name:  free-busy-query
@@ -104,7 +104,7 @@ pub struct CalendarMultiget<T: Dav::Extension> {
 ///
 /// Definition:
 /// <!ELEMENT free-busy-query (time-range)>
-pub struct FreeBusyQuery(TimeRange);
+pub struct FreeBusyQuery(pub TimeRange);
 
 // ----- Hooks -----
 pub enum ResourceType {
@@ -784,7 +784,10 @@ pub enum Collation {
 /// when nested in the DAV:prop XML element in a calendaring
 /// REPORT response to specify the content of a returned
 /// calendar object resource.
-pub struct CalendarDataPayload(String);
+pub struct CalendarDataPayload {
+    pub mime: Option<CalendarDataSupport>,
+    pub payload: String,
+}
 
 /// <!ELEMENT calendar-data (comp?,
 ///                          (expand | limit-recurrence-set)?,
@@ -794,6 +797,7 @@ pub struct CalendarDataPayload(String);
 /// REPORT request to specify which parts of calendar object
 /// resources should be returned in the response;
 pub struct CalendarDataRequest {
+    mime: Option<CalendarDataSupport>,
     comp: Option<Comp>,
     reccurence: Option<RecurrenceModifier>,
     limit_freebusy_set: Option<LimitFreebusySet>,

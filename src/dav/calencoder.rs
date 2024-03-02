@@ -8,6 +8,8 @@ use quick_xml::writer::{ElementWriter, Writer};
 use quick_xml::name::PrefixDeclaration;
 use tokio::io::AsyncWrite;
 
+const ICAL_DATETIME_FMT: &str = "%Y%m%dT%H%M%SZ";
+
 // =============== Calendar Trait ===========================
 pub trait CalContext: Context {
     fn create_cal_element(&self, name: &str) -> BytesStart;
@@ -61,13 +63,25 @@ impl CalExtension {
 // -------------------- MKCALENDAR METHOD ------------------------------------
 impl<C: CalContext> QuickWritable<C> for MkCalendar<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let start = ctx.create_cal_element("mkcalendar");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        self.0.write(xml, ctx.child()).await?;
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for MkCalendarResponse<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let start = ctx.create_cal_element("mkcalendar-response");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        for propstat in self.0.iter() {
+            propstat.write(xml, ctx.child()).await?;
+        }
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
@@ -75,31 +89,164 @@ impl<C: CalContext> QuickWritable<C> for MkCalendarResponse<C> {
 
 impl<C: CalContext> QuickWritable<C> for CalendarQuery<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let start = ctx.create_cal_element("calendar-query");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        if let Some(selector) = &self.selector {
+            selector.write(xml, ctx.child()).await?;
+        }
+        self.filter.write(xml, ctx.child()).await?;
+        if let Some(tz) = &self.timezone  {
+            tz.write(xml, ctx.child()).await?;
+        }
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for CalendarMultiget<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let start = ctx.create_cal_element("calendar-multiget");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        if let Some(selector) = &self.selector {
+            selector.write(xml, ctx.child()).await?;
+        }
+        for href in self.href.iter() {
+            href.write(xml, ctx.child()).await?;
+        }
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for FreeBusyQuery {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let start = ctx.create_cal_element("free-busy-query");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        self.0.write(xml, ctx.child()).await?;
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
 // -------------------------- DAV::prop --------------------------------------
-impl<C: CalContext> QuickWritable<C> for Property {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
-    }
-}
 impl<C: CalContext> QuickWritable<C> for PropertyRequest {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let mut atom = async |c| xml.write_event_async(Event::Empty(ctx.create_cal_element(c))).await;
+
+        match self {
+            Self::CalendarDescription => atom("calendar-description").await,
+            Self::CalendarTimezone => atom("calendar-timezone").await,
+            Self::SupportedCalendarComponentSet => atom("supported-calendar-component-set").await,
+            Self::SupportedCalendarData => atom("supported-calendar-data").await,
+            Self::MaxResourceSize => atom("max-resource-size").await,
+            Self::MinDateTime => atom("min-date-time").await,
+            Self::MaxDateTime => atom("max-date-time").await,
+            Self::MaxInstances => atom("max-instances").await,
+            Self::MaxAttendeesPerInstance =>  atom("max-attendees-per-instance").await,
+            Self::SupportedCollationSet =>  atom("supported-collation-set").await,    
+            Self::CalendarData(req) => req.write(xml, ctx).await,
+        }
+    }
+}
+impl<C: CalContext> QuickWritable<C> for Property {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        match self {
+            Self::CalendarDescription { lang, text } => {
+                let mut start = ctx.create_cal_element("calendar-description");
+                if let Some(the_lang) = lang {
+                    start.push_attribute(("xml:lang", the_lang.as_str()));
+                }
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.write_event_async(Event::Text(BytesText::new(text))).await?;
+                xml.write_event_async(Event::End(end)).await
+            },
+            Self::CalendarTimezone(payload) => {
+                let start = ctx.create_cal_element("calendar-timezone");
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.write_event_async(Event::Text(BytesText::new(payload))).await?;
+                xml.write_event_async(Event::End(end)).await
+            },
+            Self::SupportedCalendarComponentSet(many_comp) => {
+                let start = ctx.create_cal_element("supported-calendar-component-set");
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                for comp in many_comp.iter() {
+                    comp.write(xml, ctx.child()).await?;
+                }
+                xml.write_event_async(Event::End(end)).await
+            },
+            Self::SupportedCalendarData(many_mime) => {
+                let start = ctx.create_cal_element("supported-calendar-data");
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                for mime in many_mime.iter() {
+                    mime.write(xml, ctx.child()).await?;
+                }
+                xml.write_event_async(Event::End(end)).await
+            },
+            Self::MaxResourceSize(bytes) => {
+                let start = ctx.create_cal_element("max-resource-size");
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.write_event_async(Event::Text(BytesText::new(bytes.to_string().as_str()))).await?;
+                xml.write_event_async(Event::End(end)).await
+            },
+            Self::MinDateTime(dt) => {
+                let start = ctx.create_cal_element("min-date-time");
+                let end = start.to_end();
+
+                let dtstr = format!("{}", dt.format(ICAL_DATETIME_FMT));
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.write_event_async(Event::Text(BytesText::new(dtstr.as_str()))).await?;
+                xml.write_event_async(Event::End(end)).await
+            },
+            Self::MaxDateTime(dt) => {
+                let start = ctx.create_cal_element("max-date-time");
+                let end = start.to_end();
+
+                let dtstr = format!("{}", dt.format(ICAL_DATETIME_FMT));
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.write_event_async(Event::Text(BytesText::new(dtstr.as_str()))).await?;
+                xml.write_event_async(Event::End(end)).await
+            },
+            Self::MaxInstances(count) => {
+                let start = ctx.create_cal_element("max-instances");
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.write_event_async(Event::Text(BytesText::new(count.to_string().as_str()))).await?;
+                xml.write_event_async(Event::End(end)).await
+            },
+            Self::MaxAttendeesPerInstance(count) => {
+                let start = ctx.create_cal_element("max-attendees-per-instance");
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.write_event_async(Event::Text(BytesText::new(count.to_string().as_str()))).await?;
+                xml.write_event_async(Event::End(end)).await
+            },
+            Self::SupportedCollationSet(many_collations) => {
+                let start = ctx.create_cal_element("supported-collation-set");
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                for collation in many_collations.iter() {
+                    collation.write(xml, ctx.child()).await?;
+                }
+                xml.write_event_async(Event::End(end)).await               
+            },
+            Self::CalendarData(inner) => inner.write(xml, ctx).await,
+        }
     }
 }
 
