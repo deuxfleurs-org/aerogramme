@@ -3,9 +3,13 @@
 use chrono::{DateTime,Utc};
 use super::types as Dav;
 
-//@FIXME ACL part is missing, required
-//@FIXME Versioning part is missing, required
+//@FIXME ACL (rfc3744) is missing, required
+//@FIXME Versioning (rfc3253) is missing, required
 //@FIXME WebDAV sync (rfc6578) is missing, optional
+// For reference, SabreDAV guide gives high-level & real-world overview:
+// https://sabre.io/dav/building-a-caldav-client/
+// For reference, non-official extensions documented by SabreDAV:
+// https://github.com/apple/ccs-calendarserver/tree/master/doc/Extensions
 
 pub struct CalExtension {
     pub root: bool
@@ -66,6 +70,38 @@ pub struct CalendarQuery<T: Dav::Extension> {
     timezone: Option<TimeZone>,
 }
 
+///   Name:  calendar-multiget
+///
+/// Namespace:  urn:ietf:params:xml:ns:caldav
+///
+/// Purpose:  CalDAV report used to retrieve specific calendar object
+/// resources.
+///
+/// Description:  See Section 7.9.
+///
+/// Definition:
+///
+/// <!ELEMENT calendar-multiget ((DAV:allprop |
+///                               DAV:propname |
+///                               DAV:prop)?, DAV:href+)>
+pub struct CalendarMultiget<T: Dav::Extension> {
+    selector: Option<CalendarSelector<T>>,
+    href: Vec<Dav::Href>,
+}
+
+/// Name:  free-busy-query
+///
+/// Namespace:  urn:ietf:params:xml:ns:caldav
+///
+/// Purpose:  CalDAV report used to generate a VFREEBUSY to determine
+/// busy time over a specific time range.
+///
+/// Description:  See Section 7.10.
+///
+/// Definition:
+/// <!ELEMENT free-busy-query (time-range)>
+pub struct FreeBusyQuery(TimeRange);
+
 // ----- Hooks -----
 pub enum ResourceType {
     Calendar,
@@ -116,7 +152,10 @@ pub enum Property {
     /// <C:calendar-description xml:lang="fr-CA"
     ///     xmlns:C="urn:ietf:params:xml:ns:caldav"
     /// >Calendrier de Mathilde Desruisseaux</C:calendar-description>
-    CalendarDescription(String),
+    CalendarDescription {
+        lang: Option<String>,
+        text: String,
+    },
 
     /// 5.2.2.  CALDAV:calendar-timezone Property
     ///
@@ -1011,7 +1050,7 @@ pub struct LimitRecurrenceSet(DateTime<Utc>, DateTime<Utc>);
 /// end value: an iCalendar "date with UTC time"
 pub struct LimitFreebusySet(DateTime<Utc>, DateTime<Utc>);
 
-
+/// Used by CalendarQuery & CalendarMultiget
 pub enum CalendarSelector<T: Dav::Extension> {
     AllProp,
     PropName,
