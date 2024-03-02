@@ -23,6 +23,8 @@ impl Dav::Extension for CalExtension {
 
 // ----- Root elements -----
 
+// --- (MKCALENDAR PART) ---
+
 /// If a request body is included, it MUST be a CALDAV:mkcalendar XML
 /// element.  Instruction processing MUST occur in the order
 /// instructions are received (i.e., from top to bottom).
@@ -50,6 +52,8 @@ pub struct MkCalendar<E: Dav::Extension>(Dav::Set<E>);
 ///
 /// <!ELEMENT mkcol-response (propstat+)>
 pub struct MkCalendarResponse<T: Dav::Extension>(Vec<Dav::PropStat<T>>);
+
+// --- (REPORT PART) ---
 
 /// Name:  calendar-query
 ///

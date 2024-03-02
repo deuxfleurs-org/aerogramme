@@ -8,6 +8,12 @@ use quick_xml::writer::{ElementWriter, Writer};
 use quick_xml::name::PrefixDeclaration;
 use tokio::io::AsyncWrite;
 
+// =============== Calendar Trait ===========================
+pub trait CalContext: Context {
+    fn create_cal_element(&self, name: &str) -> BytesStart;
+}
+
+// =============== CalDAV Extension Setup ===================
 impl Context for CalExtension {
     fn child(&self) -> Self {
         Self { root: false }
@@ -33,6 +39,12 @@ impl Context for CalExtension {
     }
 }
 
+impl CalContext for CalExtension {
+    fn create_cal_element(&self, name: &str) -> BytesStart {
+        self.create_ns_element("C", name)
+    }
+}
+
 impl CalExtension {
     fn create_ns_element(&self, ns: &str, name: &str) -> BytesStart {
         let mut start = BytesStart::new(format!("{}:{}", ns, name));
@@ -42,13 +54,67 @@ impl CalExtension {
         }
         start
     }
-    fn create_cal_element(&self, name: &str) -> BytesStart {
-        self.create_ns_element("C", name)
+}
+
+// ==================== Calendar Types Serialization =========================
+
+// -------------------- MKCALENDAR METHOD ------------------------------------
+impl<C: CalContext> QuickWritable<C> for MkCalendar<C> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
     }
 }
 
-impl QuickWritable<CalExtension> for Violation {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: CalExtension) -> Result<(), QError> {
+impl<C: CalContext> QuickWritable<C> for MkCalendarResponse<C> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+// ----------------------- REPORT METHOD -------------------------------------
+
+impl<C: CalContext> QuickWritable<C> for CalendarQuery<C> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for CalendarMultiget<C> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for FreeBusyQuery {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+// -------------------------- DAV::prop --------------------------------------
+impl<C: CalContext> QuickWritable<C> for Property {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+impl<C: CalContext> QuickWritable<C> for PropertyRequest {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+// ---------------------- DAV::resourcetype ----------------------------------
+impl<C: CalContext> QuickWritable<C> for ResourceType {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        match self {
+            Self::Calendar => xml.write_event_async(Event::Empty(ctx.create_dav_element("calendar"))).await,
+        }
+    }
+}
+
+// --------------------------- DAV::error ------------------------------------
+impl<C: CalContext> QuickWritable<C> for Violation {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         match self {
             Self::ResourceMustBeNull => {
                 let start = ctx.create_cal_element("resource-must-be-null");
@@ -61,25 +127,199 @@ impl QuickWritable<CalExtension> for Violation {
 }
 
 
-impl QuickWritable<CalExtension> for Property {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: CalExtension) -> Result<(), QError> {
+// ---------------------------- Inner XML ------------------------------------
+impl<C: CalContext> QuickWritable<C> for SupportedCollation {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         unimplemented!();
     }
 }
 
-impl QuickWritable<CalExtension> for PropertyRequest {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: CalExtension) -> Result<(), QError> {
+impl<C: CalContext> QuickWritable<C>  for Collation {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         unimplemented!();
     }
 }
 
-impl QuickWritable<CalExtension> for ResourceType {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: CalExtension) -> Result<(), QError> {
-        match self {
-            Self::Calendar => xml.write_event_async(Event::Empty(ctx.create_dav_element("calendar"))).await,
-        }
+impl<C: CalContext> QuickWritable<C> for CalendarDataPayload {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
     }
 }
+
+impl<C: CalContext> QuickWritable<C> for CalendarDataRequest {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for CalendarDataEmpty {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for CalendarDataSupport {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for Comp {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for CompSupport {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for CompKind {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for PropKind {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for CalProp {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for RecurrenceModifier {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for Expand {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for LimitRecurrenceSet {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for LimitFreebusySet {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C>  for CalendarSelector<C> {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for CompFilter {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for CompFilterInner {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for CompFilterMatch {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for PropFilter {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for PropFilterInner {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for PropFilterMatch {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for TimeOrText {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for TextMatch {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for ParamFilter {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for ParamFilterMatch {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for TimeZone {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for Filter {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for Component {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for ComponentProperty {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for PropertyParameter {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
+impl<C: CalContext> QuickWritable<C> for TimeRange {
+    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+        unimplemented!();
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
