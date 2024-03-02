@@ -278,8 +278,6 @@ impl<C: CalContext> QuickWritable<C> for Violation {
             Self::SupportedCalendarData => atom("supported-calendar-data").await,
             Self::ValidCalendarObjectResource => atom("valid-calendar-object-resource").await,
             Self::SupportedCalendarComponent => atom("supported-calendar-component").await,
-            Self::ValidCalendarObjectResource => atom("valid-calendar-object-resource").await,
-            Self::SupportedCalendarComponent => atom("SupportedCalendarComponent").await,
             Self::NoUidConflict(href) => {
                 let start = ctx.create_cal_element("no-uid-conflict");
                 let end = start.to_end();
@@ -391,43 +389,82 @@ impl<C: CalContext> QuickWritable<C> for CalendarDataEmpty {
 
 impl<C: CalContext> QuickWritable<C> for Comp {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let mut start = ctx.create_cal_element("calendar-data");
+        start.push_attribute(("name", self.name.as_str()));
+        let end = start.to_end();
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        self.prop_kind.write(xml, ctx.child()).await?;
+        self.comp_kind.write(xml, ctx.child()).await?;
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for CompSupport {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let mut empty = ctx.create_cal_element("comp");
+        empty.push_attribute(("name", self.0.as_str()));
+        xml.write_event_async(Event::Empty(empty)).await
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for CompKind {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        match self {
+            Self::AllComp => xml.write_event_async(Event::Empty(ctx.create_cal_element("allcomp"))).await,
+            Self::Comp(many_comp) => {
+                for comp in many_comp.iter() {
+                    // Required: recursion in an async fn requires boxing
+                    // rustc --explain E0733
+                    Box::pin(comp.write(xml, ctx.child())).await?;
+                }
+                Ok(())
+            }
+        }
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for PropKind {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        match self {
+            Self::AllProp => xml.write_event_async(Event::Empty(ctx.create_cal_element("allprop"))).await,
+            Self::Prop(many_prop) => {
+                for prop in many_prop.iter() {
+                    prop.write(xml, ctx.child()).await?;
+                }
+                Ok(())
+            }
+        }
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for CalProp {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let mut empty = ctx.create_cal_element("prop");
+        empty.push_attribute(("name", self.name.0.as_str()));
+        match self.novalue {
+            None => (),
+            Some(true) => empty.push_attribute(("novalue", "yes")),
+            Some(false) => empty.push_attribute(("novalue", "no")),
+        }
+        xml.write_event_async(Event::Empty(empty)).await
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for RecurrenceModifier {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        match self {
+            Self::Expand(exp) => exp.write(xml, ctx).await,
+            Self::LimitRecurrenceSet(lrs) => lrs.write(xml, ctx).await,
+        }
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for Expand {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let mut empty = ctx.create_cal_element("expand");
+        empty.push_attribute(("start", format!("{}", self.0.format(ICAL_DATETIME_FMT)).as_str()));
+        empty.push_attribute(("end", format!("{}", self.1.format(ICAL_DATETIME_FMT)).as_str()));
+        xml.write_event_async(Event::Empty(empty)).await
     }
 }
 

@@ -846,9 +846,9 @@ pub struct CalendarDataSupport {
 /// in the "urn:ietf:params:xml:ns:caldav" namespace instead of the
 /// "DAV:" namespace.
 pub struct Comp {
-    name: Component,
-    prop_kind: PropKind,
-    comp_kind: CompKind,
+    pub name: Component,
+    pub prop_kind: PropKind,
+    pub comp_kind: CompKind,
 }
 
 /// For SupportedCalendarComponentSet
@@ -864,7 +864,7 @@ pub struct Comp {
 ///     <C:comp name="VEVENT"/>
 ///     <C:comp name="VTODO"/>
 /// </C:supported-calendar-component-set>
-pub struct CompSupport(Component);
+pub struct CompSupport(pub Component);
 
 /// Name:  allcomp
 ///
@@ -932,8 +932,8 @@ pub enum PropKind {
 /// defined in the "urn:ietf:params:xml:ns:caldav" namespace instead
 /// of the "DAV:" namespace.
 pub struct CalProp {
-    name: ComponentProperty,
-    novalue: bool,
+    pub name: ComponentProperty,
+    pub novalue: Option<bool>,
 }
 
 pub enum RecurrenceModifier {
@@ -981,7 +981,7 @@ pub enum RecurrenceModifier {
 ///                  end   CDATA #REQUIRED>
 /// start value: an iCalendar "date with UTC time"
 /// end value: an iCalendar "date with UTC time"
-pub struct Expand(DateTime<Utc>, DateTime<Utc>);
+pub struct Expand(pub DateTime<Utc>, pub DateTime<Utc>);
 
 /// CALDAV:limit-recurrence-set XML Element
 ///
@@ -1348,11 +1348,24 @@ pub enum Component {
     VAlarm,
     Unknown(String),
 }
+impl  Component {
+    pub fn as_str<'a>(&'a self) -> &'a str {
+        match self {
+            Self::VCalendar => "VCALENDAR",
+            Self::VJournal => "VJOURNAL",
+            Self::VFreeBusy => "VFREEBUSY",
+            Self::VEvent => "VEVENT",
+            Self::VTodo => "VTODO",
+            Self::VAlarm => "VALARM",
+            Self::Unknown(c) => c,
+        }
+    }
+}
 
 /// name="VERSION", name="SUMMARY", etc.
 /// Can be set on different objects: VCalendar, VEvent, etc.
 /// Might be replaced by an enum later
-pub struct ComponentProperty(String);
+pub struct ComponentProperty(pub String);
 
 /// like PARSTAT
 pub struct PropertyParameter(String);

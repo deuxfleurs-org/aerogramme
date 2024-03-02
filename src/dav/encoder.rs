@@ -37,16 +37,16 @@ impl Context for NoExtension {
         }
         start
     }
-    async fn hook_error(&self, err: &Disabled, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
+    async fn hook_error(&self, _err: &Disabled, _xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
         unreachable!();
     }
-    async fn hook_property(&self, prop: &Disabled, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
+    async fn hook_property(&self, _prop: &Disabled, _xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
         unreachable!();
     }
-    async fn hook_propertyrequest(&self, prop: &Disabled, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
+    async fn hook_propertyrequest(&self, _prop: &Disabled, _xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
         unreachable!();
     }
-    async fn hook_resourcetype(&self, restype: &Disabled, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
+    async fn hook_resourcetype(&self, _restype: &Disabled, _xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
         unreachable!();
     }
 }
