@@ -319,37 +319,73 @@ impl<C: CalContext> QuickWritable<C> for Violation {
 // ---------------------------- Inner XML ------------------------------------
 impl<C: CalContext> QuickWritable<C> for SupportedCollation {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let start = ctx.create_cal_element("supported-collation");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        self.0.write(xml, ctx.child()).await?;
+        xml.write_event_async(Event::End(end)).await
+
     }
 }
 
 impl<C: CalContext> QuickWritable<C>  for Collation {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let col = match self {
+           Self::AsciiCaseMap => "i;ascii-casemap",
+           Self::Octet => "i;octet",
+           Self::Unknown(v) => v.as_str(),
+        };
+
+        xml.write_event_async(Event::Text(BytesText::new(col))).await
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for CalendarDataPayload {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let mut start = ctx.create_cal_element("calendar-data");
+        if let Some(mime) = &self.mime {
+            start.push_attribute(("content-type", mime.content_type.as_str()));
+            start.push_attribute(("version", mime.version.as_str()));
+        }
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.write_event_async(Event::Text(BytesText::new(self.payload.as_str()))).await?;
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for CalendarDataRequest {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let mut start = ctx.create_cal_element("calendar-data");
+        if let Some(mime) = &self.mime {
+            start.push_attribute(("content-type", mime.content_type.as_str()));
+            start.push_attribute(("version", mime.version.as_str()));
+        }
+        let end = start.to_end();
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        if let Some(comp) = &self.comp {
+            comp.write(xml, ctx.child()).await?;
+        }
+        if let Some(recurrence) = &self.recurrence {
+            recurrence.write(xml, ctx.child()).await?;
+        }
+        if let Some(freebusy) = &self.limit_freebusy_set {
+            freebusy.write(xml, ctx.child()).await?;
+        }
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for CalendarDataEmpty {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
-    }
-}
-
-impl<C: CalContext> QuickWritable<C> for CalendarDataSupport {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let mut empty = ctx.create_cal_element("calendar-data");
+        if let Some(mime) = &self.0 {
+            empty.push_attribute(("content-type", mime.content_type.as_str()));
+            empty.push_attribute(("version", mime.version.as_str()));
+        }
+        xml.write_event_async(Event::Empty(empty)).await
     }
 }
 

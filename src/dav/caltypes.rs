@@ -770,7 +770,7 @@ pub enum Violation {
 /// If the client chooses a collation not supported by the server, the
 /// server MUST respond with a CALDAV:supported-collation precondition
 /// error response.
-pub struct SupportedCollation(Collation);
+pub struct SupportedCollation(pub Collation);
 #[derive(Default)]
 pub enum Collation {
     #[default]
@@ -799,10 +799,10 @@ pub struct CalendarDataPayload {
 /// REPORT request to specify which parts of calendar object
 /// resources should be returned in the response;
 pub struct CalendarDataRequest {
-    mime: Option<CalendarDataSupport>,
-    comp: Option<Comp>,
-    reccurence: Option<RecurrenceModifier>,
-    limit_freebusy_set: Option<LimitFreebusySet>,
+    pub mime: Option<CalendarDataSupport>,
+    pub comp: Option<Comp>,
+    pub recurrence: Option<RecurrenceModifier>,
+    pub limit_freebusy_set: Option<LimitFreebusySet>,
 }
 
 /// calendar-data specialization for Property
@@ -812,7 +812,7 @@ pub struct CalendarDataRequest {
 /// when nested in the CALDAV:supported-calendar-data property
 /// to specify a supported media type for calendar object
 /// resources;
-pub struct CalendarDataEmpty(Option<CalendarDataSupport>);
+pub struct CalendarDataEmpty(pub Option<CalendarDataSupport>);
 
 /// <!ATTLIST calendar-data content-type CDATA "text/calendar"
 ///                         version CDATA "2.0">
@@ -821,8 +821,8 @@ pub struct CalendarDataEmpty(Option<CalendarDataSupport>);
 /// attributes can be used on all three variants of the
 /// CALDAV:calendar-data XML element.
 pub struct CalendarDataSupport {
-    content_type: String,
-    version: String,
+    pub content_type: String,
+    pub version: String,
 }
 
 /// Name:  comp
