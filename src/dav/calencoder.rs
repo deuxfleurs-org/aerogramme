@@ -593,19 +593,46 @@ impl<C: CalContext> QuickWritable<C> for TimeOrText {
 
 impl<C: CalContext> QuickWritable<C> for TextMatch {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let mut start = ctx.create_cal_element("text-match");
+        if let Some(collation) = &self.collation {
+            start.push_attribute(("collation", collation.as_str()));
+        }
+        match self.negate_condition {
+            None => (),
+            Some(true) => start.push_attribute(("negate-condition", "yes")),
+            Some(false) => start.push_attribute(("negate-condition", "no")),
+        }
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.write_event_async(Event::Text(BytesText::new(self.text.as_str()))).await?;
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for ParamFilter {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let mut start = ctx.create_cal_element("param-filter");
+        start.push_attribute(("name", self.name.as_str()));
+
+        match &self.additional_rules {
+            None => xml.write_event_async(Event::Empty(start)).await,
+            Some(rules) => {
+                let end = start.to_end();
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                rules.write(xml, ctx.child()).await?;
+                xml.write_event_async(Event::End(end)).await
+            }
+        }
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for ParamFilterMatch {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        match self {
+            Self::IsNotDefined =>  xml.write_event_async(Event::Empty(ctx.create_dav_element("is-not-defined"))).await,
+            Self::Match(tm) => tm.write(xml, ctx).await,
+        }
     }
 }
 

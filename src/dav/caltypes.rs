@@ -778,6 +778,15 @@ pub enum Collation {
     Octet,
     Unknown(String),
 }
+impl Collation {
+    pub fn as_str<'a>(&'a self) -> &'a str {
+        match self {
+            Self::AsciiCaseMap => "i;ascii-casemap",
+            Self::Octet => "i;octet",
+            Self::Unknown(c) => c.as_str(),
+        }
+    }
+}
 
 
 /// <!ELEMENT calendar-data (#PCDATA)>
@@ -1261,8 +1270,8 @@ pub struct TextMatch {
 ///      <!ATTLIST param-filter name CDATA #REQUIRED>
 ///        name value: a property parameter name (e.g., PARTSTAT)
 pub struct ParamFilter {
-    name: PropertyParameter,
-    inner: Option<ParamFilterMatch>,
+    pub name: PropertyParameter,
+    pub additional_rules: Option<ParamFilterMatch>,
 }
 pub enum ParamFilterMatch {
     IsNotDefined,
@@ -1366,7 +1375,12 @@ impl  Component {
 pub struct ComponentProperty(pub String);
 
 /// like PARSTAT
-pub struct PropertyParameter(String);
+pub struct PropertyParameter(pub String);
+impl PropertyParameter {
+    pub fn as_str<'a>(&'a self) -> &'a str {
+        self.0.as_str()
+    }
+}
 
 /// Name: time-range
 ///
