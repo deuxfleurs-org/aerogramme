@@ -677,27 +677,82 @@ impl<C: CalContext> QuickWritable<C> for TimeRange {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dav::types::{Error, Violation as DavViolation};
+    use crate::dav::types as dav;
     use tokio::io::AsyncWriteExt;
 
-    #[tokio::test]
-    async fn test_violation() {
+    async fn serialize<C: Context, Q: QuickWritable<C>>(ctx: C, elem: &Q) -> String {
         let mut buffer = Vec::new();
         let mut tokio_buffer = tokio::io::BufWriter::new(&mut buffer);
         let mut writer = Writer::new_with_indent(&mut tokio_buffer, b' ', 4);
-
-        let res = Error(vec![
-            DavViolation::Extension(Violation::ResourceMustBeNull),
-        ]);
-
-        res.write(&mut writer, CalExtension { root: true }).await.expect("xml serialization");
+        elem.write(&mut writer, ctx).await.expect("xml serialization");
         tokio_buffer.flush().await.expect("tokio buffer flush");
+        let got = std::str::from_utf8(buffer.as_slice()).unwrap();
+
+        return got.into()
+    }
+
+    #[tokio::test]
+    async fn basic_violation() {
+        let got = serialize(
+            CalExtension { root: true },
+            &dav::Error(vec![
+                dav::Violation::Extension(Violation::ResourceMustBeNull),
+            ])
+        ).await;
 
         let expected = r#"<D:error xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
     <C:resource-must-be-null/>
 </D:error>"#;
-        let got = std::str::from_utf8(buffer.as_slice()).unwrap();
 
-        assert_eq!(got, expected);
+        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+    }
+
+    #[tokio::test]
+    async fn rfc_calendar_query1() {
+        let got = serialize(
+            CalExtension { root: true },
+            &CalendarQuery {
+                selector: Some(CalendarSelector::Prop(dav::PropName(vec![
+                ]))),
+                filter: Filter(CompFilter {
+                    name: Component::VCalendar,
+                    additional_rules: None,
+                }),
+                timezone: None,
+            }
+        ).await;
+
+        let expected = r#"<C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+    <D:prop>
+        <D:getetag/>
+        <C:calendar-data>
+            <C:comp name="VCALENDAR">
+                <C:prop name="VERSION"/>
+                <C:comp name="VEVENT">
+                    <C:prop name="SUMMARY"/>
+                    <C:prop name="UID"/>
+                    <C:prop name="DTSTART"/>
+                    <C:prop name="DTEND"/>
+                    <C:prop name="DURATION"/>
+                    <C:prop name="RRULE"/>
+                    <C:prop name="RDATE"/>
+                    <C:prop name="EXRULE"/>
+                    <C:prop name="EXDATE"/>
+                    <C:prop name="RECURRENCE-ID"/>
+                </C:comp>
+                <C:comp name="VTIMEZONE"/>
+            </C:comp>
+        </C:calendar-data>
+    </D:prop>
+    <C:filter>
+        <C:comp-filter name="VCALENDAR">
+            <C:comp-filter name="VEVENT">
+                <C:time-range start="20060104T000000Z" end="20060105T000000Z"/>
+            </C:comp-filter>
+        </C:comp-filter>
+    </C:filter>
+</C:calendar-query>"#;
+        
+        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
     }
 }
