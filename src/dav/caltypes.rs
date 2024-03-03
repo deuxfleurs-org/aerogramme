@@ -1353,6 +1353,7 @@ pub enum Component {
     VEvent,
     VTodo,
     VAlarm,
+    VTimeZone,
     Unknown(String),
 }
 impl Component {
@@ -1364,6 +1365,7 @@ impl Component {
             Self::VEvent => "VEVENT",
             Self::VTodo => "VTODO",
             Self::VAlarm => "VALARM",
+            Self::VTimeZone => "VTIMEZONE",
             Self::Unknown(c) => c,
         }
     }

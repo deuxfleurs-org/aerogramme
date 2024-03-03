@@ -389,7 +389,7 @@ impl<C: CalContext> QuickWritable<C> for CalendarDataEmpty {
 
 impl<C: CalContext> QuickWritable<C> for Comp {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut start = ctx.create_cal_element("calendar-data");
+        let mut start = ctx.create_cal_element("comp");
         start.push_attribute(("name", self.name.as_str()));
         let end = start.to_end();
         xml.write_event_async(Event::Start(start.clone())).await?;
@@ -713,6 +713,35 @@ mod tests {
             CalExtension { root: true },
             &CalendarQuery {
                 selector: Some(CalendarSelector::Prop(dav::PropName(vec![
+                    dav::PropertyRequest::GetEtag,
+                    dav::PropertyRequest::Extension(PropertyRequest::CalendarData(CalendarDataRequest {
+                        mime: None,
+                        comp: Some(Comp {
+                            name: Component::VCalendar,
+                            prop_kind: PropKind::Prop(vec![
+                                CalProp {
+                                    name: ComponentProperty("VERSION".into()),
+                                    novalue: None,
+                                }
+                            ]),
+                            comp_kind: CompKind::Comp(vec![
+                                Comp {
+                                    name: Component::VEvent,
+                                    comp_kind: CompKind::Comp(vec![]),
+                                    prop_kind: PropKind::Prop(vec![
+                                        CalProp { name: ComponentProperty("SUMMARY".into()), novalue: None },
+                                    ]),
+                                },
+                                Comp {
+                                    name: Component::VTimeZone,
+                                    prop_kind: PropKind::Prop(vec![]),
+                                    comp_kind: CompKind::Comp(vec![]),
+                                }
+                            ]),        
+                        }),
+                        recurrence: None,
+                        limit_freebusy_set: None,
+                    })),
                 ]))),
                 filter: Filter(CompFilter {
                     name: Component::VCalendar,
