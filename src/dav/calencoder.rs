@@ -470,61 +470,124 @@ impl<C: CalContext> QuickWritable<C> for Expand {
 
 impl<C: CalContext> QuickWritable<C> for LimitRecurrenceSet {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let mut empty = ctx.create_cal_element("limit-recurrence-set");
+        empty.push_attribute(("start", format!("{}", self.0.format(ICAL_DATETIME_FMT)).as_str()));
+        empty.push_attribute(("end", format!("{}", self.1.format(ICAL_DATETIME_FMT)).as_str()));
+        xml.write_event_async(Event::Empty(empty)).await
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for LimitFreebusySet {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let mut empty = ctx.create_cal_element("limit-freebusy-set");
+        empty.push_attribute(("start", format!("{}", self.0.format(ICAL_DATETIME_FMT)).as_str()));
+        empty.push_attribute(("end", format!("{}", self.1.format(ICAL_DATETIME_FMT)).as_str()));
+        xml.write_event_async(Event::Empty(empty)).await
     }
 }
 
 impl<C: CalContext> QuickWritable<C>  for CalendarSelector<C> {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        match self {
+            Self::AllProp => xml.write_event_async(Event::Empty(ctx.create_dav_element("allprop"))).await,
+            Self::PropName => xml.write_event_async(Event::Empty(ctx.create_dav_element("propname"))).await,
+            Self::Prop(prop) => prop.write(xml, ctx).await,
+        }
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for CompFilter {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let mut start = ctx.create_cal_element("comp-filter");
+        start.push_attribute(("name", self.name.as_str()));
+
+        match &self.additional_rules {
+            None => xml.write_event_async(Event::Empty(start)).await,
+            Some(rules) => {
+                let end = start.to_end();
+
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                rules.write(xml, ctx.child()).await?;
+                xml.write_event_async(Event::End(end)).await
+            }
+        }
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for CompFilterInner {
+impl<C: CalContext> QuickWritable<C> for CompFilterRules {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        match self {
+            Self::IsNotDefined =>  xml.write_event_async(Event::Empty(ctx.create_dav_element("is-not-defined"))).await,
+            Self::Matches(cfm) => cfm.write(xml, ctx).await,
+        }
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for CompFilterMatch {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        if let Some(time_range) = &self.time_range {
+            time_range.write(xml, ctx.child()).await?;
+        }
+
+        for prop_item in self.prop_filter.iter() {
+            prop_item.write(xml, ctx.child()).await?;
+        }
+        for comp_item in self.comp_filter.iter() {
+            // Required: recursion in an async fn requires boxing
+            // rustc --explain E0733
+            Box::pin(comp_item.write(xml, ctx.child())).await?;
+        }
+        Ok(())
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for PropFilter {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let mut start = ctx.create_cal_element("prop-filter");
+        start.push_attribute(("name", self.name.as_str()));
+
+        match &self.additional_rules {
+            None => xml.write_event_async(Event::Empty(start)).await,
+            Some(rules) => {
+                let end = start.to_end();
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                rules.write(xml, ctx.child()).await?;
+                xml.write_event_async(Event::End(end)).await
+            }
+        }
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for PropFilterInner {
+impl<C: CalContext> QuickWritable<C> for PropFilterRules {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        match self {
+            Self::IsNotDefined => xml.write_event_async(Event::Empty(ctx.create_dav_element("is-not-defined"))).await,
+            Self::Match(prop_match) => prop_match.write(xml, ctx).await,
+        }
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for PropFilterMatch {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        if let Some(time_range) = &self.time_range {
+            time_range.write(xml, ctx.child()).await?;
+        }
+        if let Some(time_or_text) = &self.time_or_text {
+            time_or_text.write(xml, ctx.child()).await?;
+        }
+        for param_item in self.param_filter.iter() {
+            param_item.write(xml, ctx.child()).await?;
+        }
+        Ok(())
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for TimeOrText {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        match self {
+            Self::Time(time) => time.write(xml, ctx).await,
+            Self::Text(txt) => txt.write(xml, ctx).await,
+        }
     }
 }
 

@@ -1028,7 +1028,7 @@ pub struct Expand(pub DateTime<Utc>, pub DateTime<Utc>);
 ///                                end   CDATA #REQUIRED>
 /// start value: an iCalendar "date with UTC time"
 /// end value: an iCalendar "date with UTC time"
-pub struct LimitRecurrenceSet(DateTime<Utc>, DateTime<Utc>);
+pub struct LimitRecurrenceSet(pub DateTime<Utc>, pub DateTime<Utc>);
 
 /// Name:  limit-freebusy-set
 ///
@@ -1058,7 +1058,7 @@ pub struct LimitRecurrenceSet(DateTime<Utc>, DateTime<Utc>);
 ///                              end   CDATA #REQUIRED>
 /// start value: an iCalendar "date with UTC time"
 /// end value: an iCalendar "date with UTC time"
-pub struct LimitFreebusySet(DateTime<Utc>, DateTime<Utc>);
+pub struct LimitFreebusySet(pub DateTime<Utc>, pub DateTime<Utc>);
 
 /// Used by CalendarQuery & CalendarMultiget
 pub enum CalendarSelector<T: Dav::Extension> {
@@ -1116,21 +1116,20 @@ pub enum CalendarSelector<T: Dav::Extension> {
 ///      name value: a calendar object or calendar component
 ///                  type (e.g., VEVENT)
 pub struct CompFilter {
-    name: Component,
-    inner: CompFilterInner,
+    pub name: Component,
+    // Option 1 = None, Option 2, 3, 4 = Some
+    pub additional_rules: Option<CompFilterRules>,
 }
-pub enum CompFilterInner {
-    // Option 1
-    Empty,
+pub enum CompFilterRules {
     // Option 2
     IsNotDefined,
     // Options 3 & 4
     Matches(CompFilterMatch),
 }
 pub struct CompFilterMatch {
-    time_range: Option<TimeRange>,
-    prop_filter: Vec<PropFilter>,
-    comp_filter: Vec<CompFilter>,
+    pub time_range: Option<TimeRange>,
+    pub prop_filter: Vec<PropFilter>,
+    pub comp_filter: Vec<CompFilter>,
 }
 
 /// Name:  prop-filter
@@ -1178,21 +1177,20 @@ pub struct CompFilterMatch {
 ///      <!ATTLIST prop-filter name CDATA #REQUIRED>
 ///      name value: a calendar property name (e.g., ATTENDEE)
 pub struct PropFilter {
-    name: Component,
-    inner: PropFilterInner,
+    pub name: Component,
+    // None = Option 1, Some() = Option 2, 3 & 4
+    pub additional_rules: Option<PropFilterRules>,
 }
-pub enum PropFilterInner {
-    // Option 1
-    Empty,
+pub enum PropFilterRules {
     // Option 2
     IsNotDefined,
     // Options 3 & 4
     Match(PropFilterMatch),
 }
 pub struct PropFilterMatch {
-    time_range: Option<TimeRange>,
-    time_or_text: Option<TimeOrText>,
-    param_filter: Vec<ParamFilter>,
+    pub time_range: Option<TimeRange>,
+    pub time_or_text: Option<TimeOrText>,
+    pub param_filter: Vec<ParamFilter>,
 }
 pub enum TimeOrText {
     Time(TimeRange),
@@ -1228,9 +1226,9 @@ pub enum TimeOrText {
 ///  <!ATTLIST text-match collation        CDATA "i;ascii-casemap"
 ///  negate-condition (yes | no) "no">
 pub struct TextMatch {
-    collation: Option<Collation>,
-    negate_condition: bool,
-    text: String,
+    pub collation: Option<Collation>,
+    pub negate_condition: Option<bool>,
+    pub text: String,
 }
 
 /// Name:  param-filter
