@@ -771,23 +771,6 @@ pub enum Violation {
 /// server MUST respond with a CALDAV:supported-collation precondition
 /// error response.
 pub struct SupportedCollation(pub Collation);
-#[derive(Default)]
-pub enum Collation {
-    #[default]
-    AsciiCaseMap,
-    Octet,
-    Unknown(String),
-}
-impl Collation {
-    pub fn as_str<'a>(&'a self) -> &'a str {
-        match self {
-            Self::AsciiCaseMap => "i;ascii-casemap",
-            Self::Octet => "i;octet",
-            Self::Unknown(c) => c.as_str(),
-        }
-    }
-}
-
 
 /// <!ELEMENT calendar-data (#PCDATA)>
 /// PCDATA value: iCalendar object
@@ -1328,7 +1311,7 @@ pub enum ParamFilterMatch {
 ///
 /// <!ELEMENT timezone (#PCDATA)>
 /// PCDATA value: an iCalendar object with exactly one VTIMEZONE
-pub struct TimeZone(String);
+pub struct TimeZone(pub String);
 
 /// Name:  filter
 ///
@@ -1343,7 +1326,24 @@ pub struct TimeZone(String);
 ///
 /// Definition:
 /// <!ELEMENT filter (comp-filter)>
-pub struct Filter(CompFilter);
+pub struct Filter(pub CompFilter);
+
+/// Name: time-range
+///
+/// Definition:
+///
+/// <!ELEMENT time-range EMPTY>
+/// <!ATTLIST time-range start CDATA #IMPLIED
+///                      end   CDATA #IMPLIED>
+/// start value: an iCalendar "date with UTC time"
+/// end value: an iCalendar "date with UTC time"
+pub enum TimeRange {
+    OnlyStart(DateTime<Utc>),
+    OnlyEnd(DateTime<Utc>),
+    FullRange(DateTime<Utc>, DateTime<Utc>),
+}
+
+// ----------------------- ENUM ATTRIBUTES ---------------------
 
 /// Known components
 pub enum Component {
@@ -1355,7 +1355,7 @@ pub enum Component {
     VAlarm,
     Unknown(String),
 }
-impl  Component {
+impl Component {
     pub fn as_str<'a>(&'a self) -> &'a str {
         match self {
             Self::VCalendar => "VCALENDAR",
@@ -1382,17 +1382,19 @@ impl PropertyParameter {
     }
 }
 
-/// Name: time-range
-///
-/// Definition:
-///
-/// <!ELEMENT time-range EMPTY>
-/// <!ATTLIST time-range start CDATA #IMPLIED
-///                      end   CDATA #IMPLIED>
-/// start value: an iCalendar "date with UTC time"
-/// end value: an iCalendar "date with UTC time"
-pub enum TimeRange {
-    OnlyStart(DateTime<Utc>),
-    OnlyEnd(DateTime<Utc>),
-    FullRange(DateTime<Utc>, DateTime<Utc>),
+#[derive(Default)]
+pub enum Collation {
+    #[default]
+    AsciiCaseMap,
+    Octet,
+    Unknown(String),
+}
+impl Collation {
+    pub fn as_str<'a>(&'a self) -> &'a str {
+        match self {
+            Self::AsciiCaseMap => "i;ascii-casemap",
+            Self::Octet => "i;octet",
+            Self::Unknown(c) => c.as_str(),
+        }
+    }
 }

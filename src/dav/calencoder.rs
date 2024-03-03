@@ -638,37 +638,38 @@ impl<C: CalContext> QuickWritable<C> for ParamFilterMatch {
 
 impl<C: CalContext> QuickWritable<C> for TimeZone {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let mut start = ctx.create_cal_element("timezone");
+        let end = start.to_end();
+
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.write_event_async(Event::Text(BytesText::new(self.0.as_str()))).await?;
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for Filter {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
-    }
-}
+        let mut start = ctx.create_cal_element("filter");
+        let end = start.to_end();
 
-impl<C: CalContext> QuickWritable<C> for Component {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
-    }
-}
-
-impl<C: CalContext> QuickWritable<C> for ComponentProperty {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
-    }
-}
-
-impl<C: CalContext> QuickWritable<C> for PropertyParameter {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        xml.write_event_async(Event::Start(start.clone())).await?;
+        self.0.write(xml, ctx.child()).await?;
+        xml.write_event_async(Event::End(end)).await
     }
 }
 
 impl<C: CalContext> QuickWritable<C> for TimeRange {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        unimplemented!();
+        let mut empty = ctx.create_cal_element("time-range");
+        match self {
+            Self::OnlyStart(start) => empty.push_attribute(("start", format!("{}", start.format(ICAL_DATETIME_FMT)).as_str())),
+            Self::OnlyEnd(end) => empty.push_attribute(("end", format!("{}", end.format(ICAL_DATETIME_FMT)).as_str())),
+            Self::FullRange(start, end) => {
+                empty.push_attribute(("start", format!("{}", start.format(ICAL_DATETIME_FMT)).as_str()));
+                empty.push_attribute(("end", format!("{}", end.format(ICAL_DATETIME_FMT)).as_str()));
+            }
+        }
+        xml.write_event_async(Event::Empty(empty)).await
     }
 }
 
