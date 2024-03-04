@@ -20,7 +20,8 @@ impl Extension for NoExtension {
     type Property = Disabled;
     type PropertyRequest = Disabled;
     type ResourceType = Disabled;
- }
+}
+
 
 /// 14.1.  activelock XML Element
 ///
