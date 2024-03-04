@@ -4,6 +4,7 @@ mod acltypes;
 mod versioningtypes;
 mod encoder;
 mod calencoder;
+mod decoder;
 
 use std::net::SocketAddr;
 
