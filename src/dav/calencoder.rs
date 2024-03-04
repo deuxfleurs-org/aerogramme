@@ -391,11 +391,16 @@ impl<C: CalContext> QuickWritable<C> for Comp {
     async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
         let mut start = ctx.create_cal_element("comp");
         start.push_attribute(("name", self.name.as_str()));
-        let end = start.to_end();
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        self.prop_kind.write(xml, ctx.child()).await?;
-        self.comp_kind.write(xml, ctx.child()).await?;
-        xml.write_event_async(Event::End(end)).await
+        match &self.additional_rules {
+            None => xml.write_event_async(Event::Empty(start)).await,
+            Some(rules) => {
+                let end = start.to_end();
+                xml.write_event_async(Event::Start(start.clone())).await?;
+                rules.prop_kind.write(xml, ctx.child()).await?;
+                rules.comp_kind.write(xml, ctx.child()).await?;
+                xml.write_event_async(Event::End(end)).await
+            },
+        }
     }
 }
 
@@ -679,6 +684,7 @@ mod tests {
     use super::*;
     use crate::dav::types as dav;
     use tokio::io::AsyncWriteExt;
+    use chrono::{Utc,TimeZone,DateTime};
 
     async fn serialize<C: Context, Q: QuickWritable<C>>(ctx: C, elem: &Q) -> String {
         let mut buffer = Vec::new();
@@ -718,26 +724,38 @@ mod tests {
                         mime: None,
                         comp: Some(Comp {
                             name: Component::VCalendar,
-                            prop_kind: PropKind::Prop(vec![
-                                CalProp {
-                                    name: ComponentProperty("VERSION".into()),
-                                    novalue: None,
-                                }
-                            ]),
-                            comp_kind: CompKind::Comp(vec![
-                                Comp {
-                                    name: Component::VEvent,
-                                    comp_kind: CompKind::Comp(vec![]),
-                                    prop_kind: PropKind::Prop(vec![
-                                        CalProp { name: ComponentProperty("SUMMARY".into()), novalue: None },
-                                    ]),
-                                },
-                                Comp {
-                                    name: Component::VTimeZone,
-                                    prop_kind: PropKind::Prop(vec![]),
-                                    comp_kind: CompKind::Comp(vec![]),
-                                }
-                            ]),        
+                            additional_rules: Some(CompInner {
+                                prop_kind: PropKind::Prop(vec![
+                                    CalProp {
+                                        name: ComponentProperty("VERSION".into()),
+                                        novalue: None,
+                                    }
+                                ]),
+                                comp_kind: CompKind::Comp(vec![
+                                    Comp {
+                                        name: Component::VEvent,
+                                        additional_rules: Some(CompInner {
+                                            prop_kind: PropKind::Prop(vec![
+                                                CalProp { name: ComponentProperty("SUMMARY".into()), novalue: None },
+                                                CalProp { name: ComponentProperty("UID".into()), novalue: None },
+                                                CalProp { name: ComponentProperty("DTSTART".into()), novalue: None },
+                                                CalProp { name: ComponentProperty("DTEND".into()), novalue: None },
+                                                CalProp { name: ComponentProperty("DURATION".into()), novalue: None },
+                                                CalProp { name: ComponentProperty("RRULE".into()), novalue: None },
+                                                CalProp { name: ComponentProperty("RDATE".into()), novalue: None },
+                                                CalProp { name: ComponentProperty("EXRULE".into()), novalue: None },
+                                                CalProp { name: ComponentProperty("EXDATE".into()), novalue: None },
+                                                CalProp { name: ComponentProperty("RECURRENCE-ID".into()), novalue: None },
+                                            ]),
+                                            comp_kind: CompKind::Comp(vec![]),
+                                        }),
+                                    },
+                                    Comp {
+                                        name: Component::VTimeZone,
+                                        additional_rules: None,
+                                    }
+                                ]),
+                            }),
                         }),
                         recurrence: None,
                         limit_freebusy_set: None,
@@ -745,7 +763,23 @@ mod tests {
                 ]))),
                 filter: Filter(CompFilter {
                     name: Component::VCalendar,
-                    additional_rules: None,
+                    additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
+                        time_range: None,
+                        prop_filter: vec![],
+                        comp_filter: vec![
+                            CompFilter {
+                                name: Component::VEvent,
+                                additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
+                                    time_range: Some(TimeRange::FullRange(
+                                       Utc.with_ymd_and_hms(2006,1,4,0,0,0).unwrap(),
+                                       Utc.with_ymd_and_hms(2006,1,5,0,0,0).unwrap(),
+                                    )),
+                                    prop_filter: vec![],
+                                    comp_filter: vec![],
+                                })),
+                            },
+                        ],
+                    })),
                 }),
                 timezone: None,
             }

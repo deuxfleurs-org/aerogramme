@@ -839,6 +839,9 @@ pub struct CalendarDataSupport {
 /// "DAV:" namespace.
 pub struct Comp {
     pub name: Component,
+    pub additional_rules: Option<CompInner>,
+}
+pub struct CompInner {
     pub prop_kind: PropKind,
     pub comp_kind: CompKind,
 }
