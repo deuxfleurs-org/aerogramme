@@ -714,7 +714,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rfc_calendar_query1() {
+    async fn rfc_calendar_query1_req() {
         let got = serialize(
             CalExtension { root: true },
             &CalendarQuery {
@@ -816,6 +816,80 @@ mod tests {
     </C:filter>
 </C:calendar-query>"#;
         
+        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+    }
+
+    #[tokio::test]
+    async fn rfc_calendar_query1_res() {
+        let got = serialize(
+            CalExtension { root: true },
+            &dav::Multistatus {
+                responses: vec![
+                    dav::Response {
+                        href: dav::Href("http://cal.example.com/bernard/work/abcd2.ics".into()),
+                        status_or_propstat: dav::StatusOrPropstat::PropStat(vec![dav::PropStat {
+                            prop: dav::AnyProp::Value(dav::PropValue(vec![
+                                dav::Property::GetEtag("\"fffff-abcd2\"".into()),
+                                dav::Property::Extension(Property::CalendarData(CalendarDataPayload {
+                                    mime: None,
+                                    payload: "PLACEHOLDER".into()
+                                })),
+                            ])),
+                            status: dav::Status(http::status::StatusCode::OK),
+                            error: None,
+                            responsedescription: None,
+                        }]),
+                        location: None,
+                        error: None,
+                        responsedescription: None,
+                    },
+                    dav::Response {
+                        href: dav::Href("http://cal.example.com/bernard/work/abcd3.ics".into()),
+                        status_or_propstat: dav::StatusOrPropstat::PropStat(vec![dav::PropStat {
+                            prop: dav::AnyProp::Value(dav::PropValue(vec![
+                                dav::Property::GetEtag("\"fffff-abcd3\"".into()),
+                                dav::Property::Extension(Property::CalendarData(CalendarDataPayload{
+                                    mime: None,
+                                    payload: "PLACEHOLDER".into(),
+                                })),
+                            ])),
+                            status: dav::Status(http::status::StatusCode::OK),
+                            error: None,
+                            responsedescription: None,
+                        }]),
+                        location: None,
+                        error: None,
+                        responsedescription: None,
+                    },
+                ],
+                responsedescription: None,
+            }, 
+        ).await;
+
+        let expected = r#"<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+    <D:response>
+        <D:href>http://cal.example.com/bernard/work/abcd2.ics</D:href>
+        <D:propstat>
+            <D:prop>
+                <D:getetag>&quot;fffff-abcd2&quot;</D:getetag>
+                <C:calendar-data>PLACEHOLDER</C:calendar-data>
+            </D:prop>
+            <D:status>HTTP/1.1 200 OK</D:status>
+        </D:propstat>
+    </D:response>
+    <D:response>
+        <D:href>http://cal.example.com/bernard/work/abcd3.ics</D:href>
+        <D:propstat>
+            <D:prop>
+                <D:getetag>&quot;fffff-abcd3&quot;</D:getetag>
+                <C:calendar-data>PLACEHOLDER</C:calendar-data>
+            </D:prop>
+            <D:status>HTTP/1.1 200 OK</D:status>
+        </D:propstat>
+    </D:response>
+</D:multistatus>"#;
+
+
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
     }
 }
