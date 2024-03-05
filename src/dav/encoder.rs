@@ -640,16 +640,20 @@ impl<E: Extension> QWrite for Violation<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dav::realization::Core;
     use tokio::io::AsyncWriteExt;
 
     /// To run only the unit tests and avoid the behavior ones:
     /// cargo test --bin aerogramme
     
-    async fn serialize<C: Context, Q: QuickWritable<C>>(ctx: C, elem: &Q) -> String {
+    async fn serialize(elem: &impl QWrite) -> String {
         let mut buffer = Vec::new();
         let mut tokio_buffer = tokio::io::BufWriter::new(&mut buffer);
-        let mut writer = Writer::new_with_indent(&mut tokio_buffer, b' ', 4);
-        elem.write(&mut writer, ctx).await.expect("xml serialization");
+        let q = quick_xml::writer::Writer::new_with_indent(&mut tokio_buffer, b' ', 4);
+        let ns_to_apply = vec![ ("xmlns:D".into(), "DAV:".into()) ];
+        let mut writer = Writer { q, ns_to_apply };
+
+        elem.qwrite(&mut writer).await.expect("xml serialization");
         tokio_buffer.flush().await.expect("tokio buffer flush");
         let got = std::str::from_utf8(buffer.as_slice()).unwrap();
 
@@ -660,20 +664,17 @@ mod tests {
     async fn basic_href() {
 
         let got = serialize(
-            NoExtension { root: false },
             &Href("/SOGo/dav/so/".into())
         ).await;
-        let expected = "<D:href>/SOGo/dav/so/</D:href>";
+        let expected = r#"<D:href xmlns:D="DAV:">/SOGo/dav/so/</D:href>"#;
 
-        assert_eq!(&got, expected);
+        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
     }
-
 
     #[tokio::test]
     async fn basic_multistatus() {
         let got = serialize(
-            NoExtension { root: true },
-            &Multistatus { 
+            &Multistatus::<Core> { 
                 responses: vec![], 
                 responsedescription: Some(ResponseDescription("Hello world".into())) 
             },
@@ -683,15 +684,14 @@ mod tests {
     <D:responsedescription>Hello world</D:responsedescription>
 </D:multistatus>"#;
 
-        assert_eq!(&got, expected);
+        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
     }
 
 
     #[tokio::test]
     async fn rfc_error_delete_locked() {
         let got = serialize(
-            NoExtension { root: true },
-            &Error(vec![
+            &Error::<Core>(vec![
                 Violation::LockTokenSubmitted(vec![
                     Href("/locked/".into())
                 ])
@@ -704,28 +704,26 @@ mod tests {
     </D:lock-token-submitted>
 </D:error>"#;
 
-        assert_eq!(&got, expected);
+        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
     }
 
     #[tokio::test]
     async fn rfc_propname_req() {
         let got = serialize(
-            NoExtension { root: true },
-            &PropFind::PropName,
+            &PropFind::<Core>::PropName,
         ).await;
 
         let expected = r#"<D:propfind xmlns:D="DAV:">
     <D:propname/>
 </D:propfind>"#;
 
-        assert_eq!(&got, expected);
+        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
     }
 
     #[tokio::test]
     async fn rfc_propname_res() {
         let got = serialize(
-            NoExtension { root: true },
-            &Multistatus {
+            &Multistatus::<Core> {
                 responses: vec![
                     Response {
                         href: Href("http://www.example.com/container/".into()),
@@ -808,8 +806,7 @@ mod tests {
     #[tokio::test]
     async fn rfc_allprop_req() {
         let got = serialize(
-            NoExtension { root: true },
-            &PropFind::AllProp(None),
+            &PropFind::<Core>::AllProp(None),
         ).await;
 
     let expected = r#"<D:propfind xmlns:D="DAV:">
@@ -823,8 +820,7 @@ mod tests {
     async fn rfc_allprop_res() {
         use chrono::{DateTime,FixedOffset,TimeZone};
         let got = serialize(
-            NoExtension { root: true },
-            &Multistatus {
+            &Multistatus::<Core> {
                 responses: vec![
                     Response {
                         href: Href("/container/".into()),
@@ -966,12 +962,10 @@ mod tests {
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
     }
 
-
     #[tokio::test]
     async fn rfc_allprop_include() {
         let got = serialize(
-            NoExtension { root: true },
-            &PropFind::AllProp(Some(Include(vec![
+            &PropFind::<Core>::AllProp(Some(Include(vec![
                PropertyRequest::DisplayName,
                PropertyRequest::ResourceType,
             ]))),
@@ -991,8 +985,7 @@ mod tests {
     #[tokio::test]
     async fn rfc_propertyupdate() {
         let got = serialize(
-            NoExtension { root: true },
-            &PropertyUpdate(vec![
+            &PropertyUpdate::<Core>(vec![
                 PropertyUpdateItem::Set(Set(PropValue(vec![
                     Property::GetContentLanguage("fr-FR".into()),
                 ]))),
@@ -1021,8 +1014,7 @@ mod tests {
     #[tokio::test]
     async fn rfc_delete_locked2() {
         let got = serialize(
-            NoExtension { root: true },
-            &Multistatus {
+            &Multistatus::<Core> {
                 responses: vec![Response {
                     href: Href("http://www.example.com/container/resource3".into()),
                     status_or_propstat: StatusOrPropstat::Status(Status(http::status::StatusCode::from_u16(423).unwrap())),
@@ -1050,7 +1042,6 @@ mod tests {
     #[tokio::test]
     async fn rfc_simple_lock_request() {
         let got = serialize(
-            NoExtension { root: true },
             &LockInfo {
                 lockscope: LockScope::Exclusive,
                 locktype: LockType::Write,
@@ -1076,8 +1067,7 @@ mod tests {
     #[tokio::test]
     async fn rfc_simple_lock_response() {
         let got = serialize(
-            NoExtension { root: true },
-            &PropValue(vec![
+            &PropValue::<Core>(vec![
                 Property::LockDiscovery(vec![ActiveLock {
                     lockscope: LockScope::Exclusive,
                     locktype: LockType::Write,

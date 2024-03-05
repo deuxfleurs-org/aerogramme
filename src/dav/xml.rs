@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use tokio::io::{AsyncWrite, AsyncBufRead};
 use quick_xml::events::{Event, BytesEnd, BytesStart, BytesText};
 use quick_xml::name::{Namespace, QName, PrefixDeclaration, ResolveResult, ResolveResult::*};
@@ -21,7 +20,7 @@ pub trait QRead<T> {
 /// Transform a Rust object into an XML stream of characters
 pub struct Writer<T: IWrite> {
     pub q: quick_xml::writer::Writer<T>,
-    root: bool,
+    pub ns_to_apply: Vec<(String, String)>,
 }
 impl<T: IWrite> Writer<T> {
     pub fn create_dav_element(&mut self, name: &str) -> BytesStart<'static> {
@@ -33,11 +32,9 @@ impl<T: IWrite> Writer<T> {
 
     fn create_ns_element(&mut self, ns: &str, name: &str) -> BytesStart<'static> {
         let mut start = BytesStart::new(format!("{}:{}", ns, name));
-        //@FIXME not what we want
-        if self.root {
-            start.push_attribute(("xmlns:D", "DAV:"));
-            start.push_attribute(("xmlns:C", "urn:ietf:params:xml:ns:caldav"));
-            self.root = false;
+        if !self.ns_to_apply.is_empty() {
+            start.extend_attributes(self.ns_to_apply.iter().map(|(k, n)| (k.as_str(), n.as_str())));
+            self.ns_to_apply.clear()
         }
         start
     }
