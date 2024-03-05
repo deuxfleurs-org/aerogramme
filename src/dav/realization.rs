@@ -6,8 +6,8 @@ use super::error;
 #[derive(Debug, PartialEq)]
 pub struct Disabled(());
 impl xml::QRead<Disabled> for Disabled {
-    async fn qread(&self, xml: &mut xml::Reader<impl xml::IRead>) -> Result<Option<Self>, error::ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut xml::Reader<impl xml::IRead>) -> Result<Option<Self>, error::ParsingError> {
+        Ok(None)
     }
 }
 impl xml::QWrite for Disabled {
@@ -20,6 +20,7 @@ impl xml::QWrite for Disabled {
 ///
 /// Any extension is kooh is disabled through an object we can't build
 /// due to a private inner element.
+#[derive(Debug, PartialEq)]
 pub struct Core {}
 impl dav::Extension for Core {
     type Error = Disabled;
@@ -29,6 +30,7 @@ impl dav::Extension for Core {
 }
 
 // WebDAV with the base Calendar implementation (RFC4791)
+#[derive(Debug, PartialEq)]
 pub struct Calendar {}
 impl dav::Extension for Calendar
 {

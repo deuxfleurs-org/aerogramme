@@ -5,6 +5,11 @@ use quick_xml::reader::NsReader;
 
 use super::error::ParsingError;
 
+// Constants
+pub const DAV_URN: &[u8] = b"DAV:";
+pub const CAL_URN: &[u8] = b"urn:ietf:params:xml:ns:caldav";
+pub const CARD_URN: &[u8] = b"urn:ietf:params:xml:ns:carddav";
+
 // Async traits
 pub trait IWrite = AsyncWrite + Unpin;
 pub trait IRead = AsyncBufRead + Unpin + 'static;
@@ -14,7 +19,7 @@ pub trait QWrite {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), quick_xml::Error>; 
 }
 pub trait QRead<T> {
-    async fn qread(&self, xml: &mut Reader<impl IRead>) -> Result<Option<T>, ParsingError>;
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<T>, ParsingError>;
 }
 
 /// Transform a Rust object into an XML stream of characters
@@ -42,24 +47,24 @@ impl<T: IWrite> Writer<T> {
 
 /// Transform an XML stream of characters into a Rust object
 pub struct Reader<T: IRead> {
+    pub rdr: NsReader<T>,
     evt: Event<'static>,
-    rdr: NsReader<T>,
     buf: Vec<u8>,
 }
 impl<T: IRead> Reader<T> {
-    async fn new(mut rdr: NsReader<T>) -> Result<Self, ParsingError> {
+    pub async fn new(mut rdr: NsReader<T>) -> Result<Self, ParsingError> {
         let mut buf: Vec<u8> = vec![];
         let evt = rdr.read_event_into_async(&mut buf).await?.into_owned();
         buf.clear();
         Ok(Self { evt, rdr, buf })
     }
 
-    fn peek(&self) -> &Event<'static> {
+    pub fn peek(&self) -> &Event<'static> {
         &self.evt
     }
 
     /// skip tag. Can't skip end, can't skip eof.
-    async fn skip(&mut self) -> Result<Event<'static>, ParsingError> {
+    pub async fn skip(&mut self) -> Result<Event<'static>, ParsingError> {
         match &self.evt {
             Event::Start(b) => {
                 let _span = self.rdr.read_to_end_into_async(b.to_end().name(), &mut self.buf).await?;
@@ -72,7 +77,7 @@ impl<T: IRead> Reader<T> {
     }
 
     /// read one more tag
-    async fn next(&mut self) -> Result<Event<'static>, ParsingError> {
+    pub async fn next(&mut self) -> Result<Event<'static>, ParsingError> {
        let evt = self.rdr.read_event_into_async(&mut self.buf).await?.into_owned(); 
        self.buf.clear();
        let old_evt = std::mem::replace(&mut self.evt, evt);
@@ -81,7 +86,7 @@ impl<T: IRead> Reader<T> {
 
 
     /// check if this is the desired tag
-    fn is_tag(&self, ns: &[u8], key: &str) -> bool {
+    pub fn is_tag(&self, ns: &[u8], key: &str) -> bool {
         let qname = match self.peek() {
             Event::Start(bs) | Event::Empty(bs) => bs.name(),
             Event::End(be) => be.name(),
@@ -101,7 +106,7 @@ impl<T: IRead> Reader<T> {
     }
 
     /// find start tag
-    async fn tag_start(&mut self, ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
+    pub async fn tag_start(&mut self, ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
         loop {
             match self.peek() {
                 Event::Start(b) if self.is_tag(ns, key) => break,
@@ -112,7 +117,7 @@ impl<T: IRead> Reader<T> {
     }
 
     // find stop tag
-    async fn tag_stop(&mut self, ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
+    pub async fn tag_stop(&mut self, ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
         loop {
             match self.peek() {
                 Event::End(b) if self.is_tag(ns, key) => break,
