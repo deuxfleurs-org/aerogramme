@@ -28,14 +28,13 @@ impl dav::Extension for Core {
     type ResourceType = Disabled;
 }
 
-/*
 // WebDAV with the base Calendar implementation (RFC4791)
-pub struct CalendarMin {}
-impl dav::Extension for CalendarMin
+pub struct Calendar {}
+impl dav::Extension for Calendar
 {
     type Error = cal::Violation;
     type Property = cal::Property;
     type PropertyRequest = cal::PropertyRequest;
     type ResourceType = cal::ResourceType;
 }
-*/
+

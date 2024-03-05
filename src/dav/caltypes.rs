@@ -26,6 +26,7 @@ use super::types as dav;
 /// instruction in Section 12.13.2 of [RFC2518].
 ///
 /// <!ELEMENT mkcalendar (DAV:set)>
+#[derive(Debug, PartialEq)]
 pub struct MkCalendar<E: dav::Extension>(pub dav::Set<E>);
 
 
@@ -42,6 +43,7 @@ pub struct MkCalendar<E: dav::Extension>(pub dav::Set<E>);
 /// Definition:
 ///
 /// <!ELEMENT mkcol-response (propstat+)>
+#[derive(Debug, PartialEq)]
 pub struct MkCalendarResponse<E: dav::Extension>(pub Vec<dav::PropStat<E>>);
 
 // --- (REPORT PART) ---
@@ -59,6 +61,7 @@ pub struct MkCalendarResponse<E: dav::Extension>(pub Vec<dav::PropStat<E>>);
 /// <!ELEMENT calendar-query ((DAV:allprop |
 ///                            DAV:propname |
 ///                            DAV:prop)?, filter, timezone?)>
+#[derive(Debug, PartialEq)]
 pub struct CalendarQuery<E: dav::Extension> {
     pub selector: Option<CalendarSelector<E>>,
     pub filter: Filter,
@@ -79,6 +82,7 @@ pub struct CalendarQuery<E: dav::Extension> {
 /// <!ELEMENT calendar-multiget ((DAV:allprop |
 ///                               DAV:propname |
 ///                               DAV:prop)?, DAV:href+)>
+#[derive(Debug, PartialEq)]
 pub struct CalendarMultiget<E: dav::Extension> {
     pub selector: Option<CalendarSelector<E>>,
     pub href: Vec<dav::Href>,
@@ -95,14 +99,17 @@ pub struct CalendarMultiget<E: dav::Extension> {
 ///
 /// Definition:
 /// <!ELEMENT free-busy-query (time-range)>
+#[derive(Debug, PartialEq)]
 pub struct FreeBusyQuery(pub TimeRange);
 
 // ----- Hooks -----
+#[derive(Debug, PartialEq)]
 pub enum ResourceType {
     Calendar,
 }
 
 /// Check the matching Property object for documentation
+#[derive(Debug, PartialEq)]
 pub enum PropertyRequest {
     CalendarDescription,
     CalendarTimezone,
@@ -116,6 +123,8 @@ pub enum PropertyRequest {
     SupportedCollationSet,    
     CalendarData(CalendarDataRequest),
 }
+
+#[derive(Debug, PartialEq)]
 pub enum Property {
     /// Name:  calendar-description
     /// 
@@ -591,6 +600,7 @@ pub enum Property {
     CalendarData(CalendarDataPayload),
 }
 
+#[derive(Debug, PartialEq)]
 pub enum Violation {
     /// (DAV:resource-must-be-null): A resource MUST NOT exist at the
     /// Request-URI;
@@ -761,6 +771,7 @@ pub enum Violation {
 /// If the client chooses a collation not supported by the server, the
 /// server MUST respond with a CALDAV:supported-collation precondition
 /// error response.
+#[derive(Debug, PartialEq)]
 pub struct SupportedCollation(pub Collation);
 
 /// <!ELEMENT calendar-data (#PCDATA)>
@@ -769,6 +780,7 @@ pub struct SupportedCollation(pub Collation);
 /// when nested in the DAV:prop XML element in a calendaring
 /// REPORT response to specify the content of a returned
 /// calendar object resource.
+#[derive(Debug, PartialEq)]
 pub struct CalendarDataPayload {
     pub mime: Option<CalendarDataSupport>,
     pub payload: String,
@@ -781,6 +793,7 @@ pub struct CalendarDataPayload {
 /// when nested in the DAV:prop XML element in a calendaring
 /// REPORT request to specify which parts of calendar object
 /// resources should be returned in the response;
+#[derive(Debug, PartialEq)]
 pub struct CalendarDataRequest {
     pub mime: Option<CalendarDataSupport>,
     pub comp: Option<Comp>,
@@ -795,6 +808,7 @@ pub struct CalendarDataRequest {
 /// when nested in the CALDAV:supported-calendar-data property
 /// to specify a supported media type for calendar object
 /// resources;
+#[derive(Debug, PartialEq)]
 pub struct CalendarDataEmpty(pub Option<CalendarDataSupport>);
 
 /// <!ATTLIST calendar-data content-type CDATA "text/calendar"
@@ -803,6 +817,7 @@ pub struct CalendarDataEmpty(pub Option<CalendarDataSupport>);
 /// version value: a version string
 /// attributes can be used on all three variants of the
 /// CALDAV:calendar-data XML element.
+#[derive(Debug, PartialEq)]
 pub struct CalendarDataSupport {
     pub content_type: String,
     pub version: String,
@@ -828,10 +843,13 @@ pub struct CalendarDataSupport {
 /// However, the CALDAV:prop and CALDAV:allprop elements are defined
 /// in the "urn:ietf:params:xml:ns:caldav" namespace instead of the
 /// "DAV:" namespace.
+#[derive(Debug, PartialEq)]
 pub struct Comp {
     pub name: Component,
     pub additional_rules: Option<CompInner>,
 }
+
+#[derive(Debug, PartialEq)]
 pub struct CompInner {
     pub prop_kind: PropKind,
     pub comp_kind: CompKind,
@@ -850,6 +868,7 @@ pub struct CompInner {
 ///     <C:comp name="VEVENT"/>
 ///     <C:comp name="VTODO"/>
 /// </C:supported-calendar-component-set>
+#[derive(Debug, PartialEq)]
 pub struct CompSupport(pub Component);
 
 /// Name:  allcomp
@@ -865,6 +884,7 @@ pub struct CompSupport(pub Component);
 /// Definition:
 ///
 /// <!ELEMENT allcomp EMPTY>
+#[derive(Debug, PartialEq)]
 pub enum CompKind {
     AllComp,
     Comp(Vec<Comp>),
@@ -888,6 +908,7 @@ pub enum CompKind {
 /// allprop element defined in [RFC2518].  However, the CALDAV:allprop
 /// element is defined in the "urn:ietf:params:xml:ns:caldav"
 /// namespace instead of the "DAV:" namespace.
+#[derive(Debug, PartialEq)]
 pub enum PropKind {
     AllProp,
     Prop(Vec<CalProp>),
@@ -917,11 +938,13 @@ pub enum PropKind {
 /// element defined in [RFC2518].  However, the CALDAV:prop element is
 /// defined in the "urn:ietf:params:xml:ns:caldav" namespace instead
 /// of the "DAV:" namespace.
+#[derive(Debug, PartialEq)]
 pub struct CalProp {
     pub name: ComponentProperty,
     pub novalue: Option<bool>,
 }
 
+#[derive(Debug, PartialEq)]
 pub enum RecurrenceModifier {
     Expand(Expand),
     LimitRecurrenceSet(LimitRecurrenceSet),
@@ -967,6 +990,7 @@ pub enum RecurrenceModifier {
 ///                  end   CDATA #REQUIRED>
 /// start value: an iCalendar "date with UTC time"
 /// end value: an iCalendar "date with UTC time"
+#[derive(Debug, PartialEq)]
 pub struct Expand(pub DateTime<Utc>, pub DateTime<Utc>);
 
 /// CALDAV:limit-recurrence-set XML Element
@@ -1014,6 +1038,7 @@ pub struct Expand(pub DateTime<Utc>, pub DateTime<Utc>);
 ///                                end   CDATA #REQUIRED>
 /// start value: an iCalendar "date with UTC time"
 /// end value: an iCalendar "date with UTC time"
+#[derive(Debug, PartialEq)]
 pub struct LimitRecurrenceSet(pub DateTime<Utc>, pub DateTime<Utc>);
 
 /// Name:  limit-freebusy-set
@@ -1044,9 +1069,11 @@ pub struct LimitRecurrenceSet(pub DateTime<Utc>, pub DateTime<Utc>);
 ///                              end   CDATA #REQUIRED>
 /// start value: an iCalendar "date with UTC time"
 /// end value: an iCalendar "date with UTC time"
+#[derive(Debug, PartialEq)]
 pub struct LimitFreebusySet(pub DateTime<Utc>, pub DateTime<Utc>);
 
 /// Used by CalendarQuery & CalendarMultiget
+#[derive(Debug, PartialEq)]
 pub enum CalendarSelector<E: dav::Extension> {
     AllProp,
     PropName,
@@ -1101,17 +1128,20 @@ pub enum CalendarSelector<E: dav::Extension> {
 ///      <!ATTLIST comp-filter name CDATA #REQUIRED>
 ///      name value: a calendar object or calendar component
 ///                  type (e.g., VEVENT)
+#[derive(Debug, PartialEq)]
 pub struct CompFilter {
     pub name: Component,
     // Option 1 = None, Option 2, 3, 4 = Some
     pub additional_rules: Option<CompFilterRules>,
 }
+#[derive(Debug, PartialEq)]
 pub enum CompFilterRules {
     // Option 2
     IsNotDefined,
     // Options 3 & 4
     Matches(CompFilterMatch),
 }
+#[derive(Debug, PartialEq)]
 pub struct CompFilterMatch {
     pub time_range: Option<TimeRange>,
     pub prop_filter: Vec<PropFilter>,
@@ -1162,22 +1192,26 @@ pub struct CompFilterMatch {
 ///
 ///      <!ATTLIST prop-filter name CDATA #REQUIRED>
 ///      name value: a calendar property name (e.g., ATTENDEE)
+#[derive(Debug, PartialEq)]
 pub struct PropFilter {
     pub name: Component,
     // None = Option 1, Some() = Option 2, 3 & 4
     pub additional_rules: Option<PropFilterRules>,
 }
+#[derive(Debug, PartialEq)]
 pub enum PropFilterRules {
     // Option 2
     IsNotDefined,
     // Options 3 & 4
     Match(PropFilterMatch),
 }
+#[derive(Debug, PartialEq)]
 pub struct PropFilterMatch {
     pub time_range: Option<TimeRange>,
     pub time_or_text: Option<TimeOrText>,
     pub param_filter: Vec<ParamFilter>,
 }
+#[derive(Debug, PartialEq)]
 pub enum TimeOrText {
     Time(TimeRange),
     Text(TextMatch),
@@ -1211,6 +1245,7 @@ pub enum TimeOrText {
 /// PCDATA value: string
 ///  <!ATTLIST text-match collation        CDATA "i;ascii-casemap"
 ///  negate-condition (yes | no) "no">
+#[derive(Debug, PartialEq)]
 pub struct TextMatch {
     pub collation: Option<Collation>,
     pub negate_condition: Option<bool>,
@@ -1246,10 +1281,12 @@ pub struct TextMatch {
 ///
 ///      <!ATTLIST param-filter name CDATA #REQUIRED>
 ///        name value: a property parameter name (e.g., PARTSTAT)
+#[derive(Debug, PartialEq)]
 pub struct ParamFilter {
     pub name: PropertyParameter,
     pub additional_rules: Option<ParamFilterMatch>,
 }
+#[derive(Debug, PartialEq)]
 pub enum ParamFilterMatch {
     IsNotDefined,
     Match(TextMatch),
@@ -1305,6 +1342,7 @@ pub enum ParamFilterMatch {
 ///
 /// <!ELEMENT timezone (#PCDATA)>
 /// PCDATA value: an iCalendar object with exactly one VTIMEZONE
+#[derive(Debug, PartialEq)]
 pub struct TimeZone(pub String);
 
 /// Name:  filter
@@ -1320,6 +1358,7 @@ pub struct TimeZone(pub String);
 ///
 /// Definition:
 /// <!ELEMENT filter (comp-filter)>
+#[derive(Debug, PartialEq)]
 pub struct Filter(pub CompFilter);
 
 /// Name: time-range
@@ -1331,6 +1370,7 @@ pub struct Filter(pub CompFilter);
 ///                      end   CDATA #IMPLIED>
 /// start value: an iCalendar "date with UTC time"
 /// end value: an iCalendar "date with UTC time"
+#[derive(Debug, PartialEq)]
 pub enum TimeRange {
     OnlyStart(DateTime<Utc>),
     OnlyEnd(DateTime<Utc>),
@@ -1340,6 +1380,7 @@ pub enum TimeRange {
 // ----------------------- ENUM ATTRIBUTES ---------------------
 
 /// Known components
+#[derive(Debug, PartialEq)]
 pub enum Component {
     VCalendar,
     VJournal,
@@ -1368,9 +1409,11 @@ impl Component {
 /// name="VERSION", name="SUMMARY", etc.
 /// Can be set on different objects: VCalendar, VEvent, etc.
 /// Might be replaced by an enum later
+#[derive(Debug, PartialEq)]
 pub struct ComponentProperty(pub String);
 
 /// like PARSTAT
+#[derive(Debug, PartialEq)]
 pub struct PropertyParameter(pub String);
 impl PropertyParameter {
     pub fn as_str<'a>(&'a self) -> &'a str {
@@ -1378,7 +1421,7 @@ impl PropertyParameter {
     }
 }
 
-#[derive(Default)]
+#[derive(Default,Debug,PartialEq)]
 pub enum Collation {
     #[default]
     AsciiCaseMap,

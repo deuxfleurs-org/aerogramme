@@ -662,19 +662,25 @@ impl QWrite for TimeRange {
     }
 }
 
-/*
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::dav::types as dav;
+    use crate::dav::realization::Calendar;
     use tokio::io::AsyncWriteExt;
     use chrono::{Utc,TimeZone,DateTime};
 
-    async fn serialize<C: Context, Q: QuickWritable<C>>(ctx: C, elem: &Q) -> String {
+    async fn serialize(elem: &impl QWrite) -> String {
         let mut buffer = Vec::new();
         let mut tokio_buffer = tokio::io::BufWriter::new(&mut buffer);
-        let mut writer = Writer::new_with_indent(&mut tokio_buffer, b' ', 4);
-        elem.write(&mut writer, ctx).await.expect("xml serialization");
+        let q = quick_xml::writer::Writer::new_with_indent(&mut tokio_buffer, b' ', 4);
+        let ns_to_apply = vec![ 
+            ("xmlns:D".into(), "DAV:".into()),
+            ("xmlns:C".into(), "urn:ietf:params:xml:ns:caldav".into()),
+        ];
+        let mut writer = Writer { q, ns_to_apply };
+
+        elem.qwrite(&mut writer).await.expect("xml serialization");
         tokio_buffer.flush().await.expect("tokio buffer flush");
         let got = std::str::from_utf8(buffer.as_slice()).unwrap();
 
@@ -684,8 +690,7 @@ mod tests {
     #[tokio::test]
     async fn basic_violation() {
         let got = serialize(
-            CalExtension { root: true },
-            &dav::Error(vec![
+            &dav::Error::<Calendar>(vec![
                 dav::Violation::Extension(Violation::ResourceMustBeNull),
             ])
         ).await;
@@ -700,8 +705,7 @@ mod tests {
     #[tokio::test]
     async fn rfc_calendar_query1_req() {
         let got = serialize(
-            CalExtension { root: true },
-            &CalendarQuery {
+            &CalendarQuery::<Calendar> {
                 selector: Some(CalendarSelector::Prop(dav::PropName(vec![
                     dav::PropertyRequest::GetEtag,
                     dav::PropertyRequest::Extension(PropertyRequest::CalendarData(CalendarDataRequest {
@@ -806,8 +810,7 @@ mod tests {
     #[tokio::test]
     async fn rfc_calendar_query1_res() {
         let got = serialize(
-            CalExtension { root: true },
-            &dav::Multistatus {
+            &dav::Multistatus::<Calendar> {
                 responses: vec![
                     dav::Response {
                         href: dav::Href("http://cal.example.com/bernard/work/abcd2.ics".into()),
@@ -877,4 +880,3 @@ mod tests {
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
     }
 }
-*/

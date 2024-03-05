@@ -1,13 +1,24 @@
+// utils
 mod error;
 mod xml;
+
+// webdav
 mod types;
+mod encoder;
+mod decoder;
+
+// calendar
 mod caltypes;
+mod calencoder;
+mod caldecoder;
+
+// wip
 mod acltypes;
 mod versioningtypes;
-mod encoder;
-mod calencoder;
-mod decoder;
+
+// final type
 mod realization;
+
 
 use std::net::SocketAddr;
 
