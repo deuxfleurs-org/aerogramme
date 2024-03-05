@@ -8,33 +8,32 @@ use quick_xml::reader::NsReader;
 use tokio::io::AsyncBufRead;
 
 use super::types::*;
+use super::error::*;
 
-#[derive(Debug)]
-pub enum ParsingError {
-    NamespacePrefixAlreadyUsed,
-    WrongToken,
-    TagNotFound,
-    QuickXml(quick_xml::Error), 
-    Eof
+/*
+// --- Traits ----
+
+trait Reader = AsyncBufRead+Unpin+'static;
+
+trait Decodable: Extension {
+    async fn decode_propreq(xml: &mut PeekRead<impl Reader>) -> Result<Option<Self::PropertyRequest>, ParsingError>;
 }
-impl From<AttrError> for ParsingError {
-    fn from(value: AttrError) -> Self {
-        Self::QuickXml(value.into())
+impl Decodable for NoExtension {
+    async fn decode_propreq(xml: &mut PeekRead<impl Reader>) -> Result<Option<Disabled>, ParsingError> {
+        Ok(None)
     }
 }
-impl From<quick_xml::Error> for ParsingError {
-    fn from(value: quick_xml::Error) -> Self {
-        Self::QuickXml(value)
-    }
+
+pub trait QReadable<T: Reader>: Sized {
+    async fn read(xml: &mut PeekRead<T>) -> Result<Self, ParsingError>;
 }
+
+// --- Peek read with namespaces
 
 const DAV_URN: &[u8] = b"DAV:";
 const CALDAV_URN: &[u8] = b"urn:ietf:params:xml:ns:caldav";
 const CARDDAV_URN: &[u8] = b"urn:ietf:params:xml:ns:carddav";
 //const XML_URN: &[u8] = b"xml";
-
-trait Reader = AsyncBufRead+Unpin+'static;
-
 pub struct PeekRead<T: Reader> {
     evt: Event<'static>,
     rdr: NsReader<T>,
@@ -117,11 +116,9 @@ impl<T: Reader> PeekRead<T> {
     }
 }
 
-pub trait QReadable<T: Reader>: Sized {
-    async fn read(xml: &mut PeekRead<T>) -> Result<Self, ParsingError>;
-}
+// ----- Decode ----
 
-impl<E: Extension, T: Reader> QReadable<T> for PropFind<E> {
+impl<E: Decodable, T: Reader> QReadable<T> for PropFind<E> {
     async fn read(xml: &mut PeekRead<T>) -> Result<PropFind<E>, ParsingError> {
         // Find propfind
         xml.tag_start(DAV_URN, "propfind").await?;
@@ -161,13 +158,13 @@ impl<E: Extension, T: Reader> QReadable<T> for PropFind<E> {
 }
 
 
-impl<E: Extension, T: Reader> QReadable<T> for Include<E> {
+impl<E: Decodable, T: Reader> QReadable<T> for Include<E> {
     async fn read(xml: &mut PeekRead<T>) -> Result<Include<E>, ParsingError> {
         xml.tag_start(DAV_URN, "include").await?;
         let mut acc: Vec<PropertyRequest<E>> = Vec::new();
         loop {
             match xml.peek() {
-                Event::Start(_) => acc.push(PropertyRequest::read(xml).await?),
+                Event::Start(_) | Event::Empty(_) => acc.push(PropertyRequest::read(xml).await?),
                 Event::End(_) if xml.is_tag(DAV_URN, "include") => break,
                 _ => { xml.skip().await?; },
             }
@@ -177,13 +174,13 @@ impl<E: Extension, T: Reader> QReadable<T> for Include<E> {
     }
 }
 
-impl<E: Extension, T: Reader> QReadable<T> for PropName<E> {
+impl<E: Decodable, T: Reader> QReadable<T> for PropName<E> {
     async fn read(xml: &mut PeekRead<T>) -> Result<PropName<E>, ParsingError> {
         xml.tag_start(DAV_URN, "prop").await?;
         let mut acc: Vec<PropertyRequest<E>> = Vec::new();
         loop {
             match xml.peek() {
-                Event::Start(_) => acc.push(PropertyRequest::read(xml).await?),
+                Event::Start(_) | Event::Empty(_) => acc.push(PropertyRequest::read(xml).await?),
                 Event::End(_) if xml.is_tag(DAV_URN, "prop") => break,
                 _ => { xml.skip().await?; },
             }
@@ -193,12 +190,52 @@ impl<E: Extension, T: Reader> QReadable<T> for PropName<E> {
     }
 }
 
-impl<E: Extension, T: Reader> QReadable<T> for PropertyRequest<E> {
+impl<E: Decodable, T: Reader> QReadable<T> for PropertyRequest<E> {
     async fn read(xml: &mut PeekRead<T>) -> Result<PropertyRequest<E>, ParsingError> {
-        /*match xml.peek() {
-            
-        }*/
-        unimplemented!();
+        loop {
+            let (need_close, bs) = match xml.peek() {
+                Event::Start(b) => (true, b),
+                Event::Empty(b) => (false, b),
+                _ => { 
+                    xml.skip().await?; 
+                    continue
+                },
+            };
+
+            let mut maybe_res = None;
+
+            // Option 1: a pure DAV property
+            let (ns, loc) = xml.rdr.resolve_element(bs.name());
+            if matches!(ns, Bound(Namespace(ns)) if ns == DAV_URN) {
+                maybe_res = match loc.into_inner() {
+                    b"creationdate" => Some(PropertyRequest::CreationDate),
+                    b"displayname" => Some(PropertyRequest::DisplayName),
+                    b"getcontentlanguage" => Some(PropertyRequest::GetContentLanguage),
+                    b"getcontentlength" => Some(PropertyRequest::GetContentLength),
+                    b"getetag" => Some(PropertyRequest::GetEtag),
+                    b"getlastmodified" => Some(PropertyRequest::GetLastModified),
+                    b"lockdiscovery" => Some(PropertyRequest::LockDiscovery),
+                    b"resourcetype" => Some(PropertyRequest::ResourceType),
+                    b"supportedlock" => Some(PropertyRequest::SupportedLock),
+                    _ => None,
+                };
+            }
+
+            // Option 2: an extension property
+            if maybe_res.is_none() {
+                maybe_res = E::decode_propreq(xml).await?.map(PropertyRequest::Extension);
+            }
+
+            // In any cases, we must close the opened tag
+            if need_close {
+                xml.skip().await?; 
+            }
+
+            // Return if something is found - otherwise loop
+            if let Some(res) = maybe_res {
+                return Ok(res)
+            }
+        }
     }
 }
 
@@ -207,7 +244,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn basic_propfind() {
+    async fn basic_propfind_propname() {
         let src = r#"<?xml version="1.0" encoding="utf-8" ?>
 <rando/>
 <garbage><old/></garbage>
@@ -220,4 +257,37 @@ mod tests {
         let got = PropFind::<NoExtension>::read(&mut rdr).await.unwrap();
         assert!(matches!(got, PropFind::PropName));
     }
+/*
+    #[tokio::test]
+    async fn basic_propfind_prop() {
+        let src = r#"<?xml version="1.0" encoding="utf-8" ?>
+<rando/>
+<garbage><old/></garbage>
+<D:propfind xmlns:D="DAV:">
+    <D:prop>
+        <displayname/>
+        <getcontentlength/>
+        <getcontenttype/>
+        <getetag/>
+        <getlastmodified/>
+        <resourcetype/>
+        <supportedlock/>
+    </D:prop>
+</D:propfind>
+"#;
+
+        let mut rdr = PeekRead::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
+        let got = PropFind::<NoExtension>::read(&mut rdr).await.unwrap();
+        assert_eq!(got, PropFind::Prop(PropName(vec![
+            PropertyRequest::DisplayName,
+            PropertyRequest::GetContentLength,
+            PropertyRequest::GetContentType,
+            PropertyRequest::GetEtag,
+            PropertyRequest::GetLastModified,
+            PropertyRequest::ResourceType,
+            PropertyRequest::SupportedLock,
+        ])));
+    }
+    */
 }
+*/

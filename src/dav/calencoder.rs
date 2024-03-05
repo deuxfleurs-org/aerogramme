@@ -1,3 +1,4 @@
+/*
 use super::encoder::{QuickWritable, Context};
 use super::caltypes::*;
 use super::types::Extension;
@@ -893,3 +894,4 @@ mod tests {
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
     }
 }
+*/

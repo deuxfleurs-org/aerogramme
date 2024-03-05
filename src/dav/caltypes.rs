@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 
+/*
 use chrono::{DateTime,Utc};
-use super::types as Dav;
+use super::types as dav;
 
 //@FIXME ACL (rfc3744) is missing, required
 //@FIXME Versioning (rfc3253) is missing, required
@@ -11,15 +12,6 @@ use super::types as Dav;
 // For reference, non-official extensions documented by SabreDAV:
 // https://github.com/apple/ccs-calendarserver/tree/master/doc/Extensions
 
-pub struct CalExtension {
-    pub root: bool
-}
-impl Dav::Extension for CalExtension {
-    type Error = Violation;
-    type Property = Property;
-    type PropertyRequest = PropertyRequest; 
-    type ResourceType = ResourceType;
-}
 
 // ----- Root elements -----
 
@@ -35,7 +27,7 @@ impl Dav::Extension for CalExtension {
 /// instruction in Section 12.13.2 of [RFC2518].
 ///
 /// <!ELEMENT mkcalendar (DAV:set)>
-pub struct MkCalendar<E: Dav::Extension>(pub Dav::Set<E>);
+pub struct MkCalendar<E: dav::Extension>(pub dav::Set<E>);
 
 
 /// If a response body for a successful request is included, it MUST
@@ -51,7 +43,7 @@ pub struct MkCalendar<E: Dav::Extension>(pub Dav::Set<E>);
 /// Definition:
 ///
 /// <!ELEMENT mkcol-response (propstat+)>
-pub struct MkCalendarResponse<T: Dav::Extension>(pub Vec<Dav::PropStat<T>>);
+pub struct MkCalendarResponse<E: dav::Extension>(pub Vec<dav::PropStat<E>>);
 
 // --- (REPORT PART) ---
 
@@ -68,8 +60,8 @@ pub struct MkCalendarResponse<T: Dav::Extension>(pub Vec<Dav::PropStat<T>>);
 /// <!ELEMENT calendar-query ((DAV:allprop |
 ///                            DAV:propname |
 ///                            DAV:prop)?, filter, timezone?)>
-pub struct CalendarQuery<T: Dav::Extension> {
-    pub selector: Option<CalendarSelector<T>>,
+pub struct CalendarQuery<E: dav::Extension> {
+    pub selector: Option<CalendarSelector<E>>,
     pub filter: Filter,
     pub timezone: Option<TimeZone>,
 }
@@ -88,9 +80,9 @@ pub struct CalendarQuery<T: Dav::Extension> {
 /// <!ELEMENT calendar-multiget ((DAV:allprop |
 ///                               DAV:propname |
 ///                               DAV:prop)?, DAV:href+)>
-pub struct CalendarMultiget<T: Dav::Extension> {
-    pub selector: Option<CalendarSelector<T>>,
-    pub href: Vec<Dav::Href>,
+pub struct CalendarMultiget<E: dav::Extension> {
+    pub selector: Option<CalendarSelector<E>>,
+    pub href: Vec<dav::Href>,
 }
 
 /// Name:  free-busy-query
@@ -1056,10 +1048,10 @@ pub struct LimitRecurrenceSet(pub DateTime<Utc>, pub DateTime<Utc>);
 pub struct LimitFreebusySet(pub DateTime<Utc>, pub DateTime<Utc>);
 
 /// Used by CalendarQuery & CalendarMultiget
-pub enum CalendarSelector<T: Dav::Extension> {
+pub enum CalendarSelector<E: dav::Extension> {
     AllProp,
     PropName,
-    Prop(Dav::PropName<T>),
+    Prop(dav::PropName<E>),
 }
 
 /// Name:  comp-filter
@@ -1402,4 +1394,4 @@ impl Collation {
             Self::Unknown(c) => c.as_str(),
         }
     }
-}
+}*/

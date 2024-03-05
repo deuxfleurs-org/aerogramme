@@ -2,390 +2,339 @@ use std::io::Cursor;
 
 use quick_xml::Error as QError;
 use quick_xml::events::{Event, BytesEnd, BytesStart, BytesText};
-use quick_xml::writer::{ElementWriter, Writer};
+use quick_xml::writer::ElementWriter;
 use quick_xml::name::PrefixDeclaration;
 use tokio::io::AsyncWrite;
 use super::types::*;
+use super::xml::{Writer,QWrite,IWrite};
 
-
-//-------------- TRAITS ----------------------
-
-/// Basic encode trait to make a type encodable
-pub trait QuickWritable<C: Context> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError>; 
-}
-
-/// Encoding context
-pub trait Context: Extension {
-    fn child(&self) -> Self;
-    fn create_dav_element(&self, name: &str) -> BytesStart;
-    async fn hook_error(&self, err: &Self::Error, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError>;
-    async fn hook_property(&self, prop: &Self::Property, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError>;
-    async fn hook_propertyrequest(&self, prop: &Self::PropertyRequest, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError>;
-    async fn hook_resourcetype(&self, prop: &Self::ResourceType, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError>;
-}
-
-/// -------------- NoExtension Encoding Context
-impl Context for NoExtension {
-    fn child(&self) -> Self {
-        Self { root: false }
-    }
-    fn create_dav_element(&self, name: &str) -> BytesStart {
-        let mut start = BytesStart::new(format!("D:{}", name));
-        if self.root {
-            start.push_attribute(("xmlns:D", "DAV:"));
-        }
-        start
-    }
-    async fn hook_error(&self, _err: &Disabled, _xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
-        unreachable!();
-    }
-    async fn hook_property(&self, _prop: &Disabled, _xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
-        unreachable!();
-    }
-    async fn hook_propertyrequest(&self, _prop: &Disabled, _xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
-        unreachable!();
-    }
-    async fn hook_resourcetype(&self, _restype: &Disabled, _xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
-        unreachable!();
-    }
-}
-
-
-//--------------------- ENCODING --------------------
 
 // --- XML ROOTS
 
 /// PROPFIND REQUEST
-impl<C: Context> QuickWritable<C> for PropFind<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("propfind");
+impl<E: Extension> QWrite for PropFind<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("propfind");
         let end = start.to_end();
-        let ctx = ctx.child();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
         match self {
-            Self::PropName => xml.write_event_async(Event::Empty(ctx.create_dav_element("propname"))).await?,
+            Self::PropName => {
+                let empty_propname = xml.create_dav_element("propname");
+                xml.q.write_event_async(Event::Empty(empty_propname)).await?
+            },
             Self::AllProp(maybe_include) => {
-                xml.write_event_async(Event::Empty(ctx.create_dav_element("allprop"))).await?;
+                let empty_allprop = xml.create_dav_element("allprop");
+                xml.q.write_event_async(Event::Empty(empty_allprop)).await?;
                 if let Some(include) = maybe_include {
-                    include.write(xml, ctx.child()).await?;
+                    include.qwrite(xml).await?;
                 }
             },
-            Self::Prop(propname) => propname.write(xml, ctx.child()).await?,
+            Self::Prop(propname) => propname.qwrite(xml).await?,
         }
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
 /// PROPPATCH REQUEST
-impl<C: Context> QuickWritable<C> for PropertyUpdate<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("propertyupdate");
+impl<E: Extension> QWrite for PropertyUpdate<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("propertyupdate");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
         for update in self.0.iter() {
-            update.write(xml, ctx.child()).await?;
+            update.qwrite(xml).await?;
         }
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
 
 /// PROPFIND RESPONSE, PROPPATCH RESPONSE, COPY RESPONSE, MOVE RESPONSE
 /// DELETE RESPONSE, 
-impl<C: Context> QuickWritable<C> for Multistatus<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("multistatus");
+impl<E: Extension> QWrite for Multistatus<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("multistatus");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
         for response in self.responses.iter() {
-            response.write(xml, ctx.child()).await?;
+            response.qwrite(xml).await?;
         }
         if let Some(description) = &self.responsedescription {
-            description.write(xml, ctx.child()).await?;
+            description.qwrite(xml).await?;
         }
 
-        xml.write_event_async(Event::End(end)).await?;
+        xml.q.write_event_async(Event::End(end)).await?;
         Ok(())
     }
 }
 
 /// LOCK REQUEST
-impl<C: Context> QuickWritable<C> for LockInfo {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("lockinfo");
+impl QWrite for LockInfo {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("lockinfo");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        self.lockscope.write(xml, ctx.child()).await?;
-        self.locktype.write(xml, ctx.child()).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        self.lockscope.qwrite(xml).await?;
+        self.locktype.qwrite(xml).await?;
         if let Some(owner) = &self.owner {
-            owner.write(xml, ctx.child()).await?;
+            owner.qwrite(xml).await?;
         }
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
 /// SOME LOCK RESPONSES
-impl<C: Context> QuickWritable<C> for PropValue<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("prop");
+impl<E: Extension> QWrite for PropValue<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("prop");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
         for propval in &self.0 {
-            propval.write(xml, ctx.child()).await?;
+            propval.qwrite(xml).await?;
         }
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
 // --- XML inner elements
-impl<C: Context> QuickWritable<C> for PropertyUpdateItem<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl<E: Extension> QWrite for PropertyUpdateItem<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
-            Self::Set(set) => set.write(xml, ctx).await,
-            Self::Remove(rm) => rm.write(xml, ctx).await,
+            Self::Set(set) => set.qwrite(xml).await,
+            Self::Remove(rm) => rm.qwrite(xml).await,
         }
     }
 }
 
-impl<C: Context> QuickWritable<C> for Set<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("set");
+impl<E: Extension> QWrite for Set<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("set");
         let end = start.to_end();
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        self.0.write(xml, ctx.child()).await?;
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        self.0.qwrite(xml).await?;
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: Context> QuickWritable<C> for Remove<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("remove");
+impl<E: Extension> QWrite for Remove<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("remove");
         let end = start.to_end();
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        self.0.write(xml, ctx.child()).await?;
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        self.0.qwrite(xml).await?;
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
 
-impl<C: Context> QuickWritable<C> for AnyProp<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl<E: Extension> QWrite for AnyProp<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
-            Self::Name(propname) => propname.write(xml, ctx).await,
-            Self::Value(propval) => propval.write(xml, ctx).await,
+            Self::Name(propname) => propname.qwrite(xml).await,
+            Self::Value(propval) => propval.qwrite(xml).await,
         }
     }
 }
 
-impl<C: Context> QuickWritable<C> for PropName<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("prop");
+impl<E: Extension> QWrite for PropName<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("prop");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
         for propname in &self.0 {
-            propname.write(xml, ctx.child()).await?;
+            propname.qwrite(xml).await?;
         }
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
 
-impl<C: Context> QuickWritable<C> for Href {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("href");
+impl QWrite for Href {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("href");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        xml.write_event_async(Event::Text(BytesText::new(&self.0))).await?;
-        xml.write_event_async(Event::End(end)).await?;
-
-        Ok(())
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Text(BytesText::new(&self.0))).await?;
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: Context> QuickWritable<C> for Response<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("response");
+impl<E: Extension> QWrite for Response<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("response");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        self.href.write(xml, ctx.child()).await?; 
-        self.status_or_propstat.write(xml, ctx.child()).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        self.href.qwrite(xml).await?; 
+        self.status_or_propstat.qwrite(xml).await?;
         if let Some(error) = &self.error {
-            error.write(xml, ctx.child()).await?;
+            error.qwrite(xml).await?;
         }
         if let Some(responsedescription) = &self.responsedescription {
-            responsedescription.write(xml, ctx.child()).await?;
+            responsedescription.qwrite(xml).await?;
         }
         if let Some(location) = &self.location {
-            location.write(xml, ctx.child()).await?;
+            location.qwrite(xml).await?;
         }
-        xml.write_event_async(Event::End(end)).await?;
-
-        Ok(())
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: Context> QuickWritable<C> for StatusOrPropstat<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl<E: Extension> QWrite for StatusOrPropstat<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
-            Self::Status(status) => status.write(xml, ctx.child()).await,
+            Self::Status(status) => status.qwrite(xml).await,
             Self::PropStat(propstat_list) => {
                 for propstat in propstat_list.iter() {
-                    propstat.write(xml, ctx.child()).await?;
+                    propstat.qwrite(xml).await?;
                 }
-
                 Ok(())
             }
         }
     }
 }
 
-impl<C: Context> QuickWritable<C> for Status {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("status");
+impl QWrite for Status {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("status");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
 
         let txt = format!("HTTP/1.1 {} {}", self.0.as_str(), self.0.canonical_reason().unwrap_or("No reason"));
-        xml.write_event_async(Event::Text(BytesText::new(&txt))).await?;
+        xml.q.write_event_async(Event::Text(BytesText::new(&txt))).await?;
 
-        xml.write_event_async(Event::End(end)).await?;
-
-        Ok(())
-    }
-}
-
-impl<C: Context> QuickWritable<C> for ResponseDescription {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("responsedescription");
-        let end = start.to_end();
-
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        xml.write_event_async(Event::Text(BytesText::new(&self.0))).await?;
-        xml.write_event_async(Event::End(end)).await?;
+        xml.q.write_event_async(Event::End(end)).await?;
 
         Ok(())
     }
 }
 
-impl<C: Context> QuickWritable<C> for Location {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("location");
+impl QWrite for ResponseDescription {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("responsedescription");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        self.0.write(xml, ctx.child()).await?;
-        xml.write_event_async(Event::End(end)).await?;
-
-        Ok(())
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Text(BytesText::new(&self.0))).await?;
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: Context> QuickWritable<C> for PropStat<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("propstat");
+impl QWrite for Location {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("location");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        self.prop.write(xml, ctx.child()).await?;
-        self.status.write(xml, ctx.child()).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        self.0.qwrite(xml).await?;
+        xml.q.write_event_async(Event::End(end)).await
+    }
+}
+
+impl<E: Extension> QWrite for PropStat<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("propstat");
+        let end = start.to_end();
+
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        self.prop.qwrite(xml).await?;
+        self.status.qwrite(xml).await?;
         if let Some(error) = &self.error {
-            error.write(xml, ctx.child()).await?;
+            error.qwrite(xml).await?;
         }
         if let Some(description) = &self.responsedescription {
-            description.write(xml, ctx.child()).await?;
+            description.qwrite(xml).await?;
         }
-        xml.write_event_async(Event::End(end)).await?;
+        xml.q.write_event_async(Event::End(end)).await?;
 
         Ok(())
     }
 }
 
-impl<C: Context> QuickWritable<C> for Property<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl<E: Extension> QWrite for Property<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         use Property::*;
         match self {
             CreationDate(date) => {
                 // <D:creationdate>1997-12-01T17:42:21-08:00</D:creationdate>
-                let start = ctx.create_dav_element("creationdate");
+                let start = xml.create_dav_element("creationdate");
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                xml.write_event_async(Event::Text(BytesText::new(&date.to_rfc3339()))).await?;
-                xml.write_event_async(Event::End(end)).await?;
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Text(BytesText::new(&date.to_rfc3339()))).await?;
+                xml.q.write_event_async(Event::End(end)).await?;
             },
             DisplayName(name) => {
                 // <D:displayname>Example collection</D:displayname>
-                let start = ctx.create_dav_element("displayname");
+                let start = xml.create_dav_element("displayname");
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                xml.write_event_async(Event::Text(BytesText::new(name))).await?;
-                xml.write_event_async(Event::End(end)).await?;
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Text(BytesText::new(name))).await?;
+                xml.q.write_event_async(Event::End(end)).await?;
             },
             GetContentLanguage(lang) => {
-                let start = ctx.create_dav_element("getcontentlanguage");
+                let start = xml.create_dav_element("getcontentlanguage");
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                xml.write_event_async(Event::Text(BytesText::new(lang))).await?;
-                xml.write_event_async(Event::End(end)).await?;
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Text(BytesText::new(lang))).await?;
+                xml.q.write_event_async(Event::End(end)).await?;
             },
             GetContentLength(len) => {
                 // <D:getcontentlength>4525</D:getcontentlength>
-                let start = ctx.create_dav_element("getcontentlength");
+                let start = xml.create_dav_element("getcontentlength");
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                xml.write_event_async(Event::Text(BytesText::new(&len.to_string()))).await?;
-                xml.write_event_async(Event::End(end)).await?;
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Text(BytesText::new(&len.to_string()))).await?;
+                xml.q.write_event_async(Event::End(end)).await?;
             },
             GetContentType(ct) => {
                 // <D:getcontenttype>text/html</D:getcontenttype>
-                let start = ctx.create_dav_element("getcontenttype");
+                let start = xml.create_dav_element("getcontenttype");
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                xml.write_event_async(Event::Text(BytesText::new(&ct))).await?;
-                xml.write_event_async(Event::End(end)).await?;
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Text(BytesText::new(&ct))).await?;
+                xml.q.write_event_async(Event::End(end)).await?;
             },
             GetEtag(et) => {
                 // <D:getetag>"zzyzx"</D:getetag>
-                let start = ctx.create_dav_element("getetag");
+                let start = xml.create_dav_element("getetag");
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                xml.write_event_async(Event::Text(BytesText::new(et))).await?;
-                xml.write_event_async(Event::End(end)).await?;
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Text(BytesText::new(et))).await?;
+                xml.q.write_event_async(Event::End(end)).await?;
             },
             GetLastModified(date) => {
                 // <D:getlastmodified>Mon, 12 Jan 1998 09:25:56 GMT</D:getlastmodified>
-                let start = ctx.create_dav_element("getlastmodified");
+                let start = xml.create_dav_element("getlastmodified");
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                xml.write_event_async(Event::Text(BytesText::new(&date.to_rfc2822()))).await?;
-                xml.write_event_async(Event::End(end)).await?;
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Text(BytesText::new(&date.to_rfc2822()))).await?;
+                xml.q.write_event_async(Event::End(end)).await?;
             },
             LockDiscovery(many_locks) => {
                 // <D:lockdiscovery><D:activelock> ... </D:activelock></D:lockdiscovery>
-                let start = ctx.create_dav_element("lockdiscovery");
+                let start = xml.create_dav_element("lockdiscovery");
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
                 for lock in many_locks.iter() {
-                    lock.write(xml, ctx.child()).await?;
+                    lock.qwrite(xml).await?;
                 }
-                xml.write_event_async(Event::End(end)).await?;
+                xml.q.write_event_async(Event::End(end)).await?;
             },
             ResourceType(many_types) => {
                 // <D:resourcetype><D:collection/></D:resourcetype>
@@ -397,16 +346,16 @@ impl<C: Context> QuickWritable<C> for Property<C> {
                 //   <f:search-results xmlns:f="http://www.example.com/ns"/>
                 // </x:resourcetype>
     
-                let start = ctx.create_dav_element("resourcetype");
+                let start = xml.create_dav_element("resourcetype");
                 if many_types.is_empty() {
-                    xml.write_event_async(Event::Empty(start)).await?;
+                    xml.q.write_event_async(Event::Empty(start)).await?;
                 } else {
                     let end = start.to_end();
-                    xml.write_event_async(Event::Start(start.clone())).await?;
+                    xml.q.write_event_async(Event::Start(start.clone())).await?;
                     for restype in many_types.iter() {
-                        restype.write(xml, ctx.child()).await?;
+                        restype.qwrite(xml).await?;
                     }
-                    xml.write_event_async(Event::End(end)).await?;
+                    xml.q.write_event_async(Event::End(end)).await?;
                 }
             },
             SupportedLock(many_entries) => {
@@ -414,52 +363,56 @@ impl<C: Context> QuickWritable<C> for Property<C> {
 
                 //  <D:supportedlock> <D:lockentry> ... </D:lockentry> </D:supportedlock>
 
-                let start = ctx.create_dav_element("supportedlock");
+                let start = xml.create_dav_element("supportedlock");
                 if many_entries.is_empty() {
-                    xml.write_event_async(Event::Empty(start)).await?;
+                    xml.q.write_event_async(Event::Empty(start)).await?;
                 } else {
                     let end = start.to_end();
-                    xml.write_event_async(Event::Start(start.clone())).await?;
+                    xml.q.write_event_async(Event::Start(start.clone())).await?;
                     for entry in many_entries.iter() {
-                        entry.write(xml, ctx.child()).await?;
+                        entry.qwrite(xml).await?;
                     }
-                    xml.write_event_async(Event::End(end)).await?;
+                    xml.q.write_event_async(Event::End(end)).await?;
                 }
             },
-            Extension(inner) => {
-                ctx.hook_property(inner, xml).await?;
-            },
+            Extension(inner) => inner.qwrite(xml).await?,
         };
         Ok(())
     }
 }
 
-impl<C: Context> QuickWritable<C> for ResourceType<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl<E: Extension> QWrite for ResourceType<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
-            Self::Collection => xml.write_event_async(Event::Empty(ctx.create_dav_element("collection"))).await,
-            Self::Extension(inner) => ctx.hook_resourcetype(inner, xml).await,
+            Self::Collection => {
+                let empty_collection = xml.create_dav_element("collection");
+                xml.q.write_event_async(Event::Empty(empty_collection)).await
+            },
+            Self::Extension(inner) => inner.qwrite(xml).await,
         }
     }
 }
 
-impl<C: Context> QuickWritable<C> for Include<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("include");
+impl<E: Extension> QWrite for Include<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("include");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;  
+        xml.q.write_event_async(Event::Start(start.clone())).await?;  
         for prop in self.0.iter() {
-            prop.write(xml, ctx.child()).await?;
+            prop.qwrite(xml).await?;
         }
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: Context> QuickWritable<C> for PropertyRequest<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl<E: Extension> QWrite for PropertyRequest<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         use PropertyRequest::*;
-        let mut atom = async |c| xml.write_event_async(Event::Empty(ctx.create_dav_element(c))).await;
+        let mut atom = async |c| {
+            let empty_tag = xml.create_dav_element(c);
+            xml.q.write_event_async(Event::Empty(empty_tag)).await
+        };
 
         match self {
             CreationDate => atom("creationdate").await,
@@ -472,13 +425,13 @@ impl<C: Context> QuickWritable<C> for PropertyRequest<C> {
             LockDiscovery => atom("lockdiscovery").await,
             ResourceType => atom("resourcetype").await,
             SupportedLock => atom("supportedlock").await,
-            Extension(inner) => ctx.hook_propertyrequest(inner, xml).await,
+            Extension(inner) => inner.qwrite(xml).await,
         }
     }
 }
 
-impl<C: Context> QuickWritable<C> for ActiveLock {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl QWrite for ActiveLock {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         // <D:activelock>
         //   <D:locktype><D:write/></D:locktype>
         //   <D:lockscope><D:exclusive/></D:lockscope>
@@ -494,192 +447,193 @@ impl<C: Context> QuickWritable<C> for ActiveLock {
         //     <D:href>http://example.com/workspace/webdav/proposal.doc</D:href>
         //   </D:lockroot>
         // </D:activelock>
-        let start = ctx.create_dav_element("activelock");
+        let start = xml.create_dav_element("activelock");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        self.locktype.write(xml, ctx.child()).await?;
-        self.lockscope.write(xml, ctx.child()).await?;
-        self.depth.write(xml, ctx.child()).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        self.locktype.qwrite(xml).await?;
+        self.lockscope.qwrite(xml).await?;
+        self.depth.qwrite(xml).await?;
         if let Some(owner) = &self.owner {
-            owner.write(xml, ctx.child()).await?;
+            owner.qwrite(xml).await?;
         }
         if let Some(timeout) = &self.timeout {
-            timeout.write(xml, ctx.child()).await?;
+            timeout.qwrite(xml).await?;
         }
         if let Some(locktoken) = &self.locktoken {
-            locktoken.write(xml, ctx.child()).await?;
+            locktoken.qwrite(xml).await?;
         }
-        self.lockroot.write(xml, ctx.child()).await?;
-        xml.write_event_async(Event::End(end)).await?;
-
-        Ok(())
+        self.lockroot.qwrite(xml).await?;
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: Context> QuickWritable<C> for LockType {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("locktype");
+impl QWrite for LockType {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("locktype");
         let end = start.to_end();
-        let ctx = ctx.child();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
         match self {
-            Self::Write => xml.write_event_async(Event::Empty(ctx.create_dav_element("write"))).await?,
+            Self::Write => {
+                let empty_write = xml.create_dav_element("write");
+                xml.q.write_event_async(Event::Empty(empty_write)).await?
+            },
         }; 
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: Context> QuickWritable<C> for LockScope {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("lockscope");
+impl QWrite for LockScope {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("lockscope");
         let end = start.to_end();
-        let ctx = ctx.child();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
         match self {
-            Self::Exclusive => xml.write_event_async(Event::Empty(ctx.create_dav_element("exclusive"))).await?,
-            Self::Shared => xml.write_event_async(Event::Empty(ctx.create_dav_element("shared"))).await?,
+            Self::Exclusive => {
+                let empty_tag = xml.create_dav_element("exclusive");
+                xml.q.write_event_async(Event::Empty(empty_tag)).await?
+            },
+            Self::Shared => {
+                let empty_tag = xml.create_dav_element("shared");
+                xml.q.write_event_async(Event::Empty(empty_tag)).await?
+            },
         }; 
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: Context> QuickWritable<C> for Owner {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("owner");
+impl QWrite for Owner {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("owner");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
         match self {
-            Self::Txt(txt) => xml.write_event_async(Event::Text(BytesText::new(&txt))).await?,
-            Self::Href(href) => href.write(xml, ctx.child()).await?,
+            Self::Txt(txt) => xml.q.write_event_async(Event::Text(BytesText::new(&txt))).await?,
+            Self::Href(href) => href.qwrite(xml).await?,
         }
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: Context> QuickWritable<C> for Depth {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("depth");
+impl QWrite for Depth {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("depth");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
         match self {
-            Self::Zero => xml.write_event_async(Event::Text(BytesText::new("0"))).await?,
-            Self::One => xml.write_event_async(Event::Text(BytesText::new("1"))).await?,
-            Self::Infinity => xml.write_event_async(Event::Text(BytesText::new("infinity"))).await?,
+            Self::Zero => xml.q.write_event_async(Event::Text(BytesText::new("0"))).await?,
+            Self::One => xml.q.write_event_async(Event::Text(BytesText::new("1"))).await?,
+            Self::Infinity => xml.q.write_event_async(Event::Text(BytesText::new("infinity"))).await?,
         };
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: Context> QuickWritable<C> for Timeout {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("timeout");
+impl QWrite for Timeout {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("timeout");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
         match self {
             Self::Seconds(count) => {
                 let txt = format!("Second-{}", count);
-                xml.write_event_async(Event::Text(BytesText::new(&txt))).await?
+                xml.q.write_event_async(Event::Text(BytesText::new(&txt))).await?
             },
-            Self::Infinite => xml.write_event_async(Event::Text(BytesText::new("Infinite"))).await?
+            Self::Infinite => xml.q.write_event_async(Event::Text(BytesText::new("Infinite"))).await?
         };
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: Context> QuickWritable<C> for LockToken {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("locktoken");
+impl QWrite for LockToken {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("locktoken");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        self.0.write(xml, ctx.child()).await?;
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        self.0.qwrite(xml).await?;
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: Context> QuickWritable<C> for LockRoot {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("lockroot");
+impl QWrite for LockRoot {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("lockroot");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        self.0.write(xml, ctx.child()).await?;
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        self.0.qwrite(xml).await?;
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: Context> QuickWritable<C> for LockEntry {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("lockentry");
+impl QWrite for LockEntry {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("lockentry");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        self.lockscope.write(xml, ctx.child()).await?;
-        self.locktype.write(xml, ctx.child()).await?;
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        self.lockscope.qwrite(xml).await?;
+        self.locktype.qwrite(xml).await?;
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: Context> QuickWritable<C> for Error<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_dav_element("error");
+impl<E: Extension> QWrite for Error<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("error");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
         for violation in &self.0 {
-            violation.write(xml, ctx.child()).await?;
+            violation.qwrite(xml).await?;
         }
-        xml.write_event_async(Event::End(end)).await?;
-
-        Ok(())
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: Context> QuickWritable<C> for Violation<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        match self {
-            Violation::LockTokenMatchesRequestUri => xml.write_event_async(Event::Empty(ctx.create_dav_element("lock-token-matches-request-uri"))).await?, 
-            Violation::LockTokenSubmitted(hrefs) if hrefs.is_empty() => {
-                xml.write_event_async(Event::Empty(ctx.create_dav_element("lock-token-submitted"))).await?
-            },
-            Violation::LockTokenSubmitted(hrefs) => {
-                let start = ctx.create_dav_element("lock-token-submitted");
-                let end = start.to_end();
-
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                for href in hrefs {
-                    href.write(xml, ctx.child()).await?;
-                }
-                xml.write_event_async(Event::End(end)).await?;
-            },
-            Violation::NoConflictingLock(hrefs) if hrefs.is_empty() => {
-                xml.write_event_async(Event::Empty(ctx.create_dav_element("no-conflicting-lock"))).await?
-            },
-            Violation::NoConflictingLock(hrefs) => {
-                let start = ctx.create_dav_element("no-conflicting-lock");
-                let end = start.to_end();
-
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                for href in hrefs {
-                    href.write(xml, ctx.child()).await?;
-                }
-                xml.write_event_async(Event::End(end)).await?;
-            },
-            Violation::NoExternalEntities => xml.write_event_async(Event::Empty(ctx.create_dav_element("no-external-entities"))).await?,
-            Violation::PreservedLiveProperties => xml.write_event_async(Event::Empty(ctx.create_dav_element("preserved-live-properties"))).await?,
-            Violation::PropfindFiniteDepth => xml.write_event_async(Event::Empty(ctx.create_dav_element("propfind-finite-depth"))).await?,
-            Violation::CannotModifyProtectedProperty => xml.write_event_async(Event::Empty(ctx.create_dav_element("cannot-modify-protected-property"))).await?,
-            Violation::Extension(inner) => {
-                ctx.hook_error(inner, xml).await?;
-            },
+impl<E: Extension> QWrite for Violation<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut atom = async |c| {
+            let empty_tag = xml.create_dav_element(c);
+            xml.q.write_event_async(Event::Empty(empty_tag)).await
         };
-        Ok(())
+
+        match self {
+            Violation::LockTokenMatchesRequestUri => atom("lock-token-matches-request-uri").await, 
+            Violation::LockTokenSubmitted(hrefs) if hrefs.is_empty() => atom("lock-token-submitted").await,
+            Violation::LockTokenSubmitted(hrefs) => {
+                let start = xml.create_dav_element("lock-token-submitted");
+                let end = start.to_end();
+
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                for href in hrefs {
+                    href.qwrite(xml).await?;
+                }
+                xml.q.write_event_async(Event::End(end)).await
+            },
+            Violation::NoConflictingLock(hrefs) if hrefs.is_empty() => atom("no-conflicting-lock").await,
+            Violation::NoConflictingLock(hrefs) => {
+                let start = xml.create_dav_element("no-conflicting-lock");
+                let end = start.to_end();
+
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                for href in hrefs {
+                    href.qwrite(xml).await?;
+                }
+                xml.q.write_event_async(Event::End(end)).await
+            },
+            Violation::NoExternalEntities => atom("no-external-entities").await,
+            Violation::PreservedLiveProperties => atom("preserved-live-properties").await,
+            Violation::PropfindFiniteDepth => atom("propfind-finite-depth").await,
+            Violation::CannotModifyProtectedProperty => atom("cannot-modify-protected-property").await,
+            Violation::Extension(inner) => inner.qwrite(xml).await,
+        }
     }
 }
 
