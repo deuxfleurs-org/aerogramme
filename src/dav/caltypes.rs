@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-/*
 use chrono::{DateTime,Utc};
 use super::types as dav;
 
@@ -647,7 +646,7 @@ pub enum Violation {
     /// making use of the same UID property value in the DAV:href element;
     ///
     /// <!ELEMENT no-uid-conflict (DAV:href)>
-    NoUidConflict(Dav::Href),
+    NoUidConflict(dav::Href),
 
     /// (CALDAV:max-resource-size): The resource submitted in the PUT
     /// request, or targeted by a COPY or MOVE request, MUST have an octet
@@ -1394,4 +1393,4 @@ impl Collation {
             Self::Unknown(c) => c.as_str(),
         }
     }
-}*/
+}

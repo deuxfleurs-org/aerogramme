@@ -1,141 +1,94 @@
-/*
-use super::encoder::{QuickWritable, Context};
-use super::caltypes::*;
-use super::types::Extension;
-
 use quick_xml::Error as QError;
 use quick_xml::events::{Event, BytesEnd, BytesStart, BytesText};
-use quick_xml::writer::{ElementWriter, Writer};
 use quick_xml::name::PrefixDeclaration;
 use tokio::io::AsyncWrite;
 
+use super::caltypes::*;
+use super::xml::{QWrite, IWrite, Writer};
+use super::types::Extension;
+
 const ICAL_DATETIME_FMT: &str = "%Y%m%dT%H%M%SZ";
-
-// =============== Calendar Trait ===========================
-pub trait CalContext: Context {
-    fn create_cal_element(&self, name: &str) -> BytesStart;
-}
-
-// =============== CalDAV Extension Setup ===================
-impl Context for CalExtension {
-    fn child(&self) -> Self {
-        Self { root: false }
-    }
-    fn create_dav_element(&self, name: &str) -> BytesStart {
-        self.create_ns_element("D", name)
-    }
-
-    async fn hook_error(&self, err: &Violation, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
-        err.write(xml, self.child()).await
-    }
-
-    async fn hook_property(&self, prop: &Self::Property, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
-        prop.write(xml, self.child()).await 
-    }
-
-    async fn hook_resourcetype(&self, restype: &Self::ResourceType, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
-        restype.write(xml, self.child()).await
-    }
-
-    async fn hook_propertyrequest(&self, propreq: &Self::PropertyRequest, xml: &mut Writer<impl AsyncWrite+Unpin>) -> Result<(), QError> {
-        propreq.write(xml, self.child()).await 
-    }
-}
-
-impl CalContext for CalExtension {
-    fn create_cal_element(&self, name: &str) -> BytesStart {
-        self.create_ns_element("C", name)
-    }
-}
-
-impl CalExtension {
-    fn create_ns_element(&self, ns: &str, name: &str) -> BytesStart {
-        let mut start = BytesStart::new(format!("{}:{}", ns, name));
-        if self.root {
-            start.push_attribute(("xmlns:D", "DAV:"));
-            start.push_attribute(("xmlns:C", "urn:ietf:params:xml:ns:caldav"));
-        }
-        start
-    }
-}
 
 // ==================== Calendar Types Serialization =========================
 
 // -------------------- MKCALENDAR METHOD ------------------------------------
-impl<C: CalContext> QuickWritable<C> for MkCalendar<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_cal_element("mkcalendar");
+impl<E: Extension> QWrite for MkCalendar<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_cal_element("mkcalendar");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        self.0.write(xml, ctx.child()).await?;
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        self.0.qwrite(xml).await?;
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for MkCalendarResponse<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_cal_element("mkcalendar-response");
+impl<E: Extension> QWrite for MkCalendarResponse<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_cal_element("mkcalendar-response");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
         for propstat in self.0.iter() {
-            propstat.write(xml, ctx.child()).await?;
+            propstat.qwrite(xml).await?;
         }
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
 // ----------------------- REPORT METHOD -------------------------------------
 
-impl<C: CalContext> QuickWritable<C> for CalendarQuery<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_cal_element("calendar-query");
+impl<E: Extension> QWrite for CalendarQuery<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_cal_element("calendar-query");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
         if let Some(selector) = &self.selector {
-            selector.write(xml, ctx.child()).await?;
+            selector.qwrite(xml).await?;
         }
-        self.filter.write(xml, ctx.child()).await?;
+        self.filter.qwrite(xml).await?;
         if let Some(tz) = &self.timezone  {
-            tz.write(xml, ctx.child()).await?;
+            tz.qwrite(xml).await?;
         }
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for CalendarMultiget<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_cal_element("calendar-multiget");
+impl<E: Extension> QWrite for CalendarMultiget<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_cal_element("calendar-multiget");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
         if let Some(selector) = &self.selector {
-            selector.write(xml, ctx.child()).await?;
+            selector.qwrite(xml).await?;
         }
         for href in self.href.iter() {
-            href.write(xml, ctx.child()).await?;
+            href.qwrite(xml).await?;
         }
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for FreeBusyQuery {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_cal_element("free-busy-query");
+impl QWrite for FreeBusyQuery {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_cal_element("free-busy-query");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        self.0.write(xml, ctx.child()).await?;
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        self.0.qwrite(xml).await?;
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
 // -------------------------- DAV::prop --------------------------------------
-impl<C: CalContext> QuickWritable<C> for PropertyRequest {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut atom = async |c| xml.write_event_async(Event::Empty(ctx.create_cal_element(c))).await;
+impl QWrite for PropertyRequest {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut atom = async |c| {
+            let empty_tag = xml.create_cal_element(c);
+            xml.q.write_event_async(Event::Empty(empty_tag)).await
+        };
 
         match self {
             Self::CalendarDescription => atom("calendar-description").await,
@@ -148,128 +101,137 @@ impl<C: CalContext> QuickWritable<C> for PropertyRequest {
             Self::MaxInstances => atom("max-instances").await,
             Self::MaxAttendeesPerInstance =>  atom("max-attendees-per-instance").await,
             Self::SupportedCollationSet =>  atom("supported-collation-set").await,    
-            Self::CalendarData(req) => req.write(xml, ctx).await,
+            Self::CalendarData(req) => req.qwrite(xml).await,
         }
     }
 }
-impl<C: CalContext> QuickWritable<C> for Property {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl QWrite for Property {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
             Self::CalendarDescription { lang, text } => {
-                let mut start = ctx.create_cal_element("calendar-description");
+                let mut start = xml.create_cal_element("calendar-description");
                 if let Some(the_lang) = lang {
                     start.push_attribute(("xml:lang", the_lang.as_str()));
                 }
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                xml.write_event_async(Event::Text(BytesText::new(text))).await?;
-                xml.write_event_async(Event::End(end)).await
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Text(BytesText::new(text))).await?;
+                xml.q.write_event_async(Event::End(end)).await
             },
             Self::CalendarTimezone(payload) => {
-                let start = ctx.create_cal_element("calendar-timezone");
+                let start = xml.create_cal_element("calendar-timezone");
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                xml.write_event_async(Event::Text(BytesText::new(payload))).await?;
-                xml.write_event_async(Event::End(end)).await
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Text(BytesText::new(payload))).await?;
+                xml.q.write_event_async(Event::End(end)).await
             },
             Self::SupportedCalendarComponentSet(many_comp) => {
-                let start = ctx.create_cal_element("supported-calendar-component-set");
+                let start = xml.create_cal_element("supported-calendar-component-set");
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
                 for comp in many_comp.iter() {
-                    comp.write(xml, ctx.child()).await?;
+                    comp.qwrite(xml).await?;
                 }
-                xml.write_event_async(Event::End(end)).await
+                xml.q.write_event_async(Event::End(end)).await
             },
             Self::SupportedCalendarData(many_mime) => {
-                let start = ctx.create_cal_element("supported-calendar-data");
+                let start = xml.create_cal_element("supported-calendar-data");
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
                 for mime in many_mime.iter() {
-                    mime.write(xml, ctx.child()).await?;
+                    mime.qwrite(xml).await?;
                 }
-                xml.write_event_async(Event::End(end)).await
+                xml.q.write_event_async(Event::End(end)).await
             },
             Self::MaxResourceSize(bytes) => {
-                let start = ctx.create_cal_element("max-resource-size");
+                let start = xml.create_cal_element("max-resource-size");
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                xml.write_event_async(Event::Text(BytesText::new(bytes.to_string().as_str()))).await?;
-                xml.write_event_async(Event::End(end)).await
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Text(BytesText::new(bytes.to_string().as_str()))).await?;
+                xml.q.write_event_async(Event::End(end)).await
             },
             Self::MinDateTime(dt) => {
-                let start = ctx.create_cal_element("min-date-time");
+                let start = xml.create_cal_element("min-date-time");
                 let end = start.to_end();
 
                 let dtstr = format!("{}", dt.format(ICAL_DATETIME_FMT));
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                xml.write_event_async(Event::Text(BytesText::new(dtstr.as_str()))).await?;
-                xml.write_event_async(Event::End(end)).await
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Text(BytesText::new(dtstr.as_str()))).await?;
+                xml.q.write_event_async(Event::End(end)).await
             },
             Self::MaxDateTime(dt) => {
-                let start = ctx.create_cal_element("max-date-time");
+                let start = xml.create_cal_element("max-date-time");
                 let end = start.to_end();
 
                 let dtstr = format!("{}", dt.format(ICAL_DATETIME_FMT));
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                xml.write_event_async(Event::Text(BytesText::new(dtstr.as_str()))).await?;
-                xml.write_event_async(Event::End(end)).await
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Text(BytesText::new(dtstr.as_str()))).await?;
+                xml.q.write_event_async(Event::End(end)).await
             },
             Self::MaxInstances(count) => {
-                let start = ctx.create_cal_element("max-instances");
+                let start = xml.create_cal_element("max-instances");
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                xml.write_event_async(Event::Text(BytesText::new(count.to_string().as_str()))).await?;
-                xml.write_event_async(Event::End(end)).await
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Text(BytesText::new(count.to_string().as_str()))).await?;
+                xml.q.write_event_async(Event::End(end)).await
             },
             Self::MaxAttendeesPerInstance(count) => {
-                let start = ctx.create_cal_element("max-attendees-per-instance");
+                let start = xml.create_cal_element("max-attendees-per-instance");
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                xml.write_event_async(Event::Text(BytesText::new(count.to_string().as_str()))).await?;
-                xml.write_event_async(Event::End(end)).await
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Text(BytesText::new(count.to_string().as_str()))).await?;
+                xml.q.write_event_async(Event::End(end)).await
             },
             Self::SupportedCollationSet(many_collations) => {
-                let start = ctx.create_cal_element("supported-collation-set");
+                let start = xml.create_cal_element("supported-collation-set");
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
                 for collation in many_collations.iter() {
-                    collation.write(xml, ctx.child()).await?;
+                    collation.qwrite(xml).await?;
                 }
-                xml.write_event_async(Event::End(end)).await               
+                xml.q.write_event_async(Event::End(end)).await               
             },
-            Self::CalendarData(inner) => inner.write(xml, ctx).await,
+            Self::CalendarData(inner) => inner.qwrite(xml).await,
         }
     }
 }
 
 // ---------------------- DAV::resourcetype ----------------------------------
-impl<C: CalContext> QuickWritable<C> for ResourceType {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl QWrite for ResourceType {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
-            Self::Calendar => xml.write_event_async(Event::Empty(ctx.create_dav_element("calendar"))).await,
+            Self::Calendar => {
+                let empty_tag = xml.create_dav_element("calendar");
+                xml.q.write_event_async(Event::Empty(empty_tag)).await
+            },
         }
     }
 }
 
 // --------------------------- DAV::error ------------------------------------
-impl<C: CalContext> QuickWritable<C> for Violation {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut atom = async |c| xml.write_event_async(Event::Empty(ctx.create_cal_element(c))).await;
+impl QWrite for Violation {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut atom = async |c| {
+            let empty_tag = xml.create_cal_element(c);
+            xml.q.write_event_async(Event::Empty(empty_tag)).await
+        };
 
         match self {
             //@FIXME
             // DAV elements, should not be here but in RFC3744 on ACLs
             // (we do not use atom as this error is in the DAV namespace, not the caldav one)
-            Self::NeedPrivileges => xml.write_event_async(Event::Empty(ctx.create_dav_element("need-privileges"))).await,
+            Self::NeedPrivileges => {
+                let empty_tag = xml.create_dav_element("need-privileges");
+                xml.q.write_event_async(Event::Empty(empty_tag)).await
+            },
 
             // Regular CalDAV errors
             Self::ResourceMustBeNull => atom("resource-must-be-null").await,
@@ -280,12 +242,12 @@ impl<C: CalContext> QuickWritable<C> for Violation {
             Self::ValidCalendarObjectResource => atom("valid-calendar-object-resource").await,
             Self::SupportedCalendarComponent => atom("supported-calendar-component").await,
             Self::NoUidConflict(href) => {
-                let start = ctx.create_cal_element("no-uid-conflict");
+                let start = xml.create_cal_element("no-uid-conflict");
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                href.write(xml, ctx.child()).await?;
-                xml.write_event_async(Event::End(end)).await
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                href.qwrite(xml).await?;
+                xml.q.write_event_async(Event::End(end)).await
             },
             Self::MaxResourceSize => atom("max-resource-size").await,
             Self::MinDateTime => atom("min-date-time").await,
@@ -294,20 +256,20 @@ impl<C: CalContext> QuickWritable<C> for Violation {
             Self::MaxAttendeesPerInstance => atom("max-attendees-per-instance").await,
             Self::ValidFilter => atom("valid-filter").await,
             Self::SupportedFilter { comp, prop, param } => {
-                let start = ctx.create_cal_element("supported-filter");
+                let start = xml.create_cal_element("supported-filter");
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
                 for comp_item in comp.iter() {
-                    comp_item.write(xml, ctx.child()).await?;
+                    comp_item.qwrite(xml).await?;
                 }
                 for prop_item in prop.iter() {
-                    prop_item.write(xml, ctx.child()).await?;
+                    prop_item.qwrite(xml).await?;
                 }
                 for param_item in param.iter() {
-                    param_item.write(xml, ctx.child()).await?;
+                    param_item.qwrite(xml).await?;
                 }
-                xml.write_event_async(Event::End(end)).await
+                xml.q.write_event_async(Event::End(end)).await
             },
             Self::NumberOfMatchesWithinLimits => atom("number-of-matches-within-limits").await,
         }
@@ -316,112 +278,115 @@ impl<C: CalContext> QuickWritable<C> for Violation {
 
 
 // ---------------------------- Inner XML ------------------------------------
-impl<C: CalContext> QuickWritable<C> for SupportedCollation {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let start = ctx.create_cal_element("supported-collation");
+impl QWrite for SupportedCollation {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_cal_element("supported-collation");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        self.0.write(xml, ctx.child()).await?;
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        self.0.qwrite(xml).await?;
+        xml.q.write_event_async(Event::End(end)).await
 
     }
 }
 
-impl<C: CalContext> QuickWritable<C>  for Collation {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl QWrite for Collation {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let col = match self {
            Self::AsciiCaseMap => "i;ascii-casemap",
            Self::Octet => "i;octet",
            Self::Unknown(v) => v.as_str(),
         };
 
-        xml.write_event_async(Event::Text(BytesText::new(col))).await
+        xml.q.write_event_async(Event::Text(BytesText::new(col))).await
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for CalendarDataPayload {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut start = ctx.create_cal_element("calendar-data");
+impl QWrite for CalendarDataPayload {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut start = xml.create_cal_element("calendar-data");
         if let Some(mime) = &self.mime {
             start.push_attribute(("content-type", mime.content_type.as_str()));
             start.push_attribute(("version", mime.version.as_str()));
         }
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        xml.write_event_async(Event::Text(BytesText::new(self.payload.as_str()))).await?;
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Text(BytesText::new(self.payload.as_str()))).await?;
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for CalendarDataRequest {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut start = ctx.create_cal_element("calendar-data");
+impl QWrite for CalendarDataRequest {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut start = xml.create_cal_element("calendar-data");
         if let Some(mime) = &self.mime {
             start.push_attribute(("content-type", mime.content_type.as_str()));
             start.push_attribute(("version", mime.version.as_str()));
         }
         let end = start.to_end();
-        xml.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
         if let Some(comp) = &self.comp {
-            comp.write(xml, ctx.child()).await?;
+            comp.qwrite(xml).await?;
         }
         if let Some(recurrence) = &self.recurrence {
-            recurrence.write(xml, ctx.child()).await?;
+            recurrence.qwrite(xml).await?;
         }
         if let Some(freebusy) = &self.limit_freebusy_set {
-            freebusy.write(xml, ctx.child()).await?;
+            freebusy.qwrite(xml).await?;
         }
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for CalendarDataEmpty {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut empty = ctx.create_cal_element("calendar-data");
+impl QWrite for CalendarDataEmpty {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut empty = xml.create_cal_element("calendar-data");
         if let Some(mime) = &self.0 {
             empty.push_attribute(("content-type", mime.content_type.as_str()));
             empty.push_attribute(("version", mime.version.as_str()));
         }
-        xml.write_event_async(Event::Empty(empty)).await
+        xml.q.write_event_async(Event::Empty(empty)).await
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for Comp {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut start = ctx.create_cal_element("comp");
+impl QWrite for Comp {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut start = xml.create_cal_element("comp");
         start.push_attribute(("name", self.name.as_str()));
         match &self.additional_rules {
-            None => xml.write_event_async(Event::Empty(start)).await,
+            None => xml.q.write_event_async(Event::Empty(start)).await,
             Some(rules) => {
                 let end = start.to_end();
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                rules.prop_kind.write(xml, ctx.child()).await?;
-                rules.comp_kind.write(xml, ctx.child()).await?;
-                xml.write_event_async(Event::End(end)).await
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                rules.prop_kind.qwrite(xml).await?;
+                rules.comp_kind.qwrite(xml).await?;
+                xml.q.write_event_async(Event::End(end)).await
             },
         }
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for CompSupport {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut empty = ctx.create_cal_element("comp");
+impl QWrite for CompSupport {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut empty = xml.create_cal_element("comp");
         empty.push_attribute(("name", self.0.as_str()));
-        xml.write_event_async(Event::Empty(empty)).await
+        xml.q.write_event_async(Event::Empty(empty)).await
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for CompKind {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl QWrite for CompKind {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
-            Self::AllComp => xml.write_event_async(Event::Empty(ctx.create_cal_element("allcomp"))).await,
+            Self::AllComp => {
+                let empty_tag = xml.create_cal_element("allcomp");
+                xml.q.write_event_async(Event::Empty(empty_tag)).await
+            },
             Self::Comp(many_comp) => {
                 for comp in many_comp.iter() {
                     // Required: recursion in an async fn requires boxing
                     // rustc --explain E0733
-                    Box::pin(comp.write(xml, ctx.child())).await?;
+                    Box::pin(comp.qwrite(xml)).await?;
                 }
                 Ok(())
             }
@@ -429,13 +394,16 @@ impl<C: CalContext> QuickWritable<C> for CompKind {
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for PropKind {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl QWrite for PropKind {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
-            Self::AllProp => xml.write_event_async(Event::Empty(ctx.create_cal_element("allprop"))).await,
+            Self::AllProp => {
+                let empty_tag = xml.create_cal_element("allprop");
+                xml.q.write_event_async(Event::Empty(empty_tag)).await
+            },
             Self::Prop(many_prop) => {
                 for prop in many_prop.iter() {
-                    prop.write(xml, ctx.child()).await?;
+                    prop.qwrite(xml).await?;
                 }
                 Ok(())
             }
@@ -443,163 +411,175 @@ impl<C: CalContext> QuickWritable<C> for PropKind {
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for CalProp {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut empty = ctx.create_cal_element("prop");
+impl QWrite for CalProp {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut empty = xml.create_cal_element("prop");
         empty.push_attribute(("name", self.name.0.as_str()));
         match self.novalue {
             None => (),
             Some(true) => empty.push_attribute(("novalue", "yes")),
             Some(false) => empty.push_attribute(("novalue", "no")),
         }
-        xml.write_event_async(Event::Empty(empty)).await
+        xml.q.write_event_async(Event::Empty(empty)).await
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for RecurrenceModifier {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl QWrite for RecurrenceModifier {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
-            Self::Expand(exp) => exp.write(xml, ctx).await,
-            Self::LimitRecurrenceSet(lrs) => lrs.write(xml, ctx).await,
+            Self::Expand(exp) => exp.qwrite(xml).await,
+            Self::LimitRecurrenceSet(lrs) => lrs.qwrite(xml).await,
         }
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for Expand {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut empty = ctx.create_cal_element("expand");
+impl QWrite for Expand {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut empty = xml.create_cal_element("expand");
         empty.push_attribute(("start", format!("{}", self.0.format(ICAL_DATETIME_FMT)).as_str()));
         empty.push_attribute(("end", format!("{}", self.1.format(ICAL_DATETIME_FMT)).as_str()));
-        xml.write_event_async(Event::Empty(empty)).await
+        xml.q.write_event_async(Event::Empty(empty)).await
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for LimitRecurrenceSet {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut empty = ctx.create_cal_element("limit-recurrence-set");
+impl QWrite for LimitRecurrenceSet {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut empty = xml.create_cal_element("limit-recurrence-set");
         empty.push_attribute(("start", format!("{}", self.0.format(ICAL_DATETIME_FMT)).as_str()));
         empty.push_attribute(("end", format!("{}", self.1.format(ICAL_DATETIME_FMT)).as_str()));
-        xml.write_event_async(Event::Empty(empty)).await
+        xml.q.write_event_async(Event::Empty(empty)).await
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for LimitFreebusySet {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut empty = ctx.create_cal_element("limit-freebusy-set");
+impl QWrite for LimitFreebusySet {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut empty = xml.create_cal_element("limit-freebusy-set");
         empty.push_attribute(("start", format!("{}", self.0.format(ICAL_DATETIME_FMT)).as_str()));
         empty.push_attribute(("end", format!("{}", self.1.format(ICAL_DATETIME_FMT)).as_str()));
-        xml.write_event_async(Event::Empty(empty)).await
+        xml.q.write_event_async(Event::Empty(empty)).await
     }
 }
 
-impl<C: CalContext> QuickWritable<C>  for CalendarSelector<C> {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl<E: Extension> QWrite for CalendarSelector<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
-            Self::AllProp => xml.write_event_async(Event::Empty(ctx.create_dav_element("allprop"))).await,
-            Self::PropName => xml.write_event_async(Event::Empty(ctx.create_dav_element("propname"))).await,
-            Self::Prop(prop) => prop.write(xml, ctx).await,
+            Self::AllProp => {
+                let empty_tag = xml.create_dav_element("allprop");
+                xml.q.write_event_async(Event::Empty(empty_tag)).await
+            },
+            Self::PropName => {
+                let empty_tag = xml.create_dav_element("propname");
+                xml.q.write_event_async(Event::Empty(empty_tag)).await
+            },
+            Self::Prop(prop) => prop.qwrite(xml).await,
         }
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for CompFilter {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut start = ctx.create_cal_element("comp-filter");
+impl QWrite for CompFilter {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut start = xml.create_cal_element("comp-filter");
         start.push_attribute(("name", self.name.as_str()));
 
         match &self.additional_rules {
-            None => xml.write_event_async(Event::Empty(start)).await,
+            None => xml.q.write_event_async(Event::Empty(start)).await,
             Some(rules) => {
                 let end = start.to_end();
 
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                rules.write(xml, ctx.child()).await?;
-                xml.write_event_async(Event::End(end)).await
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                rules.qwrite(xml).await?;
+                xml.q.write_event_async(Event::End(end)).await
             }
         }
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for CompFilterRules {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl QWrite for CompFilterRules {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
-            Self::IsNotDefined =>  xml.write_event_async(Event::Empty(ctx.create_dav_element("is-not-defined"))).await,
-            Self::Matches(cfm) => cfm.write(xml, ctx).await,
+            Self::IsNotDefined =>  {
+                let empty_tag = xml.create_dav_element("is-not-defined");
+                xml.q.write_event_async(Event::Empty(empty_tag)).await
+            },
+            Self::Matches(cfm) => cfm.qwrite(xml).await,
         }
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for CompFilterMatch {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl QWrite for CompFilterMatch {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         if let Some(time_range) = &self.time_range {
-            time_range.write(xml, ctx.child()).await?;
+            time_range.qwrite(xml).await?;
         }
 
         for prop_item in self.prop_filter.iter() {
-            prop_item.write(xml, ctx.child()).await?;
+            prop_item.qwrite(xml).await?;
         }
         for comp_item in self.comp_filter.iter() {
             // Required: recursion in an async fn requires boxing
             // rustc --explain E0733
-            Box::pin(comp_item.write(xml, ctx.child())).await?;
+            Box::pin(comp_item.qwrite(xml)).await?;
         }
         Ok(())
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for PropFilter {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut start = ctx.create_cal_element("prop-filter");
+impl QWrite for PropFilter {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut start = xml.create_cal_element("prop-filter");
         start.push_attribute(("name", self.name.as_str()));
 
         match &self.additional_rules {
-            None => xml.write_event_async(Event::Empty(start)).await,
+            None => xml.q.write_event_async(Event::Empty(start.clone())).await,
             Some(rules) => {
                 let end = start.to_end();
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                rules.write(xml, ctx.child()).await?;
-                xml.write_event_async(Event::End(end)).await
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                rules.qwrite(xml).await?;
+                xml.q.write_event_async(Event::End(end)).await
             }
         }
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for PropFilterRules {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl QWrite for PropFilterRules {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
-            Self::IsNotDefined => xml.write_event_async(Event::Empty(ctx.create_dav_element("is-not-defined"))).await,
-            Self::Match(prop_match) => prop_match.write(xml, ctx).await,
+            Self::IsNotDefined => {
+                let empty_tag = xml.create_dav_element("is-not-defined");
+                xml.q.write_event_async(Event::Empty(empty_tag)).await
+            },
+            Self::Match(prop_match) => prop_match.qwrite(xml).await,
         }
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for PropFilterMatch {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl QWrite for PropFilterMatch {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         if let Some(time_range) = &self.time_range {
-            time_range.write(xml, ctx.child()).await?;
+            time_range.qwrite(xml).await?;
         }
         if let Some(time_or_text) = &self.time_or_text {
-            time_or_text.write(xml, ctx.child()).await?;
+            time_or_text.qwrite(xml).await?;
         }
         for param_item in self.param_filter.iter() {
-            param_item.write(xml, ctx.child()).await?;
+            param_item.qwrite(xml).await?;
         }
         Ok(())
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for TimeOrText {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl QWrite for TimeOrText {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
-            Self::Time(time) => time.write(xml, ctx).await,
-            Self::Text(txt) => txt.write(xml, ctx).await,
+            Self::Time(time) => time.qwrite(xml).await,
+            Self::Text(txt) => txt.qwrite(xml).await,
         }
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for TextMatch {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut start = ctx.create_cal_element("text-match");
+impl QWrite for TextMatch {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut start = xml.create_cal_element("text-match");
         if let Some(collation) = &self.collation {
             start.push_attribute(("collation", collation.as_str()));
         }
@@ -610,63 +590,66 @@ impl<C: CalContext> QuickWritable<C> for TextMatch {
         }
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        xml.write_event_async(Event::Text(BytesText::new(self.text.as_str()))).await?;
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Text(BytesText::new(self.text.as_str()))).await?;
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for ParamFilter {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut start = ctx.create_cal_element("param-filter");
+impl QWrite for ParamFilter {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut start = xml.create_cal_element("param-filter");
         start.push_attribute(("name", self.name.as_str()));
 
         match &self.additional_rules {
-            None => xml.write_event_async(Event::Empty(start)).await,
+            None => xml.q.write_event_async(Event::Empty(start)).await,
             Some(rules) => {
                 let end = start.to_end();
-                xml.write_event_async(Event::Start(start.clone())).await?;
-                rules.write(xml, ctx.child()).await?;
-                xml.write_event_async(Event::End(end)).await
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                rules.qwrite(xml).await?;
+                xml.q.write_event_async(Event::End(end)).await
             }
         }
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for ParamFilterMatch {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
+impl QWrite for ParamFilterMatch {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
-            Self::IsNotDefined =>  xml.write_event_async(Event::Empty(ctx.create_dav_element("is-not-defined"))).await,
-            Self::Match(tm) => tm.write(xml, ctx).await,
+            Self::IsNotDefined => {
+                let empty_tag = xml.create_dav_element("is-not-defined");
+                xml.q.write_event_async(Event::Empty(empty_tag)).await
+            },
+            Self::Match(tm) => tm.qwrite(xml).await,
         }
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for TimeZone {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut start = ctx.create_cal_element("timezone");
+impl QWrite for TimeZone {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut start = xml.create_cal_element("timezone");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        xml.write_event_async(Event::Text(BytesText::new(self.0.as_str()))).await?;
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        xml.q.write_event_async(Event::Text(BytesText::new(self.0.as_str()))).await?;
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for Filter {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut start = ctx.create_cal_element("filter");
+impl QWrite for Filter {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut start = xml.create_cal_element("filter");
         let end = start.to_end();
 
-        xml.write_event_async(Event::Start(start.clone())).await?;
-        self.0.write(xml, ctx.child()).await?;
-        xml.write_event_async(Event::End(end)).await
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        self.0.qwrite(xml).await?;
+        xml.q.write_event_async(Event::End(end)).await
     }
 }
 
-impl<C: CalContext> QuickWritable<C> for TimeRange {
-    async fn write(&self, xml: &mut Writer<impl AsyncWrite+Unpin>, ctx: C) -> Result<(), QError> {
-        let mut empty = ctx.create_cal_element("time-range");
+impl QWrite for TimeRange {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut empty = xml.create_cal_element("time-range");
         match self {
             Self::OnlyStart(start) => empty.push_attribute(("start", format!("{}", start.format(ICAL_DATETIME_FMT)).as_str())),
             Self::OnlyEnd(end) => empty.push_attribute(("end", format!("{}", end.format(ICAL_DATETIME_FMT)).as_str())),
@@ -675,11 +658,11 @@ impl<C: CalContext> QuickWritable<C> for TimeRange {
                 empty.push_attribute(("end", format!("{}", end.format(ICAL_DATETIME_FMT)).as_str()));
             }
         }
-        xml.write_event_async(Event::Empty(empty)).await
+        xml.q.write_event_async(Event::Empty(empty)).await
     }
 }
 
-
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
