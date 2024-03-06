@@ -129,5 +129,23 @@ impl<T: IRead> Reader<T> {
         }
         self.next().await
     }
+
+    pub async fn tag_string(&mut self) -> Result<String, ParsingError> {
+        let mut acc = String::new();
+        loop {
+            match self.peek() {
+                Event::CData(unescaped) => {
+                    acc.push_str(std::str::from_utf8(unescaped.as_ref())?);
+                    self.next().await?
+                },
+                Event::Text(escaped) => {
+                    acc.push_str(escaped.unescape()?.as_ref());
+                    self.next().await?
+                }
+                Event::End(_) | Event::Start(_) | Event::Empty(_) => return Ok(acc),
+                _ => self.next().await?,
+            };
+        }
+    }
 }
 

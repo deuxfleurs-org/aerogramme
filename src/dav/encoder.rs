@@ -101,6 +101,20 @@ impl<E: Extension> QWrite for PropValue<E> {
     }
 }
 
+/// Error response
+impl<E: Extension> QWrite for Error<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("error");
+        let end = start.to_end();
+
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        for violation in &self.0 {
+            violation.qwrite(xml).await?;
+        }
+        xml.q.write_event_async(Event::End(end)).await
+    }
+}
+
 // --- XML inner elements
 impl<E: Extension> QWrite for PropertyUpdateItem<E> {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
@@ -580,19 +594,6 @@ impl QWrite for LockEntry {
         xml.q.write_event_async(Event::Start(start.clone())).await?;
         self.lockscope.qwrite(xml).await?;
         self.locktype.qwrite(xml).await?;
-        xml.q.write_event_async(Event::End(end)).await
-    }
-}
-
-impl<E: Extension> QWrite for Error<E> {
-    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
-        let start = xml.create_dav_element("error");
-        let end = start.to_end();
-
-        xml.q.write_event_async(Event::Start(start.clone())).await?;
-        for violation in &self.0 {
-            violation.qwrite(xml).await?;
-        }
         xml.q.write_event_async(Event::End(end)).await
     }
 }
