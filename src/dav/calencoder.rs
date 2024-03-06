@@ -4,8 +4,8 @@ use quick_xml::name::PrefixDeclaration;
 use tokio::io::AsyncWrite;
 
 use super::caltypes::*;
-use super::xml::{QWrite, IWrite, Writer};
-use super::types::{Extension, Node};
+use super::xml::{Node, QWrite, IWrite, Writer};
+use super::types::Extension;
 
 const ICAL_DATETIME_FMT: &str = "%Y%m%dT%H%M%SZ";
 

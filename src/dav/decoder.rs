@@ -9,7 +9,7 @@ use tokio::io::AsyncBufRead;
 
 use super::types::*;
 use super::error::ParsingError;
-use super::xml::{QRead, Reader, IRead, DAV_URN, CAL_URN};
+use super::xml::{Node, QRead, Reader, IRead, DAV_URN, CAL_URN};
 
 //@TODO (1) Rewrite all objects as Href,
 // where we return Ok(None) instead of trying to find the object at any cost.
@@ -24,21 +24,22 @@ use super::xml::{QRead, Reader, IRead, DAV_URN, CAL_URN};
 
 /// Propfind request
 impl<E: Extension> QRead<PropFind<E>> for PropFind<E> {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         // Find propfind
-        xml.tag_start(DAV_URN, "propfind").await?;
+        xml.open(DAV_URN, "propfind").await?;
+
         // Find any tag
         let propfind: PropFind<E> = loop {
             match xml.peek() {
                 Event::Start(_) if xml.is_tag(DAV_URN, "allprop") => {
-                    xml.tag_start(DAV_URN, "allprop").await?;
-                    let r = PropFind::AllProp(Include::qread(xml).await?);
+                    xml.open(DAV_URN, "allprop").await?;
+                    let includ = xml.maybe_find::<Include<E>>().await?;
+                    let r = PropFind::AllProp(includ);
                     xml.tag_stop(DAV_URN, "allprop").await?;
                     break r
                 },
                 Event::Start(_) if xml.is_tag(DAV_URN, "prop") => {
-                    let propname = PropName::qread(xml).await?.ok_or(ParsingError::MissingChild)?;
-                    break PropFind::Prop(propname);
+                    break PropFind::Prop(xml.find::<PropName<E>>().await?);
                 },
                 Event::Empty(_) if xml.is_tag(DAV_URN, "allprop") => {
                     xml.next().await?;
@@ -55,47 +56,32 @@ impl<E: Extension> QRead<PropFind<E>> for PropFind<E> {
         // Close tag
         xml.tag_stop(DAV_URN, "propfind").await?;
 
-        Ok(Some(propfind))
+        Ok(propfind)
     }
 }
 
 /// PROPPATCH request
 impl<E: Extension> QRead<PropertyUpdate<E>> for PropertyUpdate<E> {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        xml.tag_start(DAV_URN, "propertyupdate").await?;
-        let mut collected_items = Vec::new();
-        loop {
-            // Try to collect a property item
-            if let Some(item) = PropertyUpdateItem::qread(xml).await? {
-                collected_items.push(item);
-                continue
-            }
-
-            // Skip or stop otherwise
-            match xml.peek() {
-                Event::End(_) => break,
-                _ => { xml.skip().await?; },
-            }
-        }
-
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "propertyupdate").await?;
+        let collected_items = xml.collect::<PropertyUpdateItem<E>>().await?;
         xml.tag_stop(DAV_URN, "propertyupdate").await?;
-        Ok(Some(PropertyUpdate(collected_items)))
+        Ok(PropertyUpdate(collected_items))
     }
 }
 
 /// Generic response
 impl<E: Extension, N: Node<N>> QRead<Multistatus<E,N>> for Multistatus<E,N> {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        xml.tag_start(DAV_URN, "multistatus").await?;
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "multistatus").await?;
         let mut responses = Vec::new();
         let mut responsedescription = None;
 
         loop {
-            if let Some(v) = Response::qread(xml).await? {
-                responses.push(v);
-            } else if let Some(v) = ResponseDescription::qread(xml).await? {
-                responsedescription = Some(v);
-            } else {
+            let mut dirty = false;
+            xml.maybe_push(&mut responses, &mut dirty).await?;
+            xml.maybe_read(&mut responsedescription, &mut dirty).await?;
+            if !dirty {
                 match xml.peek() {
                     Event::End(_) => break,
                     _ => xml.skip().await?,
@@ -104,23 +90,22 @@ impl<E: Extension, N: Node<N>> QRead<Multistatus<E,N>> for Multistatus<E,N> {
         }
 
         xml.tag_stop(DAV_URN, "multistatus").await?;
-        Ok(Some(Multistatus { responses, responsedescription }))
+        Ok(Multistatus { responses, responsedescription })
     }
 }
 
 // LOCK REQUEST
 impl QRead<LockInfo> for LockInfo {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        xml.tag_start(DAV_URN, "lockinfo").await?;
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "lockinfo").await?;
         let (mut m_scope, mut m_type, mut owner) = (None, None, None);
         loop {
-            if let Some(v) = LockScope::qread(xml).await? {
-                m_scope = Some(v);
-            } else if let Some(v) = LockType::qread(xml).await? {
-                m_type = Some(v);
-            } else if let Some(v) = Owner::qread(xml).await? {
-                owner = Some(v);
-            } else {
+            let mut dirty = false;
+            xml.maybe_read::<LockScope>(&mut m_scope, &mut dirty).await?;
+            xml.maybe_read::<LockType>(&mut m_type, &mut dirty).await?;
+            xml.maybe_read::<Owner>(&mut owner, &mut dirty).await?;
+
+            if !dirty {
                 match xml.peek() {
                     Event::End(_) => break,
                     _ => xml.skip().await?,
@@ -129,7 +114,7 @@ impl QRead<LockInfo> for LockInfo {
         }
         xml.tag_stop(DAV_URN, "lockinfo").await?;
         match (m_scope, m_type) {
-            (Some(lockscope), Some(locktype)) => Ok(Some(LockInfo { lockscope, locktype, owner })),
+            (Some(lockscope), Some(locktype)) => Ok(LockInfo { lockscope, locktype, owner }),
             _ => Err(ParsingError::MissingChild),
         }
     }
@@ -137,44 +122,22 @@ impl QRead<LockInfo> for LockInfo {
 
 // LOCK RESPONSE
 impl<E: Extension> QRead<PropValue<E>> for PropValue<E> {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        xml.tag_start(DAV_URN, "prop").await?;
-        let mut acc = Vec::new();
-        loop {
-            // Found a property
-            if let Some(prop) = Property::qread(xml).await? {
-                acc.push(prop);
-                continue;
-            }
-
-            // Otherwise skip or escape
-            match xml.peek() {
-                Event::End(_) => break,
-                _ => { xml.skip().await?; },
-            }
-        }
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "prop").await?;
+        let mut acc = xml.collect::<Property<E>>().await?;
         xml.tag_stop(DAV_URN, "prop").await?;
-        Ok(Some(PropValue(acc)))
+        Ok(PropValue(acc))
     }
 }
 
 
 /// Error response
 impl<E: Extension> QRead<Error<E>> for Error<E> {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        xml.tag_start(DAV_URN, "error").await?;
-        let mut violations = Vec::new();
-        loop {
-            match xml.peek() {
-                Event::Start(_) | Event::Empty(_) => { 
-                    Violation::qread(xml).await?.map(|v| violations.push(v)); 
-                },
-                Event::End(_) if xml.is_tag(DAV_URN, "error") => break,
-                _ => { xml.skip().await?; },
-            }
-        }
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "error").await?;
+        let violations = xml.collect::<Violation<E>>().await?;
         xml.tag_stop(DAV_URN, "error").await?;
-        Ok(Some(Error(violations)))
+        Ok(Error(violations))
     }
 }
 
@@ -182,28 +145,22 @@ impl<E: Extension> QRead<Error<E>> for Error<E> {
 
 // ---- INNER XML
 impl<E: Extension, N: Node<N>> QRead<Response<E,N>> for Response<E,N> {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        if xml.maybe_tag_start(DAV_URN, "response").await?.is_none() {
-            return Ok(None)
-        }
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "response").await?;
         let (mut status, mut error, mut responsedescription, mut location) = (None, None, None, None);
         let mut href = Vec::new();
         let mut propstat = Vec::new();
 
         loop {
-            if let Some(v) = Status::qread(xml).await? {
-                status = Some(v);
-            } else if let Some(v) = Href::qread(xml).await? {
-                href.push(v);
-            } else if let Some(v) = PropStat::qread(xml).await? {
-                propstat.push(v);
-            } else if let Some(v) = Error::qread(xml).await? {
-                error = Some(v);
-            } else if let Some(v) = ResponseDescription::qread(xml).await? {
-                responsedescription = Some(v);
-            } else if let Some(v) = Location::qread(xml).await? {
-                location = Some(v);
-            } else {
+            let mut dirty = false;
+            xml.maybe_read::<Status>(&mut status, &mut dirty).await?;
+            xml.maybe_push::<Href>(&mut href, &mut dirty).await?;
+            xml.maybe_push::<PropStat<E,N>>(&mut propstat, &mut dirty).await?;
+            xml.maybe_read::<Error<E>>(&mut error, &mut dirty).await?;
+            xml.maybe_read::<ResponseDescription>(&mut responsedescription, &mut dirty).await?;
+            xml.maybe_read::<Location>(&mut location, &mut dirty).await?;
+
+            if !dirty {
                 match xml.peek() {
                     Event::End(_) => break,
                     _ => { xml.skip().await? },
@@ -213,14 +170,14 @@ impl<E: Extension, N: Node<N>> QRead<Response<E,N>> for Response<E,N> {
 
         xml.tag_stop(DAV_URN, "response").await?;
         match (status, &propstat[..], &href[..]) {
-            (Some(status), &[], &[_, ..]) => Ok(Some(Response { 
+            (Some(status), &[], &[_, ..]) => Ok(Response { 
                 status_or_propstat: StatusOrPropstat::Status(href, status), 
                 error, responsedescription, location,
-            })),
-            (None, &[_, ..], &[_, ..]) => Ok(Some(Response {
+            }),
+            (None, &[_, ..], &[_, ..]) => Ok(Response {
                 status_or_propstat: StatusOrPropstat::PropStat(href.into_iter().next().unwrap(), propstat),
                 error, responsedescription, location,
-            })),
+            }),
             (Some(_), &[_, ..], _) => Err(ParsingError::InvalidValue),
             _ => Err(ParsingError::MissingChild),
         }
@@ -228,255 +185,173 @@ impl<E: Extension, N: Node<N>> QRead<Response<E,N>> for Response<E,N> {
 }
 
 impl<E: Extension, N: Node<N>> QRead<PropStat<E,N>> for PropStat<E,N> {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        if xml.maybe_tag_start(DAV_URN, "propstat").await?.is_none() {
-            return Ok(None)
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "propstat").await?;
+
+        let (mut m_prop, mut m_status, mut error, mut responsedescription) = (None, None, None, None);
+
+        loop {
+            let mut dirty = false;
+            xml.maybe_read::<N>(&mut m_prop, &mut dirty).await?;
+            xml.maybe_read::<Status>(&mut m_status, &mut dirty).await?;
+            xml.maybe_read::<Error<E>>(&mut error, &mut dirty).await?;
+            xml.maybe_read::<ResponseDescription>(&mut responsedescription, &mut dirty).await?;
+
+            if !dirty {
+                match xml.peek() {
+                    Event::End(_) => break,
+                    _ => xml.skip().await?,
+                };
+            }
         }
-        unimplemented!();
+
+        xml.tag_stop(DAV_URN, "propstat").await?;
+        match (m_prop, m_status) {
+            (Some(prop), Some(status)) => Ok(PropStat { prop, status, error, responsedescription }),
+            _ => Err(ParsingError::MissingChild),
+        }
     }
 }
 
 impl QRead<Status> for Status {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        if xml.maybe_tag_start(DAV_URN, "status").await?.is_none() {
-            return Ok(None)
-        }
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "status").await?;
         let fullcode = xml.tag_string().await?;
         let txtcode = fullcode.splitn(3, ' ').nth(1).ok_or(ParsingError::InvalidValue)?;
         let code = http::status::StatusCode::from_bytes(txtcode.as_bytes()).or(Err(ParsingError::InvalidValue))?;
         xml.tag_stop(DAV_URN, "status").await?;
-        Ok(Some(Status(code)))
+        Ok(Status(code))
     }
 }
 
 impl QRead<ResponseDescription> for ResponseDescription {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        if xml.maybe_tag_start(DAV_URN, "responsedescription").await?.is_none() {
-            return Ok(None)
-        }
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "responsedescription").await?;
         let cnt = xml.tag_string().await?;
         xml.tag_stop(DAV_URN, "responsedescription").await?;
-        Ok(Some(ResponseDescription(cnt)))
+        Ok(ResponseDescription(cnt))
     }
 }
 
 impl QRead<Location> for Location {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        if xml.maybe_tag_start(DAV_URN, "location").await?.is_none() {
-            return Ok(None)
-        }
-        let href = loop {
-            if let Some(v) = Href::qread(xml).await? {
-                break v
-            }
-
-            match xml.peek() {
-                Event::End(_) => return Err(ParsingError::MissingChild),
-                _ => xml.skip().await?,
-            };
-        };
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "location").await?;
+        let href = xml.find::<Href>().await?;
         xml.tag_stop(DAV_URN, "location").await?;
-        Ok(Some(Location(href)))
+        Ok(Location(href))
     }
 }
 
 impl<E: Extension> QRead<PropertyUpdateItem<E>> for PropertyUpdateItem<E> {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        if let Some(rm) = Remove::qread(xml).await? {
-            return Ok(Some(PropertyUpdateItem::Remove(rm)))
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        match Remove::qread(xml).await {
+            Err(ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(PropertyUpdateItem::Remove),
         }
-        Ok(Set::qread(xml).await?.map(PropertyUpdateItem::Set))
+        Set::qread(xml).await.map(PropertyUpdateItem::Set)
     }
 }
 
 impl<E: Extension> QRead<Remove<E>> for Remove<E> {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        match xml.peek() {
-            Event::Start(b) if xml.is_tag(DAV_URN, "remove") => xml.next().await?,
-            _ => return Ok(None),
-        };
-
-        let propname = loop {
-            match xml.peek() {
-                Event::Start(b) | Event::Empty(b) if xml.is_tag(DAV_URN, "prop") => break PropName::qread(xml).await?,
-                _ => xml.skip().await?,
-            };
-        };
-        
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "remove").await?;
+        let propname = xml.find::<PropName<E>>().await?;
         xml.tag_stop(DAV_URN, "remove").await?;
-        Ok(propname.map(Remove))
+        Ok(Remove(propname))
     }
 }
 
 impl<E: Extension> QRead<Set<E>> for Set<E> {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        match xml.peek() {
-            Event::Start(b) if xml.is_tag(DAV_URN, "set") => xml.next().await?,
-            _ => return Ok(None),
-        };
-        let propvalue = loop {
-            match xml.peek() {
-                Event::Start(b) | Event::Empty(b) if xml.is_tag(DAV_URN, "prop") => break PropValue::qread(xml).await?,
-                _ => xml.skip().await?,
-            };
-        };
-
-
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "set").await?;
+        let propvalue = xml.find::<PropValue<E>>().await?;
         xml.tag_stop(DAV_URN, "set").await?;
-        Ok(propvalue.map(Set))
+        Ok(Set(propvalue))
     }
 }
 
 impl<E: Extension> QRead<Violation<E>> for Violation<E> {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        loop {
-            let bs = match xml.peek() {
-                Event::Start(b) | Event::Empty(b) => b,
-                _ => { 
-                    xml.skip().await?; 
-                    continue
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        let bs = match xml.peek() {
+            Event::Start(b) | Event::Empty(b) => b,
+            _ => return Err(ParsingError::Recoverable),
+        };
+
+        // Option 1: a pure DAV property
+        let (ns, loc) = xml.rdr.resolve_element(bs.name());
+        if matches!(ns, Bound(Namespace(ns)) if ns == DAV_URN) {
+            match loc.into_inner() {
+                b"lock-token-matches-request-uri" => {
+                    xml.next().await?;
+                    return Ok(Violation::LockTokenMatchesRequestUri)
                 },
+                b"lock-token-submitted" => {
+                    xml.next().await?;
+                    let links = xml.collect::<Href>().await?;
+                    xml.tag_stop(DAV_URN, "lock-token-submitted").await?;
+                    return Ok(Violation::LockTokenSubmitted(links))
+                },
+                b"no-conflicting-lock" => {
+                    // start tag
+                    xml.next().await?;
+                    let links = xml.collect::<Href>().await?;
+                    xml.tag_stop(DAV_URN, "no-conflicting-lock").await?;
+                    return Ok(Violation::NoConflictingLock(links))
+                },
+                b"no-external-entities" => {
+                    xml.next().await?;
+                    return Ok(Violation::NoExternalEntities)
+                },
+                b"preserved-live-properties" => {
+                    xml.next().await?;
+                    return Ok(Violation::PreservedLiveProperties)
+                },
+                b"propfind-finite-depth" => {
+                    xml.next().await?;
+                    return Ok(Violation::PropfindFiniteDepth)
+                },
+                b"cannot-modify-protected-property" => {
+                    xml.next().await?;
+                    return Ok(Violation::CannotModifyProtectedProperty)
+                },
+                _ => (),
             };
-
-            let mut maybe_res = None;
-
-            // Option 1: a pure DAV property
-            let (ns, loc) = xml.rdr.resolve_element(bs.name());
-            if matches!(ns, Bound(Namespace(ns)) if ns == DAV_URN) {
-                maybe_res = match loc.into_inner() {
-                    b"lock-token-matches-request-uri" => {
-                        xml.next().await?;
-                        Some(Violation::LockTokenMatchesRequestUri)
-                    },
-                    b"lock-token-submitted" => {
-                        // start tag
-                        xml.next().await?;
-
-                        let mut links = Vec::new();
-                        loop {
-                            // If we find a Href
-                            if let Some(href) = Href::qread(xml).await? {
-                                links.push(href);
-                                continue
-                            }
-
-                            // Otherwise
-                            match xml.peek() {
-                                Event::End(_) => break,
-                                _ => { xml.skip().await?; },
-                            }
-                        }
-                        xml.tag_stop(DAV_URN, "lock-token-submitted").await?;
-                        Some(Violation::LockTokenSubmitted(links))
-                    },
-                    b"no-conflicting-lock" => {
-                        // start tag
-                        xml.next().await?;
-
-                        let mut links = Vec::new();
-                        loop {
-                            // If we find a Href
-                            if let Some(href) = Href::qread(xml).await? {
-                                links.push(href);
-                                continue
-                            }
-
-                            // Otherwise
-                            match xml.peek() {
-                                Event::End(_) => break,
-                                _ => { xml.skip().await?; },
-                            }
-                        }
-                        xml.tag_stop(DAV_URN, "no-conflicting-lock").await?;
-                        Some(Violation::NoConflictingLock(links))
-                    },
-                    b"no-external-entities" => {
-                        xml.next().await?;
-                        Some(Violation::NoExternalEntities)
-                    },
-                    b"preserved-live-properties" => {
-                        xml.next().await?;
-                        Some(Violation::PreservedLiveProperties)
-                    },
-                    b"propfind-finite-depth" => {
-                        xml.next().await?;
-                        Some(Violation::PropfindFiniteDepth)
-                    },
-                    b"cannot-modify-protected-property" => {
-                        xml.next().await?;
-                        Some(Violation::CannotModifyProtectedProperty)
-                    },
-                    _ => None,
-                };
-            }
-
-            // Option 2: an extension property, delegating
-            if maybe_res.is_none() {
-                maybe_res = E::Error::qread(xml).await?.map(Violation::Extension);
-            }
-
-            return Ok(maybe_res)
         }
+
+        // Option 2: an extension property, delegating
+        E::Error::qread(xml).await.map(Violation::Extension)
     }
 }
 
 impl<E: Extension> QRead<Include<E>> for Include<E> {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        xml.tag_start(DAV_URN, "include").await?;
-        let mut acc = Vec::new();
-        loop {
-            // Found a property
-            if let Some(prop) = PropertyRequest::qread(xml).await? {
-                acc.push(prop);
-                continue;
-            }
-
-            // Otherwise skip or escape
-            match xml.peek() {
-                Event::End(_) => break,
-                _ => { xml.skip().await?; },
-            }
-        }
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "include").await?;
+        let acc = xml.collect::<PropertyRequest<E>>().await?;
         xml.tag_stop(DAV_URN, "include").await?;
-        Ok(Some(Include(acc)))
+        Ok(Include(acc))
     }
 }
 
 impl<E: Extension> QRead<PropName<E>> for PropName<E> {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        xml.tag_start(DAV_URN, "prop").await?;
-        let mut acc = Vec::new();
-        loop {
-            // Found a property
-            if let Some(prop) = PropertyRequest::qread(xml).await? {
-                acc.push(prop);
-                continue;
-            }
-
-            // Otherwise skip or escape
-            match xml.peek() {
-                Event::End(_) => break,
-                _ => { xml.skip().await?; },
-            }
-        }
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "prop").await?;
+        let acc = xml.collect::<PropertyRequest<E>>().await?;
         xml.tag_stop(DAV_URN, "prop").await?;
-        Ok(Some(PropName(acc)))
+        Ok(PropName(acc))
     }
 }
 
 impl<E: Extension> QRead<PropertyRequest<E>> for PropertyRequest<E> {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         let bs = match xml.peek() {
             Event::Start(b) | Event::Empty(b) => b,
-            _ => return Ok(None),
+            _ => return Err(ParsingError::Recoverable),
         };
-
-        let mut maybe_res = None;
 
         // Option 1: a pure core DAV property
         let (ns, loc) = xml.rdr.resolve_element(bs.name());
         if matches!(ns, Bound(Namespace(ns)) if ns == DAV_URN) {
-            maybe_res = match loc.into_inner() {
+            let maybe_res = match loc.into_inner() {
                 b"creationdate" => Some(PropertyRequest::CreationDate),
                 b"displayname" => Some(PropertyRequest::DisplayName),
                 b"getcontentlanguage" => Some(PropertyRequest::GetContentLanguage),
@@ -490,163 +365,105 @@ impl<E: Extension> QRead<PropertyRequest<E>> for PropertyRequest<E> {
                 _ => None,
             };
             // Close the current tag if we read something
-            if maybe_res.is_some() {
+            if let Some(res) = maybe_res {
                 xml.skip().await?; 
+                return Ok(res)
             }
         }
 
         // Option 2: an extension property, delegating
-        if maybe_res.is_none() {
-            maybe_res = E::PropertyRequest::qread(xml).await?.map(PropertyRequest::Extension);
-        }
-
-        Ok(maybe_res)
+        E::PropertyRequest::qread(xml).await.map(PropertyRequest::Extension)
     }
 }
 
 impl<E: Extension> QRead<Property<E>> for Property<E> {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         use chrono::{DateTime, FixedOffset, TimeZone};
 
         let bs = match xml.peek() {
             Event::Start(b) | Event::Empty(b) => b,
-            _ => return Ok(None),
+            _ => return Err(ParsingError::Recoverable),
         };
-
-        let mut maybe_res = None;
 
         // Option 1: a pure core DAV property
         let (ns, loc) = xml.rdr.resolve_element(bs.name());
         if matches!(ns, Bound(Namespace(ns)) if ns == DAV_URN) {
-            maybe_res = match loc.into_inner() {
+            match loc.into_inner() {
                 b"creationdate" => {
                     xml.next().await?;
                     let datestr = xml.tag_string().await?;
-                    Some(Property::CreationDate(DateTime::parse_from_rfc3339(datestr.as_str())?))
+                    return Ok(Property::CreationDate(DateTime::parse_from_rfc3339(datestr.as_str())?))
                 },
                 b"displayname" => {
                     xml.next().await?;
-                    Some(Property::DisplayName(xml.tag_string().await?))
+                    return Ok(Property::DisplayName(xml.tag_string().await?))
                 },
                 b"getcontentlanguage" => {
                     xml.next().await?;
-                    Some(Property::GetContentLanguage(xml.tag_string().await?))
+                    return Ok(Property::GetContentLanguage(xml.tag_string().await?))
                 },
                 b"getcontentlength" => {
                     xml.next().await?;
                     let cl = xml.tag_string().await?.parse::<u64>()?;
-                    Some(Property::GetContentLength(cl))
+                    return Ok(Property::GetContentLength(cl))
                 },
                 b"getcontenttype" => {
                     xml.next().await?;
-                    Some(Property::GetContentType(xml.tag_string().await?))
+                    return Ok(Property::GetContentType(xml.tag_string().await?))
                 },
                 b"getetag" => {
                     xml.next().await?;
-                    Some(Property::GetEtag(xml.tag_string().await?))
+                    return Ok(Property::GetEtag(xml.tag_string().await?))
                 },
                 b"getlastmodified" => {
                     xml.next().await?;
-                    xml.next().await?;
                     let datestr = xml.tag_string().await?;
-                    Some(Property::CreationDate(DateTime::parse_from_rfc2822(datestr.as_str())?))
+                    return Ok(Property::CreationDate(DateTime::parse_from_rfc2822(datestr.as_str())?))
                 },
                 b"lockdiscovery" => {
-                    // start tag
                     xml.next().await?;
-
-                    let mut acc = Vec::new();
-                    loop {
-                        // If we find a lock
-                        if let Some(lock) = ActiveLock::qread(xml).await? {
-                            acc.push(lock);
-                            continue
-                        }
-
-                        // Otherwise
-                        match xml.peek() {
-                            Event::End(_) => break,
-                            _ => { xml.skip().await?; },
-                        }
-                    }
+                    let acc = xml.collect::<ActiveLock>().await?;
                     xml.tag_stop(DAV_URN, "lockdiscovery").await?;
-                    Some(Property::LockDiscovery(acc))
+                    return Ok(Property::LockDiscovery(acc))
                 },
                 b"resourcetype" => {
                     xml.next().await?;
-
-                    let mut acc = Vec::new();
-                    loop {
-                        // If we find a resource type...
-                        if let Some(restype) = ResourceType::qread(xml).await? {
-                            acc.push(restype);
-                            continue
-                        }
-
-                        // Otherwise
-                        match xml.peek() {
-                            Event::End(_) => break,
-                            _ => { xml.skip().await?; },
-                        }
-                    }
+                    let acc = xml.collect::<ResourceType<E>>().await?;
                     xml.tag_stop(DAV_URN, "resourcetype").await?;
-                    Some(Property::ResourceType(acc))
+                    return Ok(Property::ResourceType(acc))
                 },
                 b"supportedlock" => {
                     xml.next().await?;
-
-                    let mut acc = Vec::new();
-                    loop {
-                        // If we find a resource type...
-                        if let Some(restype) = LockEntry::qread(xml).await? {
-                            acc.push(restype);
-                            continue
-                        }
-
-                        // Otherwise
-                        match xml.peek() {
-                            Event::End(_) => break,
-                            _ => { xml.skip().await?; },
-                        }
-                    }
+                    let acc = xml.collect::<LockEntry>().await?;
                     xml.tag_stop(DAV_URN, "supportedlock").await?;
-                    Some(Property::SupportedLock(acc))
+                    return Ok(Property::SupportedLock(acc))
                 },
-                _ => None,
+                _ => (),
             };
         }
 
         // Option 2: an extension property, delegating
-        if maybe_res.is_none() {
-            maybe_res = E::Property::qread(xml).await?.map(Property::Extension);
-        }
-
-        Ok(maybe_res)
+        E::Property::qread(xml).await.map(Property::Extension)
     }
 }
 
 impl QRead<ActiveLock> for ActiveLock {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        xml.tag_start(DAV_URN, "activelock").await?;
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "activelock").await?;
         let (mut m_scope, mut m_type, mut m_depth, mut owner, mut timeout, mut locktoken, mut m_root) = 
             (None, None, None, None, None, None, None);
 
         loop {
-            if let Some(v) = LockScope::qread(xml).await? {
-                m_scope = Some(v);
-            } else if let Some(v) = LockType::qread(xml).await? {
-                m_type = Some(v);
-            } else if let Some(v) = Depth::qread(xml).await? {
-                m_depth = Some(v);
-            } else if let Some(v) = Owner::qread(xml).await? {
-                owner = Some(v);
-            } else if let Some(v) = Timeout::qread(xml).await? {
-                timeout = Some(v);
-            } else if let Some(v) = LockToken::qread(xml).await? {
-                locktoken = Some(v);
-            } else if let Some(v) = LockRoot::qread(xml).await? {
-                m_root = Some(v);
-            } else {
+            let mut dirty = false;
+            xml.maybe_read::<LockScope>(&mut m_scope, &mut dirty).await?;
+            xml.maybe_read::<LockType>(&mut m_type, &mut dirty).await?;
+            xml.maybe_read::<Depth>(&mut m_depth, &mut dirty).await?;
+            xml.maybe_read::<Owner>(&mut owner, &mut dirty).await?;
+            xml.maybe_read::<Timeout>(&mut timeout, &mut dirty).await?;
+            xml.maybe_read::<LockToken>(&mut locktoken, &mut dirty).await?;
+            xml.maybe_read::<LockRoot>(&mut m_root, &mut dirty).await?;
+
+            if !dirty {
                 match xml.peek() {
                     Event::End(_) => break,
                     _ => { xml.skip().await?; },
@@ -657,31 +474,29 @@ impl QRead<ActiveLock> for ActiveLock {
         xml.tag_stop(DAV_URN, "activelock").await?;
         match (m_scope, m_type, m_depth, m_root) {
             (Some(lockscope), Some(locktype), Some(depth), Some(lockroot)) =>
-                Ok(Some(ActiveLock { lockscope, locktype, depth, owner, timeout, locktoken, lockroot })),
+                Ok(ActiveLock { lockscope, locktype, depth, owner, timeout, locktoken, lockroot }),
             _ => Err(ParsingError::MissingChild),
         }
     }
 }
 
 impl QRead<Depth> for Depth {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        xml.tag_start(DAV_URN, "depth").await?;
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "depth").await?;
         let depth_str = xml.tag_string().await?;
         xml.tag_stop(DAV_URN, "depth").await?;
         match depth_str.as_str() {
-            "0" => Ok(Some(Depth::Zero)),
-            "1" => Ok(Some(Depth::One)),
-            "infinity" => Ok(Some(Depth::Infinity)),
+            "0" => Ok(Depth::Zero),
+            "1" => Ok(Depth::One),
+            "infinity" => Ok(Depth::Infinity),
             _ => Err(ParsingError::WrongToken),
         }
     }
 }
 
 impl QRead<Owner> for Owner {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        if xml.maybe_tag_start(DAV_URN, "owner").await?.is_none() {
-            return Ok(None)
-        }
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "owner").await?;
         
         let mut owner = Owner::Unknown;
         loop {
@@ -693,28 +508,25 @@ impl QRead<Owner> for Owner {
                     }
                 }
                 Event::Start(_) | Event::Empty(_) => {
-                    if let Some(href) = Href::qread(xml).await? {
-                        owner = Owner::Href(href)
+                    match Href::qread(xml).await {
+                        Ok(href) => { owner = Owner::Href(href); },
+                        Err(ParsingError::Recoverable) => { xml.skip().await?; },
+                        Err(e) => return Err(e),
                     }
-                    xml.skip().await?;
                 }
                 Event::End(_) => break,
                 _ => { xml.skip().await?; },
             }
         };
         xml.tag_stop(DAV_URN, "owner").await?;
-        Ok(Some(owner))
+        Ok(owner)
     }
 }
 
 impl QRead<Timeout> for Timeout {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         const SEC_PFX: &str = "SEC_PFX";
-
-        match xml.peek() {
-            Event::Start(b) if xml.is_tag(DAV_URN, "timeout") => xml.next().await?,
-            _ => return Ok(None),
-        };
+        xml.open(DAV_URN, "timeout").await?;
         
         let timeout = match xml.tag_string().await?.as_str() {
             "Infinite" => Timeout::Infinite,
@@ -725,79 +537,70 @@ impl QRead<Timeout> for Timeout {
         };
 
         xml.tag_stop(DAV_URN, "timeout").await?;
-        Ok(Some(timeout))
+        Ok(timeout)
     }
 }
 
 impl QRead<LockToken> for LockToken {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        match xml.peek() {
-            Event::Start(b) if xml.is_tag(DAV_URN, "locktoken") => xml.next().await?,
-            _ => return Ok(None),
-        };
-        let href = Href::qread(xml).await?.ok_or(ParsingError::MissingChild)?;
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "locktoken").await?;
+        let href = Href::qread(xml).await?;
         xml.tag_stop(DAV_URN, "locktoken").await?;
-        Ok(Some(LockToken(href)))
+        Ok(LockToken(href))
     }
 }
 
 impl QRead<LockRoot> for LockRoot {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        xml.tag_start(DAV_URN, "lockroot").await?;
-        let href = Href::qread(xml).await?.ok_or(ParsingError::MissingChild)?;
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "lockroot").await?;
+        let href = Href::qread(xml).await?;
         xml.tag_stop(DAV_URN, "lockroot").await?;
-        Ok(Some(LockRoot(href)))
+        Ok(LockRoot(href))
     }
 }
 
 impl<E: Extension> QRead<ResourceType<E>> for ResourceType<E> {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         match xml.peek() {
             Event::Empty(b) if xml.is_tag(DAV_URN, "collection") => {
                 xml.next().await?;
-                Ok(Some(ResourceType::Collection))
+                Ok(ResourceType::Collection)
             },
-            _ => Ok(E::ResourceType::qread(xml).await?.map(ResourceType::Extension)),
+            _ => E::ResourceType::qread(xml).await.map(ResourceType::Extension),
         }
     }
 }
 
 impl QRead<LockEntry> for LockEntry {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        xml.tag_start(DAV_URN, "lockentry").await?;
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "lockentry").await?;
         let (mut maybe_scope, mut maybe_type) = (None, None);
 
         loop {
-            match xml.peek() {
-                Event::Start(_) if xml.is_tag(DAV_URN, "lockscope") => {
-                    maybe_scope = LockScope::qread(xml).await?;
-                },
-                Event::Start(_) if xml.is_tag(DAV_URN, "lockentry") => {
-                    maybe_type = LockType::qread(xml).await?;
-                }
-                Event::End(_) => break,
-                _ => { xml.skip().await?; },
+            let mut dirty = false;
+            xml.maybe_read::<LockScope>(&mut maybe_scope, &mut dirty).await?;
+            xml.maybe_read::<LockType>(&mut maybe_type, &mut dirty).await?;
+            if !dirty {
+                match xml.peek() {
+                    Event::End(_) => break,
+                    _ => xml.skip().await?,
+                };
             }
         }
 
-        let lockentry = match (maybe_scope, maybe_type) {
-            (Some(lockscope), Some(locktype)) => LockEntry { lockscope, locktype },
-            _ => return Err(ParsingError::MissingChild),
-        };
-
         xml.tag_stop(DAV_URN, "lockentry").await?;
-        Ok(Some(lockentry))
+        match (maybe_scope, maybe_type) {
+            (Some(lockscope), Some(locktype)) => Ok(LockEntry { lockscope, locktype }),
+            _ => Err(ParsingError::MissingChild),
+        }
     }
 }
 
 impl QRead<LockScope> for LockScope {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        if xml.maybe_tag_start(DAV_URN, "lockscope").await?.is_none() {
-            return Ok(None)
-        }
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "lockscope").await?;
 
         let lockscope = loop {
-            println!("lockscope tag: {:?}", xml.peek());
             match xml.peek() {
                 Event::Empty(_) if xml.is_tag(DAV_URN, "exclusive") => {
                     xml.next().await?;
@@ -812,15 +615,13 @@ impl QRead<LockScope> for LockScope {
         };
 
         xml.tag_stop(DAV_URN, "lockscope").await?;
-        Ok(Some(lockscope))
+        Ok(lockscope)
     }
 }
 
 impl QRead<LockType> for LockType {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        if xml.maybe_tag_start(DAV_URN, "locktype").await?.is_none() {
-            return Ok(None)
-        }
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "locktype").await?;
 
         let locktype = loop {
             match xml.peek() {
@@ -832,20 +633,16 @@ impl QRead<LockType> for LockType {
             };
         };
         xml.tag_stop(DAV_URN, "locktype").await?;
-        Ok(Some(locktype))
+        Ok(locktype)
     }
 }
 
 impl QRead<Href> for Href {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        match xml.peek() {
-            Event::Start(b) if xml.is_tag(DAV_URN, "href") => xml.next().await?,
-            _ => return Ok(None),
-        };
-
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "href").await?;
         let mut url = xml.tag_string().await?;
         xml.tag_stop(DAV_URN, "href").await?;
-        Ok(Some(Href(url)))
+        Ok(Href(url))
     }
 }
 
@@ -865,7 +662,7 @@ mod tests {
 "#;
 
         let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
-        let got = PropFind::<Core>::qread(&mut rdr).await.unwrap().unwrap();
+        let got = rdr.find::<PropFind::<Core>>().await.unwrap();
 
         assert_eq!(got, PropFind::<Core>::PropName);
     }
@@ -889,7 +686,7 @@ mod tests {
 "#;
 
         let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
-        let got = PropFind::<Core>::qread(&mut rdr).await.unwrap().unwrap();
+        let got = rdr.find::<PropFind::<Core>>().await.unwrap();
 
         assert_eq!(got, PropFind::Prop(PropName(vec![
             PropertyRequest::DisplayName,
@@ -912,7 +709,7 @@ mod tests {
      </D:error>"#;
 
         let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
-        let got = Error::<Core>::qread(&mut rdr).await.unwrap().unwrap();
+        let got = rdr.find::<Error::<Core>>().await.unwrap();
 
         assert_eq!(got, Error(vec![
             Violation::LockTokenSubmitted(vec![
@@ -941,7 +738,7 @@ mod tests {
      </D:propertyupdate>"#;
 
         let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
-        let got = PropertyUpdate::<Core>::qread(&mut rdr).await.unwrap().unwrap();
+        let got = rdr.find::<PropertyUpdate::<Core>>().await.unwrap();
 
         assert_eq!(got, PropertyUpdate(vec![
             PropertyUpdateItem::Set(Set(PropValue(vec![]))),
@@ -950,7 +747,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rfc_lockinfo1() {
+    async fn rfc_lockinfo() {
         let src = r#"
 <?xml version="1.0" encoding="utf-8" ?>
 <D:lockinfo xmlns:D='DAV:'>
@@ -963,12 +760,67 @@ mod tests {
 "#;
 
         let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
-        let got = LockInfo::qread(&mut rdr).await.unwrap().unwrap();
+        let got = rdr.find::<LockInfo>().await.unwrap();
+
         assert_eq!(got, LockInfo {
             lockscope: LockScope::Exclusive,
             locktype: LockType::Write,
             owner: Some(Owner::Href(Href("http://example.org/~ejw/contact.html".into()))),
         });
+    }
+
+    #[tokio::test]
+    async fn rfc_multistatus_name() {
+        let src = r#"
+<?xml version="1.0" encoding="utf-8" ?>
+    <multistatus xmlns="DAV:">
+       <response>
+         <href>http://www.example.com/container/</href>
+         <propstat>
+           <prop xmlns:R="http://ns.example.com/boxschema/">
+             <R:bigbox/>
+             <R:author/>
+             <creationdate/>
+             <displayname/>
+             <resourcetype/>
+             <supportedlock/>
+           </prop>
+           <status>HTTP/1.1 200 OK</status>
+         </propstat>
+       </response>
+       <response>
+         <href>http://www.example.com/container/front.html</href>
+         <propstat>
+           <prop xmlns:R="http://ns.example.com/boxschema/">
+             <R:bigbox/>
+             <creationdate/>
+             <displayname/>
+             <getcontentlength/>
+             <getcontenttype/>
+             <getetag/>
+             <getlastmodified/>
+             <resourcetype/>
+             <supportedlock/>
+           </prop>
+           <status>HTTP/1.1 200 OK</status>
+         </propstat>
+       </response>
+     </multistatus>
+"#;
+
+        let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
+        let got = rdr.find::<Multistatus::<Core, PropName<Core>>>().await.unwrap();
+
+        /*assert_eq!(got, Multistatus {
+            responses: vec![
+                Response {
+                    status_or_propstat: 
+                },
+                Response {},
+            ],
+            responsedescription: None,
+        });*/
+
     }
 
 }

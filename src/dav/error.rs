@@ -2,6 +2,7 @@ use quick_xml::events::attributes::AttrError;
 
 #[derive(Debug)]
 pub enum ParsingError {
+    Recoverable,
     MissingChild,
     NamespacePrefixAlreadyUsed,
     WrongToken,

@@ -6,8 +6,8 @@ use super::error;
 #[derive(Debug, PartialEq)]
 pub struct Disabled(());
 impl xml::QRead<Disabled> for Disabled {
-    async fn qread(xml: &mut xml::Reader<impl xml::IRead>) -> Result<Option<Self>, error::ParsingError> {
-        Ok(None)
+    async fn qread(xml: &mut xml::Reader<impl xml::IRead>) -> Result<Self, error::ParsingError> {
+        Err(error::ParsingError::Recoverable)
     }
 }
 impl xml::QWrite for Disabled {

@@ -19,8 +19,13 @@ pub trait QWrite {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), quick_xml::Error>; 
 }
 pub trait QRead<T> {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<T>, ParsingError>;
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<T, ParsingError>;
 }
+
+// The representation of an XML node in Rust
+pub trait Node<T> = QRead<T> + QWrite + std::fmt::Debug + PartialEq;
+
+// ---------------
 
 /// Transform a Rust object into an XML stream of characters
 pub struct Writer<T: IWrite> {
@@ -106,6 +111,8 @@ impl<T: IRead> Reader<T> {
         }
     }
 
+    /*
+     * Disabled
     /// maybe find start tag
     pub async fn maybe_tag_start(&mut self, ns: &[u8], key: &str) -> Result<Option<Event<'static>>, ParsingError> {
         println!("maybe start tag {}", key);
@@ -118,7 +125,6 @@ impl<T: IRead> Reader<T> {
 
     /// find start tag
     pub async fn tag_start(&mut self, ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
-        println!("search start tag {}", key);
         loop {
             match self.peek() {
                 Event::Start(b) if self.is_tag(ns, key) => break,
@@ -127,6 +133,7 @@ impl<T: IRead> Reader<T> {
         }
         self.next().await
     }
+    */
 
     // find stop tag
     pub async fn tag_stop(&mut self, ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
@@ -156,6 +163,82 @@ impl<T: IRead> Reader<T> {
                 _ => self.next().await?,
             };
         }
+    }
+
+    // NEW API
+    pub async fn maybe_read<N: Node<N>>(&mut self, t: &mut Option<N>, dirty: &mut bool) -> Result<(), ParsingError> {
+        match N::qread(self).await {
+            Ok(v) => { 
+                *t = Some(v); 
+                *dirty = true;
+                Ok(()) 
+            },
+            Err(ParsingError::Recoverable) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub async fn maybe_push<N: Node<N>>(&mut self, t: &mut Vec<N>, dirty: &mut bool) -> Result<(), ParsingError> {
+        match N::qread(self).await {
+            Ok(v) => { 
+                t.push(v); 
+                *dirty = true;
+                Ok(()) 
+            },
+            Err(ParsingError::Recoverable) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub async fn find<N: Node<N>>(&mut self) -> Result<N, ParsingError> {
+        loop {
+            // Try parse
+            match N::qread(self).await {
+                Err(ParsingError::Recoverable) => (),
+                otherwise => return otherwise,
+            }
+
+            // If recovered, skip the element
+            self.skip().await?;
+        }
+    }
+
+    pub async fn maybe_find<N: Node<N>>(&mut self) -> Result<Option<N>, ParsingError> {
+        loop {
+            // Try parse
+            match N::qread(self).await {
+                Err(ParsingError::Recoverable) => (),
+                otherwise => return otherwise.map(Some),
+            }
+
+            match self.peek() {
+                Event::End(_) => return Ok(None),
+                _ => self.skip().await?,
+            };
+        }
+    }
+
+    pub async fn collect<N: Node<N>>(&mut self) -> Result<Vec<N>, ParsingError> {
+        let mut acc = Vec::new();
+        loop {
+            match N::qread(self).await {
+                Err(ParsingError::Recoverable) => match self.peek() {
+                    Event::End(_) => return Ok(acc),
+                    _ => {
+                        self.skip().await?;
+                    },
+                },
+                Ok(v) => acc.push(v),
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    pub async fn open(&mut self, ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
+        if self.is_tag(ns, key) {
+            return self.next().await
+        }
+        return Err(ParsingError::Recoverable);
     }
 }
 

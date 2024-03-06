@@ -2,6 +2,7 @@
 
 use chrono::{DateTime,Utc};
 use super::types as dav;
+use super::xml;
 
 //@FIXME ACL (rfc3744) is missing, required
 //@FIXME Versioning (rfc3253) is missing, required
@@ -44,7 +45,7 @@ pub struct MkCalendar<E: dav::Extension>(pub dav::Set<E>);
 ///
 /// <!ELEMENT mkcol-response (propstat+)>
 #[derive(Debug, PartialEq)]
-pub struct MkCalendarResponse<E: dav::Extension, N: dav::Node<N>>(pub Vec<dav::PropStat<E,N>>);
+pub struct MkCalendarResponse<E: dav::Extension, N: xml::Node<N>>(pub Vec<dav::PropStat<E,N>>);
 
 // --- (REPORT PART) ---
 

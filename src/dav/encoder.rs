@@ -6,7 +6,7 @@ use quick_xml::writer::ElementWriter;
 use quick_xml::name::PrefixDeclaration;
 use tokio::io::AsyncWrite;
 use super::types::*;
-use super::xml::{Writer,QWrite,IWrite};
+use super::xml::{Node, Writer,QWrite,IWrite};
 
 
 // --- XML ROOTS

@@ -7,12 +7,11 @@ use super::error;
 
 /// It's how we implement a DAV extension
 /// (That's the dark magic part...)
-pub trait Node<T> = xml::QRead<T> + xml::QWrite + Debug + PartialEq;
-pub trait Extension {
-    type Error: Node<Self::Error>;
-    type Property: Node<Self::Property>;
-    type PropertyRequest: Node<Self::PropertyRequest>;
-    type ResourceType: Node<Self::ResourceType>;
+pub trait Extension: std::fmt::Debug + PartialEq {
+    type Error: xml::Node<Self::Error>;
+    type Property: xml::Node<Self::Property>;
+    type PropertyRequest: xml::Node<Self::PropertyRequest>;
+    type ResourceType: xml::Node<Self::ResourceType>;
 }
 
 /// 14.1.  activelock XML Element
@@ -333,7 +332,7 @@ pub enum LockType {
 ///
 /// <!ELEMENT multistatus (response*, responsedescription?)  >
 #[derive(Debug, PartialEq)]
-pub struct Multistatus<E: Extension, N: Node<N>> {
+pub struct Multistatus<E: Extension, N: xml::Node<N>> {
     pub responses: Vec<Response<E, N>>,
     pub responsedescription: Option<ResponseDescription>,
 }
@@ -465,7 +464,7 @@ pub enum PropFind<E: Extension> {
 ///
 /// <!ELEMENT propstat (prop, status, error?, responsedescription?) >
 #[derive(Debug, PartialEq)]
-pub struct PropStat<E: Extension, N: Node<N>> {
+pub struct PropStat<E: Extension, N: xml::Node<N>> {
     pub prop: N,
     pub status: Status,
     pub error: Option<Error<E>>,
@@ -514,7 +513,7 @@ pub struct Remove<E: Extension>(pub PropName<E>);
 /// --- rewritten as ---
 /// <!ELEMENT response ((href+, status)|(href, propstat+), error?, responsedescription?, location?>
 #[derive(Debug, PartialEq)]
-pub enum StatusOrPropstat<E: Extension, N: Node<N>> {
+pub enum StatusOrPropstat<E: Extension, N: xml::Node<N>> {
     // One status, multiple hrefs...
     Status(Vec<Href>, Status),
     // A single href, multiple properties...
@@ -522,7 +521,7 @@ pub enum StatusOrPropstat<E: Extension, N: Node<N>> {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Response<E: Extension, N: Node<N>> {
+pub struct Response<E: Extension, N: xml::Node<N>> {
     pub status_or_propstat: StatusOrPropstat<E, N>,
     pub error: Option<Error<E>>,
     pub responsedescription: Option<ResponseDescription>,
