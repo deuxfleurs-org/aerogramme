@@ -84,7 +84,29 @@ impl<E: Extension> QRead<PropertyUpdate<E>> for PropertyUpdate<E> {
 }
 
 /// Generic response
-//@TODO Multistatus
+impl<E: Extension> QRead<Multistatus<E>> for Multistatus<E> {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+        xml.tag_start(DAV_URN, "multistatus").await?;
+        let mut responses = Vec::new();
+        let mut responsedescription = None;
+
+        loop {
+            if let Some(v) = Response::qread(xml).await? {
+                responses.push(v);
+            } else if let Some(v) = ResponseDescription::qread(xml).await? {
+                responsedescription = Some(v);
+            } else {
+                match xml.peek() {
+                    Event::End(_) => break,
+                    _ => xml.skip().await?,
+                };
+            }
+        }
+
+        xml.tag_stop(DAV_URN, "multistatus").await?;
+        Ok(Some(Multistatus { responses, responsedescription }))
+    }
+}
 
 // LOCK REQUEST
 impl QRead<LockInfo> for LockInfo {
@@ -159,6 +181,27 @@ impl<E: Extension> QRead<Error<E>> for Error<E> {
 
 
 // ---- INNER XML
+impl<E: Extension> QRead<Response<E>> for Response<E> {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+        if xml.maybe_tag_start(DAV_URN, "response").await?.is_none() {
+            return Ok(None)
+        }
+
+        unimplemented!();
+    }
+}
+
+impl QRead<ResponseDescription> for ResponseDescription {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+        if xml.maybe_tag_start(DAV_URN, "responsedescription").await?.is_none() {
+            return Ok(None)
+        }
+        let cnt = xml.tag_string().await?;
+        xml.tag_stop(DAV_URN, "responsedescription").await?;
+        Ok(Some(ResponseDescription(cnt)))
+    }
+}
+
 impl<E: Extension> QRead<PropertyUpdateItem<E>> for PropertyUpdateItem<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
         if let Some(rm) = Remove::qread(xml).await? {

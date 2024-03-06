@@ -516,15 +516,19 @@ pub struct Remove<E: Extension>(pub PropName<E>);
 ///
 /// <!ELEMENT response (href, ((href*, status)|(propstat+)),
 ///                     error?, responsedescription? , location?) >
+///
+/// --- rewritten as ---
+/// <!ELEMENT response ((href+, status)|(href, propstat+), error?, responsedescription?, location?>
 #[derive(Debug, PartialEq)]
 pub enum StatusOrPropstat<E: Extension> {
-    Status(Status),
-    PropStat(Vec<PropStat<E>>),
+    // One status, multiple hrefs...
+    Status(Vec<Href>, Status),
+    // A single href, multiple properties...
+    PropStat(Href, Vec<PropStat<E>>),
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Response<E: Extension> {
-    pub href: Href, // It's wrong according to the spec, but I don't understand why there is an href*
     pub status_or_propstat: StatusOrPropstat<E>,
     pub error: Option<Error<E>>,
     pub responsedescription: Option<ResponseDescription>,

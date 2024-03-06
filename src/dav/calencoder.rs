@@ -813,8 +813,9 @@ mod tests {
             &dav::Multistatus::<Calendar> {
                 responses: vec![
                     dav::Response {
-                        href: dav::Href("http://cal.example.com/bernard/work/abcd2.ics".into()),
-                        status_or_propstat: dav::StatusOrPropstat::PropStat(vec![dav::PropStat {
+                        status_or_propstat: dav::StatusOrPropstat::PropStat(
+                            dav::Href("http://cal.example.com/bernard/work/abcd2.ics".into()),
+                            vec![dav::PropStat {
                             prop: dav::AnyProp::Value(dav::PropValue(vec![
                                 dav::Property::GetEtag("\"fffff-abcd2\"".into()),
                                 dav::Property::Extension(Property::CalendarData(CalendarDataPayload {
@@ -825,14 +826,16 @@ mod tests {
                             status: dav::Status(http::status::StatusCode::OK),
                             error: None,
                             responsedescription: None,
-                        }]),
+                            }]
+                        ),
                         location: None,
                         error: None,
                         responsedescription: None,
                     },
                     dav::Response {
-                        href: dav::Href("http://cal.example.com/bernard/work/abcd3.ics".into()),
-                        status_or_propstat: dav::StatusOrPropstat::PropStat(vec![dav::PropStat {
+                        status_or_propstat: dav::StatusOrPropstat::PropStat(
+                            dav::Href("http://cal.example.com/bernard/work/abcd3.ics".into()),
+                            vec![dav::PropStat {
                             prop: dav::AnyProp::Value(dav::PropValue(vec![
                                 dav::Property::GetEtag("\"fffff-abcd3\"".into()),
                                 dav::Property::Extension(Property::CalendarData(CalendarDataPayload{
@@ -843,7 +846,8 @@ mod tests {
                             status: dav::Status(http::status::StatusCode::OK),
                             error: None,
                             responsedescription: None,
-                        }]),
+                            }]
+                        ),
                         location: None,
                         error: None,
                         responsedescription: None,

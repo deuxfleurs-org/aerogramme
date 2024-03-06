@@ -186,7 +186,6 @@ impl<E: Extension> QWrite for Response<E> {
         let end = start.to_end();
 
         xml.q.write_event_async(Event::Start(start.clone())).await?;
-        self.href.qwrite(xml).await?; 
         self.status_or_propstat.qwrite(xml).await?;
         if let Some(error) = &self.error {
             error.qwrite(xml).await?;
@@ -204,8 +203,14 @@ impl<E: Extension> QWrite for Response<E> {
 impl<E: Extension> QWrite for StatusOrPropstat<E> {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
-            Self::Status(status) => status.qwrite(xml).await,
-            Self::PropStat(propstat_list) => {
+            Self::Status(many_href, status) => {
+                for href in many_href.iter() {
+                    href.qwrite(xml).await?;
+                }
+                status.qwrite(xml).await
+            },
+            Self::PropStat(href, propstat_list) => {
+                href.qwrite(xml).await?; 
                 for propstat in propstat_list.iter() {
                     propstat.qwrite(xml).await?;
                 }
@@ -728,39 +733,43 @@ mod tests {
             &Multistatus::<Core> {
                 responses: vec![
                     Response {
-                        href: Href("http://www.example.com/container/".into()),
-                        status_or_propstat: StatusOrPropstat::PropStat(vec![PropStat {
-                            prop: AnyProp::Name(PropName(vec![
-                                PropertyRequest::CreationDate,
-                                PropertyRequest::DisplayName,
-                                PropertyRequest::ResourceType,
-                                PropertyRequest::SupportedLock,
-                            ])),
-                            status: Status(http::status::StatusCode::OK),
-                            error: None,
-                            responsedescription: None,
-                        }]),
+                        status_or_propstat: StatusOrPropstat::PropStat(
+                            Href("http://www.example.com/container/".into()),
+                            vec![PropStat {
+                                prop: AnyProp::Name(PropName(vec![
+                                    PropertyRequest::CreationDate,
+                                    PropertyRequest::DisplayName,
+                                    PropertyRequest::ResourceType,
+                                    PropertyRequest::SupportedLock,
+                                ])),
+                                status: Status(http::status::StatusCode::OK),
+                                error: None,
+                                responsedescription: None,
+                            }]
+                        ),
                         error: None,
                         responsedescription: None,
                         location: None,
                     },
                     Response {
-                        href: Href("http://www.example.com/container/front.html".into()),
-                        status_or_propstat: StatusOrPropstat::PropStat(vec![PropStat {
-                            prop: AnyProp::Name(PropName(vec![
-                                PropertyRequest::CreationDate,
-                                PropertyRequest::DisplayName,
-                                PropertyRequest::GetContentLength,
-                                PropertyRequest::GetContentType,
-                                PropertyRequest::GetEtag,
-                                PropertyRequest::GetLastModified,
-                                PropertyRequest::ResourceType,
-                                PropertyRequest::SupportedLock,
-                            ])),
-                            status: Status(http::status::StatusCode::OK),
-                            error: None,
-                            responsedescription: None,
-                        }]),
+                        status_or_propstat: StatusOrPropstat::PropStat(
+                            Href("http://www.example.com/container/front.html".into()),
+                            vec![PropStat {
+                                prop: AnyProp::Name(PropName(vec![
+                                    PropertyRequest::CreationDate,
+                                    PropertyRequest::DisplayName,
+                                    PropertyRequest::GetContentLength,
+                                    PropertyRequest::GetContentType,
+                                    PropertyRequest::GetEtag,
+                                    PropertyRequest::GetLastModified,
+                                    PropertyRequest::ResourceType,
+                                    PropertyRequest::SupportedLock,
+                                ])),
+                                status: Status(http::status::StatusCode::OK),
+                                error: None,
+                                responsedescription: None,
+                            }
+                        ]),
                         error: None,
                         responsedescription: None,
                         location: None,
@@ -825,8 +834,9 @@ mod tests {
             &Multistatus::<Core> {
                 responses: vec![
                     Response {
-                        href: Href("/container/".into()),
-                        status_or_propstat: StatusOrPropstat::PropStat(vec![PropStat {
+                        status_or_propstat: StatusOrPropstat::PropStat(
+                            Href("/container/".into()),
+                            vec![PropStat {
                             prop: AnyProp::Value(PropValue(vec![
                                 Property::CreationDate(FixedOffset::west_opt(8 * 3600)
                                                        .unwrap()
@@ -848,14 +858,16 @@ mod tests {
                             status: Status(http::status::StatusCode::OK),
                             error: None,
                             responsedescription: None,
-                        }]),
+                            }]
+                        ),
                         error: None,
                         responsedescription: None,
                         location: None,
                     },
                     Response {
-                        href: Href("/container/front.html".into()),
-                        status_or_propstat: StatusOrPropstat::PropStat(vec![PropStat {
+                        status_or_propstat: StatusOrPropstat::PropStat(
+                            Href("/container/front.html".into()),
+                            vec![PropStat {
                             prop: AnyProp::Value(PropValue(vec![
                                 Property::CreationDate(FixedOffset::west_opt(8 * 3600)
                                     .unwrap()
@@ -884,7 +896,8 @@ mod tests {
                             status: Status(http::status::StatusCode::OK),
                             error: None,
                             responsedescription: None,
-                        }]),
+                            }]
+                        ),
                         error: None,
                         responsedescription: None,
                         location: None,
@@ -1018,8 +1031,10 @@ mod tests {
         let got = serialize(
             &Multistatus::<Core> {
                 responses: vec![Response {
-                    href: Href("http://www.example.com/container/resource3".into()),
-                    status_or_propstat: StatusOrPropstat::Status(Status(http::status::StatusCode::from_u16(423).unwrap())),
+                    status_or_propstat: StatusOrPropstat::Status(
+                        vec![Href("http://www.example.com/container/resource3".into())],
+                        Status(http::status::StatusCode::from_u16(423).unwrap())
+                    ),
                     error: Some(Error(vec![Violation::LockTokenSubmitted(vec![])])),
                     responsedescription: None,
                     location: None,
