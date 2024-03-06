@@ -65,6 +65,7 @@ impl<T: IRead> Reader<T> {
 
     /// skip tag. Can't skip end, can't skip eof.
     pub async fn skip(&mut self) -> Result<Event<'static>, ParsingError> {
+        println!("skip on {:?}", &self.evt);
         match &self.evt {
             Event::Start(b) => {
                 let _span = self.rdr.read_to_end_into_async(b.to_end().name(), &mut self.buf).await?;
@@ -107,6 +108,7 @@ impl<T: IRead> Reader<T> {
 
     /// find start tag
     pub async fn tag_start(&mut self, ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
+        println!("search start tag {}", key);
         loop {
             match self.peek() {
                 Event::Start(b) if self.is_tag(ns, key) => break,
@@ -118,6 +120,7 @@ impl<T: IRead> Reader<T> {
 
     // find stop tag
     pub async fn tag_stop(&mut self, ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
+        println!("search stop tag {}", key);
         loop {
             match self.peek() {
                 Event::End(b) if self.is_tag(ns, key) => break,

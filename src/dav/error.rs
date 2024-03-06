@@ -6,6 +6,7 @@ pub enum ParsingError {
     NamespacePrefixAlreadyUsed,
     WrongToken,
     TagNotFound,
+    Utf8Error(std::str::Utf8Error),
     QuickXml(quick_xml::Error), 
     Eof
 }
@@ -17,5 +18,10 @@ impl From<AttrError> for ParsingError {
 impl From<quick_xml::Error> for ParsingError {
     fn from(value: quick_xml::Error) -> Self {
         Self::QuickXml(value)
+    }
+}
+impl From<std::str::Utf8Error> for ParsingError {
+    fn from(value: std::str::Utf8Error) -> Self {
+        Self::Utf8Error(value)
     }
 }

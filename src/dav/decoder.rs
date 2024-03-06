@@ -11,6 +11,7 @@ use super::types::*;
 use super::error::ParsingError;
 use super::xml::{QRead, Reader, IRead, DAV_URN, CAL_URN};
 
+// ---- ROOT ----
 impl<E: Extension> QRead<PropFind<E>> for PropFind<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
         // Find propfind
@@ -47,6 +48,117 @@ impl<E: Extension> QRead<PropFind<E>> for PropFind<E> {
     }
 }
 
+impl<E: Extension> QRead<Error<E>> for Error<E> {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+        xml.tag_start(DAV_URN, "error").await?;
+        let mut violations = Vec::new();
+        loop {
+            match xml.peek() {
+                Event::Start(_) | Event::Empty(_) => { 
+                    Violation::qread(xml).await?.map(|v| violations.push(v)); 
+                },
+                Event::End(_) if xml.is_tag(DAV_URN, "error") => break,
+                _ => { xml.skip().await?; },
+            }
+        }
+        xml.tag_stop(DAV_URN, "error").await?;
+        Ok(Some(Error(violations)))
+    }
+}
+
+// ---- INNER XML
+impl<E: Extension> QRead<Violation<E>> for Violation<E> {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+        loop {
+            let bs = match xml.peek() {
+                Event::Start(b) | Event::Empty(b) => b,
+                _ => { 
+                    xml.skip().await?; 
+                    continue
+                },
+            };
+
+            let mut maybe_res = None;
+
+            // Option 1: a pure DAV property
+            let (ns, loc) = xml.rdr.resolve_element(bs.name());
+            if matches!(ns, Bound(Namespace(ns)) if ns == DAV_URN) {
+                maybe_res = match loc.into_inner() {
+                    b"lock-token-matches-request-uri" => {
+                        xml.next().await?;
+                        Some(Violation::LockTokenMatchesRequestUri)
+                    },
+                    b"lock-token-submitted" => {
+                        // start tag
+                        xml.next().await?;
+
+                        let mut links = Vec::new();
+                        loop {
+                            // If we find a Href
+                            if let Some(href) = Href::qread(xml).await? {
+                                links.push(href);
+                                continue
+                            }
+
+                            // Otherwise
+                            match xml.peek() {
+                                Event::End(_) => break,
+                                _ => { xml.skip().await?; },
+                            }
+                        }
+                        xml.tag_stop(DAV_URN, "lock-token-submitted").await?;
+                        Some(Violation::LockTokenSubmitted(links))
+                    },
+                    b"no-conflicting-lock" => {
+                        // start tag
+                        xml.next().await?;
+
+                        let mut links = Vec::new();
+                        loop {
+                            // If we find a Href
+                            if let Some(href) = Href::qread(xml).await? {
+                                links.push(href);
+                                continue
+                            }
+
+                            // Otherwise
+                            match xml.peek() {
+                                Event::End(_) => break,
+                                _ => { xml.skip().await?; },
+                            }
+                        }
+                        xml.tag_stop(DAV_URN, "no-conflicting-lock").await?;
+                        Some(Violation::NoConflictingLock(links))
+                    },
+                    b"no-external-entities" => {
+                        xml.next().await?;
+                        Some(Violation::NoExternalEntities)
+                    },
+                    b"preserved-live-properties" => {
+                        xml.next().await?;
+                        Some(Violation::PreservedLiveProperties)
+                    },
+                    b"propfind-finite-depth" => {
+                        xml.next().await?;
+                        Some(Violation::PropfindFiniteDepth)
+                    },
+                    b"cannot-modify-protected-property" => {
+                        xml.next().await?;
+                        Some(Violation::CannotModifyProtectedProperty)
+                    },
+                    _ => None,
+                };
+            }
+
+            // Option 2: an extension property, delegating
+            if maybe_res.is_none() {
+                maybe_res = E::Error::qread(xml).await?.map(Violation::Extension);
+            }
+
+            return Ok(maybe_res)
+        }
+    }
+}
 
 impl<E: Extension> QRead<Include<E>> for Include<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
@@ -113,18 +225,47 @@ impl<E: Extension> QRead<PropertyRequest<E>> for PropertyRequest<E> {
                     b"supportedlock" => Some(PropertyRequest::SupportedLock),
                     _ => None,
                 };
+                // Close the current tag if we read something
+                if maybe_res.is_some() {
+                    xml.skip().await?; 
+                }
             }
 
-            // Option 2: an extension property
+            // Option 2: an extension property, delegating
             if maybe_res.is_none() {
                 maybe_res = E::PropertyRequest::qread(xml).await?.map(PropertyRequest::Extension);
             }
 
-            // Close the current tag
-            xml.skip().await?; 
-
             return Ok(maybe_res)
         }
+    }
+}
+
+impl QRead<Href> for Href {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+        match xml.peek() {
+            Event::Start(b) if xml.is_tag(DAV_URN, "href") => xml.next().await?,
+            _ => return Ok(None),
+        };
+
+        let mut url = String::new();
+        loop {
+            match xml.peek() {
+                Event::End(_) => break,
+                Event::Start(_) | Event::Empty(_) => return Err(ParsingError::WrongToken),
+                Event::CData(unescaped) => {
+                    url.push_str(std::str::from_utf8(unescaped.as_ref())?);
+                    xml.next().await?
+                },
+                Event::Text(escaped) => {
+                    url.push_str(escaped.unescape()?.as_ref());
+                    xml.next().await?
+                }
+                _ => xml.skip().await?,
+            };
+        }
+        xml.tag_stop(DAV_URN, "href").await?;
+        Ok(Some(Href(url)))
     }
 }
 
@@ -179,5 +320,24 @@ mod tests {
             PropertyRequest::ResourceType,
             PropertyRequest::SupportedLock,
         ])));
+    }
+
+    #[tokio::test]
+    async fn rfc_lock_error() {
+        let src = r#"<?xml version="1.0" encoding="utf-8" ?>
+     <D:error xmlns:D="DAV:">
+       <D:lock-token-submitted>
+         <D:href>/locked/</D:href>
+       </D:lock-token-submitted>
+     </D:error>"#;
+
+        let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
+        let got = Error::<Core>::qread(&mut rdr).await.unwrap().unwrap();
+
+        assert_eq!(got, Error(vec![
+            Violation::LockTokenSubmitted(vec![
+                Href("/locked/".into())
+            ])
+        ]));
     }
 }
