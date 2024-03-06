@@ -7,12 +7,12 @@ use super::error;
 
 /// It's how we implement a DAV extension
 /// (That's the dark magic part...)
-pub trait ExtensionItem<T> = xml::QRead<T> + xml::QWrite + Debug + PartialEq;
+pub trait Node<T> = xml::QRead<T> + xml::QWrite + Debug + PartialEq;
 pub trait Extension {
-    type Error: ExtensionItem<Self::Error>;
-    type Property: ExtensionItem<Self::Property>;
-    type PropertyRequest: ExtensionItem<Self::PropertyRequest>;
-    type ResourceType: ExtensionItem<Self::ResourceType>;
+    type Error: Node<Self::Error>;
+    type Property: Node<Self::Property>;
+    type PropertyRequest: Node<Self::PropertyRequest>;
+    type ResourceType: Node<Self::ResourceType>;
 }
 
 /// 14.1.  activelock XML Element
@@ -333,8 +333,8 @@ pub enum LockType {
 ///
 /// <!ELEMENT multistatus (response*, responsedescription?)  >
 #[derive(Debug, PartialEq)]
-pub struct Multistatus<E: Extension> {
-    pub responses: Vec<Response<E>>,
+pub struct Multistatus<E: Extension, N: Node<N>> {
+    pub responses: Vec<Response<E, N>>,
     pub responsedescription: Option<ResponseDescription>,
 }
 
@@ -383,12 +383,6 @@ pub enum Owner {
 /// text or mixed content.
 ///
 /// <!ELEMENT prop ANY >
-#[derive(Debug, PartialEq)]
-pub enum AnyProp<E: Extension> {
-    Name(PropName<E>),
-    Value(PropValue<E>),
-}
-
 #[derive(Debug, PartialEq)]
 pub struct PropName<E: Extension>(pub Vec<PropertyRequest<E>>);
 
@@ -471,8 +465,8 @@ pub enum PropFind<E: Extension> {
 ///
 /// <!ELEMENT propstat (prop, status, error?, responsedescription?) >
 #[derive(Debug, PartialEq)]
-pub struct PropStat<E: Extension> {
-    pub prop: AnyProp<E>,
+pub struct PropStat<E: Extension, N: Node<N>> {
+    pub prop: N,
     pub status: Status,
     pub error: Option<Error<E>>,
     pub responsedescription: Option<ResponseDescription>,
@@ -520,16 +514,16 @@ pub struct Remove<E: Extension>(pub PropName<E>);
 /// --- rewritten as ---
 /// <!ELEMENT response ((href+, status)|(href, propstat+), error?, responsedescription?, location?>
 #[derive(Debug, PartialEq)]
-pub enum StatusOrPropstat<E: Extension> {
+pub enum StatusOrPropstat<E: Extension, N: Node<N>> {
     // One status, multiple hrefs...
     Status(Vec<Href>, Status),
     // A single href, multiple properties...
-    PropStat(Href, Vec<PropStat<E>>),
+    PropStat(Href, Vec<PropStat<E, N>>),
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Response<E: Extension> {
-    pub status_or_propstat: StatusOrPropstat<E>,
+pub struct Response<E: Extension, N: Node<N>> {
+    pub status_or_propstat: StatusOrPropstat<E, N>,
     pub error: Option<Error<E>>,
     pub responsedescription: Option<ResponseDescription>,
     pub location: Option<Location>,

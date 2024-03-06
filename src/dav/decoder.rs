@@ -84,7 +84,7 @@ impl<E: Extension> QRead<PropertyUpdate<E>> for PropertyUpdate<E> {
 }
 
 /// Generic response
-impl<E: Extension> QRead<Multistatus<E>> for Multistatus<E> {
+impl<E: Extension, N: Node<N>> QRead<Multistatus<E,N>> for Multistatus<E,N> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
         xml.tag_start(DAV_URN, "multistatus").await?;
         let mut responses = Vec::new();
@@ -181,13 +181,71 @@ impl<E: Extension> QRead<Error<E>> for Error<E> {
 
 
 // ---- INNER XML
-impl<E: Extension> QRead<Response<E>> for Response<E> {
+impl<E: Extension, N: Node<N>> QRead<Response<E,N>> for Response<E,N> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
         if xml.maybe_tag_start(DAV_URN, "response").await?.is_none() {
             return Ok(None)
         }
+        let (mut status, mut error, mut responsedescription, mut location) = (None, None, None, None);
+        let mut href = Vec::new();
+        let mut propstat = Vec::new();
 
+        loop {
+            if let Some(v) = Status::qread(xml).await? {
+                status = Some(v);
+            } else if let Some(v) = Href::qread(xml).await? {
+                href.push(v);
+            } else if let Some(v) = PropStat::qread(xml).await? {
+                propstat.push(v);
+            } else if let Some(v) = Error::qread(xml).await? {
+                error = Some(v);
+            } else if let Some(v) = ResponseDescription::qread(xml).await? {
+                responsedescription = Some(v);
+            } else if let Some(v) = Location::qread(xml).await? {
+                location = Some(v);
+            } else {
+                match xml.peek() {
+                    Event::End(_) => break,
+                    _ => { xml.skip().await? },
+                };
+            }
+        }
+
+        xml.tag_stop(DAV_URN, "response").await?;
+        match (status, &propstat[..], &href[..]) {
+            (Some(status), &[], &[_, ..]) => Ok(Some(Response { 
+                status_or_propstat: StatusOrPropstat::Status(href, status), 
+                error, responsedescription, location,
+            })),
+            (None, &[_, ..], &[_, ..]) => Ok(Some(Response {
+                status_or_propstat: StatusOrPropstat::PropStat(href.into_iter().next().unwrap(), propstat),
+                error, responsedescription, location,
+            })),
+            (Some(_), &[_, ..], _) => Err(ParsingError::InvalidValue),
+            _ => Err(ParsingError::MissingChild),
+        }
+    }
+}
+
+impl<E: Extension, N: Node<N>> QRead<PropStat<E,N>> for PropStat<E,N> {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+        if xml.maybe_tag_start(DAV_URN, "propstat").await?.is_none() {
+            return Ok(None)
+        }
         unimplemented!();
+    }
+}
+
+impl QRead<Status> for Status {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+        if xml.maybe_tag_start(DAV_URN, "status").await?.is_none() {
+            return Ok(None)
+        }
+        let fullcode = xml.tag_string().await?;
+        let txtcode = fullcode.splitn(3, ' ').nth(1).ok_or(ParsingError::InvalidValue)?;
+        let code = http::status::StatusCode::from_bytes(txtcode.as_bytes()).or(Err(ParsingError::InvalidValue))?;
+        xml.tag_stop(DAV_URN, "status").await?;
+        Ok(Some(Status(code)))
     }
 }
 
@@ -199,6 +257,26 @@ impl QRead<ResponseDescription> for ResponseDescription {
         let cnt = xml.tag_string().await?;
         xml.tag_stop(DAV_URN, "responsedescription").await?;
         Ok(Some(ResponseDescription(cnt)))
+    }
+}
+
+impl QRead<Location> for Location {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+        if xml.maybe_tag_start(DAV_URN, "location").await?.is_none() {
+            return Ok(None)
+        }
+        let href = loop {
+            if let Some(v) = Href::qread(xml).await? {
+                break v
+            }
+
+            match xml.peek() {
+                Event::End(_) => return Err(ParsingError::MissingChild),
+                _ => xml.skip().await?,
+            };
+        };
+        xml.tag_stop(DAV_URN, "location").await?;
+        Ok(Some(Location(href)))
     }
 }
 

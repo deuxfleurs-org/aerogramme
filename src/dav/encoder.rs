@@ -53,7 +53,7 @@ impl<E: Extension> QWrite for PropertyUpdate<E> {
 
 /// PROPFIND RESPONSE, PROPPATCH RESPONSE, COPY RESPONSE, MOVE RESPONSE
 /// DELETE RESPONSE, 
-impl<E: Extension> QWrite for Multistatus<E> {
+impl<E: Extension, N: Node<N>> QWrite for Multistatus<E,N> {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let start = xml.create_dav_element("multistatus");
         let end = start.to_end();
@@ -146,15 +146,6 @@ impl<E: Extension> QWrite for Remove<E> {
 }
 
 
-impl<E: Extension> QWrite for AnyProp<E> {
-    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
-        match self {
-            Self::Name(propname) => propname.qwrite(xml).await,
-            Self::Value(propval) => propval.qwrite(xml).await,
-        }
-    }
-}
-
 impl<E: Extension> QWrite for PropName<E> {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let start = xml.create_dav_element("prop");
@@ -180,7 +171,7 @@ impl QWrite for Href {
     }
 }
 
-impl<E: Extension> QWrite for Response<E> {
+impl<E: Extension, N: Node<N>> QWrite for Response<E,N> {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let start = xml.create_dav_element("response");
         let end = start.to_end();
@@ -200,7 +191,7 @@ impl<E: Extension> QWrite for Response<E> {
     }
 }
 
-impl<E: Extension> QWrite for StatusOrPropstat<E> {
+impl<E: Extension, N: Node<N>> QWrite for StatusOrPropstat<E,N> {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
             Self::Status(many_href, status) => {
@@ -258,7 +249,7 @@ impl QWrite for Location {
     }
 }
 
-impl<E: Extension> QWrite for PropStat<E> {
+impl<E: Extension, N: Node<N>> QWrite for PropStat<E,N> {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let start = xml.create_dav_element("propstat");
         let end = start.to_end();
@@ -681,7 +672,7 @@ mod tests {
     #[tokio::test]
     async fn basic_multistatus() {
         let got = serialize(
-            &Multistatus::<Core> { 
+            &Multistatus::<Core, PropName<Core>> { 
                 responses: vec![], 
                 responsedescription: Some(ResponseDescription("Hello world".into())) 
             },
@@ -730,18 +721,18 @@ mod tests {
     #[tokio::test]
     async fn rfc_propname_res() {
         let got = serialize(
-            &Multistatus::<Core> {
+            &Multistatus::<Core, PropName<Core>> {
                 responses: vec![
                     Response {
                         status_or_propstat: StatusOrPropstat::PropStat(
                             Href("http://www.example.com/container/".into()),
                             vec![PropStat {
-                                prop: AnyProp::Name(PropName(vec![
+                                prop: PropName(vec![
                                     PropertyRequest::CreationDate,
                                     PropertyRequest::DisplayName,
                                     PropertyRequest::ResourceType,
                                     PropertyRequest::SupportedLock,
-                                ])),
+                                ]),
                                 status: Status(http::status::StatusCode::OK),
                                 error: None,
                                 responsedescription: None,
@@ -755,7 +746,7 @@ mod tests {
                         status_or_propstat: StatusOrPropstat::PropStat(
                             Href("http://www.example.com/container/front.html".into()),
                             vec![PropStat {
-                                prop: AnyProp::Name(PropName(vec![
+                                prop: PropName(vec![
                                     PropertyRequest::CreationDate,
                                     PropertyRequest::DisplayName,
                                     PropertyRequest::GetContentLength,
@@ -764,7 +755,7 @@ mod tests {
                                     PropertyRequest::GetLastModified,
                                     PropertyRequest::ResourceType,
                                     PropertyRequest::SupportedLock,
-                                ])),
+                                ]),
                                 status: Status(http::status::StatusCode::OK),
                                 error: None,
                                 responsedescription: None,
@@ -831,13 +822,13 @@ mod tests {
     async fn rfc_allprop_res() {
         use chrono::{DateTime,FixedOffset,TimeZone};
         let got = serialize(
-            &Multistatus::<Core> {
+            &Multistatus::<Core, PropValue<Core>> {
                 responses: vec![
                     Response {
                         status_or_propstat: StatusOrPropstat::PropStat(
                             Href("/container/".into()),
                             vec![PropStat {
-                            prop: AnyProp::Value(PropValue(vec![
+                            prop: PropValue(vec![
                                 Property::CreationDate(FixedOffset::west_opt(8 * 3600)
                                                        .unwrap()
                                                        .with_ymd_and_hms(1997, 12, 1, 17, 42, 21)
@@ -854,7 +845,7 @@ mod tests {
                                         locktype: LockType::Write,
                                     },
                                 ]),
-                            ])),
+                            ]),
                             status: Status(http::status::StatusCode::OK),
                             error: None,
                             responsedescription: None,
@@ -868,7 +859,7 @@ mod tests {
                         status_or_propstat: StatusOrPropstat::PropStat(
                             Href("/container/front.html".into()),
                             vec![PropStat {
-                            prop: AnyProp::Value(PropValue(vec![
+                            prop: PropValue(vec![
                                 Property::CreationDate(FixedOffset::west_opt(8 * 3600)
                                     .unwrap()
                                     .with_ymd_and_hms(1997, 12, 1, 18, 27, 21)
@@ -892,7 +883,7 @@ mod tests {
                                         locktype: LockType::Write,
                                     },
                                 ]),
-                            ])),
+                            ]),
                             status: Status(http::status::StatusCode::OK),
                             error: None,
                             responsedescription: None,
@@ -1029,7 +1020,7 @@ mod tests {
     #[tokio::test]
     async fn rfc_delete_locked2() {
         let got = serialize(
-            &Multistatus::<Core> {
+            &Multistatus::<Core, PropValue<Core>> {
                 responses: vec![Response {
                     status_or_propstat: StatusOrPropstat::Status(
                         vec![Href("http://www.example.com/container/resource3".into())],

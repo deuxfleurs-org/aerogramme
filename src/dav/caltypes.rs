@@ -44,7 +44,7 @@ pub struct MkCalendar<E: dav::Extension>(pub dav::Set<E>);
 ///
 /// <!ELEMENT mkcol-response (propstat+)>
 #[derive(Debug, PartialEq)]
-pub struct MkCalendarResponse<E: dav::Extension>(pub Vec<dav::PropStat<E>>);
+pub struct MkCalendarResponse<E: dav::Extension, N: dav::Node<N>>(pub Vec<dav::PropStat<E,N>>);
 
 // --- (REPORT PART) ---
 
