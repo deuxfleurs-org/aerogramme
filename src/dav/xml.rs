@@ -106,6 +106,16 @@ impl<T: IRead> Reader<T> {
         }
     }
 
+    /// maybe find start tag
+    pub async fn maybe_tag_start(&mut self, ns: &[u8], key: &str) -> Result<Option<Event<'static>>, ParsingError> {
+        println!("maybe start tag {}", key);
+        let peek = self.peek();
+        match peek {
+            Event::Start(_) | Event::Empty(_) if self.is_tag(ns, key) => Ok(Some(self.next().await?)),
+            _ => Ok(None),
+        }
+    }
+
     /// find start tag
     pub async fn tag_start(&mut self, ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
         println!("search start tag {}", key);

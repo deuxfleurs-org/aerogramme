@@ -11,6 +11,15 @@ use super::types::*;
 use super::error::ParsingError;
 use super::xml::{QRead, Reader, IRead, DAV_URN, CAL_URN};
 
+//@TODO (1) Rewrite all objects as Href,
+// where we return Ok(None) instead of trying to find the object at any cost.
+// Add a xml.find<E: Qread>() -> Result<Option<E>, ParsingError> or similar for the cases we
+// really need the object
+// (2) Rewrite QRead and replace Result<Option<_>, _> with Result<_, _>, not found being a possible
+// error.
+// (3) Rewrite vectors with xml.collect<E: QRead>() -> Result<Vec<E>, _>
+// (4) Something for alternatives would be great but no idea yet
+
 // ---- ROOT ----
 
 /// Propfind request
@@ -74,11 +83,59 @@ impl<E: Extension> QRead<PropertyUpdate<E>> for PropertyUpdate<E> {
     }
 }
 
+/// Generic response
 //@TODO Multistatus
 
-//@TODO LockInfo
+// LOCK REQUEST
+impl QRead<LockInfo> for LockInfo {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+        xml.tag_start(DAV_URN, "lockinfo").await?;
+        let (mut m_scope, mut m_type, mut owner) = (None, None, None);
+        loop {
+            if let Some(v) = LockScope::qread(xml).await? {
+                m_scope = Some(v);
+            } else if let Some(v) = LockType::qread(xml).await? {
+                m_type = Some(v);
+            } else if let Some(v) = Owner::qread(xml).await? {
+                owner = Some(v);
+            } else {
+                match xml.peek() {
+                    Event::End(_) => break,
+                    _ => xml.skip().await?,
+                };
+            }
+        }
+        xml.tag_stop(DAV_URN, "lockinfo").await?;
+        match (m_scope, m_type) {
+            (Some(lockscope), Some(locktype)) => Ok(Some(LockInfo { lockscope, locktype, owner })),
+            _ => Err(ParsingError::MissingChild),
+        }
+    }
+}
 
-//@TODO PropValue
+// LOCK RESPONSE
+impl<E: Extension> QRead<PropValue<E>> for PropValue<E> {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+        xml.tag_start(DAV_URN, "prop").await?;
+        let mut acc = Vec::new();
+        loop {
+            // Found a property
+            if let Some(prop) = Property::qread(xml).await? {
+                acc.push(prop);
+                continue;
+            }
+
+            // Otherwise skip or escape
+            match xml.peek() {
+                Event::End(_) => break,
+                _ => { xml.skip().await?; },
+            }
+        }
+        xml.tag_stop(DAV_URN, "prop").await?;
+        Ok(Some(PropValue(acc)))
+    }
+}
+
 
 /// Error response
 impl<E: Extension> QRead<Error<E>> for Error<E> {
@@ -326,29 +383,6 @@ impl<E: Extension> QRead<PropertyRequest<E>> for PropertyRequest<E> {
     }
 }
 
-
-impl<E: Extension> QRead<PropValue<E>> for PropValue<E> {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        xml.tag_start(DAV_URN, "prop").await?;
-        let mut acc = Vec::new();
-        loop {
-            // Found a property
-            if let Some(prop) = Property::qread(xml).await? {
-                acc.push(prop);
-                continue;
-            }
-
-            // Otherwise skip or escape
-            match xml.peek() {
-                Event::End(_) => break,
-                _ => { xml.skip().await?; },
-            }
-        }
-        xml.tag_stop(DAV_URN, "prop").await?;
-        Ok(Some(PropValue(acc)))
-    }
-}
-
 impl<E: Extension> QRead<Property<E>> for Property<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
         use chrono::{DateTime, FixedOffset, TimeZone};
@@ -472,7 +506,126 @@ impl<E: Extension> QRead<Property<E>> for Property<E> {
 
 impl QRead<ActiveLock> for ActiveLock {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        unimplemented!();
+        xml.tag_start(DAV_URN, "activelock").await?;
+        let (mut m_scope, mut m_type, mut m_depth, mut owner, mut timeout, mut locktoken, mut m_root) = 
+            (None, None, None, None, None, None, None);
+
+        loop {
+            if let Some(v) = LockScope::qread(xml).await? {
+                m_scope = Some(v);
+            } else if let Some(v) = LockType::qread(xml).await? {
+                m_type = Some(v);
+            } else if let Some(v) = Depth::qread(xml).await? {
+                m_depth = Some(v);
+            } else if let Some(v) = Owner::qread(xml).await? {
+                owner = Some(v);
+            } else if let Some(v) = Timeout::qread(xml).await? {
+                timeout = Some(v);
+            } else if let Some(v) = LockToken::qread(xml).await? {
+                locktoken = Some(v);
+            } else if let Some(v) = LockRoot::qread(xml).await? {
+                m_root = Some(v);
+            } else {
+                match xml.peek() {
+                    Event::End(_) => break,
+                    _ => { xml.skip().await?; },
+                }
+            }
+        }
+
+        xml.tag_stop(DAV_URN, "activelock").await?;
+        match (m_scope, m_type, m_depth, m_root) {
+            (Some(lockscope), Some(locktype), Some(depth), Some(lockroot)) =>
+                Ok(Some(ActiveLock { lockscope, locktype, depth, owner, timeout, locktoken, lockroot })),
+            _ => Err(ParsingError::MissingChild),
+        }
+    }
+}
+
+impl QRead<Depth> for Depth {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+        xml.tag_start(DAV_URN, "depth").await?;
+        let depth_str = xml.tag_string().await?;
+        xml.tag_stop(DAV_URN, "depth").await?;
+        match depth_str.as_str() {
+            "0" => Ok(Some(Depth::Zero)),
+            "1" => Ok(Some(Depth::One)),
+            "infinity" => Ok(Some(Depth::Infinity)),
+            _ => Err(ParsingError::WrongToken),
+        }
+    }
+}
+
+impl QRead<Owner> for Owner {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+        if xml.maybe_tag_start(DAV_URN, "owner").await?.is_none() {
+            return Ok(None)
+        }
+        
+        let mut owner = Owner::Unknown;
+        loop {
+            match xml.peek() {
+                Event::Text(_) | Event::CData(_) => {
+                    let txt = xml.tag_string().await?;
+                    if matches!(owner, Owner::Unknown) {
+                        owner = Owner::Txt(txt);
+                    }
+                }
+                Event::Start(_) | Event::Empty(_) => {
+                    if let Some(href) = Href::qread(xml).await? {
+                        owner = Owner::Href(href)
+                    }
+                    xml.skip().await?;
+                }
+                Event::End(_) => break,
+                _ => { xml.skip().await?; },
+            }
+        };
+        xml.tag_stop(DAV_URN, "owner").await?;
+        Ok(Some(owner))
+    }
+}
+
+impl QRead<Timeout> for Timeout {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+        const SEC_PFX: &str = "SEC_PFX";
+
+        match xml.peek() {
+            Event::Start(b) if xml.is_tag(DAV_URN, "timeout") => xml.next().await?,
+            _ => return Ok(None),
+        };
+        
+        let timeout = match xml.tag_string().await?.as_str() {
+            "Infinite" => Timeout::Infinite,
+            seconds => match seconds.strip_prefix(SEC_PFX) {
+                Some(secs) => Timeout::Seconds(secs.parse::<u32>()?),
+                None => return Err(ParsingError::InvalidValue),
+            },
+        };
+
+        xml.tag_stop(DAV_URN, "timeout").await?;
+        Ok(Some(timeout))
+    }
+}
+
+impl QRead<LockToken> for LockToken {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+        match xml.peek() {
+            Event::Start(b) if xml.is_tag(DAV_URN, "locktoken") => xml.next().await?,
+            _ => return Ok(None),
+        };
+        let href = Href::qread(xml).await?.ok_or(ParsingError::MissingChild)?;
+        xml.tag_stop(DAV_URN, "locktoken").await?;
+        Ok(Some(LockToken(href)))
+    }
+}
+
+impl QRead<LockRoot> for LockRoot {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
+        xml.tag_start(DAV_URN, "lockroot").await?;
+        let href = Href::qread(xml).await?.ok_or(ParsingError::MissingChild)?;
+        xml.tag_stop(DAV_URN, "lockroot").await?;
+        Ok(Some(LockRoot(href)))
     }
 }
 
@@ -495,10 +648,10 @@ impl QRead<LockEntry> for LockEntry {
 
         loop {
             match xml.peek() {
-                Event::Start(b) if xml.is_tag(DAV_URN, "lockscope") => {
+                Event::Start(_) if xml.is_tag(DAV_URN, "lockscope") => {
                     maybe_scope = LockScope::qread(xml).await?;
                 },
-                Event::Start(b) if xml.is_tag(DAV_URN, "lockentry") => {
+                Event::Start(_) if xml.is_tag(DAV_URN, "lockentry") => {
                     maybe_type = LockType::qread(xml).await?;
                 }
                 Event::End(_) => break,
@@ -518,14 +671,18 @@ impl QRead<LockEntry> for LockEntry {
 
 impl QRead<LockScope> for LockScope {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        xml.tag_start(DAV_URN, "lockscope").await?;
+        if xml.maybe_tag_start(DAV_URN, "lockscope").await?.is_none() {
+            return Ok(None)
+        }
+
         let lockscope = loop {
+            println!("lockscope tag: {:?}", xml.peek());
             match xml.peek() {
-                Event::Empty(b) if xml.is_tag(DAV_URN, "exclusive") => {
+                Event::Empty(_) if xml.is_tag(DAV_URN, "exclusive") => {
                     xml.next().await?;
                     break LockScope::Exclusive
                 },
-                Event::Empty(b) if xml.is_tag(DAV_URN, "shared") => {
+                Event::Empty(_) if xml.is_tag(DAV_URN, "shared") => {
                     xml.next().await?;
                     break LockScope::Shared
                 }
@@ -540,7 +697,10 @@ impl QRead<LockScope> for LockScope {
 
 impl QRead<LockType> for LockType {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Option<Self>, ParsingError> {
-        xml.tag_start(DAV_URN, "locktype").await?;
+        if xml.maybe_tag_start(DAV_URN, "locktype").await?.is_none() {
+            return Ok(None)
+        }
+
         let locktype = loop {
             match xml.peek() {
                 Event::Empty(b) if xml.is_tag(DAV_URN, "write") => {
@@ -639,4 +799,55 @@ mod tests {
             ])
         ]));
     }
+
+
+    #[tokio::test]
+    async fn rfc_propertyupdate() {
+        let src = r#"<?xml version="1.0" encoding="utf-8" ?>
+     <D:propertyupdate xmlns:D="DAV:"
+             xmlns:Z="http://ns.example.com/standards/z39.50/">
+       <D:set>
+         <D:prop>
+           <Z:Authors>
+             <Z:Author>Jim Whitehead</Z:Author>
+             <Z:Author>Roy Fielding</Z:Author>
+           </Z:Authors>
+         </D:prop>
+       </D:set>
+       <D:remove>
+         <D:prop><Z:Copyright-Owner/></D:prop>
+       </D:remove>
+     </D:propertyupdate>"#;
+
+        let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
+        let got = PropertyUpdate::<Core>::qread(&mut rdr).await.unwrap().unwrap();
+
+        assert_eq!(got, PropertyUpdate(vec![
+            PropertyUpdateItem::Set(Set(PropValue(vec![]))),
+            PropertyUpdateItem::Remove(Remove(PropName(vec![]))),
+        ]));
+    }
+
+    #[tokio::test]
+    async fn rfc_lockinfo1() {
+        let src = r#"
+<?xml version="1.0" encoding="utf-8" ?>
+<D:lockinfo xmlns:D='DAV:'>
+    <D:lockscope><D:exclusive/></D:lockscope>
+    <D:locktype><D:write/></D:locktype>
+    <D:owner>
+        <D:href>http://example.org/~ejw/contact.html</D:href>
+    </D:owner>
+</D:lockinfo>
+"#;
+
+        let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
+        let got = LockInfo::qread(&mut rdr).await.unwrap().unwrap();
+        assert_eq!(got, LockInfo {
+            lockscope: LockScope::Exclusive,
+            locktype: LockType::Write,
+            owner: Some(Owner::Href(Href("http://example.org/~ejw/contact.html".into()))),
+        });
+    }
+
 }

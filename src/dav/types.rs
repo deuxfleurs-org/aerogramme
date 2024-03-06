@@ -366,6 +366,7 @@ pub struct Multistatus<E: Extension> {
 pub enum Owner {
     Txt(String),
     Href(Href),
+    Unknown,
 }
 
 /// 14.18.  prop XML Element

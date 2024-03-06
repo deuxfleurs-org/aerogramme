@@ -6,6 +6,7 @@ pub enum ParsingError {
     NamespacePrefixAlreadyUsed,
     WrongToken,
     TagNotFound,
+    InvalidValue,
     Utf8Error(std::str::Utf8Error),
     QuickXml(quick_xml::Error), 
     Chrono(chrono::format::ParseError),

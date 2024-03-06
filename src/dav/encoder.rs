@@ -527,6 +527,7 @@ impl QWrite for Owner {
         match self {
             Self::Txt(txt) => xml.q.write_event_async(Event::Text(BytesText::new(&txt))).await?,
             Self::Href(href) => href.qwrite(xml).await?,
+            Self::Unknown => (),
         }
         xml.q.write_event_async(Event::End(end)).await
     }
