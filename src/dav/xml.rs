@@ -53,25 +53,33 @@ impl<T: IWrite> Writer<T> {
 /// Transform an XML stream of characters into a Rust object
 pub struct Reader<T: IRead> {
     pub rdr: NsReader<T>,
-    evt: Event<'static>,
+    cur: Event<'static>,
+    parents: Vec<Event<'static>>,
     buf: Vec<u8>,
 }
 impl<T: IRead> Reader<T> {
     pub async fn new(mut rdr: NsReader<T>) -> Result<Self, ParsingError> {
         let mut buf: Vec<u8> = vec![];
-        let evt = rdr.read_event_into_async(&mut buf).await?.into_owned();
+        let cur = rdr.read_event_into_async(&mut buf).await?.into_owned();
+        let parents = vec![];
         buf.clear();
-        Ok(Self { evt, rdr, buf })
+        Ok(Self { cur, parents, rdr, buf })
     }
 
-    pub fn peek(&self) -> &Event<'static> {
-        &self.evt
+    /// read one more tag
+    /// do not expose it publicly
+    async fn next(&mut self) -> Result<Event<'static>, ParsingError> {
+       let evt = self.rdr.read_event_into_async(&mut self.buf).await?.into_owned(); 
+       self.buf.clear();
+       let old_evt = std::mem::replace(&mut self.cur, evt);
+       Ok(old_evt)
     }
 
-    /// skip tag. Can't skip end, can't skip eof.
+    /// skip a node at current level
+    /// I would like to make this one private but not ready
     pub async fn skip(&mut self) -> Result<Event<'static>, ParsingError> {
-        println!("skip on {:?}", &self.evt);
-        match &self.evt {
+        println!("skipping inside node {:?}", self.parents.last());
+        match &self.cur {
             Event::Start(b) => {
                 let _span = self.rdr.read_to_end_into_async(b.to_end().name(), &mut self.buf).await?;
                 self.next().await
@@ -82,17 +90,8 @@ impl<T: IRead> Reader<T> {
         }
     }
 
-    /// read one more tag
-    pub async fn next(&mut self) -> Result<Event<'static>, ParsingError> {
-       let evt = self.rdr.read_event_into_async(&mut self.buf).await?.into_owned(); 
-       self.buf.clear();
-       let old_evt = std::mem::replace(&mut self.evt, evt);
-       Ok(old_evt)
-    }
-
-
     /// check if this is the desired tag
-    pub fn is_tag(&self, ns: &[u8], key: &str) -> bool {
+    fn is_tag(&self, ns: &[u8], key: &str) -> bool {
         let qname = match self.peek() {
             Event::Start(bs) | Event::Empty(bs) => bs.name(),
             Event::End(be) => be.name(),
@@ -111,43 +110,25 @@ impl<T: IRead> Reader<T> {
         }
     }
 
-    /*
-     * Disabled
-    /// maybe find start tag
-    pub async fn maybe_tag_start(&mut self, ns: &[u8], key: &str) -> Result<Option<Event<'static>>, ParsingError> {
-        println!("maybe start tag {}", key);
-        let peek = self.peek();
-        match peek {
-            Event::Start(_) | Event::Empty(_) if self.is_tag(ns, key) => Ok(Some(self.next().await?)),
-            _ => Ok(None),
+    fn parent_has_child(&self) -> bool {
+        matches!(self.parents.last(), Some(Event::Start(_)) | None)
+    }
+
+    fn ensure_parent_has_child(&self) -> Result<(), ParsingError> {
+        match self.parent_has_child() {
+            true => Ok(()),
+            false => Err(ParsingError::Recoverable),
         }
     }
 
-    /// find start tag
-    pub async fn tag_start(&mut self, ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
-        loop {
-            match self.peek() {
-                Event::Start(b) if self.is_tag(ns, key) => break,
-                _ => { self.skip().await?; },
-            }
-        }
-        self.next().await
-    }
-    */
-
-    // find stop tag
-    pub async fn tag_stop(&mut self, ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
-        println!("search stop tag {}", key);
-        loop {
-            match self.peek() {
-                Event::End(b) if self.is_tag(ns, key) => break,
-                _ => { self.skip().await?; },
-            }
-        }
-        self.next().await
+    pub fn peek(&self) -> &Event<'static> {
+        &self.cur
     }
 
+    // NEW API
     pub async fn tag_string(&mut self) -> Result<String, ParsingError> {
+        self.ensure_parent_has_child()?;
+
         let mut acc = String::new();
         loop {
             match self.peek() {
@@ -165,8 +146,11 @@ impl<T: IRead> Reader<T> {
         }
     }
 
-    // NEW API
     pub async fn maybe_read<N: Node<N>>(&mut self, t: &mut Option<N>, dirty: &mut bool) -> Result<(), ParsingError> {
+        if !self.parent_has_child() {
+            return Ok(())
+        }
+
         match N::qread(self).await {
             Ok(v) => { 
                 *t = Some(v); 
@@ -179,6 +163,10 @@ impl<T: IRead> Reader<T> {
     }
 
     pub async fn maybe_push<N: Node<N>>(&mut self, t: &mut Vec<N>, dirty: &mut bool) -> Result<(), ParsingError> {
+        if !self.parent_has_child() {
+            return Ok(())
+        }
+
         match N::qread(self).await {
             Ok(v) => { 
                 t.push(v); 
@@ -191,6 +179,8 @@ impl<T: IRead> Reader<T> {
     }
 
     pub async fn find<N: Node<N>>(&mut self) -> Result<N, ParsingError> {
+        self.ensure_parent_has_child()?;
+
         loop {
             // Try parse
             match N::qread(self).await {
@@ -204,6 +194,8 @@ impl<T: IRead> Reader<T> {
     }
 
     pub async fn maybe_find<N: Node<N>>(&mut self) -> Result<Option<N>, ParsingError> {
+        self.ensure_parent_has_child()?;
+
         loop {
             // Try parse
             match N::qread(self).await {
@@ -219,7 +211,9 @@ impl<T: IRead> Reader<T> {
     }
 
     pub async fn collect<N: Node<N>>(&mut self) -> Result<Vec<N>, ParsingError> {
+        self.ensure_parent_has_child()?;
         let mut acc = Vec::new();
+
         loop {
             match N::qread(self).await {
                 Err(ParsingError::Recoverable) => match self.peek() {
@@ -235,10 +229,45 @@ impl<T: IRead> Reader<T> {
     }
 
     pub async fn open(&mut self, ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
-        if self.is_tag(ns, key) {
-            return self.next().await
+        let evt = match self.peek() {
+            Event::Empty(_) if self.is_tag(ns, key) => self.cur.clone(),
+            Event::Start(_) if self.is_tag(ns, key) => self.next().await?,
+            _ => return Err(ParsingError::Recoverable),
+        };
+
+        println!("open tag {:?}", evt);
+        self.parents.push(evt.clone());
+        Ok(evt)
+    }
+
+    pub async fn maybe_open(&mut self, ns: &[u8], key: &str) -> Result<Option<Event<'static>>, ParsingError> {
+        match self.open(ns, key).await {
+            Ok(v) => Ok(Some(v)),
+            Err(ParsingError::Recoverable) => Ok(None),
+            Err(e) => Err(e),
         }
-        return Err(ParsingError::Recoverable);
+    }
+
+    // find stop tag
+    pub async fn close(&mut self) -> Result<Event<'static>, ParsingError> {
+        println!("close tag {:?}", self.parents.last());
+
+        // Handle the empty case
+        if !self.parent_has_child() {
+            self.parents.pop();
+            return self.next().await 
+        }
+
+        // Handle the start/end case
+        loop {
+            match self.peek() {
+                Event::End(_) => {
+                    self.parents.pop();
+                    return self.next().await
+                },
+                _ => self.skip().await?,
+            };
+        }
     }
 }
 
