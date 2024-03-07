@@ -383,7 +383,7 @@ impl<E: Extension> QRead<Property<E>> for Property<E> {
         } else if xml.maybe_open(DAV_URN, "getlastmodified").await?.is_some() {
             let datestr = xml.tag_string().await?;
             xml.close().await?;
-            return Ok(Property::CreationDate(DateTime::parse_from_rfc2822(datestr.as_str())?))
+            return Ok(Property::GetLastModified(DateTime::parse_from_rfc2822(datestr.as_str())?))
         } else if xml.maybe_open(DAV_URN, "lockdiscovery").await?.is_some() {
             let acc = xml.collect::<ActiveLock>().await?;
             xml.close().await?;
@@ -602,6 +602,7 @@ impl QRead<Href> for Href {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{FixedOffset, DateTime, TimeZone, Utc};
     use crate::dav::realization::Core;
 
     #[tokio::test]
@@ -874,6 +875,74 @@ mod tests {
 
         let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
         let got = rdr.find::<Multistatus::<Core, PropValue<Core>>>().await.unwrap();
+
+        assert_eq!(got, Multistatus {
+            responses: vec![
+                Response {
+                status_or_propstat: StatusOrPropstat::PropStat(
+                        Href("/container/".into()),
+                        vec![PropStat {
+                            prop: PropValue(vec![
+                                Property::CreationDate(FixedOffset::west_opt(8 * 3600).unwrap().with_ymd_and_hms(1997, 12, 01, 17, 42, 21).unwrap()),
+                                Property::DisplayName("Example collection".into()),
+                                Property::ResourceType(vec![ResourceType::Collection]),
+                                Property::SupportedLock(vec![
+                                    LockEntry {
+                                        lockscope: LockScope::Exclusive,
+                                        locktype: LockType::Write,
+                                    },
+                                    LockEntry {
+                                        lockscope: LockScope::Shared,
+                                        locktype: LockType::Write,
+                                    },
+                                ]),
+                            ]),
+                            status: Status(http::status::StatusCode::OK),
+                            error: None,
+                            responsedescription: None,
+                        }],
+                    ),
+                    error: None,
+                    responsedescription: None,
+                    location: None,
+
+                },
+                Response {
+                    status_or_propstat: StatusOrPropstat::PropStat(
+                        Href("/container/front.html".into()),
+                        vec![PropStat {
+                            prop: PropValue(vec![
+                                Property::CreationDate(FixedOffset::west_opt(8 * 3600).unwrap().with_ymd_and_hms(1997, 12, 01, 18, 27, 21).unwrap()),
+                                Property::DisplayName("Example HTML resource".into()),
+                                Property::GetContentLength(4525),
+                                Property::GetContentType("text/html".into()),
+                                Property::GetEtag(r#""zzyzx""#.into()),
+                                Property::GetLastModified(FixedOffset::west_opt(0).unwrap().with_ymd_and_hms(1998, 01, 12, 09, 25, 56).unwrap()),
+                                //Property::ResourceType(vec![]),
+                                Property::SupportedLock(vec![
+                                    LockEntry {
+                                        lockscope: LockScope::Exclusive,
+                                        locktype: LockType::Write,
+                                    },
+                                    LockEntry {
+                                        lockscope: LockScope::Shared,
+                                        locktype: LockType::Write,
+                                    },
+                                ]),
+                            ]),
+                            status: Status(http::status::StatusCode::OK),
+                            error: None,
+                            responsedescription: None,
+                        }],
+                    ),
+                    error: None,
+                    responsedescription: None,
+                    location: None,
+
+                },
+            ],
+            responsedescription: None,
+        });
     }
 
 }
