@@ -811,16 +811,52 @@ mod tests {
         let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
         let got = rdr.find::<Multistatus::<Core, PropName<Core>>>().await.unwrap();
 
-        /*assert_eq!(got, Multistatus {
+        assert_eq!(got, Multistatus {
             responses: vec![
                 Response {
-                    status_or_propstat: 
+                    status_or_propstat: StatusOrPropstat::PropStat(
+                        Href("http://www.example.com/container/".into()),
+                        vec![PropStat {
+                            prop: PropName(vec![
+                                PropertyRequest::CreationDate,
+                                PropertyRequest::DisplayName,
+                                PropertyRequest::ResourceType,
+                                PropertyRequest::SupportedLock,
+                            ]),
+                            status: Status(http::status::StatusCode::OK),
+                            error: None,
+                            responsedescription: None,
+                        }],
+                    ),
+                    error: None,
+                    responsedescription: None,
+                    location: None,
                 },
-                Response {},
+                Response {
+                    status_or_propstat: StatusOrPropstat::PropStat(
+                        Href("http://www.example.com/container/front.html".into()),
+                        vec![PropStat {
+                            prop: PropName(vec![
+                                PropertyRequest::CreationDate,
+                                PropertyRequest::DisplayName,
+                                PropertyRequest::GetContentLength,
+                                PropertyRequest::GetContentType,
+                                PropertyRequest::GetEtag,
+                                PropertyRequest::GetLastModified,
+                                PropertyRequest::ResourceType,
+                                PropertyRequest::SupportedLock,
+                            ]),
+                            status: Status(http::status::StatusCode::OK),
+                            error: None,
+                            responsedescription: None,
+                        }],
+                    ),
+                    error: None,
+                    responsedescription: None,
+                    location: None,
+                },
             ],
             responsedescription: None,
-        });*/
-
+        });
     }
-
 }
