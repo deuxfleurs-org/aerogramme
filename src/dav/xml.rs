@@ -12,7 +12,7 @@ pub const CARD_URN: &[u8] = b"urn:ietf:params:xml:ns:carddav";
 
 // Async traits
 pub trait IWrite = AsyncWrite + Unpin;
-pub trait IRead = AsyncBufRead + Unpin + 'static;
+pub trait IRead = AsyncBufRead + Unpin;
 
 // Serialization/Deserialization traits
 pub trait QWrite {
@@ -78,7 +78,7 @@ impl<T: IRead> Reader<T> {
     /// skip a node at current level
     /// I would like to make this one private but not ready
     pub async fn skip(&mut self) -> Result<Event<'static>, ParsingError> {
-        println!("skipping inside node {:?}", self.parents.last());
+        //println!("skipping inside node {:?}", self.parents.last());
         match &self.cur {
             Event::Start(b) => {
                 let _span = self.rdr.read_to_end_into_async(b.to_end().name(), &mut self.buf).await?;
@@ -235,7 +235,7 @@ impl<T: IRead> Reader<T> {
             _ => return Err(ParsingError::Recoverable),
         };
 
-        println!("open tag {:?}", evt);
+        //println!("open tag {:?}", evt);
         self.parents.push(evt.clone());
         Ok(evt)
     }
@@ -250,7 +250,7 @@ impl<T: IRead> Reader<T> {
 
     // find stop tag
     pub async fn close(&mut self) -> Result<Event<'static>, ParsingError> {
-        println!("close tag {:?}", self.parents.last());
+        //println!("close tag {:?}", self.parents.last());
 
         // Handle the empty case
         if !self.parent_has_child() {

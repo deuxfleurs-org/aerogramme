@@ -1,0 +1,27 @@
+[package]
+name = "aerogramme-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tokio = { version = "1.18", default-features = false, features = ["rt", "rt-multi-thread", "io-util", "net", "time", "macros", "sync", "signal", "fs"] }
+quick-xml = { version = "0.31", features = ["async-tokio"] }
+
+[dependencies.aerogramme]
+path = ".."
+
+[patch.crates-io]
+imap-types = { git = "https://github.com/superboum/imap-codec", branch = "custom/aerogramme" }
+imap-codec = { git = "https://github.com/superboum/imap-codec", branch = "custom/aerogramme" }
+
+[[bin]]
+name = "dav"
+path = "fuzz_targets/dav.rs"
+test = false
+doc = false
+bench = false

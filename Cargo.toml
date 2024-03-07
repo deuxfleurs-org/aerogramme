@@ -6,6 +6,10 @@ edition = "2021"
 license = "EUPL-1.2"
 description = "A robust email server"
 
+[lib]
+name = "aerogramme"
+path = "src/lib.rs"
+
 [dependencies]
 # async runtime
 tokio = { version = "1.18", default-features = false, features = ["rt", "rt-multi-thread", "io-util", "net", "time", "macros", "sync", "signal", "fs"] }

@@ -1,11 +1,11 @@
 // utils
-mod error;
-mod xml;
+pub mod error;
+pub mod xml;
 
 // webdav
-mod types;
-mod encoder;
-mod decoder;
+pub mod types;
+pub mod encoder;
+pub mod decoder;
 
 // calendar
 mod caltypes;
@@ -17,7 +17,7 @@ mod acltypes;
 mod versioningtypes;
 
 // final type
-mod realization;
+pub mod realization;
 
 
 use std::net::SocketAddr;

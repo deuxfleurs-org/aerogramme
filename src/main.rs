@@ -1,23 +1,3 @@
-#![feature(type_alias_impl_trait)]
-#![feature(async_fn_in_trait)]
-#![feature(async_closure)]
-#![feature(trait_alias)]
-
-mod auth;
-mod bayou;
-mod config;
-mod cryptoblob;
-mod dav;
-mod imap;
-mod k2v_util;
-mod lmtp;
-mod login;
-mod mail;
-mod server;
-mod storage;
-mod timestamp;
-mod user;
-
 use std::io::Read;
 use std::path::PathBuf;
 
@@ -25,9 +5,9 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use nix::{sys::signal, unistd::Pid};
 
-use config::*;
-use login::{static_provider::*, *};
-use server::Server;
+use aerogramme::config::*;
+use aerogramme::login::{static_provider::*, *};
+use aerogramme::server::Server;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
