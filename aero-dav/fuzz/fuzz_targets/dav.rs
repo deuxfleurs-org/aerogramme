@@ -9,6 +9,7 @@ use quick_xml::reader::NsReader;
 use tokio::runtime::Runtime;
 use tokio::io::AsyncWriteExt;
 
+// Split this file
 const tokens: [&str; 63] = [
 "0",
 "1",
@@ -125,6 +126,9 @@ impl Tag {
 
 #[derive(Arbitrary)]
 enum XmlNode {
+    //@FIXME: build RFC3339 and RFC822 Dates with chrono based on timestamps
+    //@FIXME: add small numbers
+    //@FIXME: add http status code
     Node(Tag, Vec<Self>),
     Number(u64),
     Text(Token),

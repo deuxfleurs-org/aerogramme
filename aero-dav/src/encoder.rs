@@ -633,6 +633,7 @@ impl<E: Extension> QWrite for Violation<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::xml;
     use crate::realization::Core;
     use tokio::io::AsyncWriteExt;
 
@@ -653,43 +654,47 @@ mod tests {
         return got.into()
     }
 
+    async fn deserialize<T: xml::Node<T>>(src: &str) -> T {
+        let mut rdr = xml::Reader::new(quick_xml::reader::NsReader::from_reader(src.as_bytes())).await.unwrap();
+        rdr.find().await.unwrap()
+    }
+
     #[tokio::test]
     async fn basic_href() {
+        let orig = Href("/SOGo/dav/so/".into());
 
-        let got = serialize(
-            &Href("/SOGo/dav/so/".into())
-        ).await;
+        let got = serialize(&orig).await;
         let expected = r#"<D:href xmlns:D="DAV:">/SOGo/dav/so/</D:href>"#;
 
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(deserialize::<Href>(got.as_str()).await, orig)
     }
 
     #[tokio::test]
     async fn basic_multistatus() {
-        let got = serialize(
-            &Multistatus::<Core, PropName<Core>> { 
-                responses: vec![], 
-                responsedescription: Some(ResponseDescription("Hello world".into())) 
-            },
-        ).await;
+        let orig = Multistatus::<Core, PropName<Core>> { 
+            responses: vec![], 
+            responsedescription: Some(ResponseDescription("Hello world".into())) 
+        };
+        let got = serialize(&orig).await;
 
         let expected = r#"<D:multistatus xmlns:D="DAV:">
     <D:responsedescription>Hello world</D:responsedescription>
 </D:multistatus>"#;
 
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(deserialize::<Multistatus::<Core, PropName<Core>>>(got.as_str()).await, orig)
     }
 
 
     #[tokio::test]
     async fn rfc_error_delete_locked() {
-        let got = serialize(
-            &Error::<Core>(vec![
+        let orig = Error::<Core>(vec![
                 Violation::LockTokenSubmitted(vec![
                     Href("/locked/".into())
                 ])
-            ]),
-        ).await;
+            ]);
+        let got = serialize(&orig).await;
 
         let expected = r#"<D:error xmlns:D="DAV:">
     <D:lock-token-submitted>
@@ -698,72 +703,74 @@ mod tests {
 </D:error>"#;
 
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(deserialize::<Error<Core>>(got.as_str()).await, orig)
     }
 
     #[tokio::test]
     async fn rfc_propname_req() {
-        let got = serialize(
-            &PropFind::<Core>::PropName,
-        ).await;
+        let orig = PropFind::<Core>::PropName;
+
+        let got = serialize(&orig).await;
 
         let expected = r#"<D:propfind xmlns:D="DAV:">
     <D:propname/>
 </D:propfind>"#;
 
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(deserialize::<PropFind::<Core>>(got.as_str()).await, orig)
     }
 
     #[tokio::test]
     async fn rfc_propname_res() {
-        let got = serialize(
-            &Multistatus::<Core, PropName<Core>> {
-                responses: vec![
-                    Response {
-                        status_or_propstat: StatusOrPropstat::PropStat(
-                            Href("http://www.example.com/container/".into()),
-                            vec![PropStat {
-                                prop: PropName(vec![
-                                    PropertyRequest::CreationDate,
-                                    PropertyRequest::DisplayName,
-                                    PropertyRequest::ResourceType,
-                                    PropertyRequest::SupportedLock,
-                                ]),
-                                status: Status(http::status::StatusCode::OK),
-                                error: None,
-                                responsedescription: None,
-                            }]
-                        ),
-                        error: None,
-                        responsedescription: None,
-                        location: None,
-                    },
-                    Response {
-                        status_or_propstat: StatusOrPropstat::PropStat(
-                            Href("http://www.example.com/container/front.html".into()),
-                            vec![PropStat {
-                                prop: PropName(vec![
-                                    PropertyRequest::CreationDate,
-                                    PropertyRequest::DisplayName,
-                                    PropertyRequest::GetContentLength,
-                                    PropertyRequest::GetContentType,
-                                    PropertyRequest::GetEtag,
-                                    PropertyRequest::GetLastModified,
-                                    PropertyRequest::ResourceType,
-                                    PropertyRequest::SupportedLock,
-                                ]),
-                                status: Status(http::status::StatusCode::OK),
-                                error: None,
-                                responsedescription: None,
-                            }
-                        ]),
-                        error: None,
-                        responsedescription: None,
-                        location: None,
-                    },
-                ],
-                responsedescription: None,
-            },
-        ).await;
+        let orig = Multistatus::<Core, PropName<Core>> {
+            responses: vec![
+                Response {
+                    status_or_propstat: StatusOrPropstat::PropStat(
+                        Href("http://www.example.com/container/".into()),
+                        vec![PropStat {
+                            prop: PropName(vec![
+                                PropertyRequest::CreationDate,
+                                PropertyRequest::DisplayName,
+                                PropertyRequest::ResourceType,
+                                PropertyRequest::SupportedLock,
+                            ]),
+                            status: Status(http::status::StatusCode::OK),
+                            error: None,
+                            responsedescription: None,
+                        }]
+                    ),
+                    error: None,
+                    responsedescription: None,
+                    location: None,
+                },
+                Response {
+                    status_or_propstat: StatusOrPropstat::PropStat(
+                        Href("http://www.example.com/container/front.html".into()),
+                        vec![PropStat {
+                            prop: PropName(vec![
+                                PropertyRequest::CreationDate,
+                                PropertyRequest::DisplayName,
+                                PropertyRequest::GetContentLength,
+                                PropertyRequest::GetContentType,
+                                PropertyRequest::GetEtag,
+                                PropertyRequest::GetLastModified,
+                                PropertyRequest::ResourceType,
+                                PropertyRequest::SupportedLock,
+                            ]),
+                            status: Status(http::status::StatusCode::OK),
+                            error: None,
+                            responsedescription: None,
+                        }
+                    ]),
+                    error: None,
+                    responsedescription: None,
+                    location: None,
+                },
+            ],
+            responsedescription: None,
+        };
+
+        let got = serialize(&orig).await;
 
         let expected = r#"<D:multistatus xmlns:D="DAV:">
     <D:response>
@@ -798,100 +805,102 @@ mod tests {
 
 
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(deserialize::<Multistatus::<Core, PropName<Core>>>(got.as_str()).await, orig)
     }
 
     #[tokio::test]
     async fn rfc_allprop_req() {
-        let got = serialize(
-            &PropFind::<Core>::AllProp(None),
-        ).await;
+        let orig = PropFind::<Core>::AllProp(None);
+        let got = serialize(&orig).await;
 
     let expected = r#"<D:propfind xmlns:D="DAV:">
     <D:allprop/>
 </D:propfind>"#;
 
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(deserialize::<PropFind::<Core>>(got.as_str()).await, orig)
     }
 
     #[tokio::test]
     async fn rfc_allprop_res() {
-        use chrono::{DateTime,FixedOffset,TimeZone};
-        let got = serialize(
-            &Multistatus::<Core, PropValue<Core>> {
-                responses: vec![
-                    Response {
-                        status_or_propstat: StatusOrPropstat::PropStat(
-                            Href("/container/".into()),
-                            vec![PropStat {
-                            prop: PropValue(vec![
-                                Property::CreationDate(FixedOffset::west_opt(8 * 3600)
-                                                       .unwrap()
-                                                       .with_ymd_and_hms(1997, 12, 1, 17, 42, 21)
-                                                       .unwrap()),
-                                Property::DisplayName("Example collection".into()),
-                                Property::ResourceType(vec![ResourceType::Collection]),
-                                Property::SupportedLock(vec![
-                                    LockEntry {
-                                        lockscope: LockScope::Exclusive,
-                                        locktype: LockType::Write,
-                                    },
-                                    LockEntry {
-                                        lockscope: LockScope::Shared,
-                                        locktype: LockType::Write,
-                                    },
-                                ]),
+        use chrono::{FixedOffset,TimeZone};
+
+        let orig = Multistatus::<Core, PropValue<Core>> {
+            responses: vec![
+                Response {
+                    status_or_propstat: StatusOrPropstat::PropStat(
+                        Href("/container/".into()),
+                        vec![PropStat {
+                        prop: PropValue(vec![
+                            Property::CreationDate(FixedOffset::west_opt(8 * 3600)
+                                                   .unwrap()
+                                                   .with_ymd_and_hms(1997, 12, 1, 17, 42, 21)
+                                                   .unwrap()),
+                            Property::DisplayName("Example collection".into()),
+                            Property::ResourceType(vec![ResourceType::Collection]),
+                            Property::SupportedLock(vec![
+                                LockEntry {
+                                    lockscope: LockScope::Exclusive,
+                                    locktype: LockType::Write,
+                                },
+                                LockEntry {
+                                    lockscope: LockScope::Shared,
+                                    locktype: LockType::Write,
+                                },
                             ]),
-                            status: Status(http::status::StatusCode::OK),
-                            error: None,
-                            responsedescription: None,
-                            }]
-                        ),
+                        ]),
+                        status: Status(http::status::StatusCode::OK),
                         error: None,
                         responsedescription: None,
-                        location: None,
-                    },
-                    Response {
-                        status_or_propstat: StatusOrPropstat::PropStat(
-                            Href("/container/front.html".into()),
-                            vec![PropStat {
-                            prop: PropValue(vec![
-                                Property::CreationDate(FixedOffset::west_opt(8 * 3600)
-                                    .unwrap()
-                                    .with_ymd_and_hms(1997, 12, 1, 18, 27, 21)
-                                    .unwrap()),
-                                Property::DisplayName("Example HTML resource".into()),
-                                Property::GetContentLength(4525),
-                                Property::GetContentType("text/html".into()),
-                                Property::GetEtag(r#""zzyzx""#.into()),
-                                Property::GetLastModified(FixedOffset::east_opt(0)
-                                    .unwrap()
-                                    .with_ymd_and_hms(1998, 1, 12, 9, 25, 56)
-                                    .unwrap()),
-                                Property::ResourceType(vec![]),
-                                Property::SupportedLock(vec![
-                                    LockEntry {
-                                        lockscope: LockScope::Exclusive,
-                                        locktype: LockType::Write,
-                                    },
-                                    LockEntry {
-                                        lockscope: LockScope::Shared,
-                                        locktype: LockType::Write,
-                                    },
-                                ]),
+                        }]
+                    ),
+                    error: None,
+                    responsedescription: None,
+                    location: None,
+                },
+                Response {
+                    status_or_propstat: StatusOrPropstat::PropStat(
+                        Href("/container/front.html".into()),
+                        vec![PropStat {
+                        prop: PropValue(vec![
+                            Property::CreationDate(FixedOffset::west_opt(8 * 3600)
+                                .unwrap()
+                                .with_ymd_and_hms(1997, 12, 1, 18, 27, 21)
+                                .unwrap()),
+                            Property::DisplayName("Example HTML resource".into()),
+                            Property::GetContentLength(4525),
+                            Property::GetContentType("text/html".into()),
+                            Property::GetEtag(r#""zzyzx""#.into()),
+                            Property::GetLastModified(FixedOffset::east_opt(0)
+                                .unwrap()
+                                .with_ymd_and_hms(1998, 1, 12, 9, 25, 56)
+                                .unwrap()),
+                            Property::ResourceType(vec![]),
+                            Property::SupportedLock(vec![
+                                LockEntry {
+                                    lockscope: LockScope::Exclusive,
+                                    locktype: LockType::Write,
+                                },
+                                LockEntry {
+                                    lockscope: LockScope::Shared,
+                                    locktype: LockType::Write,
+                                },
                             ]),
-                            status: Status(http::status::StatusCode::OK),
-                            error: None,
-                            responsedescription: None,
-                            }]
-                        ),
+                        ]),
+                        status: Status(http::status::StatusCode::OK),
                         error: None,
                         responsedescription: None,
-                        location: None,
-                    },
-                ],
-                responsedescription: None,
-            }
-        ).await;
+                        }]
+                    ),
+                    error: None,
+                    responsedescription: None,
+                    location: None,
+                },
+            ],
+            responsedescription: None,
+        };
+
+        let got = serialize(&orig).await;
 
         let expected = r#"<D:multistatus xmlns:D="DAV:">
     <D:response>
@@ -961,16 +970,17 @@ mod tests {
 </D:multistatus>"#;
 
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(deserialize::<Multistatus::<Core, PropValue<Core>>>(got.as_str()).await, orig)
     }
 
     #[tokio::test]
     async fn rfc_allprop_include() {
-        let got = serialize(
-            &PropFind::<Core>::AllProp(Some(Include(vec![
-               PropertyRequest::DisplayName,
-               PropertyRequest::ResourceType,
-            ]))),
-        ).await;
+        let orig = PropFind::<Core>::AllProp(Some(Include(vec![
+           PropertyRequest::DisplayName,
+           PropertyRequest::ResourceType,
+        ])));
+
+        let got = serialize(&orig).await;
 
         let expected = r#"<D:propfind xmlns:D="DAV:">
     <D:allprop/>
@@ -981,6 +991,7 @@ mod tests {
 </D:propfind>"#;
 
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(deserialize::<PropFind::<Core>>(got.as_str()).await, orig)
     }
 
     #[tokio::test]

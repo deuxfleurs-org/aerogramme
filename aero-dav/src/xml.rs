@@ -79,7 +79,7 @@ impl<T: IRead> Reader<T> {
     /// skip a node at current level
     /// I would like to make this one private but not ready
     pub async fn skip(&mut self) -> Result<Event<'static>, ParsingError> {
-        //println!("skipping inside node {:?}", self.parents.last());
+        //println!("skipping inside node {:?} value {:?}", self.parents.last(), self.cur);
         match &self.cur {
             Event::Start(b) => {
                 let _span = self.rdr.read_to_end_into_async(b.to_end().name(), &mut self.buf).await?;
@@ -212,8 +212,10 @@ impl<T: IRead> Reader<T> {
     }
 
     pub async fn collect<N: Node<N>>(&mut self) -> Result<Vec<N>, ParsingError> {
-        self.ensure_parent_has_child()?;
         let mut acc = Vec::new();
+        if !self.parent_has_child() {
+            return Ok(acc)
+        }
 
         loop {
             match N::qread(self).await {
@@ -230,6 +232,7 @@ impl<T: IRead> Reader<T> {
     }
 
     pub async fn open(&mut self, ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
+        //println!("try open tag {:?}", key);
         let evt = match self.peek() {
             Event::Empty(_) if self.is_tag(ns, key) => self.cur.clone(),
             Event::Start(_) if self.is_tag(ns, key) => self.next().await?,

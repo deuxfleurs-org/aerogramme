@@ -23,8 +23,8 @@ impl<E: Extension> QRead<PropFind<E>> for PropFind<E> {
         let propfind: PropFind<E> = loop {
             // allprop
             if let Some(_) = xml.maybe_open(DAV_URN, "allprop").await? {
-                let includ = xml.maybe_find::<Include<E>>().await?;
                 xml.close().await?;
+                let includ = xml.maybe_find::<Include<E>>().await?;
                 break PropFind::AllProp(includ)
             }
 
@@ -594,8 +594,9 @@ impl QRead<Href> for Href {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{FixedOffset, DateTime, TimeZone, Utc};
+    use chrono::{FixedOffset, TimeZone};
     use crate::realization::Core;
+    use quick_xml::reader::NsReader;
 
     #[tokio::test]
     async fn basic_propfind_propname() {
@@ -910,7 +911,7 @@ mod tests {
                                 Property::GetContentType("text/html".into()),
                                 Property::GetEtag(r#""zzyzx""#.into()),
                                 Property::GetLastModified(FixedOffset::west_opt(0).unwrap().with_ymd_and_hms(1998, 01, 12, 09, 25, 56).unwrap()),
-                                //Property::ResourceType(vec![]),
+                                Property::ResourceType(vec![]),
                                 Property::SupportedLock(vec![
                                     LockEntry {
                                         lockscope: LockScope::Exclusive,

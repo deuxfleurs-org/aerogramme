@@ -666,7 +666,7 @@ mod tests {
     use crate::types as dav;
     use crate::realization::Calendar;
     use tokio::io::AsyncWriteExt;
-    use chrono::{Utc,TimeZone,DateTime};
+    use chrono::{Utc,TimeZone};
 
     async fn serialize(elem: &impl QWrite) -> String {
         let mut buffer = Vec::new();
