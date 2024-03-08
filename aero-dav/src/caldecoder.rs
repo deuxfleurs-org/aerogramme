@@ -393,7 +393,9 @@ impl QRead<CompInner> for CompInner {
 impl QRead<CompSupport> for CompSupport {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CAL_URN, "comp").await?;
+        println!("before");
         let inner = Component::new(xml.prev_attr("name").ok_or(ParsingError::MissingAttribute)?);
+        println!("after");
         xml.close().await?;
         Ok(Self(inner))
     }
@@ -760,6 +762,44 @@ mod tests {
    </D:set>
  </C:mkcalendar>
 "#;
+        let got = deserialize::<MkCalendar<Calendar>>(src).await;
+        assert_eq!(got, expected)
+    }
+
+    #[tokio::test]
+    async fn rfc_mkcalendar() {
+        let expected = MkCalendar(dav::Set(dav::PropValue(vec![
+            dav::Property::DisplayName("Lisa's Events".into()),
+            dav::Property::Extension(Property::CalendarDescription {
+                lang: Some("en".into()),
+                text: "Calendar restricted to events.".into(),
+            }),
+            dav::Property::Extension(Property::SupportedCalendarComponentSet(vec![
+                CompSupport(Component::VEvent)
+            ])),
+            dav::Property::Extension(Property::CalendarTimezone("BEGIN:VCALENDAR\nPRODID:-//Example Corp.//CalDAV Client//EN\nVERSION:2.0\nEND:VCALENDAR".into())),
+        ])));
+
+        let src = r#"
+   <?xml version="1.0" encoding="utf-8" ?>
+   <C:mkcalendar xmlns:D="DAV:"
+                 xmlns:C="urn:ietf:params:xml:ns:caldav">
+     <D:set>
+       <D:prop>
+         <D:displayname>Lisa's Events</D:displayname>
+         <C:calendar-description xml:lang="en"
+   >Calendar restricted to events.</C:calendar-description>
+         <C:supported-calendar-component-set>
+           <C:comp name="VEVENT"/>
+         </C:supported-calendar-component-set>
+         <C:calendar-timezone><![CDATA[BEGIN:VCALENDAR
+PRODID:-//Example Corp.//CalDAV Client//EN
+VERSION:2.0
+END:VCALENDAR]]></C:calendar-timezone>
+       </D:prop>
+     </D:set>
+   </C:mkcalendar>"#;
+
         let got = deserialize::<MkCalendar<Calendar>>(src).await;
         assert_eq!(got, expected)
     }

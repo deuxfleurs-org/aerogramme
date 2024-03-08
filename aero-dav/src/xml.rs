@@ -236,12 +236,20 @@ impl<T: IRead> Reader<T> {
     pub async fn open(&mut self, ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
         //println!("try open tag {:?}", key);
         let evt = match self.peek() {
-            Event::Empty(_) if self.is_tag(ns, key) => self.cur.clone(),
+            Event::Empty(_) if self.is_tag(ns, key) => {
+                // hack to make `prev_attr` works
+                // here we duplicate the current tag 
+                // as in other words, we virtually moved one token 
+                // which is useful for prev_attr and any logic based on
+                // self.prev + self.open() on empty nodes
+                self.prev = self.cur.clone();
+                self.cur.clone()
+            },
             Event::Start(_) if self.is_tag(ns, key) => self.next().await?,
             _ => return Err(ParsingError::Recoverable),
         };
 
-        //println!("open tag {:?}", evt);
+        println!("open tag {:?}", evt);
         self.parents.push(evt.clone());
         Ok(evt)
     }
@@ -266,7 +274,7 @@ impl<T: IRead> Reader<T> {
 
     // find stop tag
     pub async fn close(&mut self) -> Result<Event<'static>, ParsingError> {
-        //println!("close tag {:?}", self.parents.last());
+        println!("close tag {:?}", self.parents.last());
 
         // Handle the empty case
         if !self.parent_has_child() {
