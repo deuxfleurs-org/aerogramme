@@ -1,4 +1,4 @@
-mod timestamp
+pub mod timestamp;
 
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
@@ -9,9 +9,9 @@ use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{watch, Notify};
 
-use aero_foundations::cryptoblob::*;
-use aero_foundations::login::Credentials;
-use aero_foundations::storage;
+use aero_user::cryptoblob::*;
+use aero_user::login::Credentials;
+use aero_user::storage;
 
 use crate::timestamp::*;
 

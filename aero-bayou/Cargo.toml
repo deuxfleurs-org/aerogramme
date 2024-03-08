@@ -10,6 +10,8 @@ description = "A simplified version of Bayou by Terry et al. (ACM SIGOPS 1995)"
 aero-user.workspace = true
 
 anyhow.workspace = true
+hex.workspace = true
+tracing.workspace = true
 log.workspace = true
 rand.workspace = true
 serde.workspace = true

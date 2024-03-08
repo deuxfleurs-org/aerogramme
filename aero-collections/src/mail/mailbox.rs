@@ -2,14 +2,15 @@ use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::bayou::Bayou;
-use crate::cryptoblob::{self, gen_key, open_deserialize, seal_serialize, Key};
-use crate::login::Credentials;
+use aero_user::cryptoblob::{self, gen_key, open_deserialize, seal_serialize, Key};
+use aero_user::login::Credentials;
+use aero_user::storage::{self, BlobRef, BlobVal, RowRef, RowVal, Selector, Store};
+use aero_bayou::Bayou;
+use aero_bayou::timestamp::now_msec;
+
 use crate::mail::uidindex::*;
 use crate::mail::unique_ident::*;
 use crate::mail::IMF;
-use crate::storage::{self, BlobRef, BlobVal, RowRef, RowVal, Selector, Store};
-use crate::timestamp::now_msec;
 
 pub struct Mailbox {
     pub(super) id: UniqueIdent,

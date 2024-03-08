@@ -1,20 +1,18 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
 use anyhow::{anyhow, bail, Result};
 use lazy_static::lazy_static;
-use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
-use crate::cryptoblob::{open_deserialize, seal_serialize};
-use crate::login::Credentials;
+use aero_user::cryptoblob::{open_deserialize, seal_serialize};
+use aero_user::login::Credentials;
+use aero_user::storage;
+
 use crate::mail::incoming::incoming_mail_watch_process;
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::ImapUidvalidity;
-use crate::mail::unique_ident::{gen_ident, UniqueIdent};
-use crate::storage;
-use crate::timestamp::now_msec;
-
+use crate::mail::unique_ident::UniqueIdent;
 use crate::mail::namespace::{MAILBOX_HIERARCHY_DELIMITER, INBOX, DRAFTS, ARCHIVE, SENT, TRASH, MAILBOX_LIST_PK, MAILBOX_LIST_SK,MailboxList,CreatedMailbox};
 
 //@FIXME User should be totally rewriten

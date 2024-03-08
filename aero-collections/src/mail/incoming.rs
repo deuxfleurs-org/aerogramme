@@ -1,6 +1,3 @@
-//use std::collections::HashMap;
-use std::convert::TryFrom;
-
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
@@ -11,15 +8,16 @@ use futures::{future::BoxFuture, FutureExt};
 use tokio::sync::watch;
 use tracing::{debug, error, info, warn};
 
-use crate::cryptoblob;
-use crate::login::{Credentials, PublicCredentials};
+use aero_user::cryptoblob;
+use aero_user::login::{Credentials, PublicCredentials};
+use aero_user::storage;
+use aero_bayou::timestamp::now_msec;
+
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::ImapUidvalidity;
 use crate::mail::unique_ident::*;
 use crate::user::User;
 use crate::mail::IMF;
-use crate::storage;
-use crate::timestamp::now_msec;
 
 const INCOMING_PK: &str = "incoming";
 const INCOMING_LOCK_SK: &str = "lock";

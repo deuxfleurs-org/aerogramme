@@ -3,7 +3,7 @@ use std::num::{NonZeroU32, NonZeroU64};
 use im::{HashMap, OrdMap, OrdSet};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::bayou::*;
+use aero_bayou::*;
 use crate::mail::unique_ident::UniqueIdent;
 
 pub type ModSeq = NonZeroU64;

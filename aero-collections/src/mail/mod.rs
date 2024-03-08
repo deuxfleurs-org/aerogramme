@@ -1,5 +1,3 @@
-use std::convert::TryFrom;
-
 pub mod incoming;
 pub mod mailbox;
 pub mod query;
