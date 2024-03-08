@@ -8,7 +8,7 @@ members = [
   "aero-dav/fuzz",
   "aero-collections",
   "aero-proto",
-#  "aerogramme",
+  "aerogramme",
 ]
 
 default-members = ["aerogramme"]
@@ -21,7 +21,7 @@ aero-sasl = { version = "0.3.0", path = "aero-sasl" }
 aero-dav = { version = "0.3.0", path = "aero-dav" }
 aero-collections = { version = "0.3.0", path = "aero-collections" }
 aero-proto = { version = "0.3.0", path = "aero-proto" }
-#aerogramme = { version = "0.3.0", path = "aerogramme" }
+aerogramme = { version = "0.3.0", path = "aerogramme" }
 
 # async runtime
 tokio = { version = "1.18", default-features = false, features = ["rt", "rt-multi-thread", "io-util", "net", "time", "macros", "sync", "signal", "fs"] }

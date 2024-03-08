@@ -7,13 +7,13 @@ use futures::try_join;
 use log::*;
 use tokio::sync::watch;
 
-use crate::auth;
-use crate::config::*;
-use crate::dav;
-use crate::imap;
-use crate::lmtp::*;
-use crate::login::ArcLoginProvider;
-use crate::login::{demo_provider::*, ldap_provider::*, static_provider::*};
+use aero_user::config::*;
+use aero_user::login::ArcLoginProvider;
+use aero_user::login::{demo_provider::*, ldap_provider::*, static_provider::*};
+use aero_proto::sasl as auth;
+use aero_proto::dav;
+use aero_proto::imap;
+use aero_proto::lmtp::*;
 
 pub struct Server {
     lmtp_server: Option<Arc<LmtpServer>>,

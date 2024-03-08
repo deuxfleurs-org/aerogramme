@@ -6,6 +6,21 @@ edition = "2021"
 license = "EUPL-1.2"
 description = "A robust email server"
 
+[dependencies]
+aero-user.workspace = true
+aero-proto.workspace = true
+
+anyhow.workspace = true
+backtrace.workspace = true
+futures.workspace = true
+tokio.workspace = true
+log.workspace = true
+nix.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+rpassword.workspace = true
+
 [[test]]
 name = "behavior"
 path = "tests/behavior.rs"

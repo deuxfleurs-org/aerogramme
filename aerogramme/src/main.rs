@@ -1,3 +1,5 @@
+mod server;
+
 use std::io::Read;
 use std::path::PathBuf;
 
@@ -5,9 +7,9 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use nix::{sys::signal, unistd::Pid};
 
-use aerogramme::config::*;
-use aerogramme::login::{static_provider::*, *};
-use aerogramme::server::Server;
+use aero_user::config::*;
+use aero_user::login::{static_provider::*, *};
+use crate::server::Server;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -151,7 +153,7 @@ fn tracer() {
 #[tokio::main]
 async fn main() -> Result<()> {
     if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "main=info,aerogramme=info,k2v_client=info")
+        std::env::set_var("RUST_LOG", "info")
     }
 
     // Abort on panic (same behavior as in Go)
