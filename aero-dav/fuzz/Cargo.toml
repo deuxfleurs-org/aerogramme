@@ -1,0 +1,24 @@
+[package]
+name = "aerogramme-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+arbitrary = { version = "1", optional = true, features = ["derive"] }
+libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
+tokio = { version = "1.18", default-features = false, features = ["rt", "rt-multi-thread", "io-util", "net", "time", "macros", "sync", "signal", "fs"] }
+quick-xml = { version = "0.31", features = ["async-tokio"] }
+
+[dependencies.aero-dav]
+path = ".."
+
+[[bin]]
+name = "dav"
+path = "fuzz_targets/dav.rs"
+test = false
+doc = false
+bench = false

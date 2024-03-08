@@ -1,0 +1,14 @@
+[package]
+name = "aero-dav"
+version = "0.3.0"
+authors = ["Alex Auvolat <alex@adnab.me>", "Quentin Dufour <quentin@dufour.io>"]
+edition = "2021"
+license = "EUPL-1.2"
+description = "A partial and standalone implementation of the WebDAV protocol and its extensions (eg. CalDAV or CardDAV)"
+
+[dependencies]
+quick-xml.workspace = true
+http.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+futures.workspace = true

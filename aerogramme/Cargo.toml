@@ -1,0 +1,12 @@
+[package]
+name = "aerogramme"
+version = "0.3.0"
+authors = ["Alex Auvolat <alex@adnab.me>", "Quentin Dufour <quentin@dufour.io>"]
+edition = "2021"
+license = "EUPL-1.2"
+description = "A robust email server"
+
+[[test]]
+name = "behavior"
+path = "tests/behavior.rs"
+harness = false
