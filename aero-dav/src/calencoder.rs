@@ -536,7 +536,7 @@ impl QWrite for CompFilterMatch {
 impl QWrite for PropFilter {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut start = xml.create_cal_element("prop-filter");
-        start.push_attribute(("name", self.name.as_str()));
+        start.push_attribute(("name", self.name.0.as_str()));
 
         match &self.additional_rules {
             None => xml.q.write_event_async(Event::Empty(start.clone())).await,

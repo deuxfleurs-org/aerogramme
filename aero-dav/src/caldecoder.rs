@@ -3,7 +3,7 @@ use chrono::NaiveDateTime;
 
 use super::types as dav;
 use super::caltypes::*;
-use super::xml::{QRead, IRead, Reader, Node, CAL_URN};
+use super::xml::{QRead, IRead, Reader, Node, DAV_URN, CAL_URN};
 use super::error::ParsingError;
 
 // ---- ROOT ELEMENTS ---
@@ -17,34 +17,146 @@ impl<E: dav::Extension> QRead<MkCalendar<E>> for MkCalendar<E> {
 }
 
 impl<E: dav::Extension, N: Node<N>> QRead<MkCalendarResponse<E,N>> for MkCalendarResponse<E,N> {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(CAL_URN, "mkcalendar-response").await?;
+        let propstats = xml.collect().await?;
+        xml.close().await?;
+        Ok(MkCalendarResponse(propstats))
     }
 }
 
 impl<E: dav::Extension> QRead<CalendarQuery<E>> for CalendarQuery<E> {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(CAL_URN, "calendar-query").await?;
+        let (mut selector, mut filter, mut timezone) = (None, None, None);
+        loop {
+            let mut dirty = false;
+            xml.maybe_read(&mut selector, &mut dirty).await?;
+            xml.maybe_read(&mut filter, &mut dirty).await?;
+            xml.maybe_read(&mut timezone, &mut dirty).await?;
+
+            if !dirty {
+                match xml.peek() {
+                    Event::End(_) => break,
+                    _ => xml.skip().await?,
+                };
+            }
+        }
+        xml.close().await?;
+
+        match filter {
+            Some(filter) => Ok(CalendarQuery { selector, filter, timezone }),
+            _ => Err(ParsingError::MissingChild),
+        }
     }
 }
 
 impl<E: dav::Extension> QRead<CalendarMultiget<E>> for CalendarMultiget<E> {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(CAL_URN, "free-busy-query").await?;
+        let mut selector = None;
+        let mut href = Vec::new();
+
+        loop {
+            let mut dirty = false;
+            xml.maybe_read(&mut selector, &mut dirty).await?;
+            xml.maybe_push(&mut href, &mut dirty).await?;
+
+            if !dirty {
+                match xml.peek() {
+                    Event::End(_) => break,
+                    _ => xml.skip().await?,
+                };
+            }
+        }
+
+        xml.close().await?;
+        Ok(CalendarMultiget { selector, href })
     }
 }
 
 impl QRead<FreeBusyQuery> for FreeBusyQuery {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(CAL_URN, "calendar-multiple-get").await?;
+        let range = xml.find().await?;
+        xml.close().await?;
+        Ok(FreeBusyQuery(range))
     }
 }
 
 
 // ---- EXTENSIONS ---
 impl QRead<Violation> for Violation {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        if xml.maybe_open(DAV_URN, "resource-must-be-null").await?.is_some() {
+            xml.close().await?;
+            Ok(Self::ResourceMustBeNull)
+        } else if xml.maybe_open(DAV_URN, "need-privileges").await?.is_some() {
+            xml.close().await?;
+            Ok(Self::NeedPrivileges)
+        } else if xml.maybe_open(CAL_URN, "calendar-collection-location-ok").await?.is_some() {
+            xml.close().await?;
+            Ok(Self::CalendarCollectionLocationOk)
+        } else if xml.maybe_open(CAL_URN, "valid-calendar-data").await?.is_some() {
+            xml.close().await?;
+            Ok(Self::ValidCalendarData)
+        } else if xml.maybe_open(CAL_URN, "initialize-calendar-collection").await?.is_some() {
+            xml.close().await?;
+            Ok(Self::InitializeCalendarCollection)
+        } else if xml.maybe_open(CAL_URN, "supported-calendar-data").await?.is_some() {
+            xml.close().await?;
+            Ok(Self::SupportedCalendarData)
+        } else if xml.maybe_open(CAL_URN, "valid-calendar-object-resource").await?.is_some() {
+            xml.close().await?;
+            Ok(Self::ValidCalendarObjectResource)
+        } else if xml.maybe_open(CAL_URN, "supported-calendar-component").await?.is_some() {
+            xml.close().await?;
+            Ok(Self::SupportedCalendarComponent)
+        } else if xml.maybe_open(CAL_URN, "no-uid-conflict").await?.is_some() {
+            let href = xml.find().await?;
+            xml.close().await?;
+            Ok(Self::NoUidConflict(href))
+        } else if xml.maybe_open(CAL_URN, "max-resource-size").await?.is_some() {
+            xml.close().await?;
+            Ok(Self::MaxResourceSize)
+        } else if xml.maybe_open(CAL_URN, "min-date-time").await?.is_some() {
+            xml.close().await?;
+            Ok(Self::MinDateTime)
+        } else if xml.maybe_open(CAL_URN, "max-date-time").await?.is_some() {
+            xml.close().await?;
+            Ok(Self::MaxDateTime)
+        } else if xml.maybe_open(CAL_URN, "max-instances").await?.is_some() {
+            xml.close().await?;
+            Ok(Self::MaxInstances)
+        } else if xml.maybe_open(CAL_URN, "max-attendees-per-instance").await?.is_some() {
+            xml.close().await?;
+            Ok(Self::MaxAttendeesPerInstance)
+        } else if xml.maybe_open(CAL_URN, "valid-filter").await?.is_some() {
+            xml.close().await?;
+            Ok(Self::ValidFilter)
+        } else if xml.maybe_open(CAL_URN, "supported-filter").await?.is_some() {
+            let (mut comp, mut prop, mut param) = (Vec::new(), Vec::new(), Vec::new());
+            loop {
+                let mut dirty = false;
+                xml.maybe_push(&mut comp, &mut dirty).await?;
+                xml.maybe_push(&mut prop, &mut dirty).await?;
+                xml.maybe_push(&mut param, &mut dirty).await?;
+
+                if !dirty {
+                    match xml.peek() {
+                        Event::End(_) => break,
+                        _ => xml.skip().await?,
+                    };
+                }
+            }
+            xml.close().await?;
+            Ok(Self::SupportedFilter { comp, prop, param })
+        } else if xml.maybe_open(CAL_URN, "number-of-matches-within-limits").await?.is_some() {
+            xml.close().await?;
+            Ok(Self::NumberOfMatchesWithinLimits)
+        } else {
+            Err(ParsingError::Recoverable)
+        }
     }
 }
 
@@ -289,110 +401,286 @@ impl QRead<PropKind> for PropKind {
 }
 
 impl QRead<RecurrenceModifier> for RecurrenceModifier {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        match Expand::qread(xml).await {
+            Err(ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(RecurrenceModifier::Expand),
+        }
+        LimitRecurrenceSet::qread(xml).await.map(RecurrenceModifier::LimitRecurrenceSet)
     }
 }
 
 impl QRead<Expand> for Expand {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(CAL_URN, "expand").await?;
+        let (rstart, rend) = match (xml.prev_attr("start"), xml.prev_attr("end")) {
+            (Some(start), Some(end)) => (start, end),
+            _ => return Err(ParsingError::MissingAttribute),
+        };
+        
+        let start = NaiveDateTime::parse_from_str(rstart.as_str(), ICAL_DATETIME_FMT)?.and_utc();
+        let end = NaiveDateTime::parse_from_str(rend.as_str(), ICAL_DATETIME_FMT)?.and_utc();
+        if start > end {
+            return Err(ParsingError::InvalidValue)
+        }
+
+        xml.close().await?;
+        Ok(Expand(start, end))
     }
 }
 
 impl QRead<LimitRecurrenceSet> for LimitRecurrenceSet {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(CAL_URN, "limit-recurrence-set").await?;
+        let (rstart, rend) = match (xml.prev_attr("start"), xml.prev_attr("end")) {
+            (Some(start), Some(end)) => (start, end),
+            _ => return Err(ParsingError::MissingAttribute),
+        };
+        
+        let start = NaiveDateTime::parse_from_str(rstart.as_str(), ICAL_DATETIME_FMT)?.and_utc();
+        let end = NaiveDateTime::parse_from_str(rend.as_str(), ICAL_DATETIME_FMT)?.and_utc();
+        if start > end {
+            return Err(ParsingError::InvalidValue)
+        }
+
+        xml.close().await?;
+        Ok(LimitRecurrenceSet(start, end))
     }
 }
 
 impl QRead<LimitFreebusySet> for LimitFreebusySet {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(CAL_URN, "limit-freebusy-set").await?;
+        let (rstart, rend) = match (xml.prev_attr("start"), xml.prev_attr("end")) {
+            (Some(start), Some(end)) => (start, end),
+            _ => return Err(ParsingError::MissingAttribute),
+        };
+        
+        let start = NaiveDateTime::parse_from_str(rstart.as_str(), ICAL_DATETIME_FMT)?.and_utc();
+        let end = NaiveDateTime::parse_from_str(rend.as_str(), ICAL_DATETIME_FMT)?.and_utc();
+        if start > end {
+            return Err(ParsingError::InvalidValue)
+        }
+
+        xml.close().await?;
+        Ok(LimitFreebusySet(start, end))
     }
 }
 
 impl<E: dav::Extension> QRead<CalendarSelector<E>> for CalendarSelector<E> {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        // allprop
+        if let Some(_) = xml.maybe_open(DAV_URN, "allprop").await? {
+            xml.close().await?;
+            return Ok(Self::AllProp)
+        }
+
+        // propname
+        if let Some(_) = xml.maybe_open(DAV_URN, "propname").await? {
+            xml.close().await?;
+            return Ok(Self::PropName)
+        }
+
+        // prop
+        let (mut maybe_prop, mut dirty) = (None, false);
+        xml.maybe_read::<dav::PropName<E>>(&mut maybe_prop, &mut dirty).await?;
+        if let Some(prop) = maybe_prop {
+            return Ok(Self::Prop(prop))
+        }
+
+        Err(ParsingError::Recoverable)
     }
 }
 
 impl QRead<CompFilter> for CompFilter {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(CAL_URN, "comp-filter").await?;
+        let name = Component::new(xml.prev_attr("name").ok_or(ParsingError::MissingAttribute)?);
+        let additional_rules = Box::pin(xml.maybe_find()).await?;
+        xml.close().await?;
+        Ok(Self { name, additional_rules })
     }
 }
 
 impl QRead<CompFilterRules> for CompFilterRules {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        if xml.maybe_open(CAL_URN, "is-not-defined").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::IsNotDefined)
+        }
+        CompFilterMatch::qread(xml).await.map(CompFilterRules::Matches)
     }
 }
 
 impl QRead<CompFilterMatch> for CompFilterMatch {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        let mut time_range = None;
+        let mut prop_filter = Vec::new();
+        let mut comp_filter = Vec::new();
+
+        loop {
+            let mut dirty = false;
+            xml.maybe_read(&mut time_range, &mut dirty).await?;
+            xml.maybe_push(&mut prop_filter, &mut dirty).await?;
+            xml.maybe_push(&mut comp_filter, &mut dirty).await?;
+
+            if !dirty {
+                match xml.peek() {
+                    Event::End(_) => break,
+                    _ => xml.skip().await?,
+                };
+            }
+        }
+
+        match (&time_range, &prop_filter[..], &comp_filter[..]) {
+            (None, [], []) => Err(ParsingError::Recoverable),
+            _ => Ok(CompFilterMatch { time_range, prop_filter, comp_filter }),
+        }
     }
 }
 
 impl QRead<PropFilter> for PropFilter {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(CAL_URN, "prop-filter").await?;
+        let name = ComponentProperty(xml.prev_attr("name").ok_or(ParsingError::MissingAttribute)?);
+        let additional_rules = xml.maybe_find().await?;
+        xml.close().await?;
+        Ok(Self { name, additional_rules })
     }
 }
 
 impl QRead<PropFilterRules> for PropFilterRules {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        if xml.maybe_open(CAL_URN, "is-not-defined").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::IsNotDefined)
+        }
+        PropFilterMatch::qread(xml).await.map(PropFilterRules::Match)
     }
 }
 
 impl QRead<PropFilterMatch> for PropFilterMatch {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        let mut time_range = None;
+        let mut time_or_text = None;
+        let mut param_filter = Vec::new();
+
+        loop {
+            let mut dirty = false;
+            xml.maybe_read(&mut time_range, &mut dirty).await?;
+            xml.maybe_read(&mut time_or_text, &mut dirty).await?;
+            xml.maybe_push(&mut param_filter, &mut dirty).await?;
+
+            if !dirty {
+                match xml.peek() {
+                    Event::End(_) => break,
+                    _ => xml.skip().await?,
+                };
+            }
+        }
+
+        match (&time_range, &time_or_text, &param_filter[..]) {
+            (None, None, []) => Err(ParsingError::Recoverable),
+            _ => Ok(PropFilterMatch { time_range, time_or_text, param_filter }),
+        }
+    }
+}
+
+impl QRead<ParamFilter> for ParamFilter {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(CAL_URN, "param-filter").await?;
+        let name = PropertyParameter(xml.prev_attr("name").ok_or(ParsingError::MissingAttribute)?);
+        let additional_rules = xml.maybe_find().await?;
+        xml.close().await?;
+        Ok(Self { name, additional_rules })
     }
 }
 
 impl QRead<TimeOrText> for TimeOrText {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        match TimeRange::qread(xml).await {
+            Err(ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(Self::Time),
+        }
+        TextMatch::qread(xml).await.map(Self::Text)
     }
 }
 
 impl QRead<TextMatch> for TextMatch {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(CAL_URN, "text-match").await?;
+        let collation = xml.prev_attr("collation").map(Collation::new);
+        let negate_condition = xml.prev_attr("negate-condition").map(|v| v == "yes");
+        let text = xml.tag_string().await?;
+        xml.close().await?;
+        Ok(Self { collation, negate_condition, text })
     }
 }
 
 impl QRead<ParamFilterMatch> for ParamFilterMatch {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        if xml.maybe_open(CAL_URN, "is-not-defined").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::IsNotDefined)
+        }
+        TextMatch::qread(xml).await.map(Self::Match)
     }
 }
 
 impl QRead<TimeZone> for TimeZone {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(CAL_URN, "timezone").await?;
+        let inner = xml.tag_string().await?;
+        xml.close().await?;
+        Ok(Self(inner))
     }
 }
 
 impl QRead<Filter> for Filter {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(CAL_URN, "timezone").await?;
+        let comp_filter = xml.find().await?;
+        xml.close().await?;
+        Ok(Self(comp_filter))
     }
 }
 
 impl QRead<TimeRange> for TimeRange {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(CAL_URN, "time-range").await?;
+
+        let start = match xml.prev_attr("start") {
+            Some(r) => Some(NaiveDateTime::parse_from_str(r.as_str(), ICAL_DATETIME_FMT)?.and_utc()),
+            _ => None,
+        };
+        let end = match xml.prev_attr("end") {
+            Some(r) => Some(NaiveDateTime::parse_from_str(r.as_str(), ICAL_DATETIME_FMT)?.and_utc()),
+            _ => None,
+        };
+
+        xml.close().await?;
+
+        match (start, end) {
+            (Some(start), Some(end)) => {
+                if start > end {
+                    return Err(ParsingError::InvalidValue)
+                }
+                Ok(TimeRange::FullRange(start, end))
+            },
+            (Some(start), None) => Ok(TimeRange::OnlyStart(start)),
+            (None, Some(end)) => Ok(TimeRange::OnlyEnd(end)),
+            (None, None) => Err(ParsingError::MissingAttribute),
+        }
     }
 }
 
 impl QRead<CalProp> for CalProp {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(CAL_URN, "prop").await?;        
+        let name = ComponentProperty(xml.prev_attr("name").ok_or(ParsingError::MissingAttribute)?);
+        let novalue = xml.prev_attr("novalue").map(|v| v == "yes");
+        xml.close().await?;
+        Ok(Self { name, novalue })
     }
 }
 

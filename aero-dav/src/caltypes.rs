@@ -1208,7 +1208,7 @@ pub struct CompFilterMatch {
 /// ```
 #[derive(Debug, PartialEq)]
 pub struct PropFilter {
-    pub name: Component,
+    pub name: ComponentProperty,
     // None = Option 1, Some() = Option 2, 3 & 4
     pub additional_rules: Option<PropFilterRules>,
 }
