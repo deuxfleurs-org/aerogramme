@@ -230,14 +230,61 @@ impl QRead<Property> for Property {
 }
 
 impl QRead<PropertyRequest> for PropertyRequest {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        if xml.maybe_open(CAL_URN, "calendar-description").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::CalendarDescription)
+        } 
+        if xml.maybe_open(CAL_URN, "calendar-timezone").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::CalendarTimezone)
+        }
+        if xml.maybe_open(CAL_URN, "supported-calendar-component-set").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::SupportedCalendarComponentSet)
+        }
+        if xml.maybe_open(CAL_URN, "supported-calendar-data").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::SupportedCalendarData)
+        }
+        if xml.maybe_open(CAL_URN, "max-resource-size").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::MaxResourceSize)
+        }
+        if xml.maybe_open(CAL_URN, "min-date-time").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::MinDateTime)
+        }
+        if xml.maybe_open(CAL_URN, "max-date-time").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::MaxDateTime)
+        }
+        if xml.maybe_open(CAL_URN, "max-instances").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::MaxInstances)
+        }
+        if xml.maybe_open(CAL_URN, "max-attendees-per-instance").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::MaxAttendeesPerInstance)
+        }
+        if xml.maybe_open(CAL_URN, "supported-collation-set").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::SupportedCollationSet)
+        }
+        let mut dirty = false;
+        let mut m_cdr = None;
+        xml.maybe_read(&mut m_cdr, &mut dirty).await?;
+        m_cdr.ok_or(ParsingError::Recoverable).map(Self::CalendarData)
     }
 }
 
 impl QRead<ResourceType> for ResourceType {
-    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        unreachable!();
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        if xml.maybe_open(CAL_URN, "calendar").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::Calendar)
+        }
+        Err(ParsingError::Recoverable)
     }
 }
 
