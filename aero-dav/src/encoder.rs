@@ -996,16 +996,15 @@ mod tests {
 
     #[tokio::test]
     async fn rfc_propertyupdate() {
-        let got = serialize(
-            &PropertyUpdate::<Core>(vec![
-                PropertyUpdateItem::Set(Set(PropValue(vec![
-                    Property::GetContentLanguage("fr-FR".into()),
-                ]))),
-                PropertyUpdateItem::Remove(Remove(PropName(vec![
-                    PropertyRequest::DisplayName,
-                ]))),
-            ]),
-        ).await;
+        let orig = PropertyUpdate::<Core>(vec![
+            PropertyUpdateItem::Set(Set(PropValue(vec![
+                Property::GetContentLanguage("fr-FR".into()),
+            ]))),
+            PropertyUpdateItem::Remove(Remove(PropName(vec![
+                PropertyRequest::DisplayName,
+            ]))),
+        ]);
+        let got = serialize(&orig).await;
 
         let expected = r#"<D:propertyupdate xmlns:D="DAV:">
     <D:set>
@@ -1021,24 +1020,25 @@ mod tests {
 </D:propertyupdate>"#;
 
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(deserialize::<PropertyUpdate::<Core>>(got.as_str()).await, orig)
     }
 
     #[tokio::test]
     async fn rfc_delete_locked2() {
-        let got = serialize(
-            &Multistatus::<Core, PropValue<Core>> {
-                responses: vec![Response {
-                    status_or_propstat: StatusOrPropstat::Status(
-                        vec![Href("http://www.example.com/container/resource3".into())],
-                        Status(http::status::StatusCode::from_u16(423).unwrap())
-                    ),
-                    error: Some(Error(vec![Violation::LockTokenSubmitted(vec![])])),
-                    responsedescription: None,
-                    location: None,
-                }],
+        let orig = Multistatus::<Core, PropValue<Core>> {
+            responses: vec![Response {
+                status_or_propstat: StatusOrPropstat::Status(
+                    vec![Href("http://www.example.com/container/resource3".into())],
+                    Status(http::status::StatusCode::from_u16(423).unwrap())
+                ),
+                error: Some(Error(vec![Violation::LockTokenSubmitted(vec![])])),
                 responsedescription: None,
-            },
-        ).await;
+                location: None,
+            }],
+            responsedescription: None,
+        };
+
+        let got = serialize(&orig).await;
 
         let expected = r#"<D:multistatus xmlns:D="DAV:">
     <D:response>
@@ -1051,17 +1051,18 @@ mod tests {
 </D:multistatus>"#;
 
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(deserialize::<Multistatus::<Core, PropValue<Core>>>(got.as_str()).await, orig)
     }
 
     #[tokio::test]
     async fn rfc_simple_lock_request() {
-        let got = serialize(
-            &LockInfo {
-                lockscope: LockScope::Exclusive,
-                locktype: LockType::Write,
-                owner: Some(Owner::Href(Href("http://example.org/~ejw/contact.html".into()))),
-            },
-        ).await;
+        let orig = LockInfo {
+            lockscope: LockScope::Exclusive,
+            locktype: LockType::Write,
+            owner: Some(Owner::Href(Href("http://example.org/~ejw/contact.html".into()))),
+        };
+
+        let got = serialize(&orig).await;
 
         let expected = r#"<D:lockinfo xmlns:D="DAV:">
     <D:lockscope>
@@ -1076,23 +1077,24 @@ mod tests {
 </D:lockinfo>"#;
 
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(deserialize::<LockInfo>(got.as_str()).await, orig)
     }
 
     #[tokio::test]
     async fn rfc_simple_lock_response() {
-        let got = serialize(
-            &PropValue::<Core>(vec![
-                Property::LockDiscovery(vec![ActiveLock {
-                    lockscope: LockScope::Exclusive,
-                    locktype: LockType::Write,
-                    depth: Depth::Infinity,
-                    owner: Some(Owner::Href(Href("http://example.org/~ejw/contact.html".into()))),
-                    timeout: Some(Timeout::Seconds(604800)),
-                    locktoken: Some(LockToken(Href("urn:uuid:e71d4fae-5dec-22d6-fea5-00a0c91e6be4".into()))),
-                    lockroot: LockRoot(Href("http://example.com/workspace/webdav/proposal.doc".into())),
-                }]),
-            ]),
-        ).await;
+        let orig = PropValue::<Core>(vec![
+            Property::LockDiscovery(vec![ActiveLock {
+                lockscope: LockScope::Exclusive,
+                locktype: LockType::Write,
+                depth: Depth::Infinity,
+                owner: Some(Owner::Href(Href("http://example.org/~ejw/contact.html".into()))),
+                timeout: Some(Timeout::Seconds(604800)),
+                locktoken: Some(LockToken(Href("urn:uuid:e71d4fae-5dec-22d6-fea5-00a0c91e6be4".into()))),
+                lockroot: LockRoot(Href("http://example.com/workspace/webdav/proposal.doc".into())),
+            }]),
+        ]);
+
+        let got = serialize(&orig).await;
 
         let expected = r#"<D:prop xmlns:D="DAV:">
     <D:lockdiscovery>
@@ -1119,5 +1121,6 @@ mod tests {
 </D:prop>"#;
 
         assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(deserialize::<PropValue::<Core>>(got.as_str()).await, orig)
     }
 }

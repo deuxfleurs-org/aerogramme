@@ -473,7 +473,7 @@ impl QRead<Owner> for Owner {
 
 impl QRead<Timeout> for Timeout {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        const SEC_PFX: &str = "SEC_PFX";
+        const SEC_PFX: &str = "Second-";
         xml.open(DAV_URN, "timeout").await?;
         
         let timeout = match xml.tag_string().await?.as_str() {
@@ -492,7 +492,7 @@ impl QRead<Timeout> for Timeout {
 impl QRead<LockToken> for LockToken {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(DAV_URN, "locktoken").await?;
-        let href = Href::qread(xml).await?;
+        let href = xml.find::<Href>().await?;
         xml.close().await?;
         Ok(LockToken(href))
     }
@@ -501,7 +501,7 @@ impl QRead<LockToken> for LockToken {
 impl QRead<LockRoot> for LockRoot {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(DAV_URN, "lockroot").await?;
-        let href = Href::qread(xml).await?;
+        let href = xml.find::<Href>().await?;
         xml.close().await?;
         Ok(LockRoot(href))
     }
