@@ -4,6 +4,7 @@ use quick_xml::events::attributes::AttrError;
 pub enum ParsingError {
     Recoverable,
     MissingChild,
+    MissingAttribute,
     NamespacePrefixAlreadyUsed,
     WrongToken,
     TagNotFound,

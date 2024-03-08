@@ -5,7 +5,6 @@ use super::caltypes::*;
 use super::xml::{Node, QWrite, IWrite, Writer};
 use super::types::Extension;
 
-const ICAL_DATETIME_FMT: &str = "%Y%m%dT%H%M%SZ";
 
 // ==================== Calendar Types Serialization =========================
 
@@ -300,6 +299,12 @@ impl QWrite for Collation {
     }
 }
 
+impl QWrite for CalendarDataSupport {
+    async fn qwrite(&self, _xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        unreachable!();
+    }
+}
+
 impl QWrite for CalendarDataPayload {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut start = xml.create_cal_element("calendar-data");
@@ -345,6 +350,12 @@ impl QWrite for CalendarDataEmpty {
             empty.push_attribute(("version", mime.version.as_str()));
         }
         xml.q.write_event_async(Event::Empty(empty)).await
+    }
+}
+
+impl QWrite for CompInner {
+    async fn qwrite(&self, _xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        unreachable!();
     }
 }
 

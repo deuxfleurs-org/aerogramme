@@ -551,7 +551,9 @@ impl QRead<LockScope> for LockScope {
             if xml.maybe_open(DAV_URN, "exclusive").await?.is_some() {
                 xml.close().await?;
                 break LockScope::Exclusive
-            } else if xml.maybe_open(DAV_URN, "shared").await?.is_some() {
+            } 
+
+            if xml.maybe_open(DAV_URN, "shared").await?.is_some() {
                 xml.close().await?;
                 break LockScope::Shared
             }

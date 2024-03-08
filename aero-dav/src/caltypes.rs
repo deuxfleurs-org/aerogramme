@@ -4,6 +4,8 @@ use chrono::{DateTime,Utc};
 use super::types as dav;
 use super::xml;
 
+pub const ICAL_DATETIME_FMT: &str = "%Y%m%dT%H%M%SZ";
+
 //@FIXME ACL (rfc3744) is missing, required
 //@FIXME Versioning (rfc3253) is missing, required
 //@FIXME WebDAV sync (rfc6578) is missing, optional
@@ -1418,6 +1420,18 @@ impl Component {
             Self::Unknown(c) => c,
         }
     }
+    pub fn new(v: String) -> Self {
+        match v.as_str() {
+            "VCALENDAR" => Self::VCalendar,
+            "VJOURNAL" => Self::VJournal,
+            "VFREEBUSY" => Self::VFreeBusy,
+            "VEVENT" => Self::VEvent,
+            "VTODO" => Self::VTodo,
+            "VALARM" => Self::VAlarm,
+            "VTIMEZONE" => Self::VTimeZone,
+            _ => Self::Unknown(v),
+        }
+    }
 }
 
 /// name="VERSION", name="SUMMARY", etc.
@@ -1448,6 +1462,13 @@ impl Collation {
             Self::AsciiCaseMap => "i;ascii-casemap",
             Self::Octet => "i;octet",
             Self::Unknown(c) => c.as_str(),
+        }
+    }
+    pub fn new(v: String) -> Self {
+        match v.as_str() {
+             "i;ascii-casemap" => Self::AsciiCaseMap,
+              "i;octet" => Self::Octet,
+              _ => Self::Unknown(v),
         }
     }
 }

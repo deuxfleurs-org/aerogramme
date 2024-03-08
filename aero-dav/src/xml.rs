@@ -55,6 +55,7 @@ impl<T: IWrite> Writer<T> {
 pub struct Reader<T: IRead> {
     pub rdr: NsReader<T>,
     cur: Event<'static>,
+    prev: Event<'static>,
     parents: Vec<Event<'static>>,
     buf: Vec<u8>,
 }
@@ -63,8 +64,9 @@ impl<T: IRead> Reader<T> {
         let mut buf: Vec<u8> = vec![];
         let cur = rdr.read_event_into_async(&mut buf).await?.into_owned();
         let parents = vec![];
+        let prev = Event::Eof;
         buf.clear();
-        Ok(Self { cur, parents, rdr, buf })
+        Ok(Self { cur, prev, parents, rdr, buf })
     }
 
     /// read one more tag
@@ -72,8 +74,8 @@ impl<T: IRead> Reader<T> {
     async fn next(&mut self) -> Result<Event<'static>, ParsingError> {
        let evt = self.rdr.read_event_into_async(&mut self.buf).await?.into_owned(); 
        self.buf.clear();
-       let old_evt = std::mem::replace(&mut self.cur, evt);
-       Ok(old_evt)
+       self.prev = std::mem::replace(&mut self.cur, evt);
+       Ok(self.prev.clone())
     }
 
     /// skip a node at current level
@@ -249,6 +251,16 @@ impl<T: IRead> Reader<T> {
             Ok(v) => Ok(Some(v)),
             Err(ParsingError::Recoverable) => Ok(None),
             Err(e) => Err(e),
+        }
+    }
+
+    pub fn prev_attr(&self, attr: &str) -> Option<String> {
+        match &self.prev {
+            Event::Start(bs) | Event::Empty(bs) => match bs.try_get_attribute(attr) {
+                Ok(Some(attr)) => attr.decode_and_unescape_value(&self.rdr).ok().map(|v| v.into_owned()),
+                _ => None,
+            }
+            _ => None,
         }
     }
 
