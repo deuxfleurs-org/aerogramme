@@ -6,10 +6,11 @@ use tokio::io::BufStream;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
+use tokio_util::bytes::BytesMut;
 
 use aero_user::config::AuthConfig;
 use aero_user::login::ArcLoginProvider;
-
+use aero_sasl::{flow::State, decode::client_command, encode::Encode};
 
 pub struct AuthServer {
     login_provider: ArcLoginProvider,
@@ -108,7 +109,8 @@ impl NetLoop {
                     tracing::trace!(cmd=?cmd, "Received command");
 
                     // Make some progress in our local state
-                    self.state.progress(cmd, &self.login).await;
+                    let login = async |user: String, pass: String| self.login.login(user.as_str(), pass.as_str()).await.is_ok();
+                    self.state.progress(cmd, login).await;
                     if matches!(self.state, State::Error) {
                         bail!("Internal state is in error, previous logs explain what went wrong");
                     }

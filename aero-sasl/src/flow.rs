@@ -28,9 +28,9 @@ impl State {
         Self::Init
     }
 
-    async fn try_auth_plain<'a, X, F>(&self, data: &'a [u8], login: X) -> AuthRes
+    async fn try_auth_plain<X, F>(&self, data: &[u8], login: X) -> AuthRes
     where 
-        X: FnOnce(&'a str, &'a str) -> F, 
+        X: FnOnce(String, String) -> F, 
         F: Future<Output=bool>,
      {
         // Check that we can extract user's login+pass
@@ -56,7 +56,7 @@ impl State {
         };
 
         // Try to connect user
-        match login(user, password).await {
+        match login(user.to_string(), password.to_string()).await {
             true => AuthRes::Success(user.to_string()),
             false => {
                 tracing::warn!("login failed");
@@ -67,7 +67,7 @@ impl State {
 
     pub async fn progress<F,X>(&mut self, cmd: ClientCommand, login: X)
     where 
-        X: FnOnce(&str, &str) -> F, 
+        X: FnOnce(String, String) -> F, 
         F: Future<Output=bool>,
     {
         let new_state = 'state: {

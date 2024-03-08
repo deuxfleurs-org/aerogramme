@@ -10,18 +10,16 @@ use futures::{
     stream::{FuturesOrdered, FuturesUnordered},
     StreamExt,
 };
-use log::*;
 use tokio::net::TcpListener;
 use tokio::select;
 use tokio::sync::watch;
 use tokio_util::compat::*;
-
 use smtp_message::{DataUnescaper, Email, EscapedDataReader, Reply, ReplyCode};
 use smtp_server::{reply, Config, ConnectionMetadata, Decision, MailMetadata};
 
-use crate::config::*;
-use crate::login::*;
-use crate::mail::incoming::EncryptedMessage;
+use aero_user::config::*;
+use aero_user::login::*;
+use aero_collections::mail::incoming::EncryptedMessage;
 
 pub struct LmtpServer {
     bind_addr: SocketAddr,
@@ -43,7 +41,7 @@ impl LmtpServer {
 
     pub async fn run(self: &Arc<Self>, mut must_exit: watch::Receiver<bool>) -> Result<()> {
         let tcp = TcpListener::bind(self.bind_addr).await?;
-        info!("LMTP server listening on {:#}", self.bind_addr);
+        tracing::info!("LMTP server listening on {:#}", self.bind_addr);
 
         let mut connections = FuturesUnordered::new();
 
@@ -60,7 +58,7 @@ impl LmtpServer {
                 _ = wait_conn_finished => continue,
                 _ = must_exit.changed() => continue,
             };
-            info!("LMTP: accepted connection from {}", remote_addr);
+            tracing::info!("LMTP: accepted connection from {}", remote_addr);
 
             let conn = tokio::spawn(smtp_server::interact(
                 socket.compat(),
@@ -73,7 +71,7 @@ impl LmtpServer {
         }
         drop(tcp);
 
-        info!("LMTP server shutting down, draining remaining connections...");
+        tracing::info!("LMTP server shutting down, draining remaining connections...");
         while connections.next().await.is_some() {}
 
         Ok(())

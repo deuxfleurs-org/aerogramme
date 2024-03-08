@@ -11,9 +11,9 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 
-use crate::config::DavUnsecureConfig;
-use crate::login::ArcLoginProvider;
-use crate::user::User;
+use aero_user::config::DavUnsecureConfig;
+use aero_user::login::ArcLoginProvider;
+use aero_collections::user::User;
 
 pub struct Server {
     bind_addr: SocketAddr,
@@ -110,7 +110,7 @@ async fn auth(
     // Call login provider
     let creds = match login.login(username, password).await {
         Ok(c) => c,
-        Err(e) => return Ok(Response::builder()
+        Err(_) => return Ok(Response::builder()
             .status(401)
             .body(Full::new(Bytes::from("Wrong credentials")))?),
     };
@@ -140,6 +140,7 @@ async fn router(user: std::sync::Arc<User>, req: Request<impl hyper::body::Body>
     Ok(Response::new(Full::new(Bytes::from("Hello World!"))))
 }
 
-async fn collections(user: std::sync::Arc<User>, req: Request<impl hyper::body::Body>) -> Result<Response<Full<Bytes>>> {
+#[allow(dead_code)]
+async fn collections(_user: std::sync::Arc<User>, _req: Request<impl hyper::body::Body>) -> Result<Response<Full<Bytes>>> {
     unimplemented!();
 }

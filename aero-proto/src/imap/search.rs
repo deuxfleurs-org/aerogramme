@@ -4,9 +4,10 @@ use imap_codec::imap_types::core::Vec1;
 use imap_codec::imap_types::search::{MetadataItemSearch, SearchKey};
 use imap_codec::imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
 
+use aero_collections::mail::query::QueryScope;
+
 use crate::imap::index::MailIndex;
 use crate::imap::mail_view::MailView;
-use crate::mail::query::QueryScope;
 
 pub enum SeqType {
     Undefined,

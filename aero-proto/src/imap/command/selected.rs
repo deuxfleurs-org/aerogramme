@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use imap_codec::imap_types::command::{Command, CommandBody, FetchModifier, StoreModifier};
-use imap_codec::imap_types::core::{Charset, Vec1};
+use imap_codec::imap_types::core::Charset;
 use imap_codec::imap_types::fetch::MacroOrMessageDataItemNames;
 use imap_codec::imap_types::flag::{Flag, StoreResponse, StoreType};
 use imap_codec::imap_types::mailbox::Mailbox as MailboxCodec;
@@ -11,13 +11,14 @@ use imap_codec::imap_types::response::{Code, CodeOther};
 use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::SequenceSet;
 
+use aero_collections::user::User;
+
 use crate::imap::attributes::AttributesProxy;
 use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anystate, authenticated, MailboxName};
 use crate::imap::flow;
 use crate::imap::mailbox_view::{MailboxView, UpdateParameters};
 use crate::imap::response::Response;
-use crate::user::User;
 
 pub struct SelectedContext<'a> {
     pub req: &'a Command<'static>,

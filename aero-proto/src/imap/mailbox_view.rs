@@ -6,18 +6,18 @@ use anyhow::{anyhow, Error, Result};
 
 use futures::stream::{StreamExt, TryStreamExt};
 
-use imap_codec::imap_types::core::{Charset, Vec1};
+use imap_codec::imap_types::core::Charset;
 use imap_codec::imap_types::fetch::MessageDataItem;
 use imap_codec::imap_types::flag::{Flag, FlagFetch, FlagPerm, StoreResponse, StoreType};
 use imap_codec::imap_types::response::{Code, CodeOther, Data, Status};
 use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::SequenceSet;
 
-use crate::mail::mailbox::Mailbox;
-use crate::mail::query::QueryScope;
-use crate::mail::snapshot::FrozenMailbox;
-use crate::mail::uidindex::{ImapUid, ImapUidvalidity, ModSeq};
-use crate::mail::unique_ident::UniqueIdent;
+use aero_collections::mail::mailbox::Mailbox;
+use aero_collections::mail::query::QueryScope;
+use aero_collections::mail::snapshot::FrozenMailbox;
+use aero_collections::mail::uidindex::{ImapUid, ImapUidvalidity, ModSeq};
+use aero_collections::mail::unique_ident::UniqueIdent;
 
 use crate::imap::attributes::AttributesProxy;
 use crate::imap::flags;

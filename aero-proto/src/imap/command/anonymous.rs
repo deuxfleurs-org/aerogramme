@@ -4,12 +4,13 @@ use imap_codec::imap_types::core::AString;
 use imap_codec::imap_types::response::Code;
 use imap_codec::imap_types::secret::Secret;
 
+use aero_user::login::ArcLoginProvider;
+use aero_collections::user::User;
+
 use crate::imap::capability::ServerCapability;
 use crate::imap::command::anystate;
 use crate::imap::flow;
 use crate::imap::response::Response;
-use crate::login::ArcLoginProvider;
-use crate::user::User;
 
 //--- dispatching
 

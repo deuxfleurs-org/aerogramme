@@ -3,7 +3,7 @@ pub mod anystate;
 pub mod authenticated;
 pub mod selected;
 
-use crate::mail::namespace::INBOX;
+use aero_collections::mail::namespace::INBOX;
 use imap_codec::imap_types::mailbox::Mailbox as MailboxCodec;
 
 /// Convert an IMAP mailbox name/identifier representation

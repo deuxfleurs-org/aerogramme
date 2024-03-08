@@ -7,7 +7,7 @@ members = [
   "aero-dav",
   "aero-dav/fuzz",
   "aero-collections",
-#  "aero-proto",
+  "aero-proto",
 #  "aerogramme",
 ]
 
@@ -20,7 +20,7 @@ aero-bayou = { version = "0.3.0", path = "aero-bayou" }
 aero-sasl = { version = "0.3.0", path = "aero-sasl" }
 aero-dav = { version = "0.3.0", path = "aero-dav" }
 aero-collections = { version = "0.3.0", path = "aero-collections" }
-#aero-proto = { version = "0.3.0", path = "aero-proto" }
+aero-proto = { version = "0.3.0", path = "aero-proto" }
 #aerogramme = { version = "0.3.0", path = "aerogramme" }
 
 # async runtime

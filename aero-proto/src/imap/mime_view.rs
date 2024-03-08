@@ -384,6 +384,8 @@ impl<'a> NodeMsg<'a> {
         })
     }
 }
+
+#[allow(dead_code)]
 struct NodeMult<'a>(&'a NodeMime<'a>, &'a composite::Multipart<'a>);
 impl<'a> NodeMult<'a> {
     fn structure(&self, is_ext: bool) -> Result<BodyStructure<'static>> {

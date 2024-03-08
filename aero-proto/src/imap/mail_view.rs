@@ -16,7 +16,7 @@ use eml_codec::{
     part::{composite::Message, AnyPart},
 };
 
-use crate::mail::query::QueryResult;
+use aero_collections::mail::query::QueryResult;
 
 use crate::imap::attributes::AttributesProxy;
 use crate::imap::flags;

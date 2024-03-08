@@ -15,13 +15,11 @@ mod session;
 
 use std::net::SocketAddr;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, bail, Result};
 use futures::stream::{FuturesUnordered, StreamExt};
-
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::sync::watch;
-
 use imap_codec::imap_types::response::{Code, CommandContinuationRequest, Response, Status};
 use imap_codec::imap_types::{core::Text, response::Greeting};
 use imap_flow::server::{ServerFlow, ServerFlowEvent, ServerFlowOptions};
@@ -29,12 +27,13 @@ use imap_flow::stream::AnyStream;
 use rustls_pemfile::{certs, private_key};
 use tokio_rustls::TlsAcceptor;
 
-use crate::config::{ImapConfig, ImapUnsecureConfig};
+use aero_user::config::{ImapConfig, ImapUnsecureConfig};
+use aero_user::login::ArcLoginProvider;
+
 use crate::imap::capability::ServerCapability;
 use crate::imap::request::Request;
 use crate::imap::response::{Body, ResponseOrIdle};
 use crate::imap::session::Instance;
-use crate::login::ArcLoginProvider;
 
 /// Server is a thin wrapper to register our Services in BàL
 pub struct Server {
@@ -140,7 +139,6 @@ impl Server {
 use std::sync::Arc;
 use tokio::sync::mpsc::*;
 use tokio::sync::Notify;
-use tokio_util::bytes::BytesMut;
 
 const PIPELINABLE_COMMANDS: usize = 64;
 
@@ -325,8 +323,6 @@ impl NetLoop {
                         self.server.enqueue_status(Status::bye(None, "Internal session exited").unwrap());
                         tracing::error!("session task exited for {:?}, quitting", self.ctx.addr);
                     },
-                    Some(_) => unreachable!(),
-
                 },
 
                 // When receiving a CTRL+C

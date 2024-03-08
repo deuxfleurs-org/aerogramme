@@ -1,14 +1,9 @@
-use std::future::Future;
-
 use quick_xml::events::Event;
-use quick_xml::events::attributes::AttrError;
-use quick_xml::name::{Namespace, QName, PrefixDeclaration, ResolveResult, ResolveResult::*};
-use quick_xml::reader::NsReader;
-use tokio::io::AsyncBufRead;
+use chrono::DateTime;
 
 use super::types::*;
 use super::error::ParsingError;
-use super::xml::{Node, QRead, Reader, IRead, DAV_URN, CAL_URN};
+use super::xml::{Node, QRead, Reader, IRead, DAV_URN};
 
 //@TODO (1) Rewrite all objects as Href,
 // where we return Ok(None) instead of trying to find the object at any cost.
@@ -119,7 +114,7 @@ impl QRead<LockInfo> for LockInfo {
 impl<E: Extension> QRead<PropValue<E>> for PropValue<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(DAV_URN, "prop").await?;
-        let mut acc = xml.collect::<Property<E>>().await?;
+        let acc = xml.collect::<Property<E>>().await?;
         xml.close().await?;
         Ok(PropValue(acc))
     }
@@ -352,8 +347,6 @@ impl<E: Extension> QRead<PropertyRequest<E>> for PropertyRequest<E> {
 
 impl<E: Extension> QRead<Property<E>> for Property<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        use chrono::{DateTime, FixedOffset, TimeZone};
-
         // Core WebDAV properties
         if xml.maybe_open(DAV_URN, "creationdate").await?.is_some() {
             let datestr = xml.tag_string().await?;
@@ -592,7 +585,7 @@ impl QRead<LockType> for LockType {
 impl QRead<Href> for Href {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(DAV_URN, "href").await?;
-        let mut url = xml.tag_string().await?;
+        let url = xml.tag_string().await?;
         xml.close().await?;
         Ok(Href(url))
     }

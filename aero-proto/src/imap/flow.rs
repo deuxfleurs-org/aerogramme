@@ -5,8 +5,9 @@ use std::sync::Arc;
 use imap_codec::imap_types::core::Tag;
 use tokio::sync::Notify;
 
+use aero_collections::user::User;
+
 use crate::imap::mailbox_view::MailboxView;
-use crate::user::User;
 
 #[derive(Debug)]
 pub enum Error {

@@ -1,7 +1,5 @@
 use quick_xml::Error as QError;
-use quick_xml::events::{Event, BytesEnd, BytesStart, BytesText};
-use quick_xml::name::PrefixDeclaration;
-use tokio::io::AsyncWrite;
+use quick_xml::events::{Event, BytesText};
 
 use super::caltypes::*;
 use super::xml::{Node, QWrite, IWrite, Writer};
@@ -627,7 +625,7 @@ impl QWrite for ParamFilterMatch {
 
 impl QWrite for TimeZone {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
-        let mut start = xml.create_cal_element("timezone");
+        let start = xml.create_cal_element("timezone");
         let end = start.to_end();
 
         xml.q.write_event_async(Event::Start(start.clone())).await?;
@@ -638,7 +636,7 @@ impl QWrite for TimeZone {
 
 impl QWrite for Filter {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
-        let mut start = xml.create_cal_element("filter");
+        let start = xml.create_cal_element("filter");
         let end = start.to_end();
 
         xml.q.write_event_async(Event::Start(start.clone())).await?;

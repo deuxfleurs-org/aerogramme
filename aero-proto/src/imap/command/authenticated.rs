@@ -14,17 +14,16 @@ use imap_codec::imap_types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
 use imap_codec::imap_types::response::{Code, CodeOther, Data};
 use imap_codec::imap_types::status::{StatusDataItem, StatusDataItemName};
 
+use aero_collections::mail::uidindex::*;
+use aero_collections::user::User;
+use aero_collections::mail::IMF;
+use aero_collections::mail::namespace::MAILBOX_HIERARCHY_DELIMITER as MBX_HIER_DELIM_RAW;
+
 use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anystate, MailboxName};
 use crate::imap::flow;
-use crate::imap::mailbox_view::{MailboxView, UpdateParameters};
+use crate::imap::mailbox_view::MailboxView;
 use crate::imap::response::Response;
-use crate::imap::Body;
-
-use crate::mail::uidindex::*;
-use crate::user::User;
-use crate::mail::IMF;
-use crate::mail::namespace::MAILBOX_HIERARCHY_DELIMITER as MBX_HIER_DELIM_RAW;
 
 pub struct AuthenticatedContext<'a> {
     pub req: &'a Command<'static>,
@@ -611,7 +610,7 @@ impl<'a> AuthenticatedContext<'a> {
             Some(mb) => mb,
             None => bail!("Mailbox does not exist"),
         };
-        let mut view = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await;
+        let view = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await;
 
         if date.is_some() {
             tracing::warn!("Cannot set date when appending message");
