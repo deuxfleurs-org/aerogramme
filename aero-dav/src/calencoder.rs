@@ -353,23 +353,21 @@ impl QWrite for CalendarDataEmpty {
     }
 }
 
-impl QWrite for CompInner {
-    async fn qwrite(&self, _xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
-        unreachable!();
-    }
-}
-
 impl QWrite for Comp {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut start = xml.create_cal_element("comp");
         start.push_attribute(("name", self.name.as_str()));
-        match &self.additional_rules {
-            None => xml.q.write_event_async(Event::Empty(start)).await,
-            Some(rules) => {
+        match (&self.prop_kind, &self.comp_kind) {
+            (None, None) => xml.q.write_event_async(Event::Empty(start)).await,
+            _ => {
                 let end = start.to_end();
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
-                rules.prop_kind.qwrite(xml).await?;
-                rules.comp_kind.qwrite(xml).await?;
+                if let Some(prop_kind) = &self.prop_kind {
+                    prop_kind.qwrite(xml).await?;
+                }
+                if let Some(comp_kind) = &self.comp_kind {
+                    comp_kind.qwrite(xml).await?;
+                }
                 xml.q.write_event_async(Event::End(end)).await
             },
         }
@@ -721,39 +719,36 @@ mod tests {
                         mime: None,
                         comp: Some(Comp {
                             name: Component::VCalendar,
-                            additional_rules: Some(CompInner {
-                                prop_kind: PropKind::Prop(vec![
+                            prop_kind: Some(PropKind::Prop(vec![
                                     CalProp {
                                         name: ComponentProperty("VERSION".into()),
                                         novalue: None,
                                     }
-                                ]),
-                                comp_kind: CompKind::Comp(vec![
+                                ])),
+                            comp_kind: Some(CompKind::Comp(vec![
                                     Comp {
                                         name: Component::VEvent,
-                                        additional_rules: Some(CompInner {
-                                            prop_kind: PropKind::Prop(vec![
-                                                CalProp { name: ComponentProperty("SUMMARY".into()), novalue: None },
-                                                CalProp { name: ComponentProperty("UID".into()), novalue: None },
-                                                CalProp { name: ComponentProperty("DTSTART".into()), novalue: None },
-                                                CalProp { name: ComponentProperty("DTEND".into()), novalue: None },
-                                                CalProp { name: ComponentProperty("DURATION".into()), novalue: None },
-                                                CalProp { name: ComponentProperty("RRULE".into()), novalue: None },
-                                                CalProp { name: ComponentProperty("RDATE".into()), novalue: None },
-                                                CalProp { name: ComponentProperty("EXRULE".into()), novalue: None },
-                                                CalProp { name: ComponentProperty("EXDATE".into()), novalue: None },
-                                                CalProp { name: ComponentProperty("RECURRENCE-ID".into()), novalue: None },
-                                            ]),
-                                            comp_kind: CompKind::Comp(vec![]),
-                                        }),
+                                        prop_kind: Some(PropKind::Prop(vec![
+                                            CalProp { name: ComponentProperty("SUMMARY".into()), novalue: None },
+                                            CalProp { name: ComponentProperty("UID".into()), novalue: None },
+                                            CalProp { name: ComponentProperty("DTSTART".into()), novalue: None },
+                                            CalProp { name: ComponentProperty("DTEND".into()), novalue: None },
+                                            CalProp { name: ComponentProperty("DURATION".into()), novalue: None },
+                                            CalProp { name: ComponentProperty("RRULE".into()), novalue: None },
+                                            CalProp { name: ComponentProperty("RDATE".into()), novalue: None },
+                                            CalProp { name: ComponentProperty("EXRULE".into()), novalue: None },
+                                            CalProp { name: ComponentProperty("EXDATE".into()), novalue: None },
+                                            CalProp { name: ComponentProperty("RECURRENCE-ID".into()), novalue: None },
+                                        ])),
+                                        comp_kind: None,
                                     },
                                     Comp {
                                         name: Component::VTimeZone,
-                                        additional_rules: None,
+                                        prop_kind: None,
+                                        comp_kind: None,
                                     }
-                                ]),
+                                ])),
                             }),
-                        }),
                         recurrence: None,
                         limit_freebusy_set: None,
                     })),

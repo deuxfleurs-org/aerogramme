@@ -128,6 +128,10 @@ impl<T: IRead> Reader<T> {
         &self.cur
     }
 
+    pub fn previous(&self) -> &Event<'static> {
+        &self.prev
+    }
+
     // NEW API
     pub async fn tag_string(&mut self) -> Result<String, ParsingError> {
         self.ensure_parent_has_child()?;

@@ -855,13 +855,8 @@ pub struct CalendarDataSupport {
 #[derive(Debug, PartialEq)]
 pub struct Comp {
     pub name: Component,
-    pub additional_rules: Option<CompInner>,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct CompInner {
-    pub prop_kind: PropKind,
-    pub comp_kind: CompKind,
+    pub prop_kind: Option<PropKind>,
+    pub comp_kind: Option<CompKind>,
 }
 
 /// For SupportedCalendarComponentSet
