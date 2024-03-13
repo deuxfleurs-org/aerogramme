@@ -323,8 +323,12 @@ impl QRead<CalendarDataRequest> for CalendarDataRequest {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CAL_URN, "calendar-data").await?;
         let mime = CalendarDataSupport::qread(xml).await.ok();
-
         let (mut comp, mut recurrence, mut limit_freebusy_set) = (None, None, None);
+
+        if !xml.parent_has_child() {
+            return Ok(Self { mime, comp, recurrence, limit_freebusy_set })
+        }
+
 
         loop {
             let mut dirty = false;
@@ -566,22 +570,18 @@ impl QRead<CompFilter> for CompFilter {
 
 impl QRead<CompFilterRules> for CompFilterRules {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        if xml.maybe_open(CAL_URN, "is-not-defined").await?.is_some() {
-            xml.close().await?;
-            return Ok(Self::IsNotDefined)
-        }
-        CompFilterMatch::qread(xml).await.map(CompFilterRules::Matches)
-    }
-}
-
-impl QRead<CompFilterMatch> for CompFilterMatch {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         let mut time_range = None;
         let mut prop_filter = Vec::new();
         let mut comp_filter = Vec::new();
 
         loop {
             let mut dirty = false;
+
+            if xml.maybe_open(CAL_URN, "is-not-defined").await?.is_some() {
+                xml.close().await?;
+                return Ok(Self::IsNotDefined)
+            }
+
             xml.maybe_read(&mut time_range, &mut dirty).await?;
             xml.maybe_push(&mut prop_filter, &mut dirty).await?;
             xml.maybe_push(&mut comp_filter, &mut dirty).await?;
@@ -596,8 +596,14 @@ impl QRead<CompFilterMatch> for CompFilterMatch {
 
         match (&time_range, &prop_filter[..], &comp_filter[..]) {
             (None, [], []) => Err(ParsingError::Recoverable),
-            _ => Ok(CompFilterMatch { time_range, prop_filter, comp_filter }),
+            _ => Ok(Self::Matches(CompFilterMatch { time_range, prop_filter, comp_filter })),
         }
+    }
+}
+
+impl QRead<CompFilterMatch> for CompFilterMatch {
+    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        unreachable!();
     }
 }
 
@@ -613,22 +619,18 @@ impl QRead<PropFilter> for PropFilter {
 
 impl QRead<PropFilterRules> for PropFilterRules {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        if xml.maybe_open(CAL_URN, "is-not-defined").await?.is_some() {
-            xml.close().await?;
-            return Ok(Self::IsNotDefined)
-        }
-        PropFilterMatch::qread(xml).await.map(PropFilterRules::Match)
-    }
-}
-
-impl QRead<PropFilterMatch> for PropFilterMatch {
-    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         let mut time_range = None;
         let mut time_or_text = None;
         let mut param_filter = Vec::new();
 
         loop {
             let mut dirty = false;
+
+            if xml.maybe_open(CAL_URN, "is-not-defined").await?.is_some() {
+                xml.close().await?;
+                return Ok(Self::IsNotDefined)
+            }
+
             xml.maybe_read(&mut time_range, &mut dirty).await?;
             xml.maybe_read(&mut time_or_text, &mut dirty).await?;
             xml.maybe_push(&mut param_filter, &mut dirty).await?;
@@ -643,8 +645,14 @@ impl QRead<PropFilterMatch> for PropFilterMatch {
 
         match (&time_range, &time_or_text, &param_filter[..]) {
             (None, None, []) => Err(ParsingError::Recoverable),
-            _ => Ok(PropFilterMatch { time_range, time_or_text, param_filter }),
+            _ => Ok(PropFilterRules::Match(PropFilterMatch { time_range, time_or_text, param_filter })),
         }
+    }
+}
+
+impl QRead<PropFilterMatch> for PropFilterMatch {
+    async fn qread(_xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        unreachable!();
     }
 }
 
@@ -921,5 +929,223 @@ END:VCALENDAR]]></C:calendar-timezone>
 
         let got = deserialize::<CalendarQuery<Calendar>>(src).await;
         assert_eq!(got, expected)
+    }
+
+    #[tokio::test]
+    async fn rfc_calendar_query_res() {        
+        let expected = dav::Multistatus::<Calendar, dav::PropValue<Calendar>> {
+            responses: vec![
+                dav::Response {
+                    status_or_propstat: dav::StatusOrPropstat::PropStat(
+                        dav::Href("http://cal.example.com/bernard/work/abcd2.ics".into()),
+                        vec![
+                            dav::PropStat {
+                                prop: dav::PropValue(vec![ 
+                                    dav::Property::GetEtag("\"fffff-abcd2\"".into()),
+                                    dav::Property::Extension(Property::CalendarData(CalendarDataPayload {
+                                        mime: None,
+                                        payload: "BEGIN:VCALENDAR".into(),
+                                    })),
+                                ]),
+                                status: dav::Status(http::status::StatusCode::OK),
+                                error: None,
+                                responsedescription: None,
+                            },
+                        ],
+                    ),
+                    error: None,
+                    location: None,
+                    responsedescription: None,
+                },
+                dav::Response {
+                    status_or_propstat: dav::StatusOrPropstat::PropStat(
+                        dav::Href("http://cal.example.com/bernard/work/abcd3.ics".into()),
+                        vec![
+                            dav::PropStat {
+                                prop: dav::PropValue(vec![ 
+                                    dav::Property::GetEtag("\"fffff-abcd3\"".into()),
+                                    dav::Property::Extension(Property::CalendarData(CalendarDataPayload {
+                                        mime: None,
+                                        payload: "BEGIN:VCALENDAR".into(),
+                                    })),
+                                ]),
+                                status: dav::Status(http::status::StatusCode::OK),
+                                error: None,
+                                responsedescription: None,
+                            },
+                        ],
+                    ),
+                    error: None,
+                    location: None,
+                    responsedescription: None,
+                },
+            ],
+            responsedescription: None,
+        };
+
+        let src = r#"<D:multistatus xmlns:D="DAV:"
+              xmlns:C="urn:ietf:params:xml:ns:caldav">
+  <D:response>
+    <D:href>http://cal.example.com/bernard/work/abcd2.ics</D:href>
+       <D:propstat>
+         <D:prop>
+           <D:getetag>"fffff-abcd2"</D:getetag>
+           <C:calendar-data>BEGIN:VCALENDAR</C:calendar-data>
+         </D:prop>
+         <D:status>HTTP/1.1 200 OK</D:status>
+       </D:propstat>
+     </D:response>
+     <D:response>
+       <D:href>http://cal.example.com/bernard/work/abcd3.ics</D:href>
+       <D:propstat>
+         <D:prop>
+           <D:getetag>"fffff-abcd3"</D:getetag>
+           <C:calendar-data>BEGIN:VCALENDAR</C:calendar-data>
+         </D:prop>
+         <D:status>HTTP/1.1 200 OK</D:status>
+       </D:propstat>
+     </D:response>
+   </D:multistatus>
+"#;
+
+        let got = deserialize::<dav::Multistatus<Calendar,dav::PropValue<Calendar>>>(src).await;
+        assert_eq!(got, expected)
+    }
+
+    #[tokio::test]
+    async fn rfc_recurring_evt() {    
+        let expected = CalendarQuery::<Calendar> {
+            selector: Some(CalendarSelector::Prop(dav::PropName(vec![
+                dav::PropertyRequest::Extension(PropertyRequest::CalendarData(CalendarDataRequest{
+                    mime: None,
+                    comp: None,
+                    recurrence: Some(RecurrenceModifier::LimitRecurrenceSet(LimitRecurrenceSet (
+                        Utc.with_ymd_and_hms(2006, 1, 3, 0, 0, 0).unwrap(),
+                        Utc.with_ymd_and_hms(2006, 1, 5, 0, 0, 0).unwrap(),
+                    ))),
+                    limit_freebusy_set: None,
+                })),
+            ]))),
+            filter: Filter(CompFilter {
+                name: Component::VCalendar,
+                additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
+                    prop_filter: vec![],
+                    comp_filter: vec![
+                        CompFilter {
+                            name: Component::VEvent,
+                            additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
+                                prop_filter: vec![],
+                                comp_filter: vec![],
+                                time_range: Some(TimeRange::FullRange(
+                                    Utc.with_ymd_and_hms(2006, 1, 3, 0, 0, 0).unwrap(),
+                                    Utc.with_ymd_and_hms(2006, 1, 5, 0, 0, 0).unwrap(),
+                                )),
+                            })),
+                        },
+                    ],
+                    time_range: None,
+                })),
+            }),
+            timezone: None,
+        };
+
+        let src = r#"
+  <?xml version="1.0" encoding="utf-8" ?>
+   <C:calendar-query xmlns:D="DAV:"
+                     xmlns:C="urn:ietf:params:xml:ns:caldav">
+     <D:prop>
+       <C:calendar-data>
+         <C:limit-recurrence-set start="20060103T000000Z"
+                                 end="20060105T000000Z"/>
+       </C:calendar-data>
+     </D:prop>
+     <C:filter>
+       <C:comp-filter name="VCALENDAR">
+         <C:comp-filter name="VEVENT">
+           <C:time-range start="20060103T000000Z"
+                         end="20060105T000000Z"/>
+         </C:comp-filter>
+       </C:comp-filter>
+     </C:filter>
+   </C:calendar-query>"#;
+
+        let got = deserialize::<CalendarQuery<Calendar>>(src).await;
+        assert_eq!(got, expected)
+    }
+
+    #[tokio::test]
+    async fn rfc_pending_todos() {
+        let expected = CalendarQuery::<Calendar> {
+            selector: Some(CalendarSelector::Prop(dav::PropName(vec![
+                dav::PropertyRequest::GetEtag,
+                dav::PropertyRequest::Extension(PropertyRequest::CalendarData(CalendarDataRequest {
+                    mime: None,
+                    comp: None,
+                    recurrence: None,
+                    limit_freebusy_set: None,
+                }))
+            ]))),
+            filter: Filter(CompFilter {
+                name: Component::VCalendar,
+                additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
+                    time_range: None,
+                    prop_filter: vec![],
+                    comp_filter: vec![
+                        CompFilter {
+                            name: Component::VTodo,
+                            additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
+                                time_range: None,
+                                comp_filter: vec![],
+                                prop_filter: vec![
+                                    PropFilter {
+                                        name: ComponentProperty("COMPLETED".into()),
+                                        additional_rules: Some(PropFilterRules::IsNotDefined),
+                                    },
+                                    PropFilter {
+                                        name: ComponentProperty("STATUS".into()),
+                                        additional_rules: Some(PropFilterRules::Match(PropFilterMatch {
+                                            time_range: None,
+                                            param_filter: vec![],
+                                            time_or_text: Some(TimeOrText::Text(TextMatch {
+                                                collation: None,
+                                                negate_condition: Some(true),
+                                                text: "CANCELLED".into(),
+                                            })),
+                                        })),
+                                    },
+                                ],
+                            })),
+                        }
+                    ],
+                })),
+            }),
+            timezone: None,
+        };
+
+        let src = r#"<?xml version="1.0" encoding="utf-8" ?>
+   <C:calendar-query xmlns:C="urn:ietf:params:xml:ns:caldav">
+     <D:prop xmlns:D="DAV:">
+       <D:getetag/>
+       <C:calendar-data/>
+     </D:prop>
+     <C:filter>
+       <C:comp-filter name="VCALENDAR">
+         <C:comp-filter name="VTODO">
+           <C:prop-filter name="COMPLETED">
+             <C:is-not-defined/>
+           </C:prop-filter>
+           <C:prop-filter name="STATUS">
+             <C:text-match
+                negate-condition="yes">CANCELLED</C:text-match>
+           </C:prop-filter>
+         </C:comp-filter>
+       </C:comp-filter>
+     </C:filter>
+   </C:calendar-query>"#;
+
+
+        let got = deserialize::<CalendarQuery<Calendar>>(src).await;
+        assert_eq!(got, expected)
+
     }
 }

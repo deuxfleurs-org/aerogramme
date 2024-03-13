@@ -113,7 +113,7 @@ impl<T: IRead> Reader<T> {
         }
     }
 
-    fn parent_has_child(&self) -> bool {
+    pub fn parent_has_child(&self) -> bool {
         matches!(self.parents.last(), Some(Event::Start(_)) | None)
     }
 
@@ -238,7 +238,7 @@ impl<T: IRead> Reader<T> {
     }
 
     pub async fn open(&mut self, ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
-        //println!("try open tag {:?}", key);
+        //println!("try open tag {:?}, on {:?}", key, self.peek());
         let evt = match self.peek() {
             Event::Empty(_) if self.is_tag(ns, key) => {
                 // hack to make `prev_attr` works
@@ -253,7 +253,7 @@ impl<T: IRead> Reader<T> {
             _ => return Err(ParsingError::Recoverable),
         };
 
-        println!("open tag {:?}", evt);
+        //println!("open tag {:?}", evt);
         self.parents.push(evt.clone());
         Ok(evt)
     }
@@ -278,7 +278,7 @@ impl<T: IRead> Reader<T> {
 
     // find stop tag
     pub async fn close(&mut self) -> Result<Event<'static>, ParsingError> {
-        println!("close tag {:?}", self.parents.last());
+        //println!("close tag {:?}", self.parents.last());
 
         // Handle the empty case
         if !self.parent_has_child() {
