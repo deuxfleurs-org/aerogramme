@@ -171,6 +171,7 @@ async fn main() -> Result<()> {
         AnyConfig::Provider(ProviderConfig {
             pid: None,
             imap: None,
+            dav: None,
             imap_unsecure: Some(ImapUnsecureConfig {
                 bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 1143),
             }),

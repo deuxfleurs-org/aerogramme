@@ -21,6 +21,7 @@ pub struct Server {
     imap_server: Option<imap::Server>,
     auth_server: Option<auth::AuthServer>,
     dav_unsecure_server: Option<dav::Server>,
+    dav_server: Option<dav::Server>,
     pid_file: Option<PathBuf>,
 }
 
@@ -37,6 +38,7 @@ impl Server {
             imap_server: None,
             auth_server: None,
             dav_unsecure_server: None,
+            dav_server: None,
             pid_file: config.pid,
         })
     }
@@ -63,12 +65,17 @@ impl Server {
         let dav_unsecure_server = config
             .dav_unsecure
             .map(|dav_config| dav::new_unsecure(dav_config, login.clone()));
+        let dav_server = config
+            .dav
+            .map(|dav_config| dav::new(dav_config, login.clone()))
+            .transpose()?;
 
         Ok(Self {
             lmtp_server,
             imap_unsecure_server,
             imap_server,
             dav_unsecure_server,
+            dav_server,
             auth_server,
             pid_file: config.pid,
         })
@@ -122,6 +129,12 @@ impl Server {
             },
             async {
                 match self.dav_unsecure_server {
+                    None => Ok(()),
+                    Some(s) => s.run(exit_signal.clone()).await,
+                }
+            },
+            async {
+                match self.dav_server {
                     None => Ok(()),
                     Some(s) => s.run(exit_signal.clone()).await,
                 }

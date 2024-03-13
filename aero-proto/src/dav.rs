@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use base64::Engine;
@@ -10,22 +11,54 @@ use http_body_util::Full;
 use futures::stream::{FuturesUnordered, StreamExt};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
+use tokio_rustls::TlsAcceptor;
+use tokio::net::TcpStream;
+use hyper::rt::{Read, Write};
+use tokio::io::{AsyncRead, AsyncWrite};
+use rustls_pemfile::{certs, private_key};
 
-use aero_user::config::DavUnsecureConfig;
+use aero_user::config::{DavConfig, DavUnsecureConfig};
 use aero_user::login::ArcLoginProvider;
 use aero_collections::user::User;
 
 pub struct Server {
     bind_addr: SocketAddr,
     login_provider: ArcLoginProvider,
+    tls: Option<TlsAcceptor>,
 }
 
 pub fn new_unsecure(config: DavUnsecureConfig, login: ArcLoginProvider) -> Server {
     Server {
         bind_addr: config.bind_addr,
         login_provider: login,
+        tls: None,
     }
 }
+
+pub fn new(config: DavConfig, login: ArcLoginProvider) -> Result<Server> {
+    let loaded_certs = certs(&mut std::io::BufReader::new(std::fs::File::open(
+        config.certs,
+    )?))
+    .collect::<Result<Vec<_>, _>>()?;
+    let loaded_key = private_key(&mut std::io::BufReader::new(std::fs::File::open(
+        config.key,
+    )?))?
+    .unwrap();
+
+    let tls_config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(loaded_certs, loaded_key)?;
+    let acceptor = TlsAcceptor::from(Arc::new(tls_config));
+
+    Ok(Server {
+        bind_addr: config.bind_addr,
+        login_provider: login,
+        tls: Some(acceptor),
+    })
+}
+
+trait Stream: Read + Write + Send + Unpin {}
+impl<T: Unpin + AsyncRead + AsyncWrite + Send> Stream for TokioIo<T> {}
 
 impl Server {
     pub async fn run(self: Self, mut must_exit: watch::Receiver<bool>) -> Result<()> {
@@ -47,14 +80,24 @@ impl Server {
                 _ = must_exit.changed() => continue,
             };
             tracing::info!("Accepted connection from {}", remote_addr);
-            let stream = TokioIo::new(socket);
+            let stream = match self.build_stream(socket).await {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::error!(err=?e, "TLS acceptor failed");
+                    continue
+                }
+            };
+
             let login = self.login_provider.clone();
             let conn = tokio::spawn(async move {
                 //@FIXME should create a generic "public web" server on which "routers" could be
                 //abitrarily bound
                 //@FIXME replace with a handler supporting http2 and TLS
+
+
                 match http::Builder::new().serve_connection(stream, service_fn(|req: Request<hyper::body::Incoming>| {
                     let login = login.clone();
+                    tracing::info!("{:?} {:?}", req.method(), req.uri());
                     async move {
                         auth(login, req).await
                     }
@@ -72,6 +115,16 @@ impl Server {
 
         Ok(())
     }
+
+    async fn build_stream(&self, socket: TcpStream) -> Result<Box<dyn Stream>> {
+        match self.tls.clone() {
+            Some(acceptor) => {
+                let stream = acceptor.accept(socket).await?;
+                Ok(Box::new(TokioIo::new(stream)))
+            }
+            None => Ok(Box::new(TokioIo::new(socket))),
+        }
+    }
 }
 
 //@FIXME We should not support only BasicAuth
@@ -80,18 +133,26 @@ async fn auth(
     req: Request<impl hyper::body::Body>, 
 ) -> Result<Response<Full<Bytes>>> {
 
-    let auth_val = match req.headers().get("Authorization") {
+    tracing::info!("headers: {:?}", req.headers());
+    let auth_val = match req.headers().get(hyper::header::AUTHORIZATION) {
         Some(hv) => hv.to_str()?,
-        None => return Ok(Response::builder()
-            .status(401)
-            .body(Full::new(Bytes::from("Missing Authorization field")))?),
+        None => {
+            tracing::info!("Missing authorization field");
+            return Ok(Response::builder()
+                .status(401)
+                .header("WWW-Authenticate", "Basic realm=\"Aerogramme\"")
+                .body(Full::new(Bytes::from("Missing Authorization field")))?)
+        },
     };
 
     let b64_creds_maybe_padded = match auth_val.split_once(" ") {
         Some(("Basic", b64)) => b64,
-        _ => return Ok(Response::builder()
-            .status(400)
-            .body(Full::new(Bytes::from("Unsupported Authorization field")))?),
+        _ => {
+            tracing::info!("Unsupported authorization field");
+            return Ok(Response::builder()
+                .status(400)
+                .body(Full::new(Bytes::from("Unsupported Authorization field")))?)
+        },
     };
 
     // base64urlencoded may have trailing equals, base64urlsafe has not
@@ -110,9 +171,13 @@ async fn auth(
     // Call login provider
     let creds = match login.login(username, password).await {
         Ok(c) => c,
-        Err(_) => return Ok(Response::builder()
-            .status(401)
-            .body(Full::new(Bytes::from("Wrong credentials")))?),
+        Err(_) => {
+            tracing::info!(user=username, "Wrong credentials");
+            return Ok(Response::builder()
+                .status(401)
+                .header("WWW-Authenticate", "Basic realm=\"Aerogramme\"")
+                .body(Full::new(Bytes::from("Wrong credentials")))?)
+        },
     };
 
     // Build a user
@@ -124,6 +189,7 @@ async fn auth(
 
 async fn router(user: std::sync::Arc<User>, req: Request<impl hyper::body::Body>) -> Result<Response<Full<Bytes>>> {
     let path_segments: Vec<_> = req.uri().path().split("/").filter(|s| *s != "").collect();
+    tracing::info!("router");
     match path_segments.as_slice() {
         [] => tracing::info!("root"),
         [ username, ..] if *username != user.username => return Ok(Response::builder()
