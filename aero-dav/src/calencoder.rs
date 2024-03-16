@@ -393,7 +393,14 @@ impl QWrite for CompKind {
                 for comp in many_comp.iter() {
                     // Required: recursion in an async fn requires boxing
                     // rustc --explain E0733
-                    Box::pin(comp.qwrite(xml)).await?;
+                    // Cycle detected when computing type of ...
+                    // For more information about this error, try `rustc --explain E0391`.
+                    // https://github.com/rust-lang/rust/issues/78649
+                    #[inline(always)]
+                    fn recurse<'a>(comp: &'a Comp, xml: &'a mut Writer<impl IWrite>) -> futures::future::BoxFuture<'a, Result<(), QError>> {
+                        Box::pin(comp.qwrite(xml))
+                    }
+                    recurse(comp, xml).await?;
                 }
                 Ok(())
             }
@@ -525,7 +532,14 @@ impl QWrite for CompFilterMatch {
         for comp_item in self.comp_filter.iter() {
             // Required: recursion in an async fn requires boxing
             // rustc --explain E0733
-            Box::pin(comp_item.qwrite(xml)).await?;
+            // Cycle detected when computing type of ...
+            // For more information about this error, try `rustc --explain E0391`.
+            // https://github.com/rust-lang/rust/issues/78649
+            #[inline(always)]
+            fn recurse<'a>(comp: &'a CompFilter, xml: &'a mut Writer<impl IWrite>) -> futures::future::BoxFuture<'a, Result<(), QError>> {
+                Box::pin(comp.qwrite(xml))
+            }
+            recurse(comp_item, xml).await?;
         }
         Ok(())
     }

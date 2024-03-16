@@ -91,6 +91,7 @@ dependencies = [
  "hyper-util",
  "imap-codec",
  "imap-flow",
+ "quick-xml",
  "rustls 0.22.2",
  "rustls-pemfile 2.1.1",
  "smtp-message",
@@ -98,6 +99,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-rustls 0.25.0",
+ "tokio-stream",
  "tokio-util",
  "tracing",
 ]
@@ -1824,12 +1826,12 @@ dependencies = [
 
 [[package]]
 name = "http-body-util"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41cb79eb393015dadd30fc252023adb0b2400a0caee0fa2a077e6e21a551e840"
+checksum = "0475f8b2ac86659c21b64320d5d653f9efe42acd2a4e560073ec61a155a34f1d"
 dependencies = [
  "bytes",
- "futures-util",
+ "futures-core",
  "http 1.1.0",
  "http-body 1.0.0",
  "pin-project-lite 0.2.13",
@@ -3381,9 +3383,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.35.1"
+version = "1.36.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c89b4efa943be685f629b149f53829423f8f5531ea21249408e8e2f8671ec104"
+checksum = "61285f6515fa018fb2d1e46eb21223fff441ee8db5d0f1435e8ab4f5cdb80931"
 dependencies = [
  "backtrace",
  "bytes",

@@ -11,8 +11,8 @@ impl xml::QRead<Disabled> for Disabled {
     }
 }
 impl xml::QWrite for Disabled {
-    async fn qwrite(&self, _xml: &mut xml::Writer<impl xml::IWrite>) -> Result<(), quick_xml::Error> {
-        unreachable!();
+    fn qwrite(&self, _xml: &mut xml::Writer<impl xml::IWrite>) -> impl futures::Future<Output = Result<(), quick_xml::Error>> + Send {
+        async { unreachable!(); }
     }
 }
 

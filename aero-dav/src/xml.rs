@@ -12,19 +12,19 @@ pub const CAL_URN: &[u8] = b"urn:ietf:params:xml:ns:caldav";
 pub const CARD_URN: &[u8] = b"urn:ietf:params:xml:ns:carddav";
 
 // Async traits
-pub trait IWrite = AsyncWrite + Unpin;
+pub trait IWrite = AsyncWrite + Unpin + Send;
 pub trait IRead = AsyncBufRead + Unpin;
 
 // Serialization/Deserialization traits
 pub trait QWrite {
-    fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> impl Future<Output = Result<(), quick_xml::Error>>; 
+    fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> impl Future<Output = Result<(), quick_xml::Error>> + Send;
 }
 pub trait QRead<T> {
     fn qread(xml: &mut Reader<impl IRead>) -> impl Future<Output = Result<T, ParsingError>>;
 }
 
 // The representation of an XML node in Rust
-pub trait Node<T> = QRead<T> + QWrite + std::fmt::Debug + PartialEq;
+pub trait Node<T> = QRead<T> + QWrite + std::fmt::Debug + PartialEq + Sync;
 
 // ---------------
 
