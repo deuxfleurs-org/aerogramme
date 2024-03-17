@@ -3,7 +3,7 @@ use super::caltypes as cal;
 use super::xml;
 use super::error;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Disabled(());
 impl xml::QRead<Disabled> for Disabled {
     async fn qread(_xml: &mut xml::Reader<impl xml::IRead>) -> Result<Self, error::ParsingError> {
@@ -20,7 +20,7 @@ impl xml::QWrite for Disabled {
 ///
 /// Any extension is kooh is disabled through an object we can't build
 /// due to a private inner element.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Core {}
 impl dav::Extension for Core {
     type Error = Disabled;
@@ -30,7 +30,7 @@ impl dav::Extension for Core {
 }
 
 // WebDAV with the base Calendar implementation (RFC4791)
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Calendar {}
 impl dav::Extension for Calendar
 {

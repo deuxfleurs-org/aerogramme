@@ -6,7 +6,7 @@ use super::xml;
 
 /// It's how we implement a DAV extension
 /// (That's the dark magic part...)
-pub trait Extension: std::fmt::Debug + PartialEq {
+pub trait Extension: std::fmt::Debug + PartialEq + Clone {
     type Error: xml::Node<Self::Error>;
     type Property: xml::Node<Self::Property>;
     type PropertyRequest: xml::Node<Self::PropertyRequest>;
@@ -20,7 +20,7 @@ pub trait Extension: std::fmt::Debug + PartialEq {
 /// Purpose:   Describes a lock on a resource.
 /// <!ELEMENT activelock (lockscope, locktype, depth, owner?, timeout?,
 ///           locktoken?, lockroot)>
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ActiveLock {
     pub lockscope: LockScope,
     pub locktype: LockType,
@@ -54,7 +54,7 @@ pub struct Collection{}
 /// Value:   "0" | "1" | "infinity"
 ///
 /// <!ELEMENT depth (#PCDATA) >
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Depth {
     Zero,
     One,
@@ -77,9 +77,9 @@ pub enum Depth {
 ///   postcondition code.  Unrecognized elements MUST be ignored.
 ///
 /// <!ELEMENT error ANY >
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Error<E: Extension>(pub Vec<Violation<E>>);
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Violation<E: Extension> {
     /// Name:  lock-token-matches-request-uri
     ///
@@ -190,7 +190,7 @@ pub struct Exclusive {}
 /// Value:   Simple-ref
 ///
 /// <!ELEMENT href (#PCDATA)>
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Href(pub String);
 
 
@@ -206,7 +206,7 @@ pub struct Href(pub String);
 /// standards.  This element MUST NOT contain text or mixed content.
 ///
 /// <!ELEMENT include ANY >
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Include<E: Extension>(pub Vec<PropertyRequest<E>>);
 
 /// 14.9.  location XML Element
@@ -223,7 +223,7 @@ pub struct Include<E: Extension>(pub Vec<PropertyRequest<E>>);
 /// that would be used in a Location header.
 ///
 /// <!ELEMENT location (href)>
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Location(pub Href);
 
 /// 14.10.  lockentry XML Element
@@ -234,7 +234,7 @@ pub struct Location(pub Href);
 /// resource.
 ///
 /// <!ELEMENT lockentry (lockscope, locktype) >
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct LockEntry {
     pub lockscope: LockScope,
     pub locktype: LockType,
@@ -248,7 +248,7 @@ pub struct LockEntry {
 /// specify the type of lock the client wishes to have created.
 ///
 /// <!ELEMENT lockinfo (lockscope, locktype, owner?)  >
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct LockInfo {
     pub lockscope: LockScope,
     pub locktype: LockType,
@@ -267,7 +267,7 @@ pub struct LockInfo {
 /// values and the response to LOCK requests.
 ///
 /// <!ELEMENT lockroot (href) >
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct LockRoot(pub Href);
 
 /// 14.13.  lockscope XML Element
@@ -277,7 +277,7 @@ pub struct LockRoot(pub Href);
 /// Purpose:   Specifies whether a lock is an exclusive lock, or a shared
 /// lock.
 /// <!ELEMENT lockscope (exclusive | shared) >
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum LockScope {
     Exclusive,
     Shared
@@ -293,7 +293,7 @@ pub enum LockScope {
 ///    refers to the lock.
 ///
 /// <!ELEMENT locktoken (href) >
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct LockToken(pub Href);
 
 /// 14.15.  locktype XML Element
@@ -304,7 +304,7 @@ pub struct LockToken(pub Href);
 /// specification only defines one lock type, the write lock.
 ///
 /// <!ELEMENT locktype (write) >
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum LockType {
     /// 14.30.  write XML Element
     ///
@@ -330,7 +330,7 @@ pub enum LockType {
 /// response descriptions contained within the responses.
 ///
 /// <!ELEMENT multistatus (response*, responsedescription?)  >
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Multistatus<E: Extension, N: xml::Node<N>> {
     pub responses: Vec<Response<E, N>>,
     pub responsedescription: Option<ResponseDescription>,
@@ -360,7 +360,7 @@ pub struct Multistatus<E: Extension, N: xml::Node<N>> {
 ///
 /// <!ELEMENT owner ANY >
 //@FIXME might need support for an extension
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Owner {
     Txt(String),
     Href(Href),
@@ -381,10 +381,10 @@ pub enum Owner {
 /// text or mixed content.
 ///
 /// <!ELEMENT prop ANY >
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct PropName<E: Extension>(pub Vec<PropertyRequest<E>>);
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct PropValue<E: Extension>(pub Vec<Property<E>>);
 
 /// 14.19.  propertyupdate XML Element
@@ -397,10 +397,10 @@ pub struct PropValue<E: Extension>(pub Vec<Property<E>>);
 /// required to modify the properties on the resource.
 ///
 /// <!ELEMENT propertyupdate (remove | set)+ >
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct PropertyUpdate<E: Extension>(pub Vec<PropertyUpdateItem<E>>);
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum PropertyUpdateItem<E: Extension> {
     Remove(Remove<E>),
     Set(Set<E>),
@@ -440,7 +440,7 @@ pub enum PropertyUpdateItem<E: Extension> {
 /// values.
 ///
 /// <!ELEMENT propfind ( propname | (allprop, include?) | prop ) >
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum PropFind<E: Extension> {
     PropName,
     AllProp(Option<Include<E>>),
@@ -462,7 +462,7 @@ pub enum PropFind<E: Extension> {
 /// the properties named in 'prop'.
 ///
 /// <!ELEMENT propstat (prop, status, error?, responsedescription?) >
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct PropStat<E: Extension, N: xml::Node<N>> {
     pub prop: N,
     pub status: Status,
@@ -483,7 +483,7 @@ pub struct PropStat<E: Extension, N: xml::Node<N>> {
 /// the names of properties to be removed are required.
 ///
 /// <!ELEMENT remove (prop) >
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Remove<E: Extension>(pub PropName<E>);
 
 /// 14.24.  response XML Element
@@ -511,7 +511,7 @@ pub struct Remove<E: Extension>(pub PropName<E>);
 ///
 /// --- rewritten as ---
 /// <!ELEMENT response ((href+, status)|(href, propstat+), error?, responsedescription?, location?>
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum StatusOrPropstat<E: Extension, N: xml::Node<N>> {
     // One status, multiple hrefs...
     Status(Vec<Href>, Status),
@@ -519,7 +519,7 @@ pub enum StatusOrPropstat<E: Extension, N: xml::Node<N>> {
     PropStat(Href, Vec<PropStat<E, N>>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Response<E: Extension, N: xml::Node<N>> {
     pub status_or_propstat: StatusOrPropstat<E, N>,
     pub error: Option<Error<E>>,
@@ -538,7 +538,7 @@ pub struct Response<E: Extension, N: xml::Node<N>> {
 /// user.
 ///
 /// <!ELEMENT responsedescription (#PCDATA) >
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ResponseDescription(pub String);
 
 /// 14.26.  set XML Element
@@ -557,7 +557,7 @@ pub struct ResponseDescription(pub String);
 /// property, and MUST be subsequently retrievable using PROPFIND.
 ///
 /// <!ELEMENT set (prop) >
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Set<E: Extension>(pub PropValue<E>);
 
 /// 14.27.  shared XML Element
@@ -568,7 +568,7 @@ pub struct Set<E: Extension>(pub PropValue<E>);
 ///
 ///
 /// <!ELEMENT shared EMPTY >
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Shared {}
 
 
@@ -582,7 +582,7 @@ pub struct Shared {}
 /// 
 /// <!ELEMENT status (#PCDATA) >
 //@FIXME: Better typing is possible with an enum for example
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Status(pub http::status::StatusCode);
 
 /// 14.29.  timeout XML Element
@@ -610,7 +610,7 @@ pub struct Status(pub http::status::StatusCode);
 /// elapse between granting of the lock at the server, and the automatic
 /// removal of the lock.  The timeout value for TimeType "Second" MUST
 /// NOT be greater than 2^32-1.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Timeout {
     Seconds(u32),
     Infinite,
@@ -644,7 +644,7 @@ pub enum Timeout {
 /// the header value could include LWS as defined in [RFC2616], Section
 /// 4.2.  Server implementors SHOULD strip LWS from these values before
 /// using as WebDAV property values.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum PropertyRequest<E: Extension> {
     CreationDate,
     DisplayName,
@@ -659,7 +659,7 @@ pub enum PropertyRequest<E: Extension> {
     Extension(E::PropertyRequest),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Property<E: Extension> {
     /// 15.1.  creationdate Property
     ///
@@ -942,7 +942,7 @@ pub enum Property<E: Extension> {
     Extension(E::Property),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ResourceType<E: Extension> {
     Collection,
     Extension(E::ResourceType),

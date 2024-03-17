@@ -22,9 +22,9 @@ use rustls_pemfile::{certs, private_key};
 use aero_user::config::{DavConfig, DavUnsecureConfig};
 use aero_user::login::ArcLoginProvider;
 use aero_collections::user::User;
-use aero_dav::types::{PropFind, Multistatus, PropValue, ResponseDescription};
-use aero_dav::realization::{Core, Calendar};
-use aero_dav::xml as dav;
+use aero_dav::types as dav;
+use aero_dav::realization::Calendar;
+use aero_dav::xml as dxml;
 
 pub struct Server {
     bind_addr: SocketAddr,
@@ -196,7 +196,13 @@ async fn router(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Re
     let path_segments: Vec<_> = path.split("/").filter(|s| *s != "").collect();
     let method = req.method().as_str().to_uppercase();
 
+    //@FIXME check depth, handle it
+
     match (method.as_str(), path_segments.as_slice()) {
+        ("OPTIONS", _) => return Ok(Response::builder()
+            .status(200)
+            .header("DAV", "1")
+            .body(text_body(""))?),
         ("PROPFIND", []) => propfind_root(user, req).await,
         (_, [ username, ..]) if *username != user.username => return Ok(Response::builder()
             .status(403)
@@ -216,14 +222,73 @@ async fn router(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Re
 /// </D:prop></D:propfind>
 
 async fn propfind_root(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Response<BoxBody<Bytes, std::io::Error>>> { 
-    tracing::info!("root");
+    let supported_propname = vec![
+        dav::PropertyRequest::DisplayName,
+        dav::PropertyRequest::ResourceType,
+    ];
 
-    let r = deserialize::<PropFind<Core>>(req).await?;
-    println!("r: {:?}", r);
-    serialize(Multistatus::<Core, PropValue<Core>> {
-        responses: vec![],
-        responsedescription: Some(ResponseDescription("hello world".to_string())),
-    })
+    // A client may choose not to submit a request body.  An empty PROPFIND
+    // request body MUST be treated as if it were an 'allprop' request.
+    // @FIXME here we handle any invalid data as an allprop, an empty request is thus correctly
+    // handled, but corrupted requests are also silently handled as allprop.
+    let propfind = deserialize::<dav::PropFind<Calendar>>(req).await.unwrap_or_else(|_| dav::PropFind::<Calendar>::AllProp(None));
+    tracing::debug!(recv=?propfind, "inferred propfind request");
+
+    if matches!(propfind, dav::PropFind::PropName) {
+        return serialize(dav::Multistatus::<Calendar, dav::PropName<Calendar>> {
+            responses: vec![dav::Response {
+                status_or_propstat: dav::StatusOrPropstat::PropStat(
+                    dav::Href(format!("./{}/", user.username)),
+                    vec![dav::PropStat {
+                        prop: dav::PropName(supported_propname),
+                        status: dav::Status(hyper::StatusCode::OK),
+                        error: None,
+                        responsedescription: None,
+                    }],
+                ),
+                error: None,
+                location: None,
+                responsedescription: Some(dav::ResponseDescription("user home directory".into())),
+            }],
+            responsedescription: Some(dav::ResponseDescription("propname response".to_string())),
+        });
+    }
+
+    let propname = match propfind {
+        dav::PropFind::PropName => unreachable!(),
+        dav::PropFind::AllProp(None) => supported_propname.clone(),
+        dav::PropFind::AllProp(Some(dav::Include(mut include))) => {
+            include.extend_from_slice(supported_propname.as_slice());
+            include
+        },
+        dav::PropFind::Prop(dav::PropName(inner)) => inner,
+    };
+
+    let values = propname.iter().filter_map(|n| match n {
+        dav::PropertyRequest::DisplayName => Some(dav::Property::DisplayName(format!("{} home", user.username))),
+        dav::PropertyRequest::ResourceType => Some(dav::Property::ResourceType(vec![dav::ResourceType::Collection])),
+        _ => None,
+    }).collect();
+
+    let multistatus = dav::Multistatus::<Calendar, dav::PropValue<Calendar>> {
+        responses: vec![ dav::Response {
+            status_or_propstat: dav::StatusOrPropstat::PropStat(
+                dav::Href(format!("./{}/", user.username)),
+                vec![dav::PropStat {
+                    prop: dav::PropValue(values),
+                    status: dav::Status(hyper::StatusCode::OK),
+                    error: None,
+                    responsedescription: None,
+                }],
+            ),
+            error: None,
+            location: None,
+            responsedescription: Some(dav::ResponseDescription("Root node".into())),
+        } ],
+        responsedescription: Some(dav::ResponseDescription("hello world".to_string())),
+    };
+
+    serialize(multistatus)
 }
 
 async fn propfind_home(user: std::sync::Arc<User>, req: &Request<impl hyper::body::Body>) -> Result<Response<BoxBody<Bytes, std::io::Error>>> {
@@ -263,7 +328,7 @@ async fn collections(_user: std::sync::Arc<User>, _req: Request<impl hyper::body
 
 
 use futures::stream::TryStreamExt;
-use http_body_util::{BodyStream, Empty};
+use http_body_util::BodyStream;
 use http_body_util::StreamBody;
 use http_body_util::combinators::BoxBody;
 use hyper::body::Frame;
@@ -277,7 +342,7 @@ fn text_body(txt: &'static str) -> BoxBody<Bytes, std::io::Error> {
     BoxBody::new(Full::new(Bytes::from(txt)).map_err(|e| match e {}))
 }
 
-fn serialize<T: dav::QWrite + Send + 'static>(elem: T) -> Result<Response<BoxBody<Bytes, std::io::Error>>> {
+fn serialize<T: dxml::QWrite + Send + 'static>(elem: T) -> Result<Response<BoxBody<Bytes, std::io::Error>>> {
     let (tx, rx) = tokio::sync::mpsc::channel::<Bytes>(1);
 
     // Build the writer
@@ -286,7 +351,7 @@ fn serialize<T: dav::QWrite + Send + 'static>(elem: T) -> Result<Response<BoxBod
         let mut writer = SinkWriter::new(CopyToBytes::new(sink));
         let q = quick_xml::writer::Writer::new_with_indent(&mut writer, b' ', 4);
         let ns_to_apply = vec![ ("xmlns:D".into(), "DAV:".into()) ];
-        let mut qwriter = dav::Writer { q, ns_to_apply };
+        let mut qwriter = dxml::Writer { q, ns_to_apply };
         match elem.qwrite(&mut qwriter).await {
             Ok(_) => tracing::debug!("fully serialized object"),
             Err(e) => tracing::error!(err=?e, "failed to serialize object"),
@@ -308,14 +373,14 @@ fn serialize<T: dav::QWrite + Send + 'static>(elem: T) -> Result<Response<BoxBod
 
 
 /// Deserialize a request body to an XML request
-async fn deserialize<T: dav::Node<T>>(req: Request<Incoming>) -> Result<T> {
+async fn deserialize<T: dxml::Node<T>>(req: Request<Incoming>) -> Result<T> {
     let stream_of_frames = BodyStream::new(req.into_body());
     let stream_of_bytes = stream_of_frames
         .try_filter_map(|frame| async move { Ok(frame.into_data().ok()) })
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err));
     let async_read = tokio_util::io::StreamReader::new(stream_of_bytes);
     let async_read = std::pin::pin!(async_read);
-    let mut rdr = dav::Reader::new(quick_xml::reader::NsReader::from_reader(async_read)).await?;
+    let mut rdr = dxml::Reader::new(quick_xml::reader::NsReader::from_reader(async_read)).await?;
     let parsed = rdr.find::<T>().await?;
     Ok(parsed)
 }

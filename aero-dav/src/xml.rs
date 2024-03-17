@@ -24,7 +24,7 @@ pub trait QRead<T> {
 }
 
 // The representation of an XML node in Rust
-pub trait Node<T> = QRead<T> + QWrite + std::fmt::Debug + PartialEq + Sync;
+pub trait Node<T> = QRead<T> + QWrite + std::fmt::Debug + PartialEq + Clone + Sync;
 
 // ---------------
 
