@@ -20,7 +20,7 @@ impl<E: Extension> QWrite for MkCalendar<E> {
     }
 }
 
-impl<E: Extension, N: Node<N>> QWrite for MkCalendarResponse<E,N> {
+impl<E: Extension> QWrite for MkCalendarResponse<E> {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let start = xml.create_cal_element("mkcalendar-response");
         let end = start.to_end();
@@ -828,18 +828,18 @@ mod tests {
     #[tokio::test]
     async fn rfc_calendar_query1_res() {
         let got = serialize(
-            &dav::Multistatus::<Calendar,dav::PropValue<Calendar>> {
+            &dav::Multistatus::<Calendar> {
                 responses: vec![
                     dav::Response {
                         status_or_propstat: dav::StatusOrPropstat::PropStat(
                             dav::Href("http://cal.example.com/bernard/work/abcd2.ics".into()),
                             vec![dav::PropStat {
-                            prop: dav::PropValue(vec![
-                                dav::Property::GetEtag("\"fffff-abcd2\"".into()),
-                                dav::Property::Extension(Property::CalendarData(CalendarDataPayload {
+                            prop: dav::AnyProp(vec![
+                                dav::AnyProperty::Value(dav::Property::GetEtag("\"fffff-abcd2\"".into())),
+                                dav::AnyProperty::Value(dav::Property::Extension(Property::CalendarData(CalendarDataPayload {
                                     mime: None,
                                     payload: "PLACEHOLDER".into()
-                                })),
+                                }))),
                             ]),
                             status: dav::Status(http::status::StatusCode::OK),
                             error: None,
@@ -854,12 +854,12 @@ mod tests {
                         status_or_propstat: dav::StatusOrPropstat::PropStat(
                             dav::Href("http://cal.example.com/bernard/work/abcd3.ics".into()),
                             vec![dav::PropStat {
-                            prop: dav::PropValue(vec![
-                                dav::Property::GetEtag("\"fffff-abcd3\"".into()),
-                                dav::Property::Extension(Property::CalendarData(CalendarDataPayload{
+                            prop: dav::AnyProp(vec![
+                                dav::AnyProperty::Value(dav::Property::GetEtag("\"fffff-abcd3\"".into())),
+                                dav::AnyProperty::Value(dav::Property::Extension(Property::CalendarData(CalendarDataPayload{
                                     mime: None,
                                     payload: "PLACEHOLDER".into(),
-                                })),
+                                }))),
                             ]),
                             status: dav::Status(http::status::StatusCode::OK),
                             error: None,

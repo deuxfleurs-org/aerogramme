@@ -3,7 +3,7 @@ use chrono::NaiveDateTime;
 
 use super::types as dav;
 use super::caltypes::*;
-use super::xml::{QRead, IRead, Reader, Node, DAV_URN, CAL_URN};
+use super::xml::{QRead, IRead, Reader, DAV_URN, CAL_URN};
 use super::error::ParsingError;
 
 // ---- ROOT ELEMENTS ---
@@ -16,7 +16,7 @@ impl<E: dav::Extension> QRead<MkCalendar<E>> for MkCalendar<E> {
     }
 }
 
-impl<E: dav::Extension, N: Node<N>> QRead<MkCalendarResponse<E,N>> for MkCalendarResponse<E,N> {
+impl<E: dav::Extension> QRead<MkCalendarResponse<E>> for MkCalendarResponse<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CAL_URN, "mkcalendar-response").await?;
         let propstats = xml.collect().await?;
@@ -162,57 +162,57 @@ impl QRead<Violation> for Violation {
 
 impl QRead<Property> for Property {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        if xml.maybe_open(CAL_URN, "calendar-description").await?.is_some() {
+        if xml.maybe_open_start(CAL_URN, "calendar-description").await?.is_some() {
             let lang = xml.prev_attr("xml:lang");
             let text = xml.tag_string().await?;
             xml.close().await?;
             return Ok(Property::CalendarDescription { lang, text })
         }
 
-        if xml.maybe_open(CAL_URN, "calendar-timezone").await?.is_some() {
+        if xml.maybe_open_start(CAL_URN, "calendar-timezone").await?.is_some() {
             let tz = xml.tag_string().await?;
             xml.close().await?;
             return Ok(Property::CalendarTimezone(tz))
         }
 
-        if xml.maybe_open(CAL_URN, "supported-calendar-component-set").await?.is_some() {
+        if xml.maybe_open_start(CAL_URN, "supported-calendar-component-set").await?.is_some() {
             let comp = xml.collect().await?;
             xml.close().await?;
             return Ok(Property::SupportedCalendarComponentSet(comp))
         }
 
-        if xml.maybe_open(CAL_URN, "supported-calendar-data").await?.is_some() {
+        if xml.maybe_open_start(CAL_URN, "supported-calendar-data").await?.is_some() {
             let mime = xml.collect().await?;
             xml.close().await?;
             return Ok(Property::SupportedCalendarData(mime))
         }
 
-        if xml.maybe_open(CAL_URN, "max-resource-size").await?.is_some() {
+        if xml.maybe_open_start(CAL_URN, "max-resource-size").await?.is_some() {
             let sz = xml.tag_string().await?.parse::<u64>()?;
             xml.close().await?;
             return Ok(Property::MaxResourceSize(sz))
         }
 
-        if xml.maybe_open(CAL_URN, "max-date-time").await?.is_some() {
+        if xml.maybe_open_start(CAL_URN, "max-date-time").await?.is_some() {
             let dtstr = xml.tag_string().await?;
             let dt = NaiveDateTime::parse_from_str(dtstr.as_str(), ICAL_DATETIME_FMT)?.and_utc();
             xml.close().await?;
             return Ok(Property::MaxDateTime(dt))
         }
 
-        if xml.maybe_open(CAL_URN, "max-instances").await?.is_some() {
+        if xml.maybe_open_start(CAL_URN, "max-instances").await?.is_some() {
             let sz = xml.tag_string().await?.parse::<u64>()?;
             xml.close().await?;
             return Ok(Property::MaxInstances(sz))
         }
 
-        if xml.maybe_open(CAL_URN, "max-attendees-per-instance").await?.is_some() {
+        if xml.maybe_open_start(CAL_URN, "max-attendees-per-instance").await?.is_some() {
             let sz = xml.tag_string().await?.parse::<u64>()?;
             xml.close().await?;
             return Ok(Property::MaxAttendeesPerInstance(sz))
         }
 
-        if xml.maybe_open(CAL_URN, "supported-collation-set").await?.is_some() {
+        if xml.maybe_open_start(CAL_URN, "supported-collation-set").await?.is_some() {
             let cols = xml.collect().await?;
             xml.close().await?;
             return Ok(Property::SupportedCollationSet(cols))
@@ -759,6 +759,7 @@ mod tests {
     use super::*;
     use chrono::{Utc, TimeZone};
     use crate::realization::Calendar;
+    use crate::xml::Node;
     //use quick_reader::NsReader;
 
     async fn deserialize<T: Node<T>>(src: &str) -> T {
@@ -933,19 +934,19 @@ END:VCALENDAR]]></C:calendar-timezone>
 
     #[tokio::test]
     async fn rfc_calendar_query_res() {        
-        let expected = dav::Multistatus::<Calendar, dav::PropValue<Calendar>> {
+        let expected = dav::Multistatus::<Calendar> {
             responses: vec![
                 dav::Response {
                     status_or_propstat: dav::StatusOrPropstat::PropStat(
                         dav::Href("http://cal.example.com/bernard/work/abcd2.ics".into()),
                         vec![
                             dav::PropStat {
-                                prop: dav::PropValue(vec![ 
-                                    dav::Property::GetEtag("\"fffff-abcd2\"".into()),
-                                    dav::Property::Extension(Property::CalendarData(CalendarDataPayload {
+                                prop: dav::AnyProp(vec![ 
+                                    dav::AnyProperty::Value(dav::Property::GetEtag("\"fffff-abcd2\"".into())),
+                                    dav::AnyProperty::Value(dav::Property::Extension(Property::CalendarData(CalendarDataPayload {
                                         mime: None,
                                         payload: "BEGIN:VCALENDAR".into(),
-                                    })),
+                                    }))),
                                 ]),
                                 status: dav::Status(http::status::StatusCode::OK),
                                 error: None,
@@ -962,12 +963,12 @@ END:VCALENDAR]]></C:calendar-timezone>
                         dav::Href("http://cal.example.com/bernard/work/abcd3.ics".into()),
                         vec![
                             dav::PropStat {
-                                prop: dav::PropValue(vec![ 
-                                    dav::Property::GetEtag("\"fffff-abcd3\"".into()),
-                                    dav::Property::Extension(Property::CalendarData(CalendarDataPayload {
+                                prop: dav::AnyProp(vec![ 
+                                    dav::AnyProperty::Value(dav::Property::GetEtag("\"fffff-abcd3\"".into())),
+                                    dav::AnyProperty::Value(dav::Property::Extension(Property::CalendarData(CalendarDataPayload {
                                         mime: None,
                                         payload: "BEGIN:VCALENDAR".into(),
-                                    })),
+                                    }))),
                                 ]),
                                 status: dav::Status(http::status::StatusCode::OK),
                                 error: None,
@@ -1008,7 +1009,7 @@ END:VCALENDAR]]></C:calendar-timezone>
    </D:multistatus>
 "#;
 
-        let got = deserialize::<dav::Multistatus<Calendar,dav::PropValue<Calendar>>>(src).await;
+        let got = deserialize::<dav::Multistatus<Calendar>>(src).await;
         assert_eq!(got, expected)
     }
 

@@ -331,8 +331,8 @@ pub enum LockType {
 ///
 /// <!ELEMENT multistatus (response*, responsedescription?)  >
 #[derive(Debug, PartialEq, Clone)]
-pub struct Multistatus<E: Extension, N: xml::Node<N>> {
-    pub responses: Vec<Response<E, N>>,
+pub struct Multistatus<E: Extension> {
+    pub responses: Vec<Response<E>>,
     pub responsedescription: Option<ResponseDescription>,
 }
 
@@ -386,6 +386,9 @@ pub struct PropName<E: Extension>(pub Vec<PropertyRequest<E>>);
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct PropValue<E: Extension>(pub Vec<Property<E>>);
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct AnyProp<E: Extension>(pub Vec<AnyProperty<E>>);
 
 /// 14.19.  propertyupdate XML Element
 ///
@@ -462,13 +465,18 @@ pub enum PropFind<E: Extension> {
 /// the properties named in 'prop'.
 ///
 /// <!ELEMENT propstat (prop, status, error?, responsedescription?) >
+///
+/// ---
+///
+///
 #[derive(Debug, PartialEq, Clone)]
-pub struct PropStat<E: Extension, N: xml::Node<N>> {
-    pub prop: N,
+pub struct PropStat<E: Extension> {
+    pub prop: AnyProp<E>,
     pub status: Status,
     pub error: Option<Error<E>>,
     pub responsedescription: Option<ResponseDescription>,
 }
+
 
 /// 14.23.  remove XML Element
 ///
@@ -512,16 +520,16 @@ pub struct Remove<E: Extension>(pub PropName<E>);
 /// --- rewritten as ---
 /// <!ELEMENT response ((href+, status)|(href, propstat+), error?, responsedescription?, location?>
 #[derive(Debug, PartialEq, Clone)]
-pub enum StatusOrPropstat<E: Extension, N: xml::Node<N>> {
+pub enum StatusOrPropstat<E: Extension> {
     // One status, multiple hrefs...
     Status(Vec<Href>, Status),
     // A single href, multiple properties...
-    PropStat(Href, Vec<PropStat<E, N>>),
+    PropStat(Href, Vec<PropStat<E>>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Response<E: Extension, N: xml::Node<N>> {
-    pub status_or_propstat: StatusOrPropstat<E, N>,
+pub struct Response<E: Extension> {
+    pub status_or_propstat: StatusOrPropstat<E>,
     pub error: Option<Error<E>>,
     pub responsedescription: Option<ResponseDescription>,
     pub location: Option<Location>,
@@ -644,6 +652,12 @@ pub enum Timeout {
 /// the header value could include LWS as defined in [RFC2616], Section
 /// 4.2.  Server implementors SHOULD strip LWS from these values before
 /// using as WebDAV property values.
+#[derive(Debug, PartialEq, Clone)]
+pub enum AnyProperty<E: Extension> {
+    Request(PropertyRequest<E>),
+    Value(Property<E>),
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum PropertyRequest<E: Extension> {
     CreationDate,

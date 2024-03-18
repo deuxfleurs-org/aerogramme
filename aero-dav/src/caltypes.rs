@@ -31,7 +31,7 @@ pub const ICAL_DATETIME_FMT: &str = "%Y%m%dT%H%M%SZ";
 /// ```xmlschema
 /// <!ELEMENT mkcalendar (DAV:set)>
 /// ```
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct MkCalendar<E: dav::Extension>(pub dav::Set<E>);
 
 
@@ -48,8 +48,8 @@ pub struct MkCalendar<E: dav::Extension>(pub dav::Set<E>);
 /// Definition:
 ///
 /// <!ELEMENT mkcol-response (propstat+)>
-#[derive(Debug, PartialEq)]
-pub struct MkCalendarResponse<E: dav::Extension, N: xml::Node<N>>(pub Vec<dav::PropStat<E,N>>);
+#[derive(Debug, PartialEq, Clone)]
+pub struct MkCalendarResponse<E: dav::Extension>(pub Vec<dav::PropStat<E>>);
 
 // --- (REPORT PART) ---
 
@@ -66,7 +66,7 @@ pub struct MkCalendarResponse<E: dav::Extension, N: xml::Node<N>>(pub Vec<dav::P
 /// <!ELEMENT calendar-query ((DAV:allprop |
 ///                            DAV:propname |
 ///                            DAV:prop)?, filter, timezone?)>
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct CalendarQuery<E: dav::Extension> {
     pub selector: Option<CalendarSelector<E>>,
     pub filter: Filter,
@@ -87,7 +87,7 @@ pub struct CalendarQuery<E: dav::Extension> {
 /// <!ELEMENT calendar-multiget ((DAV:allprop |
 ///                               DAV:propname |
 ///                               DAV:prop)?, DAV:href+)>
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct CalendarMultiget<E: dav::Extension> {
     pub selector: Option<CalendarSelector<E>>,
     pub href: Vec<dav::Href>,
@@ -104,7 +104,7 @@ pub struct CalendarMultiget<E: dav::Extension> {
 ///
 /// Definition:
 /// <!ELEMENT free-busy-query (time-range)>
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct FreeBusyQuery(pub TimeRange);
 
 // ----- Hooks -----

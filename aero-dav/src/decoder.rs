@@ -12,7 +12,7 @@ use super::xml::{Node, QRead, Reader, IRead, DAV_URN};
 // (2) Rewrite QRead and replace Result<Option<_>, _> with Result<_, _>, not found being a possible
 // error.
 // (3) Rewrite vectors with xml.collect<E: QRead>() -> Result<Vec<E>, _>
-// (4) Something for alternatives would be great but no idea yet
+// (4) Something for alternatives like xml::choices on some lib would be great but no idea yet
 
 // ---- ROOT ----
 
@@ -61,7 +61,7 @@ impl<E: Extension> QRead<PropertyUpdate<E>> for PropertyUpdate<E> {
 }
 
 /// Generic response
-impl<E: Extension, N: Node<N>> QRead<Multistatus<E,N>> for Multistatus<E,N> {
+impl<E: Extension> QRead<Multistatus<E>> for Multistatus<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(DAV_URN, "multistatus").await?;
         let mut responses = Vec::new();
@@ -113,6 +113,7 @@ impl QRead<LockInfo> for LockInfo {
 // LOCK RESPONSE
 impl<E: Extension> QRead<PropValue<E>> for PropValue<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        println!("---- propvalue");
         xml.open(DAV_URN, "prop").await?;
         let acc = xml.collect::<Property<E>>().await?;
         xml.close().await?;
@@ -134,7 +135,7 @@ impl<E: Extension> QRead<Error<E>> for Error<E> {
 
 
 // ---- INNER XML
-impl<E: Extension, N: Node<N>> QRead<Response<E,N>> for Response<E,N> {
+impl<E: Extension> QRead<Response<E>> for Response<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(DAV_URN, "response").await?;
         let (mut status, mut error, mut responsedescription, mut location) = (None, None, None, None);
@@ -145,7 +146,7 @@ impl<E: Extension, N: Node<N>> QRead<Response<E,N>> for Response<E,N> {
             let mut dirty = false;
             xml.maybe_read::<Status>(&mut status, &mut dirty).await?;
             xml.maybe_push::<Href>(&mut href, &mut dirty).await?;
-            xml.maybe_push::<PropStat<E,N>>(&mut propstat, &mut dirty).await?;
+            xml.maybe_push::<PropStat<E>>(&mut propstat, &mut dirty).await?;
             xml.maybe_read::<Error<E>>(&mut error, &mut dirty).await?;
             xml.maybe_read::<ResponseDescription>(&mut responsedescription, &mut dirty).await?;
             xml.maybe_read::<Location>(&mut location, &mut dirty).await?;
@@ -174,15 +175,15 @@ impl<E: Extension, N: Node<N>> QRead<Response<E,N>> for Response<E,N> {
     }
 }
 
-impl<E: Extension, N: Node<N>> QRead<PropStat<E,N>> for PropStat<E,N> {
+impl<E: Extension> QRead<PropStat<E>> for PropStat<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(DAV_URN, "propstat").await?;
 
-        let (mut m_prop, mut m_status, mut error, mut responsedescription) = (None, None, None, None);
+        let (mut m_any_prop,  mut m_status, mut error, mut responsedescription) = (None, None, None, None);
 
         loop {
             let mut dirty = false;
-            xml.maybe_read::<N>(&mut m_prop, &mut dirty).await?;
+            xml.maybe_read::<AnyProp<E>>(&mut m_any_prop, &mut dirty).await?;
             xml.maybe_read::<Status>(&mut m_status, &mut dirty).await?;
             xml.maybe_read::<Error<E>>(&mut error, &mut dirty).await?;
             xml.maybe_read::<ResponseDescription>(&mut responsedescription, &mut dirty).await?;
@@ -196,7 +197,7 @@ impl<E: Extension, N: Node<N>> QRead<PropStat<E,N>> for PropStat<E,N> {
         }
 
         xml.close().await?;
-        match (m_prop, m_status) {
+        match (m_any_prop, m_status) {
             (Some(prop), Some(status)) => Ok(PropStat { prop, status, error, responsedescription }),
             _ => Err(ParsingError::MissingChild),
         }
@@ -309,6 +310,25 @@ impl<E: Extension> QRead<PropName<E>> for PropName<E> {
     }
 }
 
+impl<E: Extension> QRead<AnyProp<E>> for AnyProp<E> {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        xml.open(DAV_URN, "prop").await?;
+        let acc = xml.collect::<AnyProperty<E>>().await?;
+        xml.close().await?;
+        Ok(AnyProp(acc))
+    }
+}
+
+impl<E: Extension> QRead<AnyProperty<E>> for AnyProperty<E> {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        match Property::qread(xml).await {
+            Err(ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(Self::Value)
+        }
+        PropertyRequest::qread(xml).await.map(Self::Request)
+    }
+}
+
 impl<E: Extension> QRead<PropertyRequest<E>> for PropertyRequest<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         let maybe = if xml.maybe_open(DAV_URN, "creationdate").await?.is_some() {
@@ -348,43 +368,43 @@ impl<E: Extension> QRead<PropertyRequest<E>> for PropertyRequest<E> {
 impl<E: Extension> QRead<Property<E>> for Property<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         // Core WebDAV properties
-        if xml.maybe_open(DAV_URN, "creationdate").await?.is_some() {
+        if xml.maybe_open_start(DAV_URN, "creationdate").await?.is_some() {
             let datestr = xml.tag_string().await?;
             xml.close().await?;
             return Ok(Property::CreationDate(DateTime::parse_from_rfc3339(datestr.as_str())?))
-        } else if xml.maybe_open(DAV_URN, "displayname").await?.is_some() {
+        } else if xml.maybe_open_start(DAV_URN, "displayname").await?.is_some() {
             let name = xml.tag_string().await?;
             xml.close().await?;
             return Ok(Property::DisplayName(name))
-        } else if xml.maybe_open(DAV_URN, "getcontentlanguage").await?.is_some() {
+        } else if xml.maybe_open_start(DAV_URN, "getcontentlanguage").await?.is_some() {
             let lang = xml.tag_string().await?;
             xml.close().await?;
             return Ok(Property::GetContentLanguage(lang))
-        } else if xml.maybe_open(DAV_URN, "getcontentlength").await?.is_some() {
+        } else if xml.maybe_open_start(DAV_URN, "getcontentlength").await?.is_some() {
             let cl = xml.tag_string().await?.parse::<u64>()?;
             xml.close().await?;
             return Ok(Property::GetContentLength(cl))
-        } else if xml.maybe_open(DAV_URN, "getcontenttype").await?.is_some() {
+        } else if xml.maybe_open_start(DAV_URN, "getcontenttype").await?.is_some() {
             let ct = xml.tag_string().await?;
             xml.close().await?;
             return Ok(Property::GetContentType(ct))
-        } else if xml.maybe_open(DAV_URN, "getetag").await?.is_some() {
+        } else if xml.maybe_open_start(DAV_URN, "getetag").await?.is_some() {
             let etag = xml.tag_string().await?;
             xml.close().await?;
             return Ok(Property::GetEtag(etag))
-        } else if xml.maybe_open(DAV_URN, "getlastmodified").await?.is_some() {
+        } else if xml.maybe_open_start(DAV_URN, "getlastmodified").await?.is_some() {
             let datestr = xml.tag_string().await?;
             xml.close().await?;
             return Ok(Property::GetLastModified(DateTime::parse_from_rfc2822(datestr.as_str())?))
-        } else if xml.maybe_open(DAV_URN, "lockdiscovery").await?.is_some() {
+        } else if xml.maybe_open_start(DAV_URN, "lockdiscovery").await?.is_some() {
             let acc = xml.collect::<ActiveLock>().await?;
             xml.close().await?;
             return Ok(Property::LockDiscovery(acc))
-        } else if xml.maybe_open(DAV_URN, "resourcetype").await?.is_some() {
+        } else if xml.maybe_open_start(DAV_URN, "resourcetype").await?.is_some() {
             let acc = xml.collect::<ResourceType<E>>().await?;
             xml.close().await?;
             return Ok(Property::ResourceType(acc))
-        } else if xml.maybe_open(DAV_URN, "supportedlock").await?.is_some() {
+        } else if xml.maybe_open_start(DAV_URN, "supportedlock").await?.is_some() {
             let acc = xml.collect::<LockEntry>().await?;
             xml.close().await?;
             return Ok(Property::SupportedLock(acc))
@@ -758,7 +778,7 @@ mod tests {
 "#;
 
         let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
-        let got = rdr.find::<Multistatus::<Core, PropName<Core>>>().await.unwrap();
+        let got = rdr.find::<Multistatus::<Core>>().await.unwrap();
 
         assert_eq!(got, Multistatus {
             responses: vec![
@@ -766,11 +786,11 @@ mod tests {
                     status_or_propstat: StatusOrPropstat::PropStat(
                         Href("http://www.example.com/container/".into()),
                         vec![PropStat {
-                            prop: PropName(vec![
-                                PropertyRequest::CreationDate,
-                                PropertyRequest::DisplayName,
-                                PropertyRequest::ResourceType,
-                                PropertyRequest::SupportedLock,
+                            prop: AnyProp(vec![
+                                AnyProperty::Request(PropertyRequest::CreationDate),
+                                AnyProperty::Request(PropertyRequest::DisplayName),
+                                AnyProperty::Request(PropertyRequest::ResourceType),
+                                AnyProperty::Request(PropertyRequest::SupportedLock),
                             ]),
                             status: Status(http::status::StatusCode::OK),
                             error: None,
@@ -785,15 +805,15 @@ mod tests {
                     status_or_propstat: StatusOrPropstat::PropStat(
                         Href("http://www.example.com/container/front.html".into()),
                         vec![PropStat {
-                            prop: PropName(vec![
-                                PropertyRequest::CreationDate,
-                                PropertyRequest::DisplayName,
-                                PropertyRequest::GetContentLength,
-                                PropertyRequest::GetContentType,
-                                PropertyRequest::GetEtag,
-                                PropertyRequest::GetLastModified,
-                                PropertyRequest::ResourceType,
-                                PropertyRequest::SupportedLock,
+                            prop: AnyProp(vec![
+                                AnyProperty::Request(PropertyRequest::CreationDate),
+                                AnyProperty::Request(PropertyRequest::DisplayName),
+                                AnyProperty::Request(PropertyRequest::GetContentLength),
+                                AnyProperty::Request(PropertyRequest::GetContentType),
+                                AnyProperty::Request(PropertyRequest::GetEtag),
+                                AnyProperty::Request(PropertyRequest::GetLastModified),
+                                AnyProperty::Request(PropertyRequest::ResourceType),
+                                AnyProperty::Request(PropertyRequest::SupportedLock),
                             ]),
                             status: Status(http::status::StatusCode::OK),
                             error: None,
@@ -869,7 +889,7 @@ mod tests {
      </D:multistatus>"#;
 
         let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
-        let got = rdr.find::<Multistatus::<Core, PropValue<Core>>>().await.unwrap();
+        let got = rdr.find::<Multistatus::<Core>>().await.unwrap();
 
         assert_eq!(got, Multistatus {
             responses: vec![
@@ -877,11 +897,11 @@ mod tests {
                 status_or_propstat: StatusOrPropstat::PropStat(
                         Href("/container/".into()),
                         vec![PropStat {
-                            prop: PropValue(vec![
-                                Property::CreationDate(FixedOffset::west_opt(8 * 3600).unwrap().with_ymd_and_hms(1997, 12, 01, 17, 42, 21).unwrap()),
-                                Property::DisplayName("Example collection".into()),
-                                Property::ResourceType(vec![ResourceType::Collection]),
-                                Property::SupportedLock(vec![
+                            prop: AnyProp(vec![
+                                AnyProperty::Value(Property::CreationDate(FixedOffset::west_opt(8 * 3600).unwrap().with_ymd_and_hms(1997, 12, 01, 17, 42, 21).unwrap())),
+                                AnyProperty::Value(Property::DisplayName("Example collection".into())),
+                                AnyProperty::Value(Property::ResourceType(vec![ResourceType::Collection])),
+                                AnyProperty::Value(Property::SupportedLock(vec![
                                     LockEntry {
                                         lockscope: LockScope::Exclusive,
                                         locktype: LockType::Write,
@@ -890,7 +910,7 @@ mod tests {
                                         lockscope: LockScope::Shared,
                                         locktype: LockType::Write,
                                     },
-                                ]),
+                                ])),
                             ]),
                             status: Status(http::status::StatusCode::OK),
                             error: None,
@@ -906,15 +926,17 @@ mod tests {
                     status_or_propstat: StatusOrPropstat::PropStat(
                         Href("/container/front.html".into()),
                         vec![PropStat {
-                            prop: PropValue(vec![
-                                Property::CreationDate(FixedOffset::west_opt(8 * 3600).unwrap().with_ymd_and_hms(1997, 12, 01, 18, 27, 21).unwrap()),
-                                Property::DisplayName("Example HTML resource".into()),
-                                Property::GetContentLength(4525),
-                                Property::GetContentType("text/html".into()),
-                                Property::GetEtag(r#""zzyzx""#.into()),
-                                Property::GetLastModified(FixedOffset::west_opt(0).unwrap().with_ymd_and_hms(1998, 01, 12, 09, 25, 56).unwrap()),
-                                Property::ResourceType(vec![]),
-                                Property::SupportedLock(vec![
+                            prop: AnyProp(vec![
+                                AnyProperty::Value(Property::CreationDate(FixedOffset::west_opt(8 * 3600).unwrap().with_ymd_and_hms(1997, 12, 01, 18, 27, 21).unwrap())),
+                                AnyProperty::Value(Property::DisplayName("Example HTML resource".into())),
+                                AnyProperty::Value(Property::GetContentLength(4525)),
+                                AnyProperty::Value(Property::GetContentType("text/html".into())),
+                                AnyProperty::Value(Property::GetEtag(r#""zzyzx""#.into())),
+                                AnyProperty::Value(Property::GetLastModified(FixedOffset::west_opt(0).unwrap().with_ymd_and_hms(1998, 01, 12, 09, 25, 56).unwrap())),
+                                //@FIXME know bug, can't disambiguate between an empty resource
+                                //type value and a request resource type
+                                AnyProperty::Request(PropertyRequest::ResourceType),
+                                AnyProperty::Value(Property::SupportedLock(vec![
                                     LockEntry {
                                         lockscope: LockScope::Exclusive,
                                         locktype: LockType::Write,
@@ -923,7 +945,7 @@ mod tests {
                                         lockscope: LockScope::Shared,
                                         locktype: LockType::Write,
                                     },
-                                ]),
+                                ])),
                             ]),
                             status: Status(http::status::StatusCode::OK),
                             error: None,

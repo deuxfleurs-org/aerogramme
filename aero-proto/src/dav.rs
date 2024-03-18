@@ -375,18 +375,18 @@ trait DavNode: Send {
     // ----- common
 
     /// building DAV responses
-    fn multistatus_name(&self, user: &ArcUser, depth: dav::Depth) -> dav::Multistatus<Calendar, dav::PropName<Calendar>> {
+    fn multistatus_name(&self, user: &ArcUser, depth: dav::Depth) -> dav::Multistatus<Calendar> {
         let mut names = vec![(self.path(user), self.supported_properties(user))];
         if matches!(depth, dav::Depth::One | dav::Depth::Infinity) {
             names.extend(self.children(user).iter().map(|c| (c.path(user), c.supported_properties(user))));
         }
 
-        dav::Multistatus::<Calendar, dav::PropName<Calendar>> {
+        dav::Multistatus::<Calendar> {
             responses: names.into_iter().map(|(url, names)| dav::Response {
                 status_or_propstat: dav::StatusOrPropstat::PropStat(
                     dav::Href(url),
                     vec![dav::PropStat {
-                        prop: names,
+                        prop: dav::AnyProp(names.0.into_iter().map(dav::AnyProperty::Request).collect()),
                         status: dav::Status(hyper::StatusCode::OK),
                         error: None,
                         responsedescription: None,
@@ -400,7 +400,7 @@ trait DavNode: Send {
         }
     }
 
-    fn multistatus_val(&self, user: &ArcUser, props: &dav::PropName<Calendar>, depth: dav::Depth) -> dav::Multistatus<Calendar, dav::PropValue<Calendar>> {
+    fn multistatus_val(&self, user: &ArcUser, props: &dav::PropName<Calendar>, depth: dav::Depth) -> dav::Multistatus<Calendar> {
         let mut values = vec![(self.path(user), self.properties(user, props))];
         if matches!(depth, dav::Depth::One | dav::Depth::Infinity) {
             values.extend(self
@@ -410,12 +410,12 @@ trait DavNode: Send {
             );
         }
 
-        dav::Multistatus::<Calendar, dav::PropValue<Calendar>> {
+        dav::Multistatus::<Calendar> {
             responses: values.into_iter().map(|(url, propval)| dav::Response {
                 status_or_propstat: dav::StatusOrPropstat::PropStat(
                     dav::Href(url),
                     vec![dav::PropStat {
-                        prop: propval,
+                        prop: dav::AnyProp(propval.0.into_iter().map(dav::AnyProperty::Value).collect()),
                         status: dav::Status(hyper::StatusCode::OK),
                         error: None,
                         responsedescription: None,

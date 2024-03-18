@@ -258,8 +258,27 @@ impl<T: IRead> Reader<T> {
         Ok(evt)
     }
 
+    pub async fn open_start(&mut self,  ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
+        let evt = match self.peek() {
+            Event::Start(_) if self.is_tag(ns, key) => self.next().await?,
+            _ => return Err(ParsingError::Recoverable),
+        };
+
+        //println!("open tag {:?}", evt);
+        self.parents.push(evt.clone());
+        Ok(evt)
+    }
+
     pub async fn maybe_open(&mut self, ns: &[u8], key: &str) -> Result<Option<Event<'static>>, ParsingError> {
         match self.open(ns, key).await {
+            Ok(v) => Ok(Some(v)),
+            Err(ParsingError::Recoverable) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub async fn maybe_open_start(&mut self, ns: &[u8], key: &str) -> Result<Option<Event<'static>>, ParsingError> {
+        match self.open_start(ns, key).await {
             Ok(v) => Ok(Some(v)),
             Err(ParsingError::Recoverable) => Ok(None),
             Err(e) => Err(e),
