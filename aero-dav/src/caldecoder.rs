@@ -162,6 +162,11 @@ impl QRead<Violation> for Violation {
 
 impl QRead<Property> for Property {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        if xml.maybe_open_start(CAL_URN, "calendar-home-set").await?.is_some() {
+            let href = xml.find().await?;
+            xml.close().await?;
+            return Ok(Property::CalendarHomeSet(href))
+        }
         if xml.maybe_open_start(CAL_URN, "calendar-description").await?.is_some() {
             let lang = xml.prev_attr("xml:lang");
             let text = xml.tag_string().await?;
@@ -231,6 +236,10 @@ impl QRead<Property> for Property {
 
 impl QRead<PropertyRequest> for PropertyRequest {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        if xml.maybe_open(CAL_URN, "calendar-home-set").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::CalendarHomeSet)
+        } 
         if xml.maybe_open(CAL_URN, "calendar-description").await?.is_some() {
             xml.close().await?;
             return Ok(Self::CalendarDescription)

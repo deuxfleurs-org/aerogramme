@@ -212,7 +212,7 @@ async fn router(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Re
         "HEAD" | "GET" => {
             tracing::warn!("HEAD+GET not correctly implemented");
             return Ok(Response::builder()
-                .status(200)
+                .status(404)
                 .body(text_body(""))?)
         },
         "PROPFIND" => propfind(user, req, node).await,
@@ -259,6 +259,7 @@ const ALLPROP: [dav::PropertyRequest<Calendar>; 10] = [
 
 async fn propfind(user: std::sync::Arc<User>, req: Request<Incoming>, node: Box<dyn DavNode>) -> Result<Response<BoxBody<Bytes, std::io::Error>>> { 
     let depth = depth(&req);
+    let status = hyper::StatusCode::from_u16(207)?;
 
     // A client may choose not to submit a request body.  An empty PROPFIND
     // request body MUST be treated as if it were an 'allprop' request.
@@ -268,7 +269,7 @@ async fn propfind(user: std::sync::Arc<User>, req: Request<Incoming>, node: Box<
     tracing::debug!(recv=?propfind, "inferred propfind request");
 
     if matches!(propfind, dav::PropFind::PropName) {
-        return serialize(node.multistatus_name(&user, depth));
+        return serialize(status, node.multistatus_name(&user, depth));
     }
 
     let propname = match propfind {
@@ -281,7 +282,7 @@ async fn propfind(user: std::sync::Arc<User>, req: Request<Incoming>, node: Box<
         dav::PropFind::Prop(inner) => inner,
     };
 
-    serialize(node.multistatus_val(&user, propname, depth))
+    serialize(status, node.multistatus_val(&user, propname, depth))
 }
 
 // ---- HTTP DAV Binding
@@ -308,7 +309,7 @@ fn text_body(txt: &'static str) -> BoxBody<Bytes, std::io::Error> {
     BoxBody::new(Full::new(Bytes::from(txt)).map_err(|e| match e {}))
 }
 
-fn serialize<T: dxml::QWrite + Send + 'static>(elem: T) -> Result<Response<BoxBody<Bytes, std::io::Error>>> {
+fn serialize<T: dxml::QWrite + Send + 'static>(status_ok: hyper::StatusCode, elem: T) -> Result<Response<BoxBody<Bytes, std::io::Error>>> {
     let (tx, rx) = tokio::sync::mpsc::channel::<Bytes>(1);
 
     // Build the writer
@@ -318,7 +319,7 @@ fn serialize<T: dxml::QWrite + Send + 'static>(elem: T) -> Result<Response<BoxBo
         let q = quick_xml::writer::Writer::new_with_indent(&mut writer, b' ', 4);
         let ns_to_apply = vec![ ("xmlns:D".into(), "DAV:".into()), ("xmlns:C".into(), "urn:ietf:params:xml:ns:caldav".into()) ];
         let mut qwriter = dxml::Writer { q, ns_to_apply };
-        let decl = quick_xml::events::BytesDecl::from_start(quick_xml::events::BytesStart::from_content("xml encoding='utf-8' version='1.0'", 0));
+        let decl = quick_xml::events::BytesDecl::from_start(quick_xml::events::BytesStart::from_content("xml version=\"1.0\" encoding=\"utf-8\"", 0));
         match qwriter.q.write_event_async(quick_xml::events::Event::Decl(decl)).await {
             Ok(_) => (),
             Err(e) => tracing::error!(err=?e, "unable to write XML declaration <?xml ... >"),
@@ -336,7 +337,8 @@ fn serialize<T: dxml::QWrite + Send + 'static>(elem: T) -> Result<Response<BoxBo
     let boxed_body = BoxBody::new(stream);
 
     let response = Response::builder()
-        .status(hyper::StatusCode::OK)
+        .status(status_ok)
+        .header("content-type", "application/xml; charset=\"utf-8\"")
         .body(boxed_body)?;
 
     Ok(response)
@@ -510,6 +512,7 @@ impl DavNode for HomeNode {
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
             dav::PropertyRequest::GetContentType,
+            dav::PropertyRequest::Extension(cal::PropertyRequest::CalendarHomeSet),
         ])
     }
     fn properties(&self, user: &ArcUser, prop: dav::PropName<Calendar>) -> Vec<dav::AnyProperty<Calendar>> {
@@ -517,6 +520,8 @@ impl DavNode for HomeNode {
             dav::PropertyRequest::DisplayName => dav::AnyProperty::Value(dav::Property::DisplayName(format!("{} home", user.username))),
             dav::PropertyRequest::ResourceType => dav::AnyProperty::Value(dav::Property::ResourceType(vec![dav::ResourceType::Collection])),
             dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
+            dav::PropertyRequest::Extension(cal::PropertyRequest::CalendarHomeSet) => 
+                dav::AnyProperty::Value(dav::Property::Extension(cal::Property::CalendarHomeSet(dav::Href(CalendarListNode{}.path(user))))),
             v => dav::AnyProperty::Request(v),
         }).collect()
     }
@@ -604,7 +609,9 @@ impl DavNode for CalendarNode {
                 dav::ResourceType::Collection,
                 dav::ResourceType::Extension(cal::ResourceType::Calendar),
             ])),
-            dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
+            //dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
+            //@FIXME seems wrong but seems to be what Thunderbird expects...
+            dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("text/calendar".into())),
             v => dav::AnyProperty::Request(v),
         }).collect()
     }

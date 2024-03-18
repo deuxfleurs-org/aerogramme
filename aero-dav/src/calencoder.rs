@@ -88,6 +88,7 @@ impl QWrite for PropertyRequest {
         };
 
         match self {
+            Self::CalendarHomeSet => atom("calendar-home-set").await,
             Self::CalendarDescription => atom("calendar-description").await,
             Self::CalendarTimezone => atom("calendar-timezone").await,
             Self::SupportedCalendarComponentSet => atom("supported-calendar-component-set").await,
@@ -105,6 +106,13 @@ impl QWrite for PropertyRequest {
 impl QWrite for Property {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
+            Self::CalendarHomeSet(href) => {
+                let start = xml.create_cal_element("calendar-home-set");
+                let end = start.to_end();
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                href.qwrite(xml).await?;
+                xml.q.write_event_async(Event::End(end)).await
+            }
             Self::CalendarDescription { lang, text } => {
                 let mut start = xml.create_cal_element("calendar-description");
                 if let Some(the_lang) = lang {
