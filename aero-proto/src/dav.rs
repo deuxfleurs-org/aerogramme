@@ -23,6 +23,7 @@ use aero_user::config::{DavConfig, DavUnsecureConfig};
 use aero_user::login::ArcLoginProvider;
 use aero_collections::user::User;
 use aero_dav::types as dav;
+use aero_dav::caltypes as cal;
 use aero_dav::realization::Calendar;
 use aero_dav::xml as dxml;
 
@@ -196,8 +197,6 @@ async fn router(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Re
     let path_segments: Vec<_> = path.split("/").filter(|s| *s != "").collect();
     let method = req.method().as_str().to_uppercase();
 
-    //@FIXME check depth, handle it
-
     match (method.as_str(), path_segments.as_slice()) {
         ("OPTIONS", _) => return Ok(Response::builder()
             .status(200)
@@ -220,12 +219,20 @@ async fn router(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Re
 /// <D:propfind xmlns:D='DAV:' xmlns:A='http://apple.com/ns/ical/'>
 /// <D:prop><D:getcontenttype/><D:resourcetype/><D:displayname/><A:calendar-color/>
 /// </D:prop></D:propfind>
+const SUPPORTED_PROPNAME: [dav::PropertyRequest<Calendar>; 2] = [
+    dav::PropertyRequest::DisplayName,
+    dav::PropertyRequest::ResourceType,
+];
 
 async fn propfind_root(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Response<BoxBody<Bytes, std::io::Error>>> { 
-    let supported_propname = vec![
+    let node = RootNode {};
+    let depth = depth(&req);
+
+
+    /*let supported_propname = vec![
         dav::PropertyRequest::DisplayName,
         dav::PropertyRequest::ResourceType,
-    ];
+    ];*/
 
     // A client may choose not to submit a request body.  An empty PROPFIND
     // request body MUST be treated as if it were an 'allprop' request.
@@ -235,60 +242,20 @@ async fn propfind_root(user: std::sync::Arc<User>, req: Request<Incoming>) -> Re
     tracing::debug!(recv=?propfind, "inferred propfind request");
 
     if matches!(propfind, dav::PropFind::PropName) {
-        return serialize(dav::Multistatus::<Calendar, dav::PropName<Calendar>> {
-            responses: vec![dav::Response {
-                status_or_propstat: dav::StatusOrPropstat::PropStat(
-                    dav::Href(format!("./{}/", user.username)),
-                    vec![dav::PropStat {
-                        prop: dav::PropName(supported_propname),
-                        status: dav::Status(hyper::StatusCode::OK),
-                        error: None,
-                        responsedescription: None,
-                    }],
-                ),
-                error: None,
-                location: None,
-                responsedescription: Some(dav::ResponseDescription("user home directory".into())),
-            }],
-            responsedescription: Some(dav::ResponseDescription("propname response".to_string())),
-        });
+        return serialize(node.multistatus_name(&user, depth));
     }
 
     let propname = match propfind {
         dav::PropFind::PropName => unreachable!(),
-        dav::PropFind::AllProp(None) => supported_propname.clone(),
+        dav::PropFind::AllProp(None) => dav::PropName(SUPPORTED_PROPNAME.to_vec()),
         dav::PropFind::AllProp(Some(dav::Include(mut include))) => {
-            include.extend_from_slice(supported_propname.as_slice());
-            include
+            include.extend_from_slice(&SUPPORTED_PROPNAME);
+            dav::PropName(include)
         },
-        dav::PropFind::Prop(dav::PropName(inner)) => inner,
+        dav::PropFind::Prop(inner) => inner,
     };
 
-    let values = propname.iter().filter_map(|n| match n {
-        dav::PropertyRequest::DisplayName => Some(dav::Property::DisplayName(format!("{} home", user.username))),
-        dav::PropertyRequest::ResourceType => Some(dav::Property::ResourceType(vec![dav::ResourceType::Collection])),
-        _ => None,
-    }).collect();
-
-    let multistatus = dav::Multistatus::<Calendar, dav::PropValue<Calendar>> {
-        responses: vec![ dav::Response {
-            status_or_propstat: dav::StatusOrPropstat::PropStat(
-                dav::Href(format!("./{}/", user.username)),
-                vec![dav::PropStat {
-                    prop: dav::PropValue(values),
-                    status: dav::Status(hyper::StatusCode::OK),
-                    error: None,
-                    responsedescription: None,
-                }],
-            ),
-            error: None,
-            location: None,
-            responsedescription: Some(dav::ResponseDescription("Root node".into())),
-        } ],
-        responsedescription: Some(dav::ResponseDescription("hello world".to_string())),
-    };
-
-    serialize(multistatus)
+    serialize(node.multistatus_val(&user, &propname, depth))
 }
 
 async fn propfind_home(user: std::sync::Arc<User>, req: &Request<impl hyper::body::Body>) -> Result<Response<BoxBody<Bytes, std::io::Error>>> {
@@ -327,6 +294,8 @@ async fn collections(_user: std::sync::Arc<User>, _req: Request<impl hyper::body
 }
 
 
+// ---- HTTP DAV Binding
+
 use futures::stream::TryStreamExt;
 use http_body_util::BodyStream;
 use http_body_util::StreamBody;
@@ -337,6 +306,13 @@ use std::io::{Error, ErrorKind};
 use futures::sink::SinkExt;
 use tokio_util::io::{SinkWriter, CopyToBytes};
 
+fn depth(req: &Request<impl hyper::body::Body>) -> dav::Depth {
+    match req.headers().get("Depth").map(hyper::header::HeaderValue::to_str) {
+        Some(Ok("0")) => dav::Depth::Zero,
+        Some(Ok("1")) => dav::Depth::One,
+        _ => dav::Depth::Infinity,
+    }
+}
 
 fn text_body(txt: &'static str) -> BoxBody<Bytes, std::io::Error> {
     BoxBody::new(Full::new(Bytes::from(txt)).map_err(|e| match e {}))
@@ -352,6 +328,11 @@ fn serialize<T: dxml::QWrite + Send + 'static>(elem: T) -> Result<Response<BoxBo
         let q = quick_xml::writer::Writer::new_with_indent(&mut writer, b' ', 4);
         let ns_to_apply = vec![ ("xmlns:D".into(), "DAV:".into()) ];
         let mut qwriter = dxml::Writer { q, ns_to_apply };
+        let decl = quick_xml::events::BytesDecl::from_start(quick_xml::events::BytesStart::from_content("xml encoding='utf-8' version='1.0'", 0));
+        match qwriter.q.write_event_async(quick_xml::events::Event::Decl(decl)).await {
+            Ok(_) => (),
+            Err(e) => tracing::error!(err=?e, "unable to write XML declaration <?xml ... >"),
+        }
         match elem.qwrite(&mut qwriter).await {
             Ok(_) => tracing::debug!("fully serialized object"),
             Err(e) => tracing::error!(err=?e, "failed to serialize object"),
@@ -384,3 +365,195 @@ async fn deserialize<T: dxml::Node<T>>(req: Request<Incoming>) -> Result<T> {
     let parsed = rdr.find::<T>().await?;
     Ok(parsed)
 }
+
+//---
+
+type ArcUser = std::sync::Arc<User>;
+trait DavNode {
+    // recurence
+    fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>>;
+
+    // node properties
+    fn name(&self, user: &ArcUser) -> String;
+    fn supported_properties(&self, user: &ArcUser) -> dav::PropName<Calendar>;
+    fn properties(&self, user: &ArcUser, props: &dav::PropName<Calendar>) -> dav::PropValue<Calendar>;
+
+    // building DAV responses
+    fn multistatus_name(&self, user: &ArcUser, depth: dav::Depth) -> dav::Multistatus<Calendar, dav::PropName<Calendar>> {
+        let mut names = vec![(".".into(), self.supported_properties(user))];
+        if matches!(depth, dav::Depth::One | dav::Depth::Infinity) {
+            names.extend(self.children(user).iter().map(|c| (format!("./{}", c.name(user)), c.supported_properties(user))));
+        }
+
+        dav::Multistatus::<Calendar, dav::PropName<Calendar>> {
+            responses: names.into_iter().map(|(url, names)| dav::Response {
+                status_or_propstat: dav::StatusOrPropstat::PropStat(
+                    dav::Href(url),
+                    vec![dav::PropStat {
+                        prop: names,
+                        status: dav::Status(hyper::StatusCode::OK),
+                        error: None,
+                        responsedescription: None,
+                    }],
+                ),
+                error: None,
+                location: None,
+                responsedescription: None,
+            }).collect(),
+            responsedescription: None,
+        }
+    }
+
+    fn multistatus_val(&self, user: &ArcUser, props: &dav::PropName<Calendar>, depth: dav::Depth) -> dav::Multistatus<Calendar, dav::PropValue<Calendar>> {
+        let mut values = vec![(".".into(), self.properties(user, props))];
+        if matches!(depth, dav::Depth::One | dav::Depth::Infinity) {
+            values.extend(self
+                .children(user)
+                .iter()
+                .map(|c| (format!("./{}", c.name(user)), c.properties(user, props)))
+            );
+        }
+
+        dav::Multistatus::<Calendar, dav::PropValue<Calendar>> {
+            responses: values.into_iter().map(|(url, propval)| dav::Response {
+                status_or_propstat: dav::StatusOrPropstat::PropStat(
+                    dav::Href(url),
+                    vec![dav::PropStat {
+                        prop: propval,
+                        status: dav::Status(hyper::StatusCode::OK),
+                        error: None,
+                        responsedescription: None,
+                    }],
+                ),
+                error: None,
+                location: None,
+                responsedescription: None,
+            }).collect(),
+            responsedescription: None,
+        }
+    }
+}
+
+struct RootNode {}
+impl DavNode for RootNode {
+    fn name(&self, _user: &ArcUser) -> String {
+        "/".into()
+    }
+    fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>> {
+        vec![Box::new(HomeNode { })]
+    }
+    fn supported_properties(&self, user: &ArcUser) -> dav::PropName<Calendar> {
+        dav::PropName(vec![
+            dav::PropertyRequest::DisplayName,
+            dav::PropertyRequest::ResourceType,
+        ])
+    }
+    fn properties(&self, user: &ArcUser, prop: &dav::PropName<Calendar>) -> dav::PropValue<Calendar> {
+        dav::PropValue(prop.0.iter().filter_map(|n| match n {
+            dav::PropertyRequest::DisplayName => Some(dav::Property::DisplayName("DAV Root".to_string())),
+            dav::PropertyRequest::ResourceType => Some(dav::Property::ResourceType(vec![dav::ResourceType::Collection])),
+            _ => None,
+        }).collect())
+    }
+}
+
+struct HomeNode {}
+impl DavNode for HomeNode {
+    fn name(&self, user: &ArcUser) -> String {
+        format!("{}/", user.username)
+    }
+    fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>> {
+        vec![Box::new(CalendarListNode { })]
+    }
+    fn supported_properties(&self, user: &ArcUser) -> dav::PropName<Calendar> {
+        dav::PropName(vec![
+            dav::PropertyRequest::DisplayName,
+            dav::PropertyRequest::ResourceType,
+        ])
+    }
+    fn properties(&self, user: &ArcUser, prop: &dav::PropName<Calendar>) -> dav::PropValue<Calendar> {
+        dav::PropValue(prop.0.iter().filter_map(|n| match n {
+            dav::PropertyRequest::DisplayName => Some(dav::Property::DisplayName(format!("{} home", user.username))),
+            dav::PropertyRequest::ResourceType => Some(dav::Property::ResourceType(vec![dav::ResourceType::Collection])),
+            _ => None,
+        }).collect())
+    }
+}
+
+struct CalendarListNode {}
+impl DavNode for CalendarListNode {
+    fn name(&self, _user: &ArcUser) -> String {
+        "calendar/".into()
+    }
+    fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>> {
+        vec![Box::new(CalendarNode { name: "personal".into() })]
+    }
+    fn supported_properties(&self, user: &ArcUser) -> dav::PropName<Calendar> {
+        dav::PropName(vec![
+            dav::PropertyRequest::DisplayName,
+            dav::PropertyRequest::ResourceType,
+        ])
+    }
+    fn properties(&self, user: &ArcUser, prop: &dav::PropName<Calendar>) -> dav::PropValue<Calendar> {
+        dav::PropValue(prop.0.iter().filter_map(|n| match n {
+            dav::PropertyRequest::DisplayName => Some(dav::Property::DisplayName(format!("{} calendars", user.username))),
+            dav::PropertyRequest::ResourceType => Some(dav::Property::ResourceType(vec![dav::ResourceType::Collection])),
+            _ => None,
+        }).collect())
+    }
+}
+
+struct CalendarNode {
+    name: String,
+}
+impl DavNode for CalendarNode {
+    fn name(&self, _user: &ArcUser) -> String {
+        format!("{}/", self.name)
+    }
+    fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>> {
+        vec![Box::new(EventNode { file: "something.ics".into() })]
+    }
+    fn supported_properties(&self, user: &ArcUser) -> dav::PropName<Calendar> {
+        dav::PropName(vec![
+            dav::PropertyRequest::DisplayName,
+            dav::PropertyRequest::ResourceType,
+        ])
+    }
+    fn properties(&self, user: &ArcUser, prop: &dav::PropName<Calendar>) -> dav::PropValue<Calendar> {
+        dav::PropValue(prop.0.iter().filter_map(|n| match n {
+            dav::PropertyRequest::DisplayName => Some(dav::Property::DisplayName(format!("{} calendar", self.name))),
+            dav::PropertyRequest::ResourceType => Some(dav::Property::ResourceType(vec![
+                dav::ResourceType::Collection,
+                dav::ResourceType::Extension(cal::ResourceType::Calendar),
+            ])),
+            _ => None,
+        }).collect())
+    }
+}
+
+struct EventNode {
+    file: String,
+}
+impl DavNode for EventNode {
+    fn name(&self, _user: &ArcUser) -> String {
+        self.file.to_string()
+    }
+    fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>> {
+        vec![]
+    }
+    fn supported_properties(&self, user: &ArcUser) -> dav::PropName<Calendar> {
+        dav::PropName(vec![
+            dav::PropertyRequest::DisplayName,
+            dav::PropertyRequest::ResourceType,
+        ])
+    }
+    fn properties(&self, user: &ArcUser, prop: &dav::PropName<Calendar>) -> dav::PropValue<Calendar> {
+        dav::PropValue(prop.0.iter().filter_map(|n| match n {
+            dav::PropertyRequest::DisplayName => Some(dav::Property::DisplayName(format!("{} event", self.file))),
+            dav::PropertyRequest::ResourceType => Some(dav::Property::ResourceType(vec![])),
+            _ => None,
+        }).collect())
+    }
+}
+
+
