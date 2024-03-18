@@ -206,7 +206,7 @@ impl QWrite for ResourceType {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
             Self::Calendar => {
-                let empty_tag = xml.create_dav_element("calendar");
+                let empty_tag = xml.create_cal_element("calendar");
                 xml.q.write_event_async(Event::Empty(empty_tag)).await
             },
         }

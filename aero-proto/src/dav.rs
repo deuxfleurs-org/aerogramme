@@ -196,20 +196,22 @@ async fn router(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Re
     let path = req.uri().path().to_string();
     let path_segments: Vec<_> = path.split("/").filter(|s| *s != "").collect();
     let method = req.method().as_str().to_uppercase();
+    let node = match Box::new(RootNode {}).fetch(&user, &path_segments) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(err=?e, "dav node fetch failed");
+            return Ok(Response::builder()
+                .status(404)
+                .body(text_body("Resource not found"))?)
+        }
+    };
 
-    match (method.as_str(), path_segments.as_slice()) {
-        ("OPTIONS", _) => return Ok(Response::builder()
+    match method.as_str() {
+        "OPTIONS" => return Ok(Response::builder()
             .status(200)
             .header("DAV", "1")
             .body(text_body(""))?),
-        ("PROPFIND", []) => propfind_root(user, req).await,
-        (_, [ username, ..]) if *username != user.username => return Ok(Response::builder()
-            .status(403)
-            .body(text_body("Accessing other user ressources is not allowed"))?),
-        ("PROPFIND", [ _ ]) => propfind_home(user, &req).await,
-        ("PROPFIND", [ _, "calendar" ]) => propfind_all_calendars(user, &req).await,
-        ("PROPFIND", [ _, "calendar", colname ]) => propfind_this_calendar(user, &req, colname).await,
-        ("PROPFIND", [ _, "calendar", colname, event ]) => propfind_event(user, req, colname, event).await,
+        "PROPFIND" => propfind(user, req, node).await,
         _ => return Ok(Response::builder()
             .status(501)
             .body(text_body("Not implemented"))?),
@@ -224,8 +226,7 @@ const SUPPORTED_PROPNAME: [dav::PropertyRequest<Calendar>; 2] = [
     dav::PropertyRequest::ResourceType,
 ];
 
-async fn propfind_root(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Response<BoxBody<Bytes, std::io::Error>>> { 
-    let node = RootNode {};
+async fn propfind(user: std::sync::Arc<User>, req: Request<Incoming>, node: Box<dyn DavNode>) -> Result<Response<BoxBody<Bytes, std::io::Error>>> { 
     let depth = depth(&req);
 
 
@@ -257,36 +258,6 @@ async fn propfind_root(user: std::sync::Arc<User>, req: Request<Incoming>) -> Re
 
     serialize(node.multistatus_val(&user, &propname, depth))
 }
-
-async fn propfind_home(user: std::sync::Arc<User>, req: &Request<impl hyper::body::Body>) -> Result<Response<BoxBody<Bytes, std::io::Error>>> {
-    tracing::info!("user home");
-    Ok(Response::new(text_body("Hello World!")))
-}
-
-async fn propfind_all_calendars(user: std::sync::Arc<User>, req: &Request<impl hyper::body::Body>) -> Result<Response<BoxBody<Bytes, std::io::Error>>> {
-    tracing::info!("calendar");
-    Ok(Response::new(text_body("Hello World!")))
-}
-
-async fn propfind_this_calendar(
-    user: std::sync::Arc<User>, 
-    req: &Request<Incoming>,
-    colname: &str
-) -> Result<Response<BoxBody<Bytes, std::io::Error>>> {
-    tracing::info!(name=colname, "selected calendar");
-    Ok(Response::new(text_body("Hello World!")))
-}
-
-async fn propfind_event(
-    user: std::sync::Arc<User>, 
-    req: Request<Incoming>,
-    colname: &str,
-    event: &str,
-) -> Result<Response<BoxBody<Bytes, std::io::Error>>> {
-    tracing::info!(name=colname, obj=event, "selected event");
-    Ok(Response::new(text_body("Hello World!")))
-}
-
 
 #[allow(dead_code)]
 async fn collections(_user: std::sync::Arc<User>, _req: Request<impl hyper::body::Body>) -> Result<Response<Full<Bytes>>> {
@@ -326,7 +297,7 @@ fn serialize<T: dxml::QWrite + Send + 'static>(elem: T) -> Result<Response<BoxBo
         let sink = PollSender::new(tx).sink_map_err(|_| Error::from(ErrorKind::BrokenPipe));
         let mut writer = SinkWriter::new(CopyToBytes::new(sink));
         let q = quick_xml::writer::Writer::new_with_indent(&mut writer, b' ', 4);
-        let ns_to_apply = vec![ ("xmlns:D".into(), "DAV:".into()) ];
+        let ns_to_apply = vec![ ("xmlns:D".into(), "DAV:".into()), ("xmlns:C".into(), "urn:ietf:params:xml:ns:caldav".into()) ];
         let mut qwriter = dxml::Writer { q, ns_to_apply };
         let decl = quick_xml::events::BytesDecl::from_start(quick_xml::events::BytesStart::from_content("xml encoding='utf-8' version='1.0'", 0));
         match qwriter.q.write_event_async(quick_xml::events::Event::Decl(decl)).await {
@@ -369,16 +340,22 @@ async fn deserialize<T: dxml::Node<T>>(req: Request<Incoming>) -> Result<T> {
 //---
 
 type ArcUser = std::sync::Arc<User>;
-trait DavNode {
+trait DavNode: Send {
+    // ------- specialized logic
+
     // recurence
     fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>>;
+    fn fetch(self: Box<Self>, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>>;
 
     // node properties
+    fn path(&self, user: &ArcUser) -> String;
     fn name(&self, user: &ArcUser) -> String;
     fn supported_properties(&self, user: &ArcUser) -> dav::PropName<Calendar>;
     fn properties(&self, user: &ArcUser, props: &dav::PropName<Calendar>) -> dav::PropValue<Calendar>;
 
-    // building DAV responses
+    // ----- common
+
+    /// building DAV responses
     fn multistatus_name(&self, user: &ArcUser, depth: dav::Depth) -> dav::Multistatus<Calendar, dav::PropName<Calendar>> {
         let mut names = vec![(".".into(), self.supported_properties(user))];
         if matches!(depth, dav::Depth::One | dav::Depth::Infinity) {
@@ -436,6 +413,23 @@ trait DavNode {
 
 struct RootNode {}
 impl DavNode for RootNode {
+    fn fetch(self: Box<Self>, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
+        if path.len() == 0 {
+            return Ok(self)
+        }
+
+        if path[0] == user.username {
+            let child = Box::new(HomeNode {});
+            return child.fetch(user, &path[1..])
+        }
+
+        Err(anyhow!("Not found"))
+    }
+
+    fn path(&self, user: &ArcUser) -> String {
+        todo!();
+    }
+
     fn name(&self, _user: &ArcUser) -> String {
         "/".into()
     }
@@ -459,6 +453,23 @@ impl DavNode for RootNode {
 
 struct HomeNode {}
 impl DavNode for HomeNode {
+    fn fetch(self: Box<Self>, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
+        if path.len() == 0 {
+            return Ok(self)
+        }
+
+        if path[0] == "calendar" {
+            let child = Box::new(CalendarListNode {});
+            return child.fetch(user, &path[1..])
+        }
+
+        Err(anyhow!("Not found"))
+    }
+
+    fn path(&self, user: &ArcUser) -> String {
+        todo!();
+    }
+
     fn name(&self, user: &ArcUser) -> String {
         format!("{}/", user.username)
     }
@@ -482,6 +493,24 @@ impl DavNode for HomeNode {
 
 struct CalendarListNode {}
 impl DavNode for CalendarListNode {
+    fn fetch(self: Box<Self>, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
+        if path.len() == 0 {
+            return Ok(self)
+        }
+
+        //@FIXME hardcoded logic
+        if path[0] == "personal" {
+            let child = Box::new(CalendarNode { name: "personal".to_string() });
+            return child.fetch(user, &path[1..])
+        }
+
+        Err(anyhow!("Not found"))
+    }
+
+    fn path(&self, user: &ArcUser) -> String {
+        todo!();
+    }
+
     fn name(&self, _user: &ArcUser) -> String {
         "calendar/".into()
     }
@@ -507,6 +536,24 @@ struct CalendarNode {
     name: String,
 }
 impl DavNode for CalendarNode {
+    fn fetch(self: Box<Self>, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
+        if path.len() == 0 {
+            return Ok(self)
+        }
+
+        //@FIXME hardcoded logic
+        if path[0] == "something.ics" {
+            let child = Box::new(EventNode { file: "something.ics".to_string() });
+            return child.fetch(user, &path[1..])
+        }
+
+        Err(anyhow!("Not found"))
+    }
+
+    fn path(&self, user: &ArcUser) -> String {
+        todo!();
+    }
+
     fn name(&self, _user: &ArcUser) -> String {
         format!("{}/", self.name)
     }
@@ -535,6 +582,18 @@ struct EventNode {
     file: String,
 }
 impl DavNode for EventNode {
+    fn fetch(self: Box<Self>, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
+        if path.len() == 0 {
+            return Ok(self)
+        }
+
+        Err(anyhow!("Not found"))
+    }
+
+    fn path(&self, user: &ArcUser) -> String {
+        todo!();
+    }
+
     fn name(&self, _user: &ArcUser) -> String {
         self.file.to_string()
     }

@@ -18,7 +18,7 @@ impl xml::QWrite for Disabled {
 
 /// The base WebDAV 
 ///
-/// Any extension is kooh is disabled through an object we can't build
+/// Any extension is disabled through an object we can't build
 /// due to a private inner element.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Core {}
