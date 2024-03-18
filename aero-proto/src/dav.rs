@@ -349,7 +349,6 @@ trait DavNode: Send {
 
     // node properties
     fn path(&self, user: &ArcUser) -> String;
-    fn name(&self, user: &ArcUser) -> String;
     fn supported_properties(&self, user: &ArcUser) -> dav::PropName<Calendar>;
     fn properties(&self, user: &ArcUser, props: &dav::PropName<Calendar>) -> dav::PropValue<Calendar>;
 
@@ -357,9 +356,9 @@ trait DavNode: Send {
 
     /// building DAV responses
     fn multistatus_name(&self, user: &ArcUser, depth: dav::Depth) -> dav::Multistatus<Calendar, dav::PropName<Calendar>> {
-        let mut names = vec![(".".into(), self.supported_properties(user))];
+        let mut names = vec![(self.path(user), self.supported_properties(user))];
         if matches!(depth, dav::Depth::One | dav::Depth::Infinity) {
-            names.extend(self.children(user).iter().map(|c| (format!("./{}", c.name(user)), c.supported_properties(user))));
+            names.extend(self.children(user).iter().map(|c| (c.path(user), c.supported_properties(user))));
         }
 
         dav::Multistatus::<Calendar, dav::PropName<Calendar>> {
@@ -382,12 +381,12 @@ trait DavNode: Send {
     }
 
     fn multistatus_val(&self, user: &ArcUser, props: &dav::PropName<Calendar>, depth: dav::Depth) -> dav::Multistatus<Calendar, dav::PropValue<Calendar>> {
-        let mut values = vec![(".".into(), self.properties(user, props))];
+        let mut values = vec![(self.path(user), self.properties(user, props))];
         if matches!(depth, dav::Depth::One | dav::Depth::Infinity) {
             values.extend(self
                 .children(user)
                 .iter()
-                .map(|c| (format!("./{}", c.name(user)), c.properties(user, props)))
+                .map(|c| (c.path(user), c.properties(user, props)))
             );
         }
 
@@ -427,12 +426,9 @@ impl DavNode for RootNode {
     }
 
     fn path(&self, user: &ArcUser) -> String {
-        todo!();
-    }
-
-    fn name(&self, _user: &ArcUser) -> String {
         "/".into()
     }
+
     fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>> {
         vec![Box::new(HomeNode { })]
     }
@@ -467,12 +463,9 @@ impl DavNode for HomeNode {
     }
 
     fn path(&self, user: &ArcUser) -> String {
-        todo!();
+        format!("/{}/", user.username)
     }
 
-    fn name(&self, user: &ArcUser) -> String {
-        format!("{}/", user.username)
-    }
     fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>> {
         vec![Box::new(CalendarListNode { })]
     }
@@ -508,12 +501,9 @@ impl DavNode for CalendarListNode {
     }
 
     fn path(&self, user: &ArcUser) -> String {
-        todo!();
+        format!("/{}/calendar/", user.username)
     }
 
-    fn name(&self, _user: &ArcUser) -> String {
-        "calendar/".into()
-    }
     fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>> {
         vec![Box::new(CalendarNode { name: "personal".into() })]
     }
@@ -543,7 +533,10 @@ impl DavNode for CalendarNode {
 
         //@FIXME hardcoded logic
         if path[0] == "something.ics" {
-            let child = Box::new(EventNode { file: "something.ics".to_string() });
+            let child = Box::new(EventNode { 
+                calendar: self.name.to_string(),
+                event_file: "something.ics".to_string(),
+            });
             return child.fetch(user, &path[1..])
         }
 
@@ -551,14 +544,11 @@ impl DavNode for CalendarNode {
     }
 
     fn path(&self, user: &ArcUser) -> String {
-        todo!();
+        format!("/{}/calendar/{}/", user.username, self.name)
     }
 
-    fn name(&self, _user: &ArcUser) -> String {
-        format!("{}/", self.name)
-    }
     fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>> {
-        vec![Box::new(EventNode { file: "something.ics".into() })]
+        vec![Box::new(EventNode { calendar: self.name.to_string(), event_file: "something.ics".into() })]
     }
     fn supported_properties(&self, user: &ArcUser) -> dav::PropName<Calendar> {
         dav::PropName(vec![
@@ -579,7 +569,8 @@ impl DavNode for CalendarNode {
 }
 
 struct EventNode {
-    file: String,
+    calendar: String,
+    event_file: String,
 }
 impl DavNode for EventNode {
     fn fetch(self: Box<Self>, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
@@ -591,12 +582,9 @@ impl DavNode for EventNode {
     }
 
     fn path(&self, user: &ArcUser) -> String {
-        todo!();
+        format!("/{}/calendar/{}/{}", user.username, self.calendar, self.event_file)
     }
 
-    fn name(&self, _user: &ArcUser) -> String {
-        self.file.to_string()
-    }
     fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>> {
         vec![]
     }
@@ -608,7 +596,7 @@ impl DavNode for EventNode {
     }
     fn properties(&self, user: &ArcUser, prop: &dav::PropName<Calendar>) -> dav::PropValue<Calendar> {
         dav::PropValue(prop.0.iter().filter_map(|n| match n {
-            dav::PropertyRequest::DisplayName => Some(dav::Property::DisplayName(format!("{} event", self.file))),
+            dav::PropertyRequest::DisplayName => Some(dav::Property::DisplayName(format!("{} event", self.event_file))),
             dav::PropertyRequest::ResourceType => Some(dav::Property::ResourceType(vec![])),
             _ => None,
         }).collect())
