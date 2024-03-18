@@ -137,8 +137,6 @@ async fn auth(
     login: ArcLoginProvider,
     req: Request<Incoming>, 
 ) -> Result<Response<BoxBody<Bytes, std::io::Error>>> {
-
-    tracing::info!("headers: {:?}", req.headers());
     let auth_val = match req.headers().get(hyper::header::AUTHORIZATION) {
         Some(hv) => hv.to_str()?,
         None => {
@@ -210,7 +208,14 @@ async fn router(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Re
         "OPTIONS" => return Ok(Response::builder()
             .status(200)
             .header("DAV", "1")
+            .header("ALLOW", "HEAD,GET,PUT,OPTIONS,DELETE,PROPFIND,PROPPATCH,MKCOL,COPY,MOVE,LOCK,UNLOCK")
             .body(text_body(""))?),
+        "HEAD" | "GET" => {
+            tracing::warn!("HEAD+GET not correctly implemented");
+            return Ok(Response::builder()
+                .status(200)
+                .body(text_body(""))?)
+        },
         "PROPFIND" => propfind(user, req, node).await,
         _ => return Ok(Response::builder()
             .status(501)
@@ -219,21 +224,42 @@ async fn router(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Re
 }
 
 /// <D:propfind xmlns:D='DAV:' xmlns:A='http://apple.com/ns/ical/'>
-/// <D:prop><D:getcontenttype/><D:resourcetype/><D:displayname/><A:calendar-color/>
-/// </D:prop></D:propfind>
-const SUPPORTED_PROPNAME: [dav::PropertyRequest<Calendar>; 2] = [
+///   <D:prop>
+///     <D:getcontenttype/>
+///     <D:resourcetype/>
+///     <D:displayname/>
+///     <A:calendar-color/>
+///   </D:prop>
+/// </D:propfind>
+
+
+/// <D:propfind xmlns:D='DAV:' xmlns:A='http://apple.com/ns/ical/' xmlns:C='urn:ietf:params:xml:ns:caldav'>
+///   <D:prop>
+///     <D:resourcetype/>
+///     <D:owner/>
+///     <D:displayname/>
+///     <D:current-user-principal/>
+///     <D:current-user-privilege-set/>
+///     <A:calendar-color/>
+///     <C:calendar-home-set/>
+///   </D:prop>
+/// </D:propfind>
+
+const ALLPROP: [dav::PropertyRequest<Calendar>; 10] = [
+    dav::PropertyRequest::CreationDate,
     dav::PropertyRequest::DisplayName,
+    dav::PropertyRequest::GetContentLanguage,
+    dav::PropertyRequest::GetContentLength,
+    dav::PropertyRequest::GetContentType,
+    dav::PropertyRequest::GetEtag,
+    dav::PropertyRequest::GetLastModified,
+    dav::PropertyRequest::LockDiscovery,
     dav::PropertyRequest::ResourceType,
+    dav::PropertyRequest::SupportedLock,
 ];
 
 async fn propfind(user: std::sync::Arc<User>, req: Request<Incoming>, node: Box<dyn DavNode>) -> Result<Response<BoxBody<Bytes, std::io::Error>>> { 
     let depth = depth(&req);
-
-
-    /*let supported_propname = vec![
-        dav::PropertyRequest::DisplayName,
-        dav::PropertyRequest::ResourceType,
-    ];*/
 
     // A client may choose not to submit a request body.  An empty PROPFIND
     // request body MUST be treated as if it were an 'allprop' request.
@@ -248,9 +274,9 @@ async fn propfind(user: std::sync::Arc<User>, req: Request<Incoming>, node: Box<
 
     let propname = match propfind {
         dav::PropFind::PropName => unreachable!(),
-        dav::PropFind::AllProp(None) => dav::PropName(SUPPORTED_PROPNAME.to_vec()),
+        dav::PropFind::AllProp(None) => dav::PropName(ALLPROP.to_vec()),
         dav::PropFind::AllProp(Some(dav::Include(mut include))) => {
-            include.extend_from_slice(&SUPPORTED_PROPNAME);
+            include.extend_from_slice(&ALLPROP);
             dav::PropName(include)
         },
         dav::PropFind::Prop(inner) => inner,
@@ -258,12 +284,6 @@ async fn propfind(user: std::sync::Arc<User>, req: Request<Incoming>, node: Box<
 
     serialize(node.multistatus_val(&user, &propname, depth))
 }
-
-#[allow(dead_code)]
-async fn collections(_user: std::sync::Arc<User>, _req: Request<impl hyper::body::Body>) -> Result<Response<Full<Bytes>>> {
-    unimplemented!();
-}
-
 
 // ---- HTTP DAV Binding
 
@@ -436,12 +456,14 @@ impl DavNode for RootNode {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
+            dav::PropertyRequest::GetContentType,
         ])
     }
     fn properties(&self, user: &ArcUser, prop: &dav::PropName<Calendar>) -> dav::PropValue<Calendar> {
         dav::PropValue(prop.0.iter().filter_map(|n| match n {
             dav::PropertyRequest::DisplayName => Some(dav::Property::DisplayName("DAV Root".to_string())),
             dav::PropertyRequest::ResourceType => Some(dav::Property::ResourceType(vec![dav::ResourceType::Collection])),
+            dav::PropertyRequest::GetContentType => Some(dav::Property::GetContentType("httpd/unix-directory".into())),
             _ => None,
         }).collect())
     }
@@ -473,12 +495,14 @@ impl DavNode for HomeNode {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
+            dav::PropertyRequest::GetContentType,
         ])
     }
     fn properties(&self, user: &ArcUser, prop: &dav::PropName<Calendar>) -> dav::PropValue<Calendar> {
         dav::PropValue(prop.0.iter().filter_map(|n| match n {
             dav::PropertyRequest::DisplayName => Some(dav::Property::DisplayName(format!("{} home", user.username))),
             dav::PropertyRequest::ResourceType => Some(dav::Property::ResourceType(vec![dav::ResourceType::Collection])),
+            dav::PropertyRequest::GetContentType => Some(dav::Property::GetContentType("httpd/unix-directory".into())),
             _ => None,
         }).collect())
     }
@@ -511,12 +535,14 @@ impl DavNode for CalendarListNode {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
+            dav::PropertyRequest::GetContentType,
         ])
     }
     fn properties(&self, user: &ArcUser, prop: &dav::PropName<Calendar>) -> dav::PropValue<Calendar> {
         dav::PropValue(prop.0.iter().filter_map(|n| match n {
             dav::PropertyRequest::DisplayName => Some(dav::Property::DisplayName(format!("{} calendars", user.username))),
             dav::PropertyRequest::ResourceType => Some(dav::Property::ResourceType(vec![dav::ResourceType::Collection])),
+            dav::PropertyRequest::GetContentType => Some(dav::Property::GetContentType("httpd/unix-directory".into())),
             _ => None,
         }).collect())
     }
@@ -554,6 +580,7 @@ impl DavNode for CalendarNode {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
+            dav::PropertyRequest::GetContentType,
         ])
     }
     fn properties(&self, user: &ArcUser, prop: &dav::PropName<Calendar>) -> dav::PropValue<Calendar> {
@@ -563,6 +590,7 @@ impl DavNode for CalendarNode {
                 dav::ResourceType::Collection,
                 dav::ResourceType::Extension(cal::ResourceType::Calendar),
             ])),
+            dav::PropertyRequest::GetContentType => Some(dav::Property::GetContentType("httpd/unix-directory".into())),
             _ => None,
         }).collect())
     }
@@ -598,6 +626,7 @@ impl DavNode for EventNode {
         dav::PropValue(prop.0.iter().filter_map(|n| match n {
             dav::PropertyRequest::DisplayName => Some(dav::Property::DisplayName(format!("{} event", self.event_file))),
             dav::PropertyRequest::ResourceType => Some(dav::Property::ResourceType(vec![])),
+            dav::PropertyRequest::GetContentType => Some(dav::Property::GetContentType("text/calendar".into())),
             _ => None,
         }).collect())
     }
