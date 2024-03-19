@@ -208,7 +208,7 @@ async fn router(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Re
         "OPTIONS" => return Ok(Response::builder()
             .status(200)
             .header("DAV", "1")
-            .header("ALLOW", "HEAD,GET,PUT,OPTIONS,DELETE,PROPFIND,PROPPATCH,MKCOL,COPY,MOVE,LOCK,UNLOCK")
+            .header("Allow", "HEAD,GET,PUT,OPTIONS,DELETE,PROPFIND,PROPPATCH,MKCOL,COPY,MOVE,LOCK,UNLOCK,MKCALENDAR,REPORT")
             .body(text_body(""))?),
         "HEAD" | "GET" => {
             tracing::warn!("HEAD+GET not correctly implemented");
@@ -223,27 +223,39 @@ async fn router(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Re
     }
 }
 
-/// <D:propfind xmlns:D='DAV:' xmlns:A='http://apple.com/ns/ical/'>
-///   <D:prop>
-///     <D:getcontenttype/>
-///     <D:resourcetype/>
-///     <D:displayname/>
-///     <A:calendar-color/>
-///   </D:prop>
-/// </D:propfind>
+// <D:propfind xmlns:D='DAV:' xmlns:A='http://apple.com/ns/ical/'>
+//   <D:prop>
+//     <D:getcontenttype/>
+//     <D:resourcetype/>
+//     <D:displayname/>
+//     <A:calendar-color/>
+//   </D:prop>
+// </D:propfind>
 
 
-/// <D:propfind xmlns:D='DAV:' xmlns:A='http://apple.com/ns/ical/' xmlns:C='urn:ietf:params:xml:ns:caldav'>
-///   <D:prop>
-///     <D:resourcetype/>
-///     <D:owner/>
-///     <D:displayname/>
-///     <D:current-user-principal/>
-///     <D:current-user-privilege-set/>
-///     <A:calendar-color/>
-///     <C:calendar-home-set/>
-///   </D:prop>
-/// </D:propfind>
+// <D:propfind xmlns:D='DAV:' xmlns:A='http://apple.com/ns/ical/' xmlns:C='urn:ietf:params:xml:ns:caldav'>
+//   <D:prop>
+//     <D:resourcetype/>
+//     <D:owner/>
+//     <D:displayname/>
+//     <D:current-user-principal/>
+//     <D:current-user-privilege-set/>
+//     <A:calendar-color/>
+//     <C:calendar-home-set/>
+//   </D:prop>
+// </D:propfind>
+
+// <D:propfind xmlns:D='DAV:' xmlns:C='urn:ietf:params:xml:ns:caldav' xmlns:CS='http://calendarserver.org/ns/'>
+//   <D:prop>
+//     <D:resourcetype/>
+//     <D:owner/>
+//     <D:current-user-principal/>
+//     <D:current-user-privilege-set/>
+//     <D:supported-report-set/>
+//     <C:supported-calendar-component-set/>
+//     <CS:getctag/>
+//   </D:prop>
+// </D:propfind>
 
 const ALLPROP: [dav::PropertyRequest<All>; 10] = [
     dav::PropertyRequest::CreationDate,
@@ -609,6 +621,7 @@ impl DavNode for CalendarNode {
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
             dav::PropertyRequest::GetContentType,
+            dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::SupportedCalendarComponentSet)),
         ])
     }
     fn properties(&self, _user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>> {
@@ -621,6 +634,10 @@ impl DavNode for CalendarNode {
             //dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
             //@FIXME seems wrong but seems to be what Thunderbird expects...
             dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("text/calendar".into())),
+            dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::SupportedCalendarComponentSet))
+                => dav::AnyProperty::Value(dav::Property::Extension(all::Property::Cal(cal::Property::SupportedCalendarComponentSet(vec![
+                    cal::CompSupport(cal::Component::VEvent),
+                ])))),
             v => dav::AnyProperty::Request(v),
         }).collect()
     }
@@ -650,6 +667,7 @@ impl DavNode for EventNode {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
+            dav::PropertyRequest::GetEtag,
         ])
     }
     fn properties(&self, _user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>> {
@@ -657,6 +675,7 @@ impl DavNode for EventNode {
             dav::PropertyRequest::DisplayName => dav::AnyProperty::Value(dav::Property::DisplayName(format!("{} event", self.event_file))),
             dav::PropertyRequest::ResourceType => dav::AnyProperty::Value(dav::Property::ResourceType(vec![])),
             dav::PropertyRequest::GetContentType =>  dav::AnyProperty::Value(dav::Property::GetContentType("text/calendar".into())),
+            dav::PropertyRequest::GetEtag => dav::AnyProperty::Value(dav::Property::GetEtag("\"abcdefg\"".into())),
             v => dav::AnyProperty::Request(v),
         }).collect()
     }
