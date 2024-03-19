@@ -264,7 +264,7 @@ impl<T: IRead> Reader<T> {
             _ => return Err(ParsingError::Recoverable),
         };
 
-        //println!("open tag {:?}", evt);
+        //println!("open start tag {:?}", evt);
         self.parents.push(evt.clone());
         Ok(evt)
     }

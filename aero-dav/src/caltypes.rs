@@ -2,7 +2,6 @@
 
 use chrono::{DateTime,Utc};
 use super::types as dav;
-use super::xml;
 
 pub const ICAL_DATETIME_FMT: &str = "%Y%m%dT%H%M%SZ";
 

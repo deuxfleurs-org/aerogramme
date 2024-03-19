@@ -16,8 +16,12 @@ pub mod caltypes;
 pub mod calencoder;
 pub mod caldecoder;
 
-// wip
-mod acltypes;
+// acl (wip)
+pub mod acltypes;
+pub mod aclencoder;
+pub mod acldecoder;
+
+// versioning (wip)
 mod versioningtypes;
 
 // final type
