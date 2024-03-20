@@ -51,6 +51,12 @@ pub struct MkCalendar<E: dav::Extension>(pub dav::Set<E>);
 pub struct MkCalendarResponse<E: dav::Extension>(pub Vec<dav::PropStat<E>>);
 
 // --- (REPORT PART) ---
+#[derive(Debug, PartialEq, Clone)]
+pub enum Report<E: dav::Extension> {
+    Query(CalendarQuery<E>),
+    Multiget(CalendarMultiget<E>),
+    FreeBusy(FreeBusyQuery),
+}
 
 /// Name:  calendar-query
 ///
@@ -827,7 +833,7 @@ pub struct CalendarDataPayload {
 /// when nested in the DAV:prop XML element in a calendaring
 /// REPORT request to specify which parts of calendar object
 /// resources should be returned in the response;
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub struct CalendarDataRequest {
     pub mime: Option<CalendarDataSupport>,
     pub comp: Option<Comp>,

@@ -25,6 +25,22 @@ impl<E: dav::Extension> QRead<MkCalendarResponse<E>> for MkCalendarResponse<E> {
     }
 }
 
+impl<E: dav::Extension> QRead<Report<E>> for Report<E> {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        match CalendarQuery::<E>::qread(xml).await {
+            Err(ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(Self::Query)
+        }
+
+        match CalendarMultiget::<E>::qread(xml).await {
+            Err(ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(Self::Multiget),
+        }
+
+        FreeBusyQuery::qread(xml).await.map(Self::FreeBusy)
+    }
+}
+
 impl<E: dav::Extension> QRead<CalendarQuery<E>> for CalendarQuery<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CAL_URN, "calendar-query").await?;

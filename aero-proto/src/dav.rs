@@ -190,6 +190,30 @@ async fn auth(
     router(user, req).await 
 }
 
+/// Path is a voluntarily feature limited
+/// compared to the expressiveness of a UNIX path
+/// For example getting parent with ../ is not supported, scheme is not supported, etc.
+/// More complex support could be added later if needed by clients
+enum Path<'a> {
+    Abs(Vec<&'a str>),
+    Rel(Vec<&'a str>),
+}
+impl<'a> Path<'a> {
+    fn new(path: &'a str) -> Result<Self> {
+        // This check is naive, it does not aim at detecting all fully qualified
+        // URL or protect from any attack, its only goal is to help debugging.
+        if path.starts_with("http://") || path.starts_with("https://") {
+            anyhow::bail!("Full URL are not supported")
+        }
+
+        let path_segments: Vec<_> = path.split("/").filter(|s| *s != "" && *s != ".").collect();
+        if path.starts_with("/") {
+            return Ok(Path::Abs(path_segments))
+        }
+        Ok(Path::Rel(path_segments))
+    }
+}
+
 async fn router(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Response<BoxBody<Bytes, std::io::Error>>> {
     let path = req.uri().path().to_string();
     let path_segments: Vec<_> = path.split("/").filter(|s| *s != "").collect();
@@ -217,9 +241,10 @@ async fn router(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Re
                 .body(text_body(""))?)
         },
         "PROPFIND" => propfind(user, req, node).await,
+        "REPORT" => report(user, req, node).await,
         _ => return Ok(Response::builder()
             .status(501)
-            .body(text_body("Not implemented"))?),
+            .body(text_body("HTTP Method not implemented"))?),
     }
 }
 
@@ -257,6 +282,14 @@ async fn router(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Re
 //   </D:prop>
 // </D:propfind>
 
+// <C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+//   <D:prop>
+//     <D:getetag/>
+//     <C:calendar-data/>
+//    </D:prop>
+//    <D:href>/alice/calendar/personal/something.ics</D:href>
+//  </C:calendar-multiget>
+
 const ALLPROP: [dav::PropertyRequest<All>; 10] = [
     dav::PropertyRequest::CreationDate,
     dav::PropertyRequest::DisplayName,
@@ -270,8 +303,16 @@ const ALLPROP: [dav::PropertyRequest<All>; 10] = [
     dav::PropertyRequest::SupportedLock,
 ];
 
-async fn propfind(user: std::sync::Arc<User>, req: Request<Incoming>, node: Box<dyn DavNode>) -> Result<Response<BoxBody<Bytes, std::io::Error>>> { 
+// ---------- Building objects
+
+async fn propfind(user: std::sync::Arc<User>, req: Request<Incoming>, base_node: Box<dyn DavNode>) -> Result<Response<BoxBody<Bytes, std::io::Error>>> { 
     let depth = depth(&req);
+    if matches!(depth, dav::Depth::Infinity) {
+        return Ok(Response::builder()
+            .status(501)
+            .body(text_body("Depth: Infinity not implemented"))?)    
+    }
+
     let status = hyper::StatusCode::from_u16(207)?;
 
     // A client may choose not to submit a request body.  An empty PROPFIND
@@ -281,21 +322,78 @@ async fn propfind(user: std::sync::Arc<User>, req: Request<Incoming>, node: Box<
     let propfind = deserialize::<dav::PropFind<All>>(req).await.unwrap_or_else(|_| dav::PropFind::<All>::AllProp(None));
     tracing::debug!(recv=?propfind, "inferred propfind request");
 
-    if matches!(propfind, dav::PropFind::PropName) {
-        return serialize(status, node.multistatus_name(&user, depth));
+    // Collect nodes as PROPFIND is not limited at the targeted node
+    let mut nodes = vec![];
+    if matches!(depth, dav::Depth::One | dav::Depth::Infinity) {
+        nodes.extend(base_node.children(&user));
     }
+    nodes.push(base_node);
 
+    // Expand properties request
     let propname = match propfind {
-        dav::PropFind::PropName => unreachable!(),
-        dav::PropFind::AllProp(None) => dav::PropName(ALLPROP.to_vec()),
+        dav::PropFind::PropName => None,
+        dav::PropFind::AllProp(None) => Some(dav::PropName(ALLPROP.to_vec())),
         dav::PropFind::AllProp(Some(dav::Include(mut include))) => {
             include.extend_from_slice(&ALLPROP);
-            dav::PropName(include)
+            Some(dav::PropName(include))
         },
-        dav::PropFind::Prop(inner) => inner,
+        dav::PropFind::Prop(inner) => Some(inner),
     };
 
-    serialize(status, node.multistatus_val(&user, propname, depth))
+    // Not Found is currently impossible considering the way we designed this function
+    let not_found = vec![];
+    serialize(status, multistatus(&user, nodes, not_found, propname))
+}
+
+
+async fn report(user: std::sync::Arc<User>, req: Request<Incoming>, node: Box<dyn DavNode>) -> Result<Response<BoxBody<Bytes, std::io::Error>>> { 
+    let status = hyper::StatusCode::from_u16(207)?;
+
+    let report = deserialize::<cal::Report<All>>(req).await?;
+
+    // Multiget is really like a propfind where Depth: 0|1|Infinity is replaced by an arbitrary
+    // list of URLs
+    let multiget = match report {
+        cal::Report::Multiget(m) => m,
+        _ => return Ok(Response::builder()
+            .status(501)
+            .body(text_body("Not implemented"))?),
+    };
+
+    // Getting the list of nodes
+    /*let nodes = multiget.href.iter().map(|h| match Path::new(h.0.as_str()) {
+
+    });*/
+
+    todo!();
+    //serialize(status, node.multistatus_val(&user, multiget
+}
+
+fn multistatus(user: &ArcUser, nodes: Vec<Box<dyn DavNode>>, not_found: Vec<dav::Href>, props: Option<dav::PropName<All>>) -> dav::Multistatus<All> {
+    // Collect properties on existing objects
+    let mut responses: Vec<dav::Response<All>> = match props {
+        Some(props) => nodes.into_iter().map(|n| n.response_props(user, props.clone())).collect(),
+        None => nodes.into_iter().map(|n| n.response_propname(user)).collect(),
+    };
+
+    // Register not found objects only if relevant
+    if !not_found.is_empty() {
+        responses.push(dav::Response {
+            status_or_propstat: dav::StatusOrPropstat::Status(
+                not_found,
+                dav::Status(hyper::StatusCode::NOT_FOUND),
+            ),
+            error: None,
+            location: None,
+            responsedescription: None,
+        });
+    }
+
+    // Build response
+    dav::Multistatus::<All> {
+        responses,
+        responsedescription: None,
+    }
 }
 
 // ---- HTTP DAV Binding
@@ -314,7 +412,8 @@ fn depth(req: &Request<impl hyper::body::Body>) -> dav::Depth {
     match req.headers().get("Depth").map(hyper::header::HeaderValue::to_str) {
         Some(Ok("0")) => dav::Depth::Zero,
         Some(Ok("1")) => dav::Depth::One,
-        _ => dav::Depth::Infinity,
+        Some(Ok("Infinity")) => dav::Depth::Infinity,
+        _ => dav::Depth::Zero,
     }
 }
 
@@ -386,75 +485,58 @@ trait DavNode: Send {
     fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All>;
     fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>>;
 
-    // ----- common
-
-    /// building DAV responses
-    fn multistatus_name(&self, user: &ArcUser, depth: dav::Depth) -> dav::Multistatus<All> {
-        let mut names = vec![(self.path(user), self.supported_properties(user))];
-        if matches!(depth, dav::Depth::One | dav::Depth::Infinity) {
-            names.extend(self.children(user).iter().map(|c| (c.path(user), c.supported_properties(user))));
-        }
-
-        dav::Multistatus::<All> {
-            responses: names.into_iter().map(|(url, names)| dav::Response {
-                status_or_propstat: dav::StatusOrPropstat::PropStat(
-                    dav::Href(url),
-                    vec![dav::PropStat {
-                        prop: dav::AnyProp(names.0.into_iter().map(dav::AnyProperty::Request).collect()),
-                        status: dav::Status(hyper::StatusCode::OK),
+    // --- shared
+    fn response_propname(&self, user: &ArcUser) -> dav::Response<All> {
+        dav::Response {
+            status_or_propstat: dav::StatusOrPropstat::PropStat(
+                dav::Href(self.path(user)), 
+                vec![
+                    dav::PropStat {
+                        status: dav::Status(hyper::StatusCode::OK), 
+                        prop: dav::AnyProp(self.supported_properties(user).0.into_iter().map(dav::AnyProperty::Request).collect()),
                         error: None,
                         responsedescription: None,
-                    }],
-                ),
-                error: None,
-                location: None,
-                responsedescription: None,
-            }).collect(),
-            responsedescription: None,
+                    }
+                ],
+            ),
+            error: None,
+            location: None,
+            responsedescription: None
         }
     }
 
-    fn multistatus_val(&self, user: &ArcUser, props: dav::PropName<All>, depth: dav::Depth) -> dav::Multistatus<All> {
-        // Collect properties
-        let mut values = vec![(self.path(user), self.properties(user, props.clone()))];
-        if matches!(depth, dav::Depth::One | dav::Depth::Infinity) {
-            values.extend(self
-                .children(user)
-                .iter()
-                .map(|c| (c.path(user), c.properties(user, props.clone())))
-            );
+    fn response_props(&self, user: &ArcUser, props: dav::PropName<All>) -> dav::Response<All> {
+        let mut prop_desc = vec![];
+        let (found, not_found): (Vec<_>, Vec<_>) = self.properties(user, props).into_iter().partition(|v| matches!(v, dav::AnyProperty::Value(_)));
+
+        // If at least one property has been found on this object, adding a HTTP 200 propstat to
+        // the response
+        if !found.is_empty() {
+            prop_desc.push(dav::PropStat { 
+                status: dav::Status(hyper::StatusCode::OK), 
+                prop: dav::AnyProp(found),
+                error: None,
+                responsedescription: None,
+            });
         }
 
-        // Separate FOUND from NOT FOUND
-        let values: Vec<_> = values.into_iter().map(|(path, anyprop)| {
-            let mut prop_desc = vec![];
-            let (found, not_found): (Vec<_>, Vec<_>) = anyprop.into_iter().partition(|v| matches!(v, dav::AnyProperty::Value(_)));
-            if !found.is_empty() {
-                prop_desc.push((hyper::StatusCode::OK, dav::AnyProp(found)))
-            }
-            if !not_found.is_empty() {
-                prop_desc.push((hyper::StatusCode::NOT_FOUND, dav::AnyProp(not_found)))
-            }
-            (path, prop_desc)
-        }).collect();
-
-        // Build response
-        dav::Multistatus::<All> {
-            responses: values.into_iter().map(|(url, propdesc)| dav::Response {
-                status_or_propstat: dav::StatusOrPropstat::PropStat(
-                    dav::Href(url),
-                    propdesc.into_iter().map(|(status, prop)| dav::PropStat {
-                        prop,
-                        status: dav::Status(status),
-                        error: None,
-                        responsedescription: None,
-                    }).collect(),
-                ),
+        // If at least one property can't be found on this object, adding a HTTP 404 propstat to
+        // the response
+        if !not_found.is_empty() {
+            prop_desc.push(dav::PropStat { 
+                status: dav::Status(hyper::StatusCode::NOT_FOUND), 
+                prop: dav::AnyProp(not_found),
                 error: None,
-                location: None,
                 responsedescription: None,
-            }).collect(),
-            responsedescription: None,
+            })
+        }
+
+        // Build the finale response
+        dav::Response {
+            status_or_propstat: dav::StatusOrPropstat::PropStat(dav::Href(self.path(user)), prop_desc),
+            error: None,
+            location: None,
+            responsedescription: None
         }
     }
 }
@@ -643,6 +725,37 @@ impl DavNode for CalendarNode {
     }
 }
 
+const FAKE_ICS: &str = r#"BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example Corp.//CalDAV Client//EN
+BEGIN:VTIMEZONE
+LAST-MODIFIED:20040110T032845Z
+TZID:US/Eastern
+BEGIN:DAYLIGHT
+DTSTART:20000404T020000
+RRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=4
+TZNAME:EDT
+TZOFFSETFROM:-0500
+TZOFFSETTO:-0400
+END:DAYLIGHT
+BEGIN:STANDARD
+DTSTART:20001026T020000
+RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=10
+TZNAME:EST
+TZOFFSETFROM:-0400
+TZOFFSETTO:-0500
+END:STANDARD
+END:VTIMEZONE
+BEGIN:VEVENT
+DTSTAMP:20240406T001102Z
+DTSTART;TZID=US/Eastern:20240406T100000
+DURATION:PT1H
+SUMMARY:Event #1
+Description:Go Steelers!
+UID:74855313FA803DA593CD579A@example.com
+END:VEVENT
+END:VCALENDAR"#;
+
 struct EventNode {
     calendar: String,
     event_file: String,
@@ -668,6 +781,7 @@ impl DavNode for EventNode {
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
             dav::PropertyRequest::GetEtag,
+            dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::CalendarData(cal::CalendarDataRequest::default()))),
         ])
     }
     fn properties(&self, _user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>> {
@@ -676,6 +790,8 @@ impl DavNode for EventNode {
             dav::PropertyRequest::ResourceType => dav::AnyProperty::Value(dav::Property::ResourceType(vec![])),
             dav::PropertyRequest::GetContentType =>  dav::AnyProperty::Value(dav::Property::GetContentType("text/calendar".into())),
             dav::PropertyRequest::GetEtag => dav::AnyProperty::Value(dav::Property::GetEtag("\"abcdefg\"".into())),
+            dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::CalendarData(req))) =>
+                dav::AnyProperty::Value(dav::Property::Extension(all::Property::Cal(cal::Property::CalendarData(cal::CalendarDataPayload { mime: None, payload: FAKE_ICS.into() })))),
             v => dav::AnyProperty::Request(v),
         }).collect()
     }

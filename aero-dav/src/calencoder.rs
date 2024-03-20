@@ -34,6 +34,15 @@ impl<E: Extension> QWrite for MkCalendarResponse<E> {
 }
 
 // ----------------------- REPORT METHOD -------------------------------------
+impl<E: Extension> QWrite for Report<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        match self {
+            Self::Query(v) => v.qwrite(xml).await,
+            Self::Multiget(v) => v.qwrite(xml).await,
+            Self::FreeBusy(v) => v.qwrite(xml).await,
+        }
+    }
+}
 
 impl<E: Extension> QWrite for CalendarQuery<E> {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
@@ -335,6 +344,12 @@ impl QWrite for CalendarDataRequest {
             start.push_attribute(("content-type", mime.content_type.as_str()));
             start.push_attribute(("version", mime.version.as_str()));
         }
+
+        // Empty tag
+        if self.comp.is_none() && self.recurrence.is_none() && self.limit_freebusy_set.is_none() {
+            return xml.q.write_event_async(Event::Empty(start.clone())).await
+        }
+
         let end = start.to_end();
         xml.q.write_event_async(Event::Start(start.clone())).await?;
         if let Some(comp) = &self.comp {
