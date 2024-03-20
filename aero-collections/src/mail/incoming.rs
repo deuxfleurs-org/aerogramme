@@ -15,7 +15,7 @@ use aero_bayou::timestamp::now_msec;
 
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::ImapUidvalidity;
-use crate::mail::unique_ident::*;
+use crate::unique_ident::*;
 use crate::user::User;
 use crate::mail::IMF;
 

@@ -3,7 +3,6 @@ pub mod mailbox;
 pub mod query;
 pub mod snapshot;
 pub mod uidindex;
-pub mod unique_ident;
 pub mod namespace;
 
 // Internet Message Format

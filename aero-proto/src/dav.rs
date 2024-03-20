@@ -27,6 +27,8 @@ use aero_dav::acltypes as acl;
 use aero_dav::realization::{All, self as all};
 use aero_dav::xml as dxml;
 
+type ArcUser = std::sync::Arc<User>;
+
 pub struct Server {
     bind_addr: SocketAddr,
     login_provider: ArcLoginProvider,
@@ -359,7 +361,15 @@ async fn propfind(user: std::sync::Arc<User>, req: Request<Incoming>, base_node:
 async fn report(user: std::sync::Arc<User>, req: Request<Incoming>, node: Box<dyn DavNode>) -> Result<Response<BoxBody<Bytes, std::io::Error>>> { 
     let status = hyper::StatusCode::from_u16(207)?;
 
-    let report = deserialize::<cal::Report<All>>(req).await?;
+    let report = match deserialize::<cal::Report<All>>(req).await {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!(err=?e, "unable to decode REPORT body");
+            return Ok(Response::builder()
+                .status(400)
+                .body(text_body("Bad request"))?)
+        }
+    };
 
     // Multiget is really like a propfind where Depth: 0|1|Infinity is replaced by an arbitrary
     // list of URLs
@@ -492,7 +502,6 @@ async fn deserialize<T: dxml::Node<T>>(req: Request<Incoming>) -> Result<T> {
 
 //---
 
-type ArcUser = std::sync::Arc<User>;
 trait DavNode: Send {
     // ------- specialized logic
 

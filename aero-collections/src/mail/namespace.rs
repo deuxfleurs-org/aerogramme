@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use aero_bayou::timestamp::now_msec;
 
 use crate::mail::uidindex::ImapUidvalidity;
-use crate::mail::unique_ident::{gen_ident, UniqueIdent};
+use crate::unique_ident::{gen_ident, UniqueIdent};
 
 pub const MAILBOX_HIERARCHY_DELIMITER: char = '.';
 

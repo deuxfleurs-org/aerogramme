@@ -1,6 +1,6 @@
 use super::mailbox::MailMeta;
 use super::snapshot::FrozenMailbox;
-use super::unique_ident::UniqueIdent;
+use crate::unique_ident::UniqueIdent;
 use anyhow::Result;
 use futures::future::FutureExt;
 use futures::stream::{BoxStream, Stream, StreamExt};

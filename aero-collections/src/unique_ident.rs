@@ -7,7 +7,7 @@ use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
 use aero_bayou::timestamp::now_msec;
 
-/// An internal Mail Identifier is composed of two components:
+/// An internal Aerogramme identifier is composed of two components:
 /// - a process identifier, 128 bits, itself composed of:
 ///   - the timestamp of when the process started, 64 bits
 ///   - a 64-bit random number
@@ -15,7 +15,7 @@ use aero_bayou::timestamp::now_msec;
 /// They are not part of the protocol but an internal representation
 /// required by Aerogramme.
 /// Their main property is to be unique without having to rely
-/// on synchronization between IMAP processes.
+/// on synchronization between (IMAP) processes.
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct UniqueIdent(pub [u8; 24]);
 

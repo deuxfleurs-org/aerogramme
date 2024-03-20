@@ -9,7 +9,7 @@ use aero_bayou::Bayou;
 use aero_bayou::timestamp::now_msec;
 
 use crate::mail::uidindex::*;
-use crate::mail::unique_ident::*;
+use crate::unique_ident::*;
 use crate::mail::IMF;
 
 pub struct Mailbox {

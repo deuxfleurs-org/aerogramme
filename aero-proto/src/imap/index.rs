@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use imap_codec::imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
 
 use aero_collections::mail::uidindex::{ImapUid, ModSeq, UidIndex};
-use aero_collections::mail::unique_ident::UniqueIdent;
+use aero_collections::unique_ident::UniqueIdent;
 
 pub struct Index<'a> {
     pub imap_index: Vec<MailIndex<'a>>,

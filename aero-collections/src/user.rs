@@ -12,19 +12,27 @@ use aero_user::storage;
 use crate::mail::incoming::incoming_mail_watch_process;
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::ImapUidvalidity;
-use crate::mail::unique_ident::UniqueIdent;
+use crate::unique_ident::UniqueIdent;
 use crate::mail::namespace::{MAILBOX_HIERARCHY_DELIMITER, INBOX, DRAFTS, ARCHIVE, SENT, TRASH, MAILBOX_LIST_PK, MAILBOX_LIST_SK,MailboxList,CreatedMailbox};
+use crate::calendar::Calendar;
 
 //@FIXME User should be totally rewriten
-//to extract the local mailbox list
-//to the mail/namespace.rs file (and mailbox list should be reworded as mail namespace)
+// to extract the local mailbox list
+// to the mail/namespace.rs file (and mailbox list should be reworded as mail namespace)
+
+//@FIXME User should be run in a LocalSet
+// to remove most - if not all - synchronizations types.
+// Especially RwLock & co.
 
 pub struct User {
     pub username: String,
     pub creds: Credentials,
     pub storage: storage::Store,
     pub mailboxes: std::sync::Mutex<HashMap<UniqueIdent, Weak<Mailbox>>>,
+    pub calendars: std::sync::Mutex<HashMap<UniqueIdent, Weak<Calendar>>>,
 
+    // Handle on worker processing received email
+    // (moving emails from the mailqueue to the user's INBOX)
     tx_inbox_id: watch::Sender<Option<(UniqueIdent, ImapUidvalidity)>>,
 }
 
@@ -178,6 +186,7 @@ impl User {
             storage,
             tx_inbox_id,
             mailboxes: std::sync::Mutex::new(HashMap::new()),
+            calendars: std::sync::Mutex::new(HashMap::new()),
         });
 
         // Ensure INBOX exists (done inside load_mailbox_list)
@@ -204,6 +213,10 @@ impl User {
             }
         }
 
+        // The idea here is that:
+        //  1. Opening a mailbox that is not already opened takes a significant amount of time
+        //  2. We don't want to lock the whole HashMap that contain the mailboxes during this
+        //     operation which is why we droppped the lock above but take it again below.
         let mb = Arc::new(Mailbox::open(&self.creds, id, min_uidvalidity).await?);
 
         let mut cache = self.mailboxes.lock().unwrap();

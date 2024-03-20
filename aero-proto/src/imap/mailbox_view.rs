@@ -17,7 +17,7 @@ use aero_collections::mail::mailbox::Mailbox;
 use aero_collections::mail::query::QueryScope;
 use aero_collections::mail::snapshot::FrozenMailbox;
 use aero_collections::mail::uidindex::{ImapUid, ImapUidvalidity, ModSeq};
-use aero_collections::mail::unique_ident::UniqueIdent;
+use aero_collections::unique_ident::UniqueIdent;
 
 use crate::imap::attributes::AttributesProxy;
 use crate::imap::flags;
