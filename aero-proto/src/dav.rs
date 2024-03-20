@@ -103,7 +103,17 @@ impl Server {
                 match http::Builder::new().serve_connection(stream, service_fn(|req: Request<hyper::body::Incoming>| {
                     let login = login.clone();
                     tracing::info!("{:?} {:?}", req.method(), req.uri());
-                    auth(login, req)
+                    async {
+                        match auth(login, req).await {
+                            Ok(v) => Ok(v),
+                            Err(e) => {
+                                tracing::error!(err=?e, "internal error");
+                                Response::builder()
+                                    .status(500)
+                                    .body(text_body("Internal error"))
+                            },
+                        }
+                    }
                 })).await {
                     Err(e) => tracing::warn!(err=?e, "connection failed"),
                     Ok(()) => tracing::trace!("connection terminated with success"),
@@ -218,7 +228,7 @@ async fn router(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Re
     let path = req.uri().path().to_string();
     let path_segments: Vec<_> = path.split("/").filter(|s| *s != "").collect();
     let method = req.method().as_str().to_uppercase();
-    let node = match Box::new(RootNode {}).fetch(&user, &path_segments) {
+    let node = match (RootNode {}).fetch(&user, &path_segments) {
         Ok(v) => v,
         Err(e) => {
             tracing::warn!(err=?e, "dav node fetch failed");
@@ -361,12 +371,22 @@ async fn report(user: std::sync::Arc<User>, req: Request<Incoming>, node: Box<dy
     };
 
     // Getting the list of nodes
-    /*let nodes = multiget.href.iter().map(|h| match Path::new(h.0.as_str()) {
+    let (ok_node, not_found): (Vec<_>, Vec<_>) = multiget.href.into_iter().map(|h| match Path::new(h.0.as_str()) {
+        Ok(Path::Abs(p)) => RootNode{}.fetch(&user, p.as_slice()).or(Err(h)),
+        Ok(Path::Rel(p)) => node.fetch(&user, p.as_slice()).or(Err(h)),
+        Err(_) => Err(h),
+    }).partition(|v| matches!(v, Result::Ok(_)));
+    let ok_node = ok_node.into_iter().filter_map(|v| v.ok()).collect();
+    let not_found = not_found.into_iter().filter_map(|v| v.err()).collect();
 
-    });*/
+    // Getting props
+    let props = match multiget.selector {
+        None | Some(cal::CalendarSelector::AllProp) => Some(dav::PropName(ALLPROP.to_vec())),
+        Some(cal::CalendarSelector::PropName) => None,
+        Some(cal::CalendarSelector::Prop(inner)) => Some(inner),
+    };
 
-    todo!();
-    //serialize(status, node.multistatus_val(&user, multiget
+    serialize(status, multistatus(&user, ok_node, not_found, props))
 }
 
 fn multistatus(user: &ArcUser, nodes: Vec<Box<dyn DavNode>>, not_found: Vec<dav::Href>, props: Option<dav::PropName<All>>) -> dav::Multistatus<All> {
@@ -478,7 +498,7 @@ trait DavNode: Send {
 
     // recurence
     fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>>;
-    fn fetch(self: Box<Self>, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>>;
+    fn fetch(&self, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>>;
 
     // node properties
     fn path(&self, user: &ArcUser) -> String;
@@ -541,11 +561,12 @@ trait DavNode: Send {
     }
 }
 
+#[derive(Clone)]
 struct RootNode {}
 impl DavNode for RootNode {
-    fn fetch(self: Box<Self>, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
+    fn fetch(&self, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
         if path.len() == 0 {
-            return Ok(self)
+            return Ok(Box::new(self.clone()))
         }
 
         if path[0] == user.username {
@@ -585,11 +606,12 @@ impl DavNode for RootNode {
     }
 }
 
+#[derive(Clone)]
 struct HomeNode {}
 impl DavNode for HomeNode {
-    fn fetch(self: Box<Self>, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
+    fn fetch(&self, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
         if path.len() == 0 {
-            return Ok(self)
+            return Ok(Box::new(self.clone()))
         }
 
         if path[0] == "calendar" {
@@ -630,11 +652,12 @@ impl DavNode for HomeNode {
     }
 }
 
+#[derive(Clone)]
 struct CalendarListNode {}
 impl DavNode for CalendarListNode {
-    fn fetch(self: Box<Self>, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
+    fn fetch(&self, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
         if path.len() == 0 {
-            return Ok(self)
+            return Ok(Box::new(self.clone()))
         }
 
         //@FIXME hardcoded logic
@@ -670,13 +693,14 @@ impl DavNode for CalendarListNode {
     }
 }
 
+#[derive(Clone)]
 struct CalendarNode {
     name: String,
 }
 impl DavNode for CalendarNode {
-    fn fetch(self: Box<Self>, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
+    fn fetch(&self, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
         if path.len() == 0 {
-            return Ok(self)
+            return Ok(Box::new(self.clone()))
         }
 
         //@FIXME hardcoded logic
@@ -756,14 +780,15 @@ UID:74855313FA803DA593CD579A@example.com
 END:VEVENT
 END:VCALENDAR"#;
 
+#[derive(Clone)]
 struct EventNode {
     calendar: String,
     event_file: String,
 }
 impl DavNode for EventNode {
-    fn fetch(self: Box<Self>, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
+    fn fetch(&self, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
         if path.len() == 0 {
-            return Ok(self)
+            return Ok(Box::new(self.clone()))
         }
 
         Err(anyhow!("Not found"))

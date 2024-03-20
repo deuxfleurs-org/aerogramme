@@ -259,6 +259,7 @@ impl<T: IRead> Reader<T> {
     }
 
     pub async fn open_start(&mut self,  ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
+        //println!("try open start tag {:?}, on {:?}", key, self.peek());
         let evt = match self.peek() {
             Event::Start(_) if self.is_tag(ns, key) => self.next().await?,
             _ => return Err(ParsingError::Recoverable),

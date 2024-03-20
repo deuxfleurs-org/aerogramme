@@ -69,7 +69,7 @@ impl<E: dav::Extension> QRead<CalendarQuery<E>> for CalendarQuery<E> {
 
 impl<E: dav::Extension> QRead<CalendarMultiget<E>> for CalendarMultiget<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        xml.open(CAL_URN, "free-busy-query").await?;
+        xml.open(CAL_URN, "calendar-multiget").await?;
         let mut selector = None;
         let mut href = Vec::new();
 
@@ -93,7 +93,7 @@ impl<E: dav::Extension> QRead<CalendarMultiget<E>> for CalendarMultiget<E> {
 
 impl QRead<FreeBusyQuery> for FreeBusyQuery {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        xml.open(CAL_URN, "calendar-multiple-get").await?;
+        xml.open(CAL_URN, "free-busy-query").await?;
         let range = xml.find().await?;
         xml.close().await?;
         Ok(FreeBusyQuery(range))
