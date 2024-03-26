@@ -14,7 +14,7 @@ use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::ImapUidvalidity;
 use crate::unique_ident::UniqueIdent;
 use crate::mail::namespace::{MAILBOX_HIERARCHY_DELIMITER, INBOX, DRAFTS, ARCHIVE, SENT, TRASH, MAILBOX_LIST_PK, MAILBOX_LIST_SK,MailboxList,CreatedMailbox};
-use crate::calendar::Calendar;
+use crate::calendar::namespace::CalendarNs;
 
 //@FIXME User should be totally rewriten
 // to extract the local mailbox list
@@ -29,7 +29,7 @@ pub struct User {
     pub creds: Credentials,
     pub storage: storage::Store,
     pub mailboxes: std::sync::Mutex<HashMap<UniqueIdent, Weak<Mailbox>>>,
-    pub calendars: std::sync::Mutex<HashMap<UniqueIdent, Weak<Calendar>>>,
+    pub calendars: CalendarNs,
 
     // Handle on worker processing received email
     // (moving emails from the mailqueue to the user's INBOX)
@@ -186,7 +186,7 @@ impl User {
             storage,
             tx_inbox_id,
             mailboxes: std::sync::Mutex::new(HashMap::new()),
-            calendars: std::sync::Mutex::new(HashMap::new()),
+            calendars: CalendarNs::new(),
         });
 
         // Ensure INBOX exists (done inside load_mailbox_list)

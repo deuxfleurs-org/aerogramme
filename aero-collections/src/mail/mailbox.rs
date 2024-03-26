@@ -8,8 +8,8 @@ use aero_user::storage::{self, BlobRef, BlobVal, RowRef, RowVal, Selector, Store
 use aero_bayou::Bayou;
 use aero_bayou::timestamp::now_msec;
 
-use crate::mail::uidindex::*;
 use crate::unique_ident::*;
+use crate::mail::uidindex::*;
 use crate::mail::IMF;
 
 pub struct Mailbox {
