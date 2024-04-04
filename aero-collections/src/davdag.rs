@@ -93,7 +93,7 @@ impl DavDag {
     }
 
     /// Resolve a sync token
-    pub fn resolve(&self, known: UniqueIdent) -> Result<OrdSet<UniqueIdent>> {
+    pub fn resolve(&self, known: Token) -> Result<OrdSet<Token>> {
         let already_known = self.all_ancestors(known);
 
         // We can't capture all missing events if we are not connected
@@ -112,7 +112,7 @@ impl DavDag {
     }
 
     /// Find all ancestors of a given node
-    fn all_ancestors(&self, known: UniqueIdent) -> OrdSet<UniqueIdent> {
+    fn all_ancestors(&self, known: Token) -> OrdSet<Token> {
         let mut all_known: OrdSet<UniqueIdent> = OrdSet::new();
         let mut to_collect = vec![known];
         loop {

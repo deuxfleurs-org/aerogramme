@@ -1,12 +1,12 @@
 pub mod namespace;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use tokio::sync::RwLock;
 
 use aero_bayou::Bayou;
 use aero_user::login::Credentials;
-use aero_user::cryptoblob::{self, gen_key, open_deserialize, seal_serialize, Key};
-use aero_user::storage::{self, BlobRef, BlobVal, RowRef, RowVal, Selector, Store};
+use aero_user::cryptoblob::{self, gen_key, Key};
+use aero_user::storage::{self, BlobRef, BlobVal, Store};
 
 use crate::unique_ident::*;
 use crate::davdag::{DavDag, IndexEntry, Token, BlobId, SyncChange};
@@ -151,10 +151,43 @@ impl CalendarInternal {
     }
 
     async fn delete(&mut self, blob_id: BlobId) -> Result<Token> {
-        todo!();
+        let davstate = self.davdag.state();
+
+        if davstate.table.contains_key(&blob_id) {
+            bail!("Cannot delete event that doesn't exist");
+        }
+
+        let del_op = davstate.op_delete(blob_id);
+        let token = del_op.token();
+        self.davdag.push(del_op).await?;
+
+        let blob_ref = BlobRef(format!("{}/{}", self.cal_path, blob_id));
+        self.storage.blob_rm(&blob_ref).await?;
+
+        Ok(token)
     }
 
     async fn diff(&mut self, sync_token: Token) -> Result<(Token, Vec<SyncChange>)> {
-        todo!();
+        let davstate = self.davdag.state();
+
+        let token_changed = davstate.resolve(sync_token)?;
+        let changes = token_changed
+            .iter()
+            .filter_map(|t: &Token| davstate.change.get(t))
+            .map(|s| s.clone())
+            .collect();
+
+        let heads = davstate.heads_vec();
+        let token = match heads.as_slice() {
+            [ token ] => *token,
+            _ => {
+                let op_mg = davstate.op_merge();
+                let token = op_mg.token();
+                self.davdag.push(op_mg).await?;
+                token
+            }
+        };
+
+        Ok((token, changes))
     }
 }

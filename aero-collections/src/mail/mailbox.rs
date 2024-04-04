@@ -375,7 +375,7 @@ impl MailboxInternal {
 
     async fn delete(&mut self, ident: UniqueIdent) -> Result<()> {
         if !self.uid_index.state().table.contains_key(&ident) {
-            bail!("Cannot delete mail that doesn't exit");
+            bail!("Cannot delete mail that doesn't exist");
         }
 
         let del_mail_op = self.uid_index.state().op_mail_del(ident);
