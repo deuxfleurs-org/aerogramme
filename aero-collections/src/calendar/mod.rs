@@ -1,6 +1,6 @@
 pub mod namespace;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use tokio::sync::RwLock;
 
 use aero_bayou::Bayou;
@@ -66,8 +66,8 @@ impl Calendar {
     }
 
     /// Get a specific event
-    pub async fn get(&self, evt_id: UniqueIdent, message_key: &Key) -> Result<Vec<u8>> {
-        self.internal.read().await.get(evt_id, message_key).await
+    pub async fn get(&self, evt_id: UniqueIdent) -> Result<Vec<u8>> {
+        self.internal.read().await.get(evt_id).await
     }
 
     /// Put a specific event
@@ -103,8 +103,24 @@ impl CalendarInternal {
         Ok(())
     }
 
-    async fn get(&self, blob_id: BlobId, message_key: &Key) -> Result<Vec<u8>> {
-        todo!()
+    async fn get(&self, blob_id: BlobId) -> Result<Vec<u8>> {
+        // Fetch message from S3
+        let blob_ref = storage::BlobRef(format!("{}/{}", self.cal_path, blob_id));
+        let object = self.storage.blob_fetch(&blob_ref).await?;
+
+        // Decrypt message key from headers
+        let key_encrypted_b64 = object
+            .meta
+            .get(MESSAGE_KEY)
+            .ok_or(anyhow!("Missing key in metadata"))?;
+        let key_encrypted = base64::engine::general_purpose::STANDARD.decode(key_encrypted_b64)?;
+        let message_key_raw = cryptoblob::open(&key_encrypted, &self.encryption_key)?;
+        let message_key =
+            cryptoblob::Key::from_slice(&message_key_raw).ok_or(anyhow!("Invalid message key"))?;
+
+        // Decrypt body
+        let body = object.value;
+        cryptoblob::open(&body, &message_key)
     }
 
     async fn put<'a>(&mut self, entry: IndexEntry, evt: &'a [u8]) -> Result<Token> {
