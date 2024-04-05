@@ -20,7 +20,7 @@ use rustls_pemfile::{certs, private_key};
 
 use aero_user::config::{DavConfig, DavUnsecureConfig};
 use aero_user::login::ArcLoginProvider;
-use aero_collections::{user::User, calendar::Calendar};
+use aero_collections::{user::User, calendar::Calendar, davdag::BlobId};
 use aero_dav::types as dav;
 use aero_dav::caltypes as cal;
 use aero_dav::acltypes as acl;
@@ -231,7 +231,7 @@ async fn router(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Re
     let path_segments: Vec<_> = path.split("/").filter(|s| *s != "").collect();
     let method = req.method().as_str().to_uppercase();
 
-    let node = match (RootNode {}).fetch(&user, &path_segments) {
+    let node = match (RootNode {}).fetch(&user, &path_segments).await {
         Ok(v) => v,
         Err(e) => {
             tracing::warn!(err=?e, "dav node fetch failed");
@@ -302,7 +302,7 @@ async fn propfind(user: std::sync::Arc<User>, req: Request<Incoming>, base_node:
     // Collect nodes as PROPFIND is not limited at the targeted node
     let mut nodes = vec![];
     if matches!(depth, dav::Depth::One | dav::Depth::Infinity) {
-        nodes.extend(base_node.children(&user));
+        nodes.extend(base_node.children(&user).await);
     }
     nodes.push(base_node);
 
@@ -346,13 +346,19 @@ async fn report(user: std::sync::Arc<User>, req: Request<Incoming>, node: Box<dy
     };
 
     // Getting the list of nodes
-    let (ok_node, not_found): (Vec<_>, Vec<_>) = multiget.href.into_iter().map(|h| match Path::new(h.0.as_str()) {
-        Ok(Path::Abs(p)) => RootNode{}.fetch(&user, p.as_slice()).or(Err(h)),
-        Ok(Path::Rel(p)) => node.fetch(&user, p.as_slice()).or(Err(h)),
-        Err(_) => Err(h),
-    }).partition(|v| matches!(v, Result::Ok(_)));
-    let ok_node = ok_node.into_iter().filter_map(|v| v.ok()).collect();
-    let not_found = not_found.into_iter().filter_map(|v| v.err()).collect();
+    let (mut ok_node, mut not_found) = (Vec::new(), Vec::new());
+    for h in multiget.href.into_iter() {
+        let maybe_collected_node = match Path::new(h.0.as_str()) {
+            Ok(Path::Abs(p)) => RootNode{}.fetch(&user, p.as_slice()).await.or(Err(h)),
+            Ok(Path::Rel(p)) => node.fetch(&user, p.as_slice()).await.or(Err(h)),
+            Err(_) => Err(h),
+        };
+
+        match maybe_collected_node {
+            Ok(v) => ok_node.push(v),
+            Err(h) => not_found.push(h),
+        };
+    }
 
     // Getting props
     let props = match multiget.selector {
@@ -553,13 +559,14 @@ impl DavNode for RootNode {
         async { Err(anyhow!("Not found")) }.boxed()
     }
 
+    fn children<'a>(&self, user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+        async { vec![Box::new(HomeNode { }) as Box<dyn DavNode>] }.boxed()
+    }
+
     fn path(&self, user: &ArcUser) -> String {
         "/".into()
     }
 
-    fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>> {
-        vec![Box::new(HomeNode { })]
-    }
     fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All> {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
@@ -585,26 +592,34 @@ impl DavNode for RootNode {
 #[derive(Clone)]
 struct HomeNode {}
 impl DavNode for HomeNode {
-    fn fetch(&self, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
+    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str]) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
         if path.len() == 0 {
-            return Ok(Box::new(self.clone()))
+            let node = Box::new(self.clone()) as Box<dyn DavNode>;
+            return async { Ok(node) }.boxed()
         }
 
         if path[0] == "calendar" {
-            let child = Box::new(CalendarListNode {});
-            return child.fetch(user, &path[1..])
+            return async {
+                let child = Box::new(CalendarListNode::new(user).await?);
+                child.fetch(user, &path[1..]).await
+            }.boxed();
         }
 
-        Err(anyhow!("Not found"))
+        async { Err(anyhow!("Not found")) }.boxed()
+    }
+
+    fn children<'a>(&self, user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+        async { 
+            CalendarListNode::new(user).await
+                .map(|c| vec![Box::new(c) as Box<dyn DavNode>])
+                .unwrap_or(vec![]) 
+        }.boxed()
     }
 
     fn path(&self, user: &ArcUser) -> String {
         format!("/{}/", user.username)
     }
 
-    fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>> {
-        vec![Box::new(CalendarListNode { })]
-    }
     fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All> {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
@@ -622,39 +637,63 @@ impl DavNode for HomeNode {
             ])),
             dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
             dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::CalendarHomeSet)) => 
-                dav::AnyProperty::Value(dav::Property::Extension(all::Property::Cal(cal::Property::CalendarHomeSet(dav::Href(CalendarListNode{}.path(user)))))),
+                dav::AnyProperty::Value(dav::Property::Extension(all::Property::Cal(cal::Property::CalendarHomeSet(dav::Href(/*CalendarListNode{}.path(user)*/ todo!()))))),
             v => dav::AnyProperty::Request(v),
         }).collect()
     }
 }
 
 #[derive(Clone)]
-struct CalendarListNode {}
+struct CalendarListNode {
+    list: Vec<String>,
+}
+impl CalendarListNode {
+    async fn new(user: &ArcUser) -> Result<Self> {
+        let list = user.calendars.list(user).await?;
+        Ok(Self { list })
+    }
+}
 impl DavNode for CalendarListNode {
-    async fn fetch(&self, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
+    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str]) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
         if path.len() == 0 {
-            return Ok(Box::new(self.clone()))
+            let node = Box::new(self.clone()) as Box<dyn DavNode>;
+            return async { Ok(node) }.boxed();
         }
 
-        //@FIXME hardcoded logic
-        /*if path[0] == "personal" {
-            let child = Box::new(CalendarNode { name: "personal".to_string() });
-            return child.fetch(user, &path[1..])
-        }*/
-        if !user.calendars.has(user, path[0]).await? {
-            bail!("Not found");
-        }
-        let child = Box::new(CalendarNode { name: path[0].to_string() });
-        child.fetch(user, &path[1..])
+        async {
+            let cal = user.calendars.open(user, path[0]).await?.ok_or(anyhow!("Not found"))?;
+            let child = Box::new(CalendarNode { 
+                col: cal,
+                calname: path[0].to_string()
+            });
+            child.fetch(user, &path[1..]).await
+        }.boxed()
+    }
+
+    fn children<'a>(&self, user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+        let list = self.list.clone();
+        async move {
+            //@FIXME maybe we want to be lazy here?!
+            futures::stream::iter(list.iter())
+                .filter_map(|name| async move {
+                    user.calendars.open(user, name).await
+                        .ok()
+                        .flatten()
+                        .map(|v| (name, v))
+                })
+                .map(|(name, cal)| Box::new(CalendarNode { 
+                    col: cal,
+                    calname: name.to_string(),
+                }) as Box<dyn DavNode>)
+                .collect::<Vec<Box<dyn DavNode>>>()
+                .await
+        }.boxed()
     }
 
     fn path(&self, user: &ArcUser) -> String {
         format!("/{}/calendar/", user.username)
     }
 
-    async fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>> {
-        user.calendars.list(user).await.map(|name| Box::new(CalendarNode { name: name.to_string() })).collect()
-    }
     fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All> {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
@@ -674,33 +713,53 @@ impl DavNode for CalendarListNode {
 
 #[derive(Clone)]
 struct CalendarNode {
-    name: String,
+    col: Arc<Calendar>,
+    calname: String,
 }
 impl DavNode for CalendarNode {
-    fn fetch(&self, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
+    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str]) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
         if path.len() == 0 {
-            return Ok(Box::new(self.clone()))
+            let node = Box::new(self.clone()) as Box<dyn DavNode>;
+            return async { Ok(node) }.boxed()
         }
 
-        //@FIXME hardcoded logic
-        if path[0] == "something.ics" {
-            let child = Box::new(EventNode { 
-                calendar: self.name.to_string(),
-                event_file: "something.ics".to_string(),
-            });
-            return child.fetch(user, &path[1..])
-        }
+        let col = self.col.clone();
+        let calname = self.calname.clone();
+        async move {
+            if let Some(blob_id) = col.dag().await.idx_by_filename.get(path[0]) {
+                let child = Box::new(EventNode {
+                    col: col.clone(),
+                    calname,
+                    filename: path[0].to_string(),
+                    blob_id: *blob_id,
+                });
+                return child.fetch(user, &path[1..]).await
+            }
 
-        Err(anyhow!("Not found"))
+            Err(anyhow!("Not found"))
+        }.boxed()
+    }
+
+    fn children<'a>(&self, user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+        let col = self.col.clone();
+        let calname = self.calname.clone();
+
+        async move {
+            col.dag().await.idx_by_filename.iter().map(|(filename, blob_id)| {
+                Box::new(EventNode { 
+                    col: col.clone(),
+                    calname: calname.clone(),
+                    filename: filename.to_string(),
+                    blob_id: *blob_id,
+                }) as Box<dyn DavNode>
+            }).collect()
+        }.boxed()
     }
 
     fn path(&self, user: &ArcUser) -> String {
-        format!("/{}/calendar/{}/", user.username, self.name)
+        format!("/{}/calendar/{}/", user.username, self.calname)
     }
 
-    fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>> {
-        vec![Box::new(EventNode { calendar: self.name.to_string(), event_file: "something.ics".into() })]
-    }
     fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All> {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
@@ -711,7 +770,7 @@ impl DavNode for CalendarNode {
     }
     fn properties(&self, _user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>> {
         prop.0.into_iter().map(|n| match n {
-            dav::PropertyRequest::DisplayName =>  dav::AnyProperty::Value(dav::Property::DisplayName(format!("{} calendar", self.name))),
+            dav::PropertyRequest::DisplayName =>  dav::AnyProperty::Value(dav::Property::DisplayName(format!("{} calendar", self.calname))),
             dav::PropertyRequest::ResourceType =>  dav::AnyProperty::Value(dav::Property::ResourceType(vec![
                 dav::ResourceType::Collection,
                 dav::ResourceType::Extension(all::ResourceType::Cal(cal::ResourceType::Calendar)),
@@ -761,25 +820,29 @@ END:VCALENDAR"#;
 
 #[derive(Clone)]
 struct EventNode {
-    calendar: String,
-    event_file: String,
+    col: Arc<Calendar>,
+    calname: String,
+    filename: String,
+    blob_id: BlobId,
 }
 impl DavNode for EventNode {
-    fn fetch(&self, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
+    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str]) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
         if path.len() == 0 {
-            return Ok(Box::new(self.clone()))
+            let node = Box::new(self.clone()) as Box<dyn DavNode>;
+            return async { Ok(node) }.boxed()
         }
 
-        Err(anyhow!("Not found"))
+        async { Err(anyhow!("Not found")) }.boxed()
+    }
+
+    fn children<'a>(&self, user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+        async { vec![] }.boxed()
     }
 
     fn path(&self, user: &ArcUser) -> String {
-        format!("/{}/calendar/{}/{}", user.username, self.calendar, self.event_file)
+        format!("/{}/calendar/{}/{}", user.username, self.calname, self.filename)
     }
 
-    fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>> {
-        vec![]
-    }
     fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All> {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
@@ -790,12 +853,15 @@ impl DavNode for EventNode {
     }
     fn properties(&self, _user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>> {
         prop.0.into_iter().map(|n| match n {
-            dav::PropertyRequest::DisplayName => dav::AnyProperty::Value(dav::Property::DisplayName(format!("{} event", self.event_file))),
+            dav::PropertyRequest::DisplayName => dav::AnyProperty::Value(dav::Property::DisplayName(format!("{} event", self.filename))),
             dav::PropertyRequest::ResourceType => dav::AnyProperty::Value(dav::Property::ResourceType(vec![])),
             dav::PropertyRequest::GetContentType =>  dav::AnyProperty::Value(dav::Property::GetContentType("text/calendar".into())),
             dav::PropertyRequest::GetEtag => dav::AnyProperty::Value(dav::Property::GetEtag("\"abcdefg\"".into())),
             dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::CalendarData(req))) =>
-                dav::AnyProperty::Value(dav::Property::Extension(all::Property::Cal(cal::Property::CalendarData(cal::CalendarDataPayload { mime: None, payload: FAKE_ICS.into() })))),
+                dav::AnyProperty::Value(dav::Property::Extension(all::Property::Cal(cal::Property::CalendarData(cal::CalendarDataPayload { 
+                    mime: None, 
+                    payload: FAKE_ICS.into() 
+                })))),
             v => dav::AnyProperty::Request(v),
         }).collect()
     }
