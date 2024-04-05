@@ -17,7 +17,7 @@ pub(crate) const CAL_LIST_SK: &str = "list";
 pub(crate) const MAIN_CAL: &str = "Personal";
 pub(crate) const MAX_CALNAME_CHARS: usize = 32;
 
-pub(crate) struct CalendarNs(std::sync::Mutex<HashMap<UniqueIdent, Weak<Calendar>>>);
+pub struct CalendarNs(std::sync::Mutex<HashMap<UniqueIdent, Weak<Calendar>>>);
 
 impl CalendarNs {
     /// Create a new calendar namespace

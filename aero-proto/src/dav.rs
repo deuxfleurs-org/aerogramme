@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use base64::Engine;
 use hyper::service::service_fn;
 use hyper::{Request, Response, body::Bytes};
@@ -20,7 +20,7 @@ use rustls_pemfile::{certs, private_key};
 
 use aero_user::config::{DavConfig, DavUnsecureConfig};
 use aero_user::login::ArcLoginProvider;
-use aero_collections::user::User;
+use aero_collections::{user::User, calendar::Calendar};
 use aero_dav::types as dav;
 use aero_dav::caltypes as cal;
 use aero_dav::acltypes as acl;
@@ -230,6 +230,7 @@ async fn router(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Re
     let path = req.uri().path().to_string();
     let path_segments: Vec<_> = path.split("/").filter(|s| *s != "").collect();
     let method = req.method().as_str().to_uppercase();
+
     let node = match (RootNode {}).fetch(&user, &path_segments) {
         Ok(v) => v,
         Err(e) => {
@@ -252,6 +253,12 @@ async fn router(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Re
                 .status(404)
                 .body(text_body(""))?)
         },
+        "PUT" => {
+            todo!();
+        },
+        "DELETE" => {
+            todo!();
+        },
         "PROPFIND" => propfind(user, req, node).await,
         "REPORT" => report(user, req, node).await,
         _ => return Ok(Response::builder()
@@ -259,48 +266,6 @@ async fn router(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Re
             .body(text_body("HTTP Method not implemented"))?),
     }
 }
-
-// <D:propfind xmlns:D='DAV:' xmlns:A='http://apple.com/ns/ical/'>
-//   <D:prop>
-//     <D:getcontenttype/>
-//     <D:resourcetype/>
-//     <D:displayname/>
-//     <A:calendar-color/>
-//   </D:prop>
-// </D:propfind>
-
-
-// <D:propfind xmlns:D='DAV:' xmlns:A='http://apple.com/ns/ical/' xmlns:C='urn:ietf:params:xml:ns:caldav'>
-//   <D:prop>
-//     <D:resourcetype/>
-//     <D:owner/>
-//     <D:displayname/>
-//     <D:current-user-principal/>
-//     <D:current-user-privilege-set/>
-//     <A:calendar-color/>
-//     <C:calendar-home-set/>
-//   </D:prop>
-// </D:propfind>
-
-// <D:propfind xmlns:D='DAV:' xmlns:C='urn:ietf:params:xml:ns:caldav' xmlns:CS='http://calendarserver.org/ns/'>
-//   <D:prop>
-//     <D:resourcetype/>
-//     <D:owner/>
-//     <D:current-user-principal/>
-//     <D:current-user-privilege-set/>
-//     <D:supported-report-set/>
-//     <C:supported-calendar-component-set/>
-//     <CS:getctag/>
-//   </D:prop>
-// </D:propfind>
-
-// <C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-//   <D:prop>
-//     <D:getetag/>
-//     <C:calendar-data/>
-//    </D:prop>
-//    <D:href>/alice/calendar/personal/something.ics</D:href>
-//  </C:calendar-multiget>
 
 const ALLPROP: [dav::PropertyRequest<All>; 10] = [
     dav::PropertyRequest::CreationDate,
@@ -501,13 +466,14 @@ async fn deserialize<T: dxml::Node<T>>(req: Request<Incoming>) -> Result<T> {
 }
 
 //---
-
+use futures::{future, future::BoxFuture, future::FutureExt};
 trait DavNode: Send {
     // ------- specialized logic
 
     // recurence
-    fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>>;
-    fn fetch(&self, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>>;
+    // @FIXME not satisfied by BoxFutures but I have no better idea currently
+    fn children<'a>(&self, user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>>;
+    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str]) -> BoxFuture<'a, Result<Box<dyn DavNode>>>;
 
     // node properties
     fn path(&self, user: &ArcUser) -> String;
@@ -573,17 +539,18 @@ trait DavNode: Send {
 #[derive(Clone)]
 struct RootNode {}
 impl DavNode for RootNode {
-    fn fetch(&self, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
+    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str]) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
         if path.len() == 0 {
-            return Ok(Box::new(self.clone()))
+            let this = self.clone();
+            return async { Ok(Box::new(this) as Box<dyn DavNode>) }.boxed();
         }
 
         if path[0] == user.username {
             let child = Box::new(HomeNode {});
-            return child.fetch(user, &path[1..])
+            return child.fetch(user, &path[1..]);
         }
 
-        Err(anyhow!("Not found"))
+        async { Err(anyhow!("Not found")) }.boxed()
     }
 
     fn path(&self, user: &ArcUser) -> String {
@@ -664,26 +631,29 @@ impl DavNode for HomeNode {
 #[derive(Clone)]
 struct CalendarListNode {}
 impl DavNode for CalendarListNode {
-    fn fetch(&self, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
+    async fn fetch(&self, user: &ArcUser, path: &[&str]) -> Result<Box<dyn DavNode>> {
         if path.len() == 0 {
             return Ok(Box::new(self.clone()))
         }
 
         //@FIXME hardcoded logic
-        if path[0] == "personal" {
+        /*if path[0] == "personal" {
             let child = Box::new(CalendarNode { name: "personal".to_string() });
             return child.fetch(user, &path[1..])
+        }*/
+        if !user.calendars.has(user, path[0]).await? {
+            bail!("Not found");
         }
-
-        Err(anyhow!("Not found"))
+        let child = Box::new(CalendarNode { name: path[0].to_string() });
+        child.fetch(user, &path[1..])
     }
 
     fn path(&self, user: &ArcUser) -> String {
         format!("/{}/calendar/", user.username)
     }
 
-    fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>> {
-        vec![Box::new(CalendarNode { name: "personal".into() })]
+    async fn children(&self, user: &ArcUser) -> Vec<Box<dyn DavNode>> {
+        user.calendars.list(user).await.map(|name| Box::new(CalendarNode { name: name.to_string() })).collect()
     }
     fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All> {
         dav::PropName(vec![
@@ -832,3 +802,45 @@ impl DavNode for EventNode {
 }
 
 
+
+// <D:propfind xmlns:D='DAV:' xmlns:A='http://apple.com/ns/ical/'>
+//   <D:prop>
+//     <D:getcontenttype/>
+//     <D:resourcetype/>
+//     <D:displayname/>
+//     <A:calendar-color/>
+//   </D:prop>
+// </D:propfind>
+
+
+// <D:propfind xmlns:D='DAV:' xmlns:A='http://apple.com/ns/ical/' xmlns:C='urn:ietf:params:xml:ns:caldav'>
+//   <D:prop>
+//     <D:resourcetype/>
+//     <D:owner/>
+//     <D:displayname/>
+//     <D:current-user-principal/>
+//     <D:current-user-privilege-set/>
+//     <A:calendar-color/>
+//     <C:calendar-home-set/>
+//   </D:prop>
+// </D:propfind>
+
+// <D:propfind xmlns:D='DAV:' xmlns:C='urn:ietf:params:xml:ns:caldav' xmlns:CS='http://calendarserver.org/ns/'>
+//   <D:prop>
+//     <D:resourcetype/>
+//     <D:owner/>
+//     <D:current-user-principal/>
+//     <D:current-user-privilege-set/>
+//     <D:supported-report-set/>
+//     <C:supported-calendar-component-set/>
+//     <CS:getctag/>
+//   </D:prop>
+// </D:propfind>
+
+// <C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+//   <D:prop>
+//     <D:getetag/>
+//     <C:calendar-data/>
+//    </D:prop>
+//    <D:href>/alice/calendar/personal/something.ics</D:href>
+//  </C:calendar-multiget>
