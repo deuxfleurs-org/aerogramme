@@ -2,6 +2,7 @@ use anyhow::Result;
 use http_body_util::combinators::BoxBody;
 use hyper::body::Incoming;
 use hyper::{Request, Response, body::Bytes};
+use http_body_util::StreamBody;
 
 use aero_collections::user::User;
 use aero_dav::types as dav;
@@ -39,7 +40,8 @@ impl Controller {
         let path_segments: Vec<_> = path.split("/").filter(|s| *s != "").collect();
         let method = req.method().as_str().to_uppercase();
 
-        let node = match (RootNode {}).fetch(&user, &path_segments).await {
+        let can_create = matches!(method.as_str(), "PUT" | "MKCOL" | "MKCALENDAR");
+        let node = match (RootNode {}).fetch(&user, &path_segments, can_create).await{
             Ok(v) => v,
             Err(e) => {
                 tracing::warn!(err=?e, "dav node fetch failed");
@@ -48,6 +50,7 @@ impl Controller {
                     .body(codec::text_body("Resource not found"))?)
             }
         };
+
         let ctrl = Self { node, user, req };
 
         match method.as_str() {
@@ -63,7 +66,8 @@ impl Controller {
                     .body(codec::text_body(""))?)
             },
             "PUT" => {
-                todo!();
+                let to_create = path_segments.last().expect("Bound checked earlier in this fx");
+                ctrl.put(to_create).await
             },
             "DELETE" => {
                 todo!();
@@ -77,7 +81,7 @@ impl Controller {
     }
 
 
-    // --- Public API ---
+    // --- Per-method functions ---
 
     /// REPORT has been first described in the "Versioning Extension" of WebDAV
     /// It allows more complex queries compared to PROPFIND
@@ -111,8 +115,8 @@ impl Controller {
         let (mut ok_node, mut not_found) = (Vec::new(), Vec::new());
         for h in multiget.href.into_iter() {
             let maybe_collected_node = match Path::new(h.0.as_str()) {
-                Ok(Path::Abs(p)) => RootNode{}.fetch(&self.user, p.as_slice()).await.or(Err(h)),
-                Ok(Path::Rel(p)) => self.node.fetch(&self.user, p.as_slice()).await.or(Err(h)),
+                Ok(Path::Abs(p)) => RootNode{}.fetch(&self.user, p.as_slice(), false).await.or(Err(h)),
+                Ok(Path::Rel(p)) => self.node.fetch(&self.user, p.as_slice(), false).await.or(Err(h)),
                 Err(_) => Err(h),
             };
 
@@ -173,9 +177,25 @@ impl Controller {
         serialize(status, Self::multistatus(&self.user, nodes, not_found, propname))
     }
 
-    // --- Internal functions ---
-    /// Utility function to build a multistatus response from 
-    /// a list of DavNodes
+    async fn put(self, child: &str) -> Result<Response<BoxBody<Bytes, std::io::Error>>> { 
+        todo!()
+    }
+
+    async fn get(self) ->  Result<Response<BoxBody<Bytes, std::io::Error>>> {
+        todo!()
+        /*let stream = StreamBody::new(self.node.get().map(|v| Ok(Frame::data(v))));
+        let boxed_body = BoxBody::new(stream);
+
+        let response = Response::builder()
+            .status(200)
+            //.header("content-type", "application/xml; charset=\"utf-8\"")
+            .body(boxed_body)?;
+
+        Ok(response)*/
+    }
+
+    // --- Common utulity functions ---
+    /// Build a multistatus response from a list of DavNodes
     fn multistatus(user: &ArcUser, nodes: Vec<Box<dyn DavNode>>, not_found: Vec<dav::Href>, props: Option<dav::PropName<All>>) -> dav::Multistatus<All> {
         // Collect properties on existing objects
         let mut responses: Vec<dav::Response<All>> = match props {

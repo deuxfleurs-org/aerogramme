@@ -17,7 +17,7 @@ use crate::dav::node::DavNode;
 #[derive(Clone)]
 pub(crate) struct RootNode {}
 impl DavNode for RootNode {
-    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str]) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
+    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str], create: bool) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
         if path.len() == 0 {
             let this = self.clone();
             return async { Ok(Box::new(this) as Box<dyn DavNode>) }.boxed();
@@ -25,9 +25,10 @@ impl DavNode for RootNode {
 
         if path[0] == user.username {
             let child = Box::new(HomeNode {});
-            return child.fetch(user, &path[1..]);
+            return child.fetch(user, &path[1..], create);
         }
 
+        //@NOTE: We can't create a node at this level
         async { Err(anyhow!("Not found")) }.boxed()
     }
 
@@ -64,19 +65,20 @@ impl DavNode for RootNode {
 #[derive(Clone)]
 pub(crate) struct HomeNode {}
 impl DavNode for HomeNode {
-    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str]) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
+    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str], create: bool) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
         if path.len() == 0 {
             let node = Box::new(self.clone()) as Box<dyn DavNode>;
             return async { Ok(node) }.boxed()
         }
 
         if path[0] == "calendar" {
-            return async {
+            return async move {
                 let child = Box::new(CalendarListNode::new(user).await?);
-                child.fetch(user, &path[1..]).await
+                child.fetch(user, &path[1..], create).await
             }.boxed();
         }
-
+    
+        //@NOTE: we can't create a node at this level
         async { Err(anyhow!("Not found")) }.boxed()
     }
 
@@ -126,19 +128,20 @@ impl CalendarListNode {
     }
 }
 impl DavNode for CalendarListNode {
-    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str]) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
+    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str], create: bool) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
         if path.len() == 0 {
             let node = Box::new(self.clone()) as Box<dyn DavNode>;
             return async { Ok(node) }.boxed();
         }
 
-        async {
+        async move {
+            //@FIXME: we should create a node if the open returns a "not found".
             let cal = user.calendars.open(user, path[0]).await?.ok_or(anyhow!("Not found"))?;
             let child = Box::new(CalendarNode { 
                 col: cal,
                 calname: path[0].to_string()
             });
-            child.fetch(user, &path[1..]).await
+            child.fetch(user, &path[1..], create).await
         }.boxed()
     }
 
@@ -189,7 +192,7 @@ pub(crate) struct CalendarNode {
     calname: String,
 }
 impl DavNode for CalendarNode {
-    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str]) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
+    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str], create: bool) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
         if path.len() == 0 {
             let node = Box::new(self.clone()) as Box<dyn DavNode>;
             return async { Ok(node) }.boxed()
@@ -198,17 +201,27 @@ impl DavNode for CalendarNode {
         let col = self.col.clone();
         let calname = self.calname.clone();
         async move {
-            if let Some(blob_id) = col.dag().await.idx_by_filename.get(path[0]) {
-                let child = Box::new(EventNode {
-                    col: col.clone(),
-                    calname,
-                    filename: path[0].to_string(),
-                    blob_id: *blob_id,
-                });
-                return child.fetch(user, &path[1..]).await
+            match (col.dag().await.idx_by_filename.get(path[0]), create) {
+                (Some(blob_id), _) => { 
+                    let child = Box::new(EventNode {
+                        col: col.clone(),
+                        calname,
+                        filename: path[0].to_string(),
+                        blob_id: *blob_id,
+                    });
+                    child.fetch(user, &path[1..], create).await
+                },
+                (None, true) => {
+                    let child = Box::new(CreateEventNode {
+                        col: col.clone(),
+                        calname,
+                        filename: path[0].to_string(),
+                    });
+                    child.fetch(user, &path[1..], create).await
+                }, 
+                _ => Err(anyhow!("Not found")),
             }
 
-            Err(anyhow!("Not found"))
         }.boxed()
     }
 
@@ -298,13 +311,13 @@ pub(crate) struct EventNode {
     blob_id: BlobId,
 }
 impl DavNode for EventNode {
-    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str]) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
+    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str], create: bool) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
         if path.len() == 0 {
             let node = Box::new(self.clone()) as Box<dyn DavNode>;
             return async { Ok(node) }.boxed()
         }
 
-        async { Err(anyhow!("Not found")) }.boxed()
+        async { Err(anyhow!("Not supported: can't create a child on an event node")) }.boxed()
     }
 
     fn children<'a>(&self, user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
@@ -336,5 +349,38 @@ impl DavNode for EventNode {
                 })))),
             v => dav::AnyProperty::Request(v),
         }).collect()
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct CreateEventNode {
+    col: Arc<Calendar>,
+    calname: String,
+    filename: String,
+}
+impl DavNode for CreateEventNode {
+    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str], create: bool) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
+        if path.len() == 0 {
+            let node = Box::new(self.clone()) as Box<dyn DavNode>;
+            return async { Ok(node) }.boxed()
+        }
+
+        async { Err(anyhow!("Not supported: can't create a child on an event node")) }.boxed()
+    }
+
+    fn children<'a>(&self, user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+        async { vec![] }.boxed()
+    }
+
+    fn path(&self, user: &ArcUser) -> String {
+        format!("/{}/calendar/{}/{}", user.username, self.calname, self.filename)
+    }
+
+    fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All> {
+        dav::PropName(vec![])
+    }
+
+    fn properties(&self, _user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>> {
+        vec![]
     }
 }

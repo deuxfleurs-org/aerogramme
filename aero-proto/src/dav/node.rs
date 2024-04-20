@@ -7,6 +7,11 @@ use aero_collections::user::User;
 
 type ArcUser = std::sync::Arc<User>;
 
+pub(crate) enum PutPolicy {
+    CreateOnly,
+    ReplaceEtags(String),
+}
+
 /// A DAV node should implement the following methods
 /// @FIXME not satisfied by BoxFutures but I have no better idea currently
 pub(crate) trait DavNode: Send {
@@ -14,7 +19,7 @@ pub(crate) trait DavNode: Send {
     /// This node direct children
     fn children<'a>(&self, user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>>;
     /// Recursively fetch a child (progress inside the filesystem hierarchy)
-    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str]) -> BoxFuture<'a, Result<Box<dyn DavNode>>>;
+    fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str], create: bool) -> BoxFuture<'a, Result<Box<dyn DavNode>>>;
 
     // node properties
     /// Get the path
@@ -23,6 +28,10 @@ pub(crate) trait DavNode: Send {
     fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All>;
     /// Get the values for the given properties
     fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>>;
+    /// Put a child
+    //fn put(&self, policy: PutPolicy, stream: TryStream) -> BoxFuture<Result<dyn DavNode>>;
+    /// Get content
+    //fn content(&self) -> TryStream;
 
     //@FIXME maybe add etag, maybe add a way to set content
 
