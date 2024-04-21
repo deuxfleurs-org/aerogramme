@@ -1,4 +1,5 @@
 use anyhow::Result;
+use futures::Stream;
 use futures::future::BoxFuture;
 
 use aero_dav::types as dav;
@@ -6,6 +7,7 @@ use aero_dav::realization::All;
 use aero_collections::user::User;
 
 type ArcUser = std::sync::Arc<User>;
+pub(crate) type Content = Box<dyn Stream<Item=Result<u64>>>;
 
 pub(crate) enum PutPolicy {
     CreateOnly,
@@ -28,8 +30,8 @@ pub(crate) trait DavNode: Send {
     fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All>;
     /// Get the values for the given properties
     fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>>;
-    /// Put a child
-    //fn put(&self, policy: PutPolicy, stream: TryStream) -> BoxFuture<Result<dyn DavNode>>;
+    /// Put an element (create or update)
+    fn put(&self, policy: PutPolicy, stream: Content) -> BoxFuture<Result<()>>;
     /// Get content
     //fn content(&self) -> TryStream;
 

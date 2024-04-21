@@ -70,8 +70,12 @@ pub(crate) fn serialize<T: dxml::QWrite + Send + 'static>(status_ok: hyper::Stat
 pub(crate) async fn deserialize<T: dxml::Node<T>>(req: Request<Incoming>) -> Result<T> {
     let stream_of_frames = BodyStream::new(req.into_body());
     let stream_of_bytes = stream_of_frames
-        .try_filter_map(|frame| async move { Ok(frame.into_data().ok()) })
-        .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err));
+        .map_ok(|frame| frame.into_data())
+        .map(|obj| match obj {
+            Ok(Ok(v)) => Ok(v),
+            Ok(Err(_)) => Err(std::io::Error::new(std::io::ErrorKind::Other, "conversion error")), 
+            Err(err) => Err(std::io::Error::new(std::io::ErrorKind::Other, err)),
+        });
     let async_read = tokio_util::io::StreamReader::new(stream_of_bytes);
     let async_read = std::pin::pin!(async_read);
     let mut rdr = dxml::Reader::new(quick_xml::reader::NsReader::from_reader(async_read)).await?;

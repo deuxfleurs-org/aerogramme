@@ -2,7 +2,7 @@ use std::sync::Arc;
 type ArcUser = std::sync::Arc<User>;
 
 use anyhow::{anyhow, Result};
-use futures::stream::StreamExt;
+use futures::stream::{TryStream, StreamExt};
 use futures::{future::BoxFuture, future::FutureExt};
 
 use aero_collections::{user::User, calendar::Calendar, davdag::BlobId};
@@ -12,7 +12,7 @@ use aero_dav::acltypes as acl;
 use aero_dav::realization::{All, self as all};
 
 
-use crate::dav::node::DavNode;
+use crate::dav::node::{DavNode, PutPolicy, Content};
 
 #[derive(Clone)]
 pub(crate) struct RootNode {}
@@ -59,6 +59,10 @@ impl DavNode for RootNode {
                 dav::AnyProperty::Value(dav::Property::Extension(all::Property::Acl(acl::Property::CurrentUserPrincipal(acl::User::Authenticated(dav::Href(HomeNode{}.path(user))))))),
             v => dav::AnyProperty::Request(v),
         }).collect()
+    }
+
+    fn put(&self, policy: PutPolicy, stream: Content) -> BoxFuture<Result<()>> {
+        todo!()
     }
 }
 
@@ -111,9 +115,17 @@ impl DavNode for HomeNode {
             ])),
             dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
             dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::CalendarHomeSet)) => 
-                dav::AnyProperty::Value(dav::Property::Extension(all::Property::Cal(cal::Property::CalendarHomeSet(dav::Href(/*CalendarListNode{}.path(user)*/ todo!()))))),
+                dav::AnyProperty::Value(dav::Property::Extension(all::Property::Cal(cal::Property::CalendarHomeSet(dav::Href(
+                    //@FIXME we are hardcoding the calendar path, instead we would want to use
+                    //objects
+                    format!("/{}/calendar/", user.username)
+                ))))),
             v => dav::AnyProperty::Request(v),
         }).collect()
+    }
+
+    fn put(&self, policy: PutPolicy, stream: Content) -> BoxFuture<Result<()>> {
+        todo!()
     }
 }
 
@@ -183,6 +195,10 @@ impl DavNode for CalendarListNode {
             dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
             v => dav::AnyProperty::Request(v),
         }).collect()
+    }
+
+    fn put(&self, policy: PutPolicy, stream: Content) -> BoxFuture<Result<()>> {
+        todo!()
     }
 }
 
@@ -270,6 +286,10 @@ impl DavNode for CalendarNode {
             v => dav::AnyProperty::Request(v),
         }).collect()
     }
+
+    fn put(&self, policy: PutPolicy, stream: Content) -> BoxFuture<Result<()>> {
+        todo!()
+    }
 }
 
 const FAKE_ICS: &str = r#"BEGIN:VCALENDAR
@@ -350,6 +370,10 @@ impl DavNode for EventNode {
             v => dav::AnyProperty::Request(v),
         }).collect()
     }
+
+    fn put(&self, policy: PutPolicy, stream: Content) -> BoxFuture<Result<()>> {
+        todo!()
+    }
 }
 
 #[derive(Clone)]
@@ -382,5 +406,10 @@ impl DavNode for CreateEventNode {
 
     fn properties(&self, _user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>> {
         vec![]
+    }
+
+    fn put(&self, policy: PutPolicy, stream: Content) -> BoxFuture<Result<()>> {
+        //@TODO write file
+        todo!()
     }
 }
