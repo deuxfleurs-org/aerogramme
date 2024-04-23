@@ -5,9 +5,10 @@ use hyper::body::Bytes;
 
 use aero_dav::types as dav;
 use aero_dav::realization::All;
-use aero_collections::{user::User, davdag::Etag};
+use aero_collections::davdag::Etag;
 
-type ArcUser = std::sync::Arc<User>;
+use super::controller::ArcUser;
+
 pub(crate) type Content<'a> = BoxStream<'a, std::result::Result<Bytes, std::io::Error>>;
 
 pub(crate) enum PutPolicy {
@@ -34,7 +35,7 @@ pub(crate) trait DavNode: Send {
     /// Put an element (create or update)
     fn put<'a>(&'a self, policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>>;
     /// Get content
-    //fn content(&self) -> TryStream;
+    fn content<'a>(&'a self) -> BoxFuture<'a, Content<'static>>;
 
     //@FIXME maybe add etag, maybe add a way to set content
 

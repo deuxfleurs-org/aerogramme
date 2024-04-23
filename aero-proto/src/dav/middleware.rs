@@ -1,21 +1,21 @@
 use anyhow::{anyhow, Result};
 use base64::Engine;
-use hyper::{Request, Response, body::Bytes};
+use hyper::{Request, Response};
 use hyper::body::Incoming;
-use http_body_util::combinators::BoxBody;
 
 use aero_user::login::ArcLoginProvider;
 use aero_collections::user::User;
 
 use super::codec::text_body;
+use super::controller::HttpResponse;
 
 type ArcUser = std::sync::Arc<User>;
 
 pub(super) async fn auth<'a>(
     login: ArcLoginProvider,
     req: Request<Incoming>, 
-    next: impl Fn(ArcUser, Request<Incoming>) -> futures::future::BoxFuture<'a, Result<Response<BoxBody<Bytes, std::io::Error>>>>,
-) -> Result<Response<BoxBody<Bytes, std::io::Error>>> {
+    next: impl Fn(ArcUser, Request<Incoming>) -> futures::future::BoxFuture<'a, Result<HttpResponse>>,
+) -> Result<HttpResponse> {
     let auth_val = match req.headers().get(hyper::header::AUTHORIZATION) {
         Some(hv) => hv.to_str()?,
         None => {

@@ -1,8 +1,10 @@
 use anyhow::Result;
-use http_body_util::combinators::BoxBody;
+use http_body_util::combinators::{UnsyncBoxBody, BoxBody};
 use hyper::body::Incoming;
 use hyper::{Request, Response, body::Bytes};
 use http_body_util::BodyStream;
+use http_body_util::StreamBody;
+use hyper::body::Frame;
 use futures::stream::{StreamExt, TryStreamExt};
 
 use aero_collections::user::User;
@@ -15,7 +17,8 @@ use crate::dav::node::{DavNode, PutPolicy};
 use crate::dav::resource::RootNode;
 use crate::dav::codec;
 
-type ArcUser = std::sync::Arc<User>;
+pub(super) type ArcUser = std::sync::Arc<User>;
+pub(super) type HttpResponse = Response<UnsyncBoxBody<Bytes, std::io::Error>>;
 
 const ALLPROP: [dav::PropertyRequest<All>; 10] = [
     dav::PropertyRequest::CreationDate,
@@ -36,7 +39,7 @@ pub(crate) struct Controller {
     req: Request<Incoming>,
 }
 impl Controller {
-    pub(crate) async fn route(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<Response<BoxBody<Bytes, std::io::Error>>> {
+    pub(crate) async fn route(user: std::sync::Arc<User>, req: Request<Incoming>) -> Result<HttpResponse> {
         let path = req.uri().path().to_string();
         let path_segments: Vec<_> = path.split("/").filter(|s| *s != "").collect();
         let method = req.method().as_str().to_uppercase();
@@ -60,12 +63,13 @@ impl Controller {
                 .header("DAV", "1")
                 .header("Allow", "HEAD,GET,PUT,OPTIONS,DELETE,PROPFIND,PROPPATCH,MKCOL,COPY,MOVE,LOCK,UNLOCK,MKCALENDAR,REPORT")
                 .body(codec::text_body(""))?),
-            "HEAD" | "GET" => {
-                tracing::warn!("HEAD+GET not correctly implemented");
+            "HEAD" => {
+                tracing::warn!("HEAD not correctly implemented");
                 Ok(Response::builder()
                     .status(404)
                     .body(codec::text_body(""))?)
             },
+            "GET" => ctrl.get().await,
             "PUT" => ctrl.put().await,
             "DELETE" => {
                 todo!();
@@ -87,7 +91,7 @@ impl Controller {
     /// Note: current implementation is not generic at all, it is heavily tied to CalDAV.
     /// A rewrite would be required to make it more generic (with the extension system that has
     /// been introduced in aero-dav)
-    async fn report(self) -> Result<Response<BoxBody<Bytes, std::io::Error>>> { 
+    async fn report(self) -> Result<HttpResponse> { 
         let status = hyper::StatusCode::from_u16(207)?;
 
         let report = match deserialize::<cal::Report<All>>(self.req).await {
@@ -135,7 +139,7 @@ impl Controller {
     }
 
     /// PROPFIND is the standard way to fetch WebDAV properties
-    async fn propfind(self) -> Result<Response<BoxBody<Bytes, std::io::Error>>> { 
+    async fn propfind(self) -> Result<HttpResponse> { 
         let depth = depth(&self.req);
         if matches!(depth, dav::Depth::Infinity) {
             return Ok(Response::builder()
@@ -175,7 +179,7 @@ impl Controller {
         serialize(status, Self::multistatus(&self.user, nodes, not_found, propname))
     }
 
-    async fn put(self) -> Result<Response<BoxBody<Bytes, std::io::Error>>> { 
+    async fn put(self) -> Result<HttpResponse> { 
         //@FIXME temporary, look at If-None-Match & If-Match headers
         let put_policy = PutPolicy::CreateOnly;
 
@@ -199,20 +203,19 @@ impl Controller {
         Ok(response)
     }
 
-    async fn get(self) ->  Result<Response<BoxBody<Bytes, std::io::Error>>> {
-        todo!()
-        /*let stream = StreamBody::new(self.node.get().map(|v| Ok(Frame::data(v))));
-        let boxed_body = BoxBody::new(stream);
+    async fn get(self) ->  Result<HttpResponse> {
+        let stream_body = StreamBody::new(self.node.content().await.map_ok(|v| Frame::data(v)));
+        let boxed_body = UnsyncBoxBody::new(stream_body);
 
         let response = Response::builder()
             .status(200)
             //.header("content-type", "application/xml; charset=\"utf-8\"")
             .body(boxed_body)?;
 
-        Ok(response)*/
+        Ok(response)
     }
 
-    // --- Common utulity functions ---
+    // --- Common utility functions ---
     /// Build a multistatus response from a list of DavNodes
     fn multistatus(user: &ArcUser, nodes: Vec<Box<dyn DavNode>>, not_found: Vec<dav::Href>, props: Option<dav::PropName<All>>) -> dav::Multistatus<All> {
         // Collect properties on existing objects

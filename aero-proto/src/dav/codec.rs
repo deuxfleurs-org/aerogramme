@@ -6,7 +6,7 @@ use futures::stream::StreamExt;
 use futures::stream::TryStreamExt;
 use http_body_util::BodyStream;
 use http_body_util::StreamBody;
-use http_body_util::combinators::BoxBody;
+use http_body_util::combinators::UnsyncBoxBody;
 use hyper::body::Frame;
 use tokio_util::sync::PollSender;
 use std::io::{Error, ErrorKind};
@@ -16,6 +16,7 @@ use http_body_util::BodyExt;
 
 use aero_dav::types as dav;
 use aero_dav::xml as dxml;
+use super::controller::HttpResponse;
 
 pub(crate) fn depth(req: &Request<impl hyper::body::Body>) -> dav::Depth {
     match req.headers().get("Depth").map(hyper::header::HeaderValue::to_str) {
@@ -26,11 +27,11 @@ pub(crate) fn depth(req: &Request<impl hyper::body::Body>) -> dav::Depth {
     }
 }
 
-pub(crate) fn text_body(txt: &'static str) -> BoxBody<Bytes, std::io::Error> {
-    BoxBody::new(Full::new(Bytes::from(txt)).map_err(|e| match e {}))
+pub(crate) fn text_body(txt: &'static str) -> UnsyncBoxBody<Bytes, std::io::Error> {
+    UnsyncBoxBody::new(Full::new(Bytes::from(txt)).map_err(|e| match e {}))
 }
 
-pub(crate) fn serialize<T: dxml::QWrite + Send + 'static>(status_ok: hyper::StatusCode, elem: T) -> Result<Response<BoxBody<Bytes, std::io::Error>>> {
+pub(crate) fn serialize<T: dxml::QWrite + Send + 'static>(status_ok: hyper::StatusCode, elem: T) -> Result<HttpResponse> {
     let (tx, rx) = tokio::sync::mpsc::channel::<Bytes>(1);
 
     // Build the writer
@@ -55,7 +56,7 @@ pub(crate) fn serialize<T: dxml::QWrite + Send + 'static>(status_ok: hyper::Stat
     // Build the reader
     let recv = tokio_stream::wrappers::ReceiverStream::new(rx);
     let stream = StreamBody::new(recv.map(|v| Ok(Frame::data(v))));
-    let boxed_body = BoxBody::new(stream);
+    let boxed_body = UnsyncBoxBody::new(stream);
 
     let response = Response::builder()
         .status(status_ok)

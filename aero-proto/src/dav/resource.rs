@@ -64,6 +64,12 @@ impl DavNode for RootNode {
     fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
         todo!()
     }
+
+    fn content<'a>(&'a self) -> BoxFuture<'a, Content<'static>> {
+        async { 
+            futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
+        }.boxed()
+    }
 }
 
 #[derive(Clone)]
@@ -126,6 +132,12 @@ impl DavNode for HomeNode {
 
     fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
         todo!()
+    }
+    
+    fn content<'a>(&'a self) -> BoxFuture<'a, Content<'static>> {
+        async { 
+            futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
+        }.boxed()
     }
 }
 
@@ -199,6 +211,12 @@ impl DavNode for CalendarListNode {
 
     fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
         todo!()
+    }
+
+    fn content<'a>(&'a self) -> BoxFuture<'a, Content<'static>> {
+        async { 
+            futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
+        }.boxed()
     }
 }
 
@@ -289,6 +307,12 @@ impl DavNode for CalendarNode {
 
     fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
         todo!()
+    }
+
+    fn content<'a>(&'a self) -> BoxFuture<'a, Content<'static>> {
+        async { 
+            futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
+        }.boxed()
     }
 }
 
@@ -386,12 +410,26 @@ impl DavNode for EventNode {
                 _ => ()
             };
 
-            //@FIXME for now, our storage interface does not allow for streaming
+            //@FIXME for now, our storage interface does not allow streaming,
+            // so we load everything in memory
             let mut evt = Vec::new();
             let mut reader = stream.into_async_read();
             reader.read_to_end(&mut evt).await.unwrap();
             let (_token, entry) = self.col.put(self.filename.as_str(), evt.as_ref()).await?;
             Ok(entry.2)
+        }.boxed()
+    }
+
+    fn content<'a>(&'a self) -> BoxFuture<'a, Content<'static>> {
+        async {
+            //@FIXME for now, our storage interface does not allow streaming,
+            // so we load everything in memory
+            let content = self.col.get(self.blob_id).await.or(Err(std::io::Error::from(std::io::ErrorKind::Interrupted)));
+            let r = async {
+                Ok(hyper::body::Bytes::from(content?))
+            };
+            //tokio::pin!(r);
+            futures::stream::once(Box::pin(r)).boxed()
         }.boxed()
     }
 }
@@ -438,6 +476,12 @@ impl DavNode for CreateEventNode {
             reader.read_to_end(&mut evt).await.unwrap();
             let (_token, entry) = self.col.put(self.filename.as_str(), evt.as_ref()).await?;
             Ok(entry.2)
+        }.boxed()
+    }
+
+    fn content<'a>(&'a self) -> BoxFuture<'a, Content<'static>> {
+        async {
+            futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
         }.boxed()
     }
 }
