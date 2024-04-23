@@ -35,7 +35,7 @@ pub(crate) trait DavNode: Send {
     fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> PropertyStream<'static>;
     //fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>>;
     /// Put an element (create or update)
-    fn put<'a>(&'a self, policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>>;
+    fn put<'a>(&'a self, policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>>;
     /// Content type of the element
     fn content_type(&self) -> &str;
     /// Get content

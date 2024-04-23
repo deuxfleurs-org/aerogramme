@@ -67,8 +67,8 @@ impl DavNode for RootNode {
         }).boxed()
     }
 
-    fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
-        todo!()
+    fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
+        futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported)).boxed()
     }
 
     fn content(&self) -> Content<'static> {
@@ -143,8 +143,8 @@ impl DavNode for HomeNode {
         }).boxed()
     }
 
-    fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
-        todo!()
+    fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
+        futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported)).boxed()
     }
     
     fn content(&self) -> Content<'static> {
@@ -230,8 +230,8 @@ impl DavNode for CalendarListNode {
         }).boxed()
     }
 
-    fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
-        todo!()
+    fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
+        futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported)).boxed()
     }
 
     fn content(&self) -> Content<'static> {
@@ -333,8 +333,8 @@ impl DavNode for CalendarNode {
         }).boxed()
     }
 
-    fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
-        todo!()
+    fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
+        futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported)).boxed()
     }
 
     fn content<'a>(&'a self) -> Content<'static> {
@@ -412,12 +412,12 @@ impl DavNode for EventNode {
         }).boxed()
     }
 
-    fn put<'a>(&'a self, policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
+    fn put<'a>(&'a self, policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
         async {
-            let existing_etag = self.etag().await?;
+            let existing_etag = self.etag().await.or(Err(std::io::Error::new(std::io::ErrorKind::Other, "Etag error")))?;
             match policy {
-                PutPolicy::CreateOnly => bail!("Already existing"),
-                PutPolicy::ReplaceEtag(etag) if etag != existing_etag.as_str() => bail!("Would overwrite something we don't know"),
+                PutPolicy::CreateOnly => return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists)),
+                PutPolicy::ReplaceEtag(etag) if etag != existing_etag.as_str() => return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists)),
                 _ => ()
             };
 
@@ -425,8 +425,8 @@ impl DavNode for EventNode {
             // so we load everything in memory
             let mut evt = Vec::new();
             let mut reader = stream.into_async_read();
-            reader.read_to_end(&mut evt).await.unwrap();
-            let (_token, entry) = self.col.put(self.filename.as_str(), evt.as_ref()).await?;
+            reader.read_to_end(&mut evt).await.or(Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe)))?;
+            let (_token, entry) = self.col.put(self.filename.as_str(), evt.as_ref()).await.or(Err(std::io::ErrorKind::Interrupted))?;
             Ok(entry.2)
         }.boxed()
     }
@@ -480,7 +480,7 @@ impl DavNode for CreateEventNode {
         futures::stream::iter(vec![]).boxed()
     }
 
-    fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
+    fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
         //@NOTE: policy might not be needed here: whatever we put, there is no known entries here
         
         async {
@@ -488,7 +488,7 @@ impl DavNode for CreateEventNode {
             let mut evt = Vec::new();
             let mut reader = stream.into_async_read();
             reader.read_to_end(&mut evt).await.unwrap();
-            let (_token, entry) = self.col.put(self.filename.as_str(), evt.as_ref()).await?;
+            let (_token, entry) = self.col.put(self.filename.as_str(), evt.as_ref()).await.or(Err(std::io::ErrorKind::Interrupted))?;
             Ok(entry.2)
         }.boxed()
     }
