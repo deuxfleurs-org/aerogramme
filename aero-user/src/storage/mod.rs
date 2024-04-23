@@ -159,7 +159,7 @@ pub trait IStore {
     async fn row_poll(&self, value: &RowRef) -> Result<RowVal, StorageError>;
 
     async fn blob_fetch(&self, blob_ref: &BlobRef) -> Result<BlobVal, StorageError>;
-    async fn blob_insert(&self, blob_val: BlobVal) -> Result<(), StorageError>;
+    async fn blob_insert(&self, blob_val: BlobVal) -> Result<String, StorageError>;
     async fn blob_copy(&self, src: &BlobRef, dst: &BlobRef) -> Result<(), StorageError>;
     async fn blob_list(&self, prefix: &str) -> Result<Vec<BlobRef>, StorageError>;
     async fn blob_rm(&self, blob_ref: &BlobRef) -> Result<(), StorageError>;

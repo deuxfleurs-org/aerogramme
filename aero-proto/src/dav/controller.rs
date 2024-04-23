@@ -2,7 +2,8 @@ use anyhow::Result;
 use http_body_util::combinators::BoxBody;
 use hyper::body::Incoming;
 use hyper::{Request, Response, body::Bytes};
-use http_body_util::StreamBody;
+use http_body_util::BodyStream;
+use futures::stream::{StreamExt, TryStreamExt};
 
 use aero_collections::user::User;
 use aero_dav::types as dav;
@@ -10,7 +11,7 @@ use aero_dav::realization::All;
 use aero_dav::caltypes as cal;
 
 use crate::dav::codec::{serialize, deserialize, depth, text_body};
-use crate::dav::node::DavNode;
+use crate::dav::node::{DavNode, PutPolicy};
 use crate::dav::resource::RootNode;
 use crate::dav::codec;
 
@@ -65,10 +66,7 @@ impl Controller {
                     .status(404)
                     .body(codec::text_body(""))?)
             },
-            "PUT" => {
-                let to_create = path_segments.last().expect("Bound checked earlier in this fx");
-                ctrl.put(to_create).await
-            },
+            "PUT" => ctrl.put().await,
             "DELETE" => {
                 todo!();
             },
@@ -177,8 +175,28 @@ impl Controller {
         serialize(status, Self::multistatus(&self.user, nodes, not_found, propname))
     }
 
-    async fn put(self, child: &str) -> Result<Response<BoxBody<Bytes, std::io::Error>>> { 
-        todo!()
+    async fn put(self) -> Result<Response<BoxBody<Bytes, std::io::Error>>> { 
+        //@FIXME temporary, look at If-None-Match & If-Match headers
+        let put_policy = PutPolicy::CreateOnly;
+
+        let stream_of_frames = BodyStream::new(self.req.into_body());
+        let stream_of_bytes = stream_of_frames
+             .map_ok(|frame| frame.into_data())
+             .map(|obj| match obj {
+                 Ok(Ok(v)) => Ok(v),
+                 Ok(Err(_)) => Err(std::io::Error::new(std::io::ErrorKind::Other, "conversion error")), 
+                 Err(err) => Err(std::io::Error::new(std::io::ErrorKind::Other, err)),
+             }).boxed();
+
+        let etag = self.node.put(put_policy, stream_of_bytes).await?;
+        
+        let response = Response::builder()
+            .status(201)
+            .header("ETag", etag)
+            //.header("content-type", "application/xml; charset=\"utf-8\"")
+            .body(text_body(""))?;
+
+        Ok(response)
     }
 
     async fn get(self) ->  Result<Response<BoxBody<Bytes, std::io::Error>>> {

@@ -426,15 +426,16 @@ impl IStore for GarageStore {
         tracing::debug!("Fetched {}/{}", self.bucket, blob_ref.0);
         Ok(bv)
     }
-    async fn blob_insert(&self, blob_val: BlobVal) -> Result<(), StorageError> {
+    async fn blob_insert(&self, blob_val: BlobVal) -> Result<String, StorageError> {
         tracing::trace!(entry=%blob_val.blob_ref, command="blob_insert");
         let streamable_value = s3::primitives::ByteStream::from(blob_val.value);
+        let obj_key = blob_val.blob_ref.0;
 
         let maybe_send = self
             .s3
             .put_object()
             .bucket(self.bucket.to_string())
-            .key(blob_val.blob_ref.0.to_string())
+            .key(obj_key.to_string())
             .set_metadata(Some(blob_val.meta))
             .body(streamable_value)
             .send()
@@ -445,9 +446,12 @@ impl IStore for GarageStore {
                 tracing::error!("unable to send object: {}", e);
                 Err(StorageError::Internal)
             }
-            Ok(_) => {
-                tracing::debug!("Inserted {}/{}", self.bucket, blob_val.blob_ref.0);
-                Ok(())
+            Ok(put_output) => {
+                tracing::debug!("Inserted {}/{}", self.bucket, obj_key);
+                Ok(put_output
+                    .e_tag()
+                    .map(|v| format!("\"{}\"", v))
+                    .unwrap_or(format!("W/\"{}\"", obj_key)))
             }
         }
     }

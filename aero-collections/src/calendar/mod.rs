@@ -71,8 +71,8 @@ impl Calendar {
     }
 
     /// Put a specific event
-    pub async fn put<'a>(&self, entry: IndexEntry, evt: &'a [u8]) -> Result<Token> {
-        self.internal.write().await.put(entry, evt).await
+    pub async fn put<'a>(&self, name: &str, evt: &'a [u8]) -> Result<(Token, IndexEntry)> {
+        self.internal.write().await.put(name, evt).await
     }
 
     /// Delete a specific event
@@ -123,8 +123,9 @@ impl CalendarInternal {
         cryptoblob::open(&body, &message_key)
     }
 
-    async fn put<'a>(&mut self, entry: IndexEntry, evt: &'a [u8]) -> Result<Token> {
+    async fn put<'a>(&mut self, name: &str, evt: &'a [u8]) -> Result<(Token, IndexEntry)> {
         let message_key = gen_key();
+        let blob_id = gen_ident();
         
         let encrypted_msg_key = cryptoblob::seal(&message_key.as_ref(), &self.encryption_key)?;
         let key_header = base64::engine::general_purpose::STANDARD.encode(&encrypted_msg_key);
@@ -132,22 +133,23 @@ impl CalendarInternal {
         // Write event to S3
         let message_blob = cryptoblob::seal(evt, &message_key)?;
         let blob_val = BlobVal::new(
-            BlobRef(format!("{}/{}", self.cal_path, entry.0)),
+            BlobRef(format!("{}/{}", self.cal_path, blob_id)),
             message_blob,
         )
         .with_meta(MESSAGE_KEY.to_string(), key_header);
 
-        self.storage
+        let etag = self.storage
             .blob_insert(blob_val)
             .await?;
 
         // Add entry to Bayou
+        let entry: IndexEntry = (blob_id, name.to_string(), etag);
         let davstate = self.davdag.state();
-        let put_op = davstate.op_put(entry);
+        let put_op = davstate.op_put(entry.clone());
         let token = put_op.token();
         self.davdag.push(put_op).await?;
 
-        Ok(token)
+        Ok((token, entry))
     }
 
     async fn delete(&mut self, blob_id: BlobId) -> Result<Token> {

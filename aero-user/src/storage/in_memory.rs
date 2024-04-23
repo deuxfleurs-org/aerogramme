@@ -1,8 +1,11 @@
-use crate::storage::*;
 use std::collections::BTreeMap;
 use std::ops::Bound::{self, Excluded, Included, Unbounded};
 use std::sync::RwLock;
+
+use sodiumoxide::{hex, crypto::hash};
 use tokio::sync::Notify;
+
+use crate::storage::*;
 
 /// This implementation is very inneficient, and not completely correct
 /// Indeed, when the connector is dropped, the memory is freed.
@@ -79,6 +82,12 @@ impl InternalBlobVal {
             meta: self.metadata.clone(),
             value: self.data.clone(),
         }
+    }
+    fn etag(&self) -> String {
+        let digest = hash::hash(self.data.as_ref());
+        let buff = digest.as_ref();
+        let hexstr = hex::encode(buff);
+        format!("\"{}\"", hexstr)
     }
 }
 
@@ -300,13 +309,14 @@ impl IStore for MemStore {
             .ok_or(StorageError::NotFound)
             .map(|v| v.to_blob_val(blob_ref))
     }
-    async fn blob_insert(&self, blob_val: BlobVal) -> Result<(), StorageError> {
+    async fn blob_insert(&self, blob_val: BlobVal) -> Result<String, StorageError> {
         tracing::trace!(entry=%blob_val.blob_ref, command="blob_insert");
         let mut store = self.blob.write().or(Err(StorageError::Internal))?;
         let entry = store.entry(blob_val.blob_ref.0.clone()).or_default();
         entry.data = blob_val.value.clone();
         entry.metadata = blob_val.meta.clone();
-        Ok(())
+
+        Ok(entry.etag())
     }
     async fn blob_copy(&self, src: &BlobRef, dst: &BlobRef) -> Result<(), StorageError> {
         tracing::trace!(src=%src, dst=%dst, command="blob_copy");

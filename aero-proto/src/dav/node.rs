@@ -1,17 +1,18 @@
 use anyhow::Result;
-use futures::Stream;
+use futures::stream::{BoxStream, Stream};
 use futures::future::BoxFuture;
+use hyper::body::Bytes;
 
 use aero_dav::types as dav;
 use aero_dav::realization::All;
-use aero_collections::user::User;
+use aero_collections::{user::User, davdag::Etag};
 
 type ArcUser = std::sync::Arc<User>;
-pub(crate) type Content = Box<dyn Stream<Item=Result<u64>>>;
+pub(crate) type Content<'a> = BoxStream<'a, std::result::Result<Bytes, std::io::Error>>;
 
 pub(crate) enum PutPolicy {
     CreateOnly,
-    ReplaceEtags(String),
+    ReplaceEtag(String),
 }
 
 /// A DAV node should implement the following methods
@@ -31,7 +32,7 @@ pub(crate) trait DavNode: Send {
     /// Get the values for the given properties
     fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>>;
     /// Put an element (create or update)
-    fn put(&self, policy: PutPolicy, stream: Content) -> BoxFuture<Result<()>>;
+    fn put<'a>(&'a self, policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>>;
     /// Get content
     //fn content(&self) -> TryStream;
 

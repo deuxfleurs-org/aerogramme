@@ -1,16 +1,16 @@
 use std::sync::Arc;
 type ArcUser = std::sync::Arc<User>;
 
-use anyhow::{anyhow, Result};
-use futures::stream::{TryStream, StreamExt};
+use anyhow::{anyhow, bail, Result};
+use futures::stream::{TryStream, TryStreamExt, StreamExt};
+use futures::io::AsyncReadExt;
 use futures::{future::BoxFuture, future::FutureExt};
 
-use aero_collections::{user::User, calendar::Calendar, davdag::BlobId};
+use aero_collections::{user::User, calendar::Calendar, davdag::{BlobId, IndexEntry, Etag}};
 use aero_dav::types as dav;
 use aero_dav::caltypes as cal;
 use aero_dav::acltypes as acl;
 use aero_dav::realization::{All, self as all};
-
 
 use crate::dav::node::{DavNode, PutPolicy, Content};
 
@@ -61,7 +61,7 @@ impl DavNode for RootNode {
         }).collect()
     }
 
-    fn put(&self, policy: PutPolicy, stream: Content) -> BoxFuture<Result<()>> {
+    fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
         todo!()
     }
 }
@@ -124,7 +124,7 @@ impl DavNode for HomeNode {
         }).collect()
     }
 
-    fn put(&self, policy: PutPolicy, stream: Content) -> BoxFuture<Result<()>> {
+    fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
         todo!()
     }
 }
@@ -197,7 +197,7 @@ impl DavNode for CalendarListNode {
         }).collect()
     }
 
-    fn put(&self, policy: PutPolicy, stream: Content) -> BoxFuture<Result<()>> {
+    fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
         todo!()
     }
 }
@@ -287,7 +287,7 @@ impl DavNode for CalendarNode {
         }).collect()
     }
 
-    fn put(&self, policy: PutPolicy, stream: Content) -> BoxFuture<Result<()>> {
+    fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
         todo!()
     }
 }
@@ -330,6 +330,12 @@ pub(crate) struct EventNode {
     filename: String,
     blob_id: BlobId,
 }
+impl EventNode {
+    async fn etag(&self) -> Result<Etag> {
+        self.col.dag().await.table.get(&self.blob_id).map(|(_, _, etag)| etag.to_string()).ok_or(anyhow!("Missing blob id in index"))
+    }
+}
+
 impl DavNode for EventNode {
     fn fetch<'a>(&self, user: &'a ArcUser, path: &'a [&str], create: bool) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
         if path.len() == 0 {
@@ -362,7 +368,7 @@ impl DavNode for EventNode {
             dav::PropertyRequest::ResourceType => dav::AnyProperty::Value(dav::Property::ResourceType(vec![])),
             dav::PropertyRequest::GetContentType =>  dav::AnyProperty::Value(dav::Property::GetContentType("text/calendar".into())),
             dav::PropertyRequest::GetEtag => dav::AnyProperty::Value(dav::Property::GetEtag("\"abcdefg\"".into())),
-            dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::CalendarData(req))) =>
+            dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::CalendarData(_req))) =>
                 dav::AnyProperty::Value(dav::Property::Extension(all::Property::Cal(cal::Property::CalendarData(cal::CalendarDataPayload { 
                     mime: None, 
                     payload: FAKE_ICS.into() 
@@ -371,8 +377,22 @@ impl DavNode for EventNode {
         }).collect()
     }
 
-    fn put(&self, policy: PutPolicy, stream: Content) -> BoxFuture<Result<()>> {
-        todo!()
+    fn put<'a>(&'a self, policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
+        async {
+            let existing_etag = self.etag().await?;
+            match policy {
+                PutPolicy::CreateOnly => bail!("Already existing"),
+                PutPolicy::ReplaceEtag(etag) if etag != existing_etag.as_str() => bail!("Would overwrite something we don't know"),
+                _ => ()
+            };
+
+            //@FIXME for now, our storage interface does not allow for streaming
+            let mut evt = Vec::new();
+            let mut reader = stream.into_async_read();
+            reader.read_to_end(&mut evt).await.unwrap();
+            let (_token, entry) = self.col.put(self.filename.as_str(), evt.as_ref()).await?;
+            Ok(entry.2)
+        }.boxed()
     }
 }
 
@@ -408,8 +428,16 @@ impl DavNode for CreateEventNode {
         vec![]
     }
 
-    fn put(&self, policy: PutPolicy, stream: Content) -> BoxFuture<Result<()>> {
-        //@TODO write file
-        todo!()
+    fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
+        //@NOTE: policy might not be needed here: whatever we put, there is no known entries here
+        
+        async {
+            //@FIXME for now, our storage interface does not allow for streaming
+            let mut evt = Vec::new();
+            let mut reader = stream.into_async_read();
+            reader.read_to_end(&mut evt).await.unwrap();
+            let (_token, entry) = self.col.put(self.filename.as_str(), evt.as_ref()).await?;
+            Ok(entry.2)
+        }.boxed()
     }
 }
