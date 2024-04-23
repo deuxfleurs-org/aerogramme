@@ -1,6 +1,6 @@
 use anyhow::Result;
-use futures::stream::{BoxStream, Stream};
-use futures::future::BoxFuture;
+use futures::stream::{BoxStream, Stream, StreamExt};
+use futures::future::{BoxFuture, FutureExt};
 use hyper::body::Bytes;
 
 use aero_dav::types as dav;
@@ -10,6 +10,7 @@ use aero_collections::davdag::Etag;
 use super::controller::ArcUser;
 
 pub(crate) type Content<'a> = BoxStream<'a, std::result::Result<Bytes, std::io::Error>>;
+pub(crate) type PropertyStream<'a> = BoxStream<'a, std::result::Result<dav::Property<All>, dav::PropertyRequest<All>>>;
 
 pub(crate) enum PutPolicy {
     CreateOnly,
@@ -31,13 +32,14 @@ pub(crate) trait DavNode: Send {
     /// Get the supported WebDAV properties
     fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All>;
     /// Get the values for the given properties
-    fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>>;
+    fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> PropertyStream<'static>;
+    //fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>>;
     /// Put an element (create or update)
     fn put<'a>(&'a self, policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>>;
     /// Content type of the element
     fn content_type(&self) -> &str;
     /// Get content
-    fn content<'a>(&'a self) -> BoxFuture<'a, Content<'static>>;
+    fn content(&self) -> Content<'static>;
 
     //@FIXME maybe add etag, maybe add a way to set content
 
@@ -62,39 +64,51 @@ pub(crate) trait DavNode: Send {
     }
 
     /// Utility function to get a prop response from a node & a list of propname
-    fn response_props(&self, user: &ArcUser, props: dav::PropName<All>) -> dav::Response<All> {
-        let mut prop_desc = vec![];
-        let (found, not_found): (Vec<_>, Vec<_>) = self.properties(user, props).into_iter().partition(|v| matches!(v, dav::AnyProperty::Value(_)));
+    fn response_props(&self, user: &ArcUser, props: dav::PropName<All>) -> BoxFuture<'static, dav::Response<All>> {
+        //@FIXME we should make the DAV parsed object a stream...
+        let mut result_stream = self.properties(user, props);
+        let path = self.path(user);
 
-        // If at least one property has been found on this object, adding a HTTP 200 propstat to
-        // the response
-        if !found.is_empty() {
-            prop_desc.push(dav::PropStat { 
-                status: dav::Status(hyper::StatusCode::OK), 
-                prop: dav::AnyProp(found),
+        async move {
+            let mut prop_desc = vec![];
+            let (mut found, mut not_found) = (vec![], vec![]);
+            while let Some(maybe_prop) = result_stream.next().await {
+                match maybe_prop {
+                    Ok(v) => found.push(dav::AnyProperty::Value(v)),
+                    Err(v) => not_found.push(dav::AnyProperty::Request(v)),
+                }
+            }
+
+            // If at least one property has been found on this object, adding a HTTP 200 propstat to
+            // the response
+            if !found.is_empty() {
+                prop_desc.push(dav::PropStat { 
+                    status: dav::Status(hyper::StatusCode::OK), 
+                    prop: dav::AnyProp(found),
+                    error: None,
+                    responsedescription: None,
+                });
+            }
+
+            // If at least one property can't be found on this object, adding a HTTP 404 propstat to
+            // the response
+            if !not_found.is_empty() {
+                prop_desc.push(dav::PropStat { 
+                    status: dav::Status(hyper::StatusCode::NOT_FOUND), 
+                    prop: dav::AnyProp(not_found),
+                    error: None,
+                    responsedescription: None,
+                })
+            }
+
+            // Build the finale response
+            dav::Response {
+                status_or_propstat: dav::StatusOrPropstat::PropStat(dav::Href(path), prop_desc),
                 error: None,
-                responsedescription: None,
-            });
-        }
-
-        // If at least one property can't be found on this object, adding a HTTP 404 propstat to
-        // the response
-        if !not_found.is_empty() {
-            prop_desc.push(dav::PropStat { 
-                status: dav::Status(hyper::StatusCode::NOT_FOUND), 
-                prop: dav::AnyProp(not_found),
-                error: None,
-                responsedescription: None,
-            })
-        }
-
-        // Build the finale response
-        dav::Response {
-            status_or_propstat: dav::StatusOrPropstat::PropStat(dav::Href(self.path(user)), prop_desc),
-            error: None,
-            location: None,
-            responsedescription: None
-        }
+                location: None,
+                responsedescription: None
+            }
+        }.boxed()
     }
 }
 

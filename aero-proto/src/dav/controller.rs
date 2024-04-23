@@ -135,7 +135,7 @@ impl Controller {
             Some(cal::CalendarSelector::Prop(inner)) => Some(inner),
         };
 
-        serialize(status, Self::multistatus(&self.user, ok_node, not_found, props))
+        serialize(status, Self::multistatus(&self.user, ok_node, not_found, props).await)
     }
 
     /// PROPFIND is the standard way to fetch WebDAV properties
@@ -176,7 +176,7 @@ impl Controller {
 
         // Not Found is currently impossible considering the way we designed this function
         let not_found = vec![];
-        serialize(status, Self::multistatus(&self.user, nodes, not_found, propname))
+        serialize(status, Self::multistatus(&self.user, nodes, not_found, propname).await)
     }
 
     async fn put(self) -> Result<HttpResponse> { 
@@ -204,7 +204,7 @@ impl Controller {
     }
 
     async fn get(self) ->  Result<HttpResponse> {
-        let stream_body = StreamBody::new(self.node.content().await.map_ok(|v| Frame::data(v)));
+        let stream_body = StreamBody::new(self.node.content().map_ok(|v| Frame::data(v)));
         let boxed_body = UnsyncBoxBody::new(stream_body);
 
         let response = Response::builder()
@@ -217,10 +217,10 @@ impl Controller {
 
     // --- Common utility functions ---
     /// Build a multistatus response from a list of DavNodes
-    fn multistatus(user: &ArcUser, nodes: Vec<Box<dyn DavNode>>, not_found: Vec<dav::Href>, props: Option<dav::PropName<All>>) -> dav::Multistatus<All> {
+    async fn multistatus(user: &ArcUser, nodes: Vec<Box<dyn DavNode>>, not_found: Vec<dav::Href>, props: Option<dav::PropName<All>>) -> dav::Multistatus<All> {
         // Collect properties on existing objects
         let mut responses: Vec<dav::Response<All>> = match props {
-            Some(props) => nodes.into_iter().map(|n| n.response_props(user, props.clone())).collect(),
+            Some(props) => futures::stream::iter(nodes).then(|n| n.response_props(user, props.clone())).collect().await,
             None => nodes.into_iter().map(|n| n.response_propname(user)).collect(),
         };
 

@@ -13,6 +13,7 @@ use aero_dav::acltypes as acl;
 use aero_dav::realization::{All, self as all};
 
 use crate::dav::node::{DavNode, PutPolicy, Content};
+use super::node::PropertyStream;
 
 #[derive(Clone)]
 pub(crate) struct RootNode {}
@@ -48,27 +49,30 @@ impl DavNode for RootNode {
             dav::PropertyRequest::Extension(all::PropertyRequest::Acl(acl::PropertyRequest::CurrentUserPrincipal)),
         ])
     }
-    fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>> {
-        prop.0.into_iter().map(|n| match n {
-            dav::PropertyRequest::DisplayName => dav::AnyProperty::Value(dav::Property::DisplayName("DAV Root".to_string())),
-            dav::PropertyRequest::ResourceType => dav::AnyProperty::Value(dav::Property::ResourceType(vec![
-                dav::ResourceType::Collection,
-            ])),
-            dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
-            dav::PropertyRequest::Extension(all::PropertyRequest::Acl(acl::PropertyRequest::CurrentUserPrincipal)) =>
-                dav::AnyProperty::Value(dav::Property::Extension(all::Property::Acl(acl::Property::CurrentUserPrincipal(acl::User::Authenticated(dav::Href(HomeNode{}.path(user))))))),
-            v => dav::AnyProperty::Request(v),
-        }).collect()
+
+    fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> PropertyStream<'static> {
+        let user = user.clone();
+        futures::stream::iter(prop.0).map(move |n| {
+            let prop = match n {
+                dav::PropertyRequest::DisplayName => dav::Property::DisplayName("DAV Root".to_string()),
+                dav::PropertyRequest::ResourceType => dav::Property::ResourceType(vec![
+                    dav::ResourceType::Collection,
+                ]),
+                dav::PropertyRequest::GetContentType => dav::Property::GetContentType("httpd/unix-directory".into()),
+                dav::PropertyRequest::Extension(all::PropertyRequest::Acl(acl::PropertyRequest::CurrentUserPrincipal)) =>
+                    dav::Property::Extension(all::Property::Acl(acl::Property::CurrentUserPrincipal(acl::User::Authenticated(dav::Href(HomeNode{}.path(&user)))))),
+                v => return Err(v),
+            };
+            Ok(prop)
+        }).boxed()
     }
 
     fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
         todo!()
     }
 
-    fn content<'a>(&'a self) -> BoxFuture<'a, Content<'static>> {
-        async { 
-            futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
-        }.boxed()
+    fn content(&self) -> Content<'static> {
+        futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
     }
 
     fn content_type(&self) -> &str {
@@ -116,32 +120,35 @@ impl DavNode for HomeNode {
             dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::CalendarHomeSet)),
         ])
     }
-    fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>> {
-        prop.0.into_iter().map(|n| match n {
-            dav::PropertyRequest::DisplayName => dav::AnyProperty::Value(dav::Property::DisplayName(format!("{} home", user.username))),
-            dav::PropertyRequest::ResourceType => dav::AnyProperty::Value(dav::Property::ResourceType(vec![
-                dav::ResourceType::Collection,
-                dav::ResourceType::Extension(all::ResourceType::Acl(acl::ResourceType::Principal)),
-            ])),
-            dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
-            dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::CalendarHomeSet)) => 
-                dav::AnyProperty::Value(dav::Property::Extension(all::Property::Cal(cal::Property::CalendarHomeSet(dav::Href(
-                    //@FIXME we are hardcoding the calendar path, instead we would want to use
-                    //objects
-                    format!("/{}/calendar/", user.username)
-                ))))),
-            v => dav::AnyProperty::Request(v),
-        }).collect()
+    fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> PropertyStream<'static> {
+        let user = user.clone();
+
+        futures::stream::iter(prop.0).map(move |n| {
+            let prop = match n {
+                dav::PropertyRequest::DisplayName => dav::Property::DisplayName(format!("{} home", user.username)),
+                dav::PropertyRequest::ResourceType => dav::Property::ResourceType(vec![
+                    dav::ResourceType::Collection,
+                    dav::ResourceType::Extension(all::ResourceType::Acl(acl::ResourceType::Principal)),
+                ]),
+                dav::PropertyRequest::GetContentType => dav::Property::GetContentType("httpd/unix-directory".into()),
+                dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::CalendarHomeSet)) => 
+                    dav::Property::Extension(all::Property::Cal(cal::Property::CalendarHomeSet(dav::Href(
+                        //@FIXME we are hardcoding the calendar path, instead we would want to use
+                        //objects
+                        format!("/{}/calendar/", user.username)
+                    )))),
+                v => return Err(v),
+            };
+            Ok(prop)
+        }).boxed()
     }
 
     fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
         todo!()
     }
     
-    fn content<'a>(&'a self) -> BoxFuture<'a, Content<'static>> {
-        async { 
-            futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
-        }.boxed()
+    fn content(&self) -> Content<'static> {
+        futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
     }
 
 
@@ -209,23 +216,26 @@ impl DavNode for CalendarListNode {
             dav::PropertyRequest::GetContentType,
         ])
     }
-    fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>> {
-        prop.0.into_iter().map(|n| match n {
-            dav::PropertyRequest::DisplayName => dav::AnyProperty::Value(dav::Property::DisplayName(format!("{} calendars", user.username))),
-            dav::PropertyRequest::ResourceType => dav::AnyProperty::Value(dav::Property::ResourceType(vec![dav::ResourceType::Collection])),
-            dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
-            v => dav::AnyProperty::Request(v),
-        }).collect()
+    fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> PropertyStream<'static> {
+        let user = user.clone();
+
+        futures::stream::iter(prop.0).map(move |n| {
+            let prop = match n {
+                dav::PropertyRequest::DisplayName => dav::Property::DisplayName(format!("{} calendars", user.username)),
+                dav::PropertyRequest::ResourceType => dav::Property::ResourceType(vec![dav::ResourceType::Collection]),
+                dav::PropertyRequest::GetContentType => dav::Property::GetContentType("httpd/unix-directory".into()),
+                v => return Err(v),
+            };
+            Ok(prop)
+        }).boxed()
     }
 
     fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
         todo!()
     }
 
-    fn content<'a>(&'a self) -> BoxFuture<'a, Content<'static>> {
-        async { 
-            futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
-        }.boxed()
+    fn content(&self) -> Content<'static> {
+        futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
     }
 
     fn content_type(&self) -> &str {
@@ -300,69 +310,41 @@ impl DavNode for CalendarNode {
             dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::SupportedCalendarComponentSet)),
         ])
     }
-    fn properties(&self, _user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>> {
-        prop.0.into_iter().map(|n| match n {
-            dav::PropertyRequest::DisplayName =>  dav::AnyProperty::Value(dav::Property::DisplayName(format!("{} calendar", self.calname))),
-            dav::PropertyRequest::ResourceType =>  dav::AnyProperty::Value(dav::Property::ResourceType(vec![
-                dav::ResourceType::Collection,
-                dav::ResourceType::Extension(all::ResourceType::Cal(cal::ResourceType::Calendar)),
-            ])),
-            //dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
-            //@FIXME seems wrong but seems to be what Thunderbird expects...
-            dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("text/calendar".into())),
-            dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::SupportedCalendarComponentSet))
-                => dav::AnyProperty::Value(dav::Property::Extension(all::Property::Cal(cal::Property::SupportedCalendarComponentSet(vec![
-                    cal::CompSupport(cal::Component::VEvent),
-                ])))),
-            v => dav::AnyProperty::Request(v),
-        }).collect()
+    fn properties(&self, _user: &ArcUser, prop: dav::PropName<All>) -> PropertyStream<'static> {
+        let calname = self.calname.to_string();
+
+        futures::stream::iter(prop.0).map(move |n| {
+            let prop = match n {
+                dav::PropertyRequest::DisplayName =>  dav::Property::DisplayName(format!("{} calendar", calname)),
+                dav::PropertyRequest::ResourceType =>  dav::Property::ResourceType(vec![
+                    dav::ResourceType::Collection,
+                    dav::ResourceType::Extension(all::ResourceType::Cal(cal::ResourceType::Calendar)),
+                ]),
+                //dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
+                //@FIXME seems wrong but seems to be what Thunderbird expects...
+                dav::PropertyRequest::GetContentType => dav::Property::GetContentType("text/calendar".into()),
+                dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::SupportedCalendarComponentSet))
+                    => dav::Property::Extension(all::Property::Cal(cal::Property::SupportedCalendarComponentSet(vec![
+                        cal::CompSupport(cal::Component::VEvent),
+                    ]))),
+                v => return Err(v),
+            };
+            Ok(prop)
+        }).boxed()
     }
 
     fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
         todo!()
     }
 
-    fn content<'a>(&'a self) -> BoxFuture<'a, Content<'static>> {
-        async { 
-            futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
-        }.boxed()
+    fn content<'a>(&'a self) -> Content<'static> {
+        futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
     }
 
     fn content_type(&self) -> &str {
         "text/plain"
     }
 }
-
-const FAKE_ICS: &str = r#"BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//Example Corp.//CalDAV Client//EN
-BEGIN:VTIMEZONE
-LAST-MODIFIED:20040110T032845Z
-TZID:US/Eastern
-BEGIN:DAYLIGHT
-DTSTART:20000404T020000
-RRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=4
-TZNAME:EDT
-TZOFFSETFROM:-0500
-TZOFFSETTO:-0400
-END:DAYLIGHT
-BEGIN:STANDARD
-DTSTART:20001026T020000
-RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=10
-TZNAME:EST
-TZOFFSETFROM:-0400
-TZOFFSETTO:-0500
-END:STANDARD
-END:VTIMEZONE
-BEGIN:VEVENT
-DTSTAMP:20240406T001102Z
-DTSTART;TZID=US/Eastern:20240406T100000
-DURATION:PT1H
-SUMMARY:Event #1
-Description:Go Steelers!
-UID:74855313FA803DA593CD579A@example.com
-END:VEVENT
-END:VCALENDAR"#;
 
 #[derive(Clone)]
 pub(crate) struct EventNode {
@@ -403,19 +385,31 @@ impl DavNode for EventNode {
             dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::CalendarData(cal::CalendarDataRequest::default()))),
         ])
     }
-    fn properties(&self, _user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>> {
-        prop.0.into_iter().map(|n| match n {
-            dav::PropertyRequest::DisplayName => dav::AnyProperty::Value(dav::Property::DisplayName(format!("{} event", self.filename))),
-            dav::PropertyRequest::ResourceType => dav::AnyProperty::Value(dav::Property::ResourceType(vec![])),
-            dav::PropertyRequest::GetContentType =>  dav::AnyProperty::Value(dav::Property::GetContentType("text/calendar".into())),
-            dav::PropertyRequest::GetEtag => dav::AnyProperty::Value(dav::Property::GetEtag("\"abcdefg\"".into())),
-            dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::CalendarData(_req))) =>
-                dav::AnyProperty::Value(dav::Property::Extension(all::Property::Cal(cal::Property::CalendarData(cal::CalendarDataPayload { 
-                    mime: None, 
-                    payload: FAKE_ICS.into() 
-                })))),
-            v => dav::AnyProperty::Request(v),
-        }).collect()
+    fn properties(&self, _user: &ArcUser, prop: dav::PropName<All>) -> PropertyStream<'static> {
+        let this = self.clone();
+
+        futures::stream::iter(prop.0).then(move |n| {
+            let this = this.clone();
+
+            async move {
+                let prop = match &n {
+                    dav::PropertyRequest::DisplayName => dav::Property::DisplayName(format!("{} event", this.filename)),
+                    dav::PropertyRequest::ResourceType => dav::Property::ResourceType(vec![]),
+                    dav::PropertyRequest::GetContentType => dav::Property::GetContentType("text/calendar".into()),
+                    dav::PropertyRequest::GetEtag => dav::Property::GetEtag("\"abcdefg\"".into()),
+                    dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::CalendarData(_req))) => {
+                        let ics = String::from_utf8(this.col.get(this.blob_id).await.or(Err(n.clone()))?).or(Err(n.clone()))?;
+                        
+                        dav::Property::Extension(all::Property::Cal(cal::Property::CalendarData(cal::CalendarDataPayload { 
+                            mime: None, 
+                            payload: ics,
+                        })))
+                    },
+                    _ => return Err(n),
+                };
+                Ok(prop)
+            }
+        }).boxed()
     }
 
     fn put<'a>(&'a self, policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
@@ -437,17 +431,16 @@ impl DavNode for EventNode {
         }.boxed()
     }
 
-    fn content<'a>(&'a self) -> BoxFuture<'a, Content<'static>> {
-        async {
-            //@FIXME for now, our storage interface does not allow streaming,
-            // so we load everything in memory
-            let content = self.col.get(self.blob_id).await.or(Err(std::io::Error::from(std::io::ErrorKind::Interrupted)));
-            let r = async {
-                Ok(hyper::body::Bytes::from(content?))
-            };
-            //tokio::pin!(r);
-            futures::stream::once(Box::pin(r)).boxed()
-        }.boxed()
+    fn content<'a>(&'a self) -> Content<'static> {
+        //@FIXME for now, our storage interface does not allow streaming,
+        // so we load everything in memory
+        let calendar = self.col.clone();
+        let blob_id = self.blob_id.clone();
+        let r = async move {
+            let content = calendar.get(blob_id).await.or(Err(std::io::Error::from(std::io::ErrorKind::Interrupted)));
+            Ok(hyper::body::Bytes::from(content?))
+        };
+        futures::stream::once(Box::pin(r)).boxed()
     }
 
     fn content_type(&self) -> &str {
@@ -483,8 +476,8 @@ impl DavNode for CreateEventNode {
         dav::PropName(vec![])
     }
 
-    fn properties(&self, _user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>> {
-        vec![]
+    fn properties(&self, _user: &ArcUser, prop: dav::PropName<All>) ->  PropertyStream<'static> {
+        futures::stream::iter(vec![]).boxed()
     }
 
     fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, Result<Etag>> {
@@ -500,10 +493,8 @@ impl DavNode for CreateEventNode {
         }.boxed()
     }
 
-    fn content<'a>(&'a self) -> BoxFuture<'a, Content<'static>> {
-        async {
-            futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
-        }.boxed()
+    fn content(&self) -> Content<'static> {
+        futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
     }
 
     fn content_type(&self) -> &str {
