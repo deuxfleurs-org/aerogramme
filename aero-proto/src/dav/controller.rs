@@ -209,7 +209,7 @@ impl Controller {
 
         let response = Response::builder()
             .status(200)
-            //.header("content-type", "application/xml; charset=\"utf-8\"")
+            .header("content-type", self.node.content_type())
             .body(boxed_body)?;
 
         Ok(response)

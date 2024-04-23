@@ -70,6 +70,10 @@ impl DavNode for RootNode {
             futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
         }.boxed()
     }
+
+    fn content_type(&self) -> &str {
+        "text/plain"
+    }
 }
 
 #[derive(Clone)]
@@ -138,6 +142,11 @@ impl DavNode for HomeNode {
         async { 
             futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
         }.boxed()
+    }
+
+
+    fn content_type(&self) -> &str {
+        "text/plain"
     }
 }
 
@@ -217,6 +226,10 @@ impl DavNode for CalendarListNode {
         async { 
             futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
         }.boxed()
+    }
+
+    fn content_type(&self) -> &str {
+        "text/plain"
     }
 }
 
@@ -313,6 +326,10 @@ impl DavNode for CalendarNode {
         async { 
             futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
         }.boxed()
+    }
+
+    fn content_type(&self) -> &str {
+        "text/plain"
     }
 }
 
@@ -432,6 +449,10 @@ impl DavNode for EventNode {
             futures::stream::once(Box::pin(r)).boxed()
         }.boxed()
     }
+
+    fn content_type(&self) -> &str {
+        "text/calendar"
+    }
 }
 
 #[derive(Clone)]
@@ -483,5 +504,9 @@ impl DavNode for CreateEventNode {
         async {
             futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
         }.boxed()
+    }
+
+    fn content_type(&self) -> &str {
+        "text/plain"
     }
 }
