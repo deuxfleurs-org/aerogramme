@@ -180,8 +180,7 @@ impl Controller {
     }
 
     async fn put(self) -> Result<HttpResponse> { 
-        //@FIXME temporary, look at If-None-Match & If-Match headers
-        let put_policy = PutPolicy::CreateOnly;
+        let put_policy = codec::put_policy(&self.req)?;
 
         let stream_of_frames = BodyStream::new(self.req.into_body());
         let stream_of_bytes = stream_of_frames

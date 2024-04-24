@@ -1,5 +1,5 @@
 use anyhow::Result;
-use futures::stream::{BoxStream, Stream, StreamExt};
+use futures::stream::{BoxStream, StreamExt};
 use futures::future::{BoxFuture, FutureExt};
 use hyper::body::Bytes;
 
@@ -13,6 +13,7 @@ pub(crate) type Content<'a> = BoxStream<'a, std::result::Result<Bytes, std::io::
 pub(crate) type PropertyStream<'a> = BoxStream<'a, std::result::Result<dav::Property<All>, dav::PropertyRequest<All>>>;
 
 pub(crate) enum PutPolicy {
+    OverwriteAll,
     CreateOnly,
     ReplaceEtag(String),
 }

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use hyper::{Request, Response, body::Bytes};
 use hyper::body::Incoming;
 use http_body_util::Full;
@@ -17,6 +17,7 @@ use http_body_util::BodyExt;
 use aero_dav::types as dav;
 use aero_dav::xml as dxml;
 use super::controller::HttpResponse;
+use super::node::PutPolicy;
 
 pub(crate) fn depth(req: &Request<impl hyper::body::Body>) -> dav::Depth {
     match req.headers().get("Depth").map(hyper::header::HeaderValue::to_str) {
@@ -25,6 +26,28 @@ pub(crate) fn depth(req: &Request<impl hyper::body::Body>) -> dav::Depth {
         Some(Ok("Infinity")) => dav::Depth::Infinity,
         _ => dav::Depth::Zero,
     }
+}
+
+pub(crate) fn put_policy(req: &Request<impl hyper::body::Body>) -> Result<PutPolicy> {
+    if let Some(maybe_txt_etag) = req.headers().get("If-Match").map(hyper::header::HeaderValue::to_str) {
+        let etag = maybe_txt_etag?;
+        let dquote_count = etag.chars().filter(|c| *c == '"').count();
+        if dquote_count != 2 {
+            bail!("Either If-Match value is invalid or it's not supported (only single etag is supported)");
+        }
+
+        return Ok(PutPolicy::ReplaceEtag(etag.into()))
+    }
+
+    if let Some(maybe_txt_etag) = req.headers().get("If-None-Match").map(hyper::header::HeaderValue::to_str) {
+        let etag = maybe_txt_etag?;
+        if etag == "*" {
+            return Ok(PutPolicy::CreateOnly)
+        }
+        bail!("Either If-None-Match value is invalid or it's not supported (only asterisk is supported)")
+    }
+
+    Ok(PutPolicy::OverwriteAll)
 }
 
 pub(crate) fn text_body(txt: &'static str) -> UnsyncBoxBody<Bytes, std::io::Error> {

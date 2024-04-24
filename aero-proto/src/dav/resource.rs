@@ -1,12 +1,12 @@
 use std::sync::Arc;
 type ArcUser = std::sync::Arc<User>;
 
-use anyhow::{anyhow, bail, Result};
-use futures::stream::{TryStream, TryStreamExt, StreamExt};
+use anyhow::{anyhow, Result};
+use futures::stream::{TryStreamExt, StreamExt};
 use futures::io::AsyncReadExt;
 use futures::{future::BoxFuture, future::FutureExt};
 
-use aero_collections::{user::User, calendar::Calendar, davdag::{BlobId, IndexEntry, Etag}};
+use aero_collections::{user::User, calendar::Calendar, davdag::{BlobId, Etag}};
 use aero_dav::types as dav;
 use aero_dav::caltypes as cal;
 use aero_dav::acltypes as acl;
