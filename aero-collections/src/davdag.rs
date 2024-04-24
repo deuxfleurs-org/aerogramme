@@ -202,6 +202,16 @@ impl DavDag {
     }
 }
 
+impl std::fmt::Debug for DavDag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("DavDag\n")?;
+        for elem in self.table.iter() {
+            f.write_fmt(format_args!("\t{:?} => {:?}", elem.0, elem.1))?;
+        }
+        Ok(())
+    }
+}
+
 impl BayouState for DavDag {
     type Op = DavDagOp;
 

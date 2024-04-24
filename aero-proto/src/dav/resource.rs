@@ -78,6 +78,14 @@ impl DavNode for RootNode {
     fn content_type(&self) -> &str {
         "text/plain"
     }
+
+    fn etag(&self) -> BoxFuture<Option<Etag>> {
+        async { None }.boxed()
+    }
+
+    fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>> {
+        async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
+    }
 }
 
 #[derive(Clone)]
@@ -151,9 +159,16 @@ impl DavNode for HomeNode {
         futures::stream::once(futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported))).boxed()
     }
 
-
     fn content_type(&self) -> &str {
         "text/plain"
+    }
+
+    fn etag(&self) -> BoxFuture<Option<Etag>> {
+        async { None }.boxed()
+    }
+
+    fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>> {
+        async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
     }
 }
 
@@ -240,6 +255,14 @@ impl DavNode for CalendarListNode {
 
     fn content_type(&self) -> &str {
         "text/plain"
+    }
+
+    fn etag(&self) -> BoxFuture<Option<Etag>> {
+        async { None }.boxed()
+    }
+
+    fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>> {
+        async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
     }
 }
 
@@ -333,7 +356,7 @@ impl DavNode for CalendarNode {
         }).boxed()
     }
 
-    fn put<'a>(&'a self, _policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
+    fn put<'a>(&'a self, _policy: PutPolicy, _stream: Content<'a>) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
         futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported)).boxed()
     }
 
@@ -344,6 +367,14 @@ impl DavNode for CalendarNode {
     fn content_type(&self) -> &str {
         "text/plain"
     }
+
+    fn etag(&self) -> BoxFuture<Option<Etag>> {
+        async { None }.boxed()
+    }
+
+    fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>> {
+        async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
+    }
 }
 
 #[derive(Clone)]
@@ -352,11 +383,6 @@ pub(crate) struct EventNode {
     calname: String,
     filename: String,
     blob_id: BlobId,
-}
-impl EventNode {
-    async fn etag(&self) -> Result<Etag> {
-        self.col.dag().await.table.get(&self.blob_id).map(|(_, _, etag)| etag.to_string()).ok_or(anyhow!("Missing blob id in index"))
-    }
 }
 
 impl DavNode for EventNode {
@@ -396,7 +422,10 @@ impl DavNode for EventNode {
                     dav::PropertyRequest::DisplayName => dav::Property::DisplayName(format!("{} event", this.filename)),
                     dav::PropertyRequest::ResourceType => dav::Property::ResourceType(vec![]),
                     dav::PropertyRequest::GetContentType => dav::Property::GetContentType("text/calendar".into()),
-                    dav::PropertyRequest::GetEtag => dav::Property::GetEtag("\"abcdefg\"".into()),
+                    dav::PropertyRequest::GetEtag => {
+                        let etag = this.etag().await.ok_or(n.clone())?;
+                        dav::Property::GetEtag(etag)
+                    },
                     dav::PropertyRequest::Extension(all::PropertyRequest::Cal(cal::PropertyRequest::CalendarData(_req))) => {
                         let ics = String::from_utf8(this.col.get(this.blob_id).await.or(Err(n.clone()))?).or(Err(n.clone()))?;
                         
@@ -414,7 +443,7 @@ impl DavNode for EventNode {
 
     fn put<'a>(&'a self, policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
         async {
-            let existing_etag = self.etag().await.or(Err(std::io::Error::new(std::io::ErrorKind::Other, "Etag error")))?;
+            let existing_etag = self.etag().await.ok_or(std::io::Error::new(std::io::ErrorKind::Other, "Etag error"))?;
             match policy {
                 PutPolicy::CreateOnly => return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists)),
                 PutPolicy::ReplaceEtag(etag) if etag != existing_etag.as_str() => return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists)),
@@ -427,6 +456,7 @@ impl DavNode for EventNode {
             let mut reader = stream.into_async_read();
             reader.read_to_end(&mut evt).await.or(Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe)))?;
             let (_token, entry) = self.col.put(self.filename.as_str(), evt.as_ref()).await.or(Err(std::io::ErrorKind::Interrupted))?;
+            self.col.opportunistic_sync().await.or(Err(std::io::ErrorKind::ConnectionReset))?;
             Ok(entry.2)
         }.boxed()
     }
@@ -445,6 +475,31 @@ impl DavNode for EventNode {
 
     fn content_type(&self) -> &str {
         "text/calendar"
+    }
+
+    fn etag(&self) -> BoxFuture<Option<Etag>> {
+        let calendar = self.col.clone();
+
+        async move {
+            calendar.dag().await.table.get(&self.blob_id).map(|(_, _, etag)| etag.to_string())
+        }.boxed()
+    }
+
+    fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>> {
+        let calendar = self.col.clone();
+        let blob_id = self.blob_id.clone();
+
+        async move {
+            let _token = match calendar.delete(blob_id).await {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::error!(err=?e, "delete event node");
+                    return Err(std::io::Error::from(std::io::ErrorKind::Interrupted))
+                },
+            };
+            calendar.opportunistic_sync().await.or(Err(std::io::ErrorKind::ConnectionReset))?;
+            Ok(())
+        }.boxed()
     }
 }
 
@@ -489,6 +544,7 @@ impl DavNode for CreateEventNode {
             let mut reader = stream.into_async_read();
             reader.read_to_end(&mut evt).await.unwrap();
             let (_token, entry) = self.col.put(self.filename.as_str(), evt.as_ref()).await.or(Err(std::io::ErrorKind::Interrupted))?;
+            self.col.opportunistic_sync().await.or(Err(std::io::ErrorKind::ConnectionReset))?;
             Ok(entry.2)
         }.boxed()
     }
@@ -499,5 +555,14 @@ impl DavNode for CreateEventNode {
 
     fn content_type(&self) -> &str {
         "text/plain"
+    }
+
+    fn etag(&self) -> BoxFuture<Option<Etag>> {
+        async { None }.boxed()
+    }
+
+    fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>> {
+        // Nothing to delete
+        async { Ok(()) }.boxed()
     }
 }

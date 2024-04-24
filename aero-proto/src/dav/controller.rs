@@ -71,9 +71,7 @@ impl Controller {
             },
             "GET" => ctrl.get().await,
             "PUT" => ctrl.put().await,
-            "DELETE" => {
-                todo!();
-            },
+            "DELETE" => ctrl.delete().await,
             "PROPFIND" => ctrl.propfind().await,
             "REPORT" => ctrl.report().await,
             _ => Ok(Response::builder()
@@ -206,11 +204,22 @@ impl Controller {
         let stream_body = StreamBody::new(self.node.content().map_ok(|v| Frame::data(v)));
         let boxed_body = UnsyncBoxBody::new(stream_body);
 
-        let response = Response::builder()
-            .status(200)
-            .header("content-type", self.node.content_type())
-            .body(boxed_body)?;
+        let mut builder = Response::builder().status(200);
+        builder = builder.header("content-type", self.node.content_type());
+        if let Some(etag) = self.node.etag().await {
+            builder = builder.header("etag", etag);
+        }
+        let response = builder.body(boxed_body)?;
 
+        Ok(response)
+    }
+
+    async fn delete(self) -> Result<HttpResponse> {
+        self.node.delete().await?;
+        let response = Response::builder()
+            .status(204)
+            //.header("content-type", "application/xml; charset=\"utf-8\"")
+            .body(text_body(""))?;
         Ok(response)
     }
 

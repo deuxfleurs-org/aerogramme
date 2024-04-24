@@ -39,8 +39,12 @@ pub(crate) trait DavNode: Send {
     fn put<'a>(&'a self, policy: PutPolicy, stream: Content<'a>) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>>;
     /// Content type of the element
     fn content_type(&self) -> &str;
+    /// Get ETag
+    fn etag(&self) -> BoxFuture<Option<Etag>>;
     /// Get content
     fn content(&self) -> Content<'static>;
+    /// Delete
+    fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>>;
 
     //@FIXME maybe add etag, maybe add a way to set content
 

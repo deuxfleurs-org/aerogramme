@@ -155,7 +155,7 @@ impl CalendarInternal {
     async fn delete(&mut self, blob_id: BlobId) -> Result<Token> {
         let davstate = self.davdag.state();
 
-        if davstate.table.contains_key(&blob_id) {
+        if !davstate.table.contains_key(&blob_id) {
             bail!("Cannot delete event that doesn't exist");
         }
 
