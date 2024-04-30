@@ -104,9 +104,11 @@ impl Controller {
 
         // Multiget is really like a propfind where Depth: 0|1|Infinity is replaced by an arbitrary
         // list of URLs
+        // @FIXME
         let multiget = match report {
             cal::Report::Multiget(m) => m,
-            _ => return Ok(Response::builder()
+            cal::Report::Query(q) => todo!(),
+            cal::Report::FreeBusy(_) => return Ok(Response::builder()
                            .status(501)
                            .body(text_body("Not implemented"))?),
         };

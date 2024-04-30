@@ -57,6 +57,9 @@ smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/
 imap-codec = { version = "2.0.0", features = ["bounded-static", "ext_condstore_qresync"] }
 imap-flow = { git = "https://github.com/duesee/imap-flow.git", branch = "main" }
 
+# dav protocols
+icalendar = "0.16"
+
 # http & web
 http = "1.1"
 http-body-util = "0.1.1"
