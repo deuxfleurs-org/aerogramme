@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 use std::fmt::Debug;
 
-use chrono::{DateTime,FixedOffset};
 use super::xml;
+use chrono::{DateTime, FixedOffset};
 
 /// It's how we implement a DAV extension
 /// (That's the dark magic part...)
@@ -42,7 +42,7 @@ pub struct ActiveLock {
 ///
 /// <!ELEMENT collection EMPTY >
 #[derive(Debug, PartialEq)]
-pub struct Collection{}
+pub struct Collection {}
 
 /// 14.4 depth XML Element
 ///
@@ -58,7 +58,7 @@ pub struct Collection{}
 pub enum Depth {
     Zero,
     One,
-    Infinity
+    Infinity,
 }
 
 /// 14.5 error XML Element
@@ -153,7 +153,6 @@ pub enum Violation<E: Extension> {
     /// PROPFIND requests on collections.
     PropfindFiniteDepth,
 
-    
     /// Name:  cannot-modify-protected-property
     ///
     /// Use with:  403 Forbidden
@@ -172,7 +171,7 @@ pub enum Violation<E: Extension> {
 /// Name:   exclusive
 ///
 /// Purpose:   Specifies an exclusive lock.
-/// 
+///
 /// <!ELEMENT exclusive EMPTY >
 #[derive(Debug, PartialEq)]
 pub struct Exclusive {}
@@ -192,7 +191,6 @@ pub struct Exclusive {}
 /// <!ELEMENT href (#PCDATA)>
 #[derive(Debug, PartialEq, Clone)]
 pub struct Href(pub String);
-
 
 /// 14.8.  include XML Element
 ///
@@ -280,7 +278,7 @@ pub struct LockRoot(pub Href);
 #[derive(Debug, PartialEq, Clone)]
 pub enum LockScope {
     Exclusive,
-    Shared
+    Shared,
 }
 
 /// 14.14.  locktoken XML Element
@@ -288,7 +286,7 @@ pub enum LockScope {
 /// Name:   locktoken
 ///
 /// Purpose:   The lock token associated with a lock.
-/// 
+///
 /// Description:   The href contains a single lock token URI, which
 ///    refers to the lock.
 ///
@@ -314,7 +312,7 @@ pub enum LockType {
     ///
     ///
     /// <!ELEMENT write EMPTY >
-    Write
+    Write,
 }
 
 /// 14.16.  multistatus XML Element
@@ -477,7 +475,6 @@ pub struct PropStat<E: Extension> {
     pub responsedescription: Option<ResponseDescription>,
 }
 
-
 /// 14.23.  remove XML Element
 ///
 /// Name:   remove
@@ -579,15 +576,14 @@ pub struct Set<E: Extension>(pub PropValue<E>);
 #[derive(Debug, PartialEq, Clone)]
 pub struct Shared {}
 
-
 /// 14.28.  status XML Element
-/// 
+///
 /// Name:   status
 ///
 /// Purpose:   Holds a single HTTP status-line.
 ///
 /// Value:   status-line (defined in Section 6.1 of [RFC2616])
-/// 
+///
 /// <!ELEMENT status (#PCDATA) >
 //@FIXME: Better typing is possible with an enum for example
 #[derive(Debug, PartialEq, Clone)]
@@ -623,7 +619,6 @@ pub enum Timeout {
     Seconds(u32),
     Infinite,
 }
-
 
 /// 15.  DAV Properties
 ///
@@ -704,7 +699,7 @@ pub enum Property<E: Extension> {
     CreationDate(DateTime<FixedOffset>),
 
     /// 15.2.  displayname Property
-    /// 
+    ///
     /// Name:   displayname
     ///
     /// Purpose:   Provides a name for the resource that is suitable for
@@ -733,7 +728,6 @@ pub enum Property<E: Extension> {
     ///
     /// <!ELEMENT displayname (#PCDATA) >
     DisplayName(String),
-
 
     /// 15.3.  getcontentlanguage Property
     ///
@@ -893,7 +887,6 @@ pub enum Property<E: Extension> {
     /// <!ELEMENT lockdiscovery (activelock)* >
     LockDiscovery(Vec<ActiveLock>),
 
-    
     /// 15.9.  resourcetype Property
     ///
     /// Name:   resourcetype
@@ -920,7 +913,7 @@ pub enum Property<E: Extension> {
     /// type.
     ///
     /// Example: (fictional example to show extensibility)
-    /// 
+    ///
     ///   <x:resourcetype xmlns:x="DAV:">
     ///       <x:collection/>
     ///       <f:search-results xmlns:f="http://www.example.com/ns"/>

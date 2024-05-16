@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
+use im::{ordset, OrdMap, OrdSet};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use im::{OrdMap, OrdSet, ordset};
 
 use aero_bayou::*;
 
@@ -26,7 +26,6 @@ pub struct DavDag {
     pub idx_by_filename: OrdMap<FileName, BlobId>,
 
     // ------------ Below this line, data is ephemeral, ie. not checkpointed
-
     /// Partial synchronization graph
     pub ancestors: OrdMap<Token, OrdSet<Token>>,
 
@@ -84,7 +83,7 @@ impl DavDag {
     // HELPER functions
 
     pub fn heads_vec(&self) -> Vec<Token> {
-       self.heads.clone().into_iter().collect() 
+        self.heads.clone().into_iter().collect()
     }
 
     /// A sync descriptor
@@ -99,7 +98,7 @@ impl DavDag {
         // We can't capture all missing events if we are not connected
         // to all sinks of the graph,
         // ie. if we don't already know all the sinks,
-        // ie. if we are missing so much history that 
+        // ie. if we are missing so much history that
         // the event log has been transformed into a checkpoint
         if !self.origins.is_subset(already_known.clone()) {
             bail!("Not enough history to produce a correct diff, a full resync is needed");
@@ -124,7 +123,7 @@ impl DavDag {
 
             if all_known.insert(cursor).is_some() {
                 // Item already processed
-                continue
+                continue;
             }
 
             // Collect parents
@@ -167,7 +166,8 @@ impl DavDag {
         self.idx_by_filename.remove(filename);
 
         // Record the change in the ephemeral synchronization map
-        self.change.insert(sync_token, SyncChange::NotFound(filename.to_string()));
+        self.change
+            .insert(sync_token, SyncChange::NotFound(filename.to_string()));
 
         // Finally clear item from the source of trust
         self.table.remove(blob_id);
@@ -179,10 +179,13 @@ impl DavDag {
 
         // --- Update ANCESTORS
         // We register ancestors as it is required for the sync algorithm
-        self.ancestors.insert(*child, parents.iter().fold(ordset![], |mut acc, p| {
-            acc.insert(*p);
-            acc
-        }));
+        self.ancestors.insert(
+            *child,
+            parents.iter().fold(ordset![], |mut acc, p| {
+                acc.insert(*p);
+                acc
+            }),
+        );
 
         // --- Update ORIGINS
         // If this event has no parents, it's an origin
@@ -192,11 +195,13 @@ impl DavDag {
 
         // --- Update HEADS
         // Remove from HEADS this event's parents
-        parents.iter().for_each(|par| { self.heads.remove(par); });
+        parents.iter().for_each(|par| {
+            self.heads.remove(par);
+        });
 
         // This event becomes a new HEAD in turn
         self.heads.insert(*child);
-        
+
         // --- Update ALL NODES
         self.all_nodes.insert(*child);
     }
@@ -217,16 +222,16 @@ impl BayouState for DavDag {
 
     fn apply(&self, op: &Self::Op) -> Self {
         let mut new = self.clone();
-    
+
         match op {
             DavDagOp::Put(sync_desc, entry) => {
                 new.sync_dag(sync_desc);
                 new.register(Some(sync_desc.1), entry.clone());
-            },
+            }
             DavDagOp::Delete(sync_desc, blob_id) => {
                 new.sync_dag(sync_desc);
                 new.unregister(sync_desc.1, blob_id);
-            },
+            }
             DavDagOp::Merge(sync_desc) => {
                 new.sync_dag(sync_desc);
             }
@@ -252,7 +257,9 @@ impl<'de> Deserialize<'de> for DavDag {
         let mut davdag = DavDag::default();
 
         // Build the table + index
-        val.items.into_iter().for_each(|entry| davdag.register(None, entry));
+        val.items
+            .into_iter()
+            .for_each(|entry| davdag.register(None, entry));
 
         // Initialize the synchronization DAG with its roots
         val.heads.into_iter().for_each(|ident| {

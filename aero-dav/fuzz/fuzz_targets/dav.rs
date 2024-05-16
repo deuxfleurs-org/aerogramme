@@ -1,79 +1,79 @@
 #![no_main]
 
-use libfuzzer_sys::fuzz_target;
 use libfuzzer_sys::arbitrary;
 use libfuzzer_sys::arbitrary::Arbitrary;
+use libfuzzer_sys::fuzz_target;
 
-use aero_dav::{types, realization, xml};
+use aero_dav::{realization, types, xml};
 use quick_xml::reader::NsReader;
-use tokio::runtime::Runtime;
 use tokio::io::AsyncWriteExt;
+use tokio::runtime::Runtime;
 
 // Split this file
 const tokens: [&str; 63] = [
-"0",
-"1",
-"activelock",
-"allprop",
-"encoding",
-"utf-8",
-"http://ns.example.com/boxschema/",
-"HTTP/1.1 200 OK",
-"1997-12-01T18:27:21-08:00",
-"Mon, 12 Jan 1998 09:25:56 GMT",
-"\"abcdef\"",
-"cannot-modify-protected-property",
-"collection",
-"creationdate",
-"DAV:",
-"D",
-"C",
-"xmlns:D",
-"depth",
-"displayname",
-"error",
-"exclusive",
-"getcontentlanguage",
-"getcontentlength",
-"getcontenttype",
-"getetag",
-"getlastmodified",
-"href",
-"include",
-"Infinite",
-"infinity",
-"location",
-"lockdiscovery",
-"lockentry",
-"lockinfo",
-"lockroot",
-"lockscope",
-"locktoken",
-"lock-token-matches-request-uri",
-"lock-token-submitted",
-"locktype",
-"multistatus",
-"no-conflicting-lock",
-"no-external-entities",
-"owner",
-"preserved-live-properties",
-"prop",
-"propertyupdate",
-"propfind",
-"propfind-finite-depth",
-"propname",
-"propstat",
-"remove",
-"resourcetype",
-"response",
-"responsedescription",
-"set",
-"shared",
-"status",
-"supportedlock",
-"text/html",
-"timeout",
-"write",
+    "0",
+    "1",
+    "activelock",
+    "allprop",
+    "encoding",
+    "utf-8",
+    "http://ns.example.com/boxschema/",
+    "HTTP/1.1 200 OK",
+    "1997-12-01T18:27:21-08:00",
+    "Mon, 12 Jan 1998 09:25:56 GMT",
+    "\"abcdef\"",
+    "cannot-modify-protected-property",
+    "collection",
+    "creationdate",
+    "DAV:",
+    "D",
+    "C",
+    "xmlns:D",
+    "depth",
+    "displayname",
+    "error",
+    "exclusive",
+    "getcontentlanguage",
+    "getcontentlength",
+    "getcontenttype",
+    "getetag",
+    "getlastmodified",
+    "href",
+    "include",
+    "Infinite",
+    "infinity",
+    "location",
+    "lockdiscovery",
+    "lockentry",
+    "lockinfo",
+    "lockroot",
+    "lockscope",
+    "locktoken",
+    "lock-token-matches-request-uri",
+    "lock-token-submitted",
+    "locktype",
+    "multistatus",
+    "no-conflicting-lock",
+    "no-external-entities",
+    "owner",
+    "preserved-live-properties",
+    "prop",
+    "propertyupdate",
+    "propfind",
+    "propfind-finite-depth",
+    "propname",
+    "propstat",
+    "remove",
+    "resourcetype",
+    "response",
+    "responsedescription",
+    "set",
+    "shared",
+    "status",
+    "supportedlock",
+    "text/html",
+    "timeout",
+    "write",
 ];
 
 #[derive(Arbitrary)]
@@ -106,7 +106,7 @@ impl Tag {
         acc.push_str("D:");
         acc.push_str(self.name.serialize().as_str());
 
-        if let Some((k,v)) = &self.attr {
+        if let Some((k, v)) = &self.attr {
             acc.push_str(" ");
             acc.push_str(k.serialize().as_str());
             acc.push_str("=\"");
@@ -122,7 +122,6 @@ impl Tag {
         acc
     }
 }
-
 
 #[derive(Arbitrary)]
 enum XmlNode {
@@ -145,9 +144,14 @@ impl XmlNode {
                 let stag = tag.start();
                 match children.is_empty() {
                     true => format!("<{}/>", stag),
-                    false => format!("<{}>{}</{}>", stag, children.iter().map(|v| v.serialize()).collect::<String>(), tag.end()),
+                    false => format!(
+                        "<{}>{}</{}>",
+                        stag,
+                        children.iter().map(|v| v.serialize()).collect::<String>(),
+                        tag.end()
+                    ),
                 }
-            },
+            }
             Self::Number(v) => format!("{}", v),
             Self::Text(v) => v.serialize(),
         }
@@ -158,19 +162,22 @@ async fn serialize(elem: &impl xml::QWrite) -> Vec<u8> {
     let mut buffer = Vec::new();
     let mut tokio_buffer = tokio::io::BufWriter::new(&mut buffer);
     let q = quick_xml::writer::Writer::new_with_indent(&mut tokio_buffer, b' ', 4);
-    let ns_to_apply = vec![ ("xmlns:D".into(), "DAV:".into()) ];
+    let ns_to_apply = vec![("xmlns:D".into(), "DAV:".into())];
     let mut writer = xml::Writer { q, ns_to_apply };
 
     elem.qwrite(&mut writer).await.expect("xml serialization");
     tokio_buffer.flush().await.expect("tokio buffer flush");
 
-    return buffer
+    return buffer;
 }
 
 type Object = types::Multistatus<realization::Core, types::PropValue<realization::Core>>;
 
 fuzz_target!(|nodes: XmlNode| {
-    let gen = format!("<D:multistatus xmlns:D=\"DAV:\">{}<D:/multistatus>", nodes.serialize());
+    let gen = format!(
+        "<D:multistatus xmlns:D=\"DAV:\">{}<D:/multistatus>",
+        nodes.serialize()
+    );
     //println!("--------\n{}", gen);
     let data = gen.as_bytes();
 
@@ -191,7 +198,9 @@ fuzz_target!(|nodes: XmlNode| {
         let my_serialization = serialize(&reference).await;
 
         // 3. De-serialize my serialization
-        let mut rdr2 = xml::Reader::new(NsReader::from_reader(my_serialization.as_slice())).await.expect("XML Reader init");
+        let mut rdr2 = xml::Reader::new(NsReader::from_reader(my_serialization.as_slice()))
+            .await
+            .expect("XML Reader init");
         let comparison = rdr2.find::<Object>().await.expect("Deserialize again");
 
         // 4. Both the first decoding and last decoding must be identical

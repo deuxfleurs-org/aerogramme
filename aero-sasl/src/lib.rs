@@ -1,3 +1,6 @@
+pub mod decode;
+pub mod encode;
+pub mod flow;
 /// Seek compatibility with the Dovecot Authentication Protocol
 ///
 /// ## Trace
@@ -38,6 +41,3 @@
 /// https://doc.dovecot.org/configuration_manual/howto/simple_virtual_install/#simple-virtual-install-smtp-auth
 /// https://doc.dovecot.org/configuration_manual/howto/postfix_and_dovecot_sasl/#howto-postfix-and-dovecot-sasl
 pub mod types;
-pub mod encode;
-pub mod decode;
-pub mod flow;

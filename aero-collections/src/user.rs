@@ -9,12 +9,15 @@ use aero_user::cryptoblob::{open_deserialize, seal_serialize};
 use aero_user::login::Credentials;
 use aero_user::storage;
 
+use crate::calendar::namespace::CalendarNs;
 use crate::mail::incoming::incoming_mail_watch_process;
 use crate::mail::mailbox::Mailbox;
+use crate::mail::namespace::{
+    CreatedMailbox, MailboxList, ARCHIVE, DRAFTS, INBOX, MAILBOX_HIERARCHY_DELIMITER,
+    MAILBOX_LIST_PK, MAILBOX_LIST_SK, SENT, TRASH,
+};
 use crate::mail::uidindex::ImapUidvalidity;
 use crate::unique_ident::UniqueIdent;
-use crate::mail::namespace::{MAILBOX_HIERARCHY_DELIMITER, INBOX, DRAFTS, ARCHIVE, SENT, TRASH, MAILBOX_LIST_PK, MAILBOX_LIST_SK,MailboxList,CreatedMailbox};
-use crate::calendar::namespace::CalendarNs;
 
 //@FIXME User should be totally rewriten
 // to extract the local mailbox list

@@ -1,8 +1,7 @@
-use quick_xml::Error as QError;
-use quick_xml::events::{Event, BytesText};
 use super::types::*;
-use super::xml::{Node, Writer,QWrite,IWrite};
-
+use super::xml::{IWrite, Node, QWrite, Writer};
+use quick_xml::events::{BytesText, Event};
+use quick_xml::Error as QError;
 
 // --- XML ROOTS
 
@@ -16,15 +15,17 @@ impl<E: Extension> QWrite for PropFind<E> {
         match self {
             Self::PropName => {
                 let empty_propname = xml.create_dav_element("propname");
-                xml.q.write_event_async(Event::Empty(empty_propname)).await?
-            },
+                xml.q
+                    .write_event_async(Event::Empty(empty_propname))
+                    .await?
+            }
             Self::AllProp(maybe_include) => {
                 let empty_allprop = xml.create_dav_element("allprop");
                 xml.q.write_event_async(Event::Empty(empty_allprop)).await?;
                 if let Some(include) = maybe_include {
                     include.qwrite(xml).await?;
                 }
-            },
+            }
             Self::Prop(propname) => propname.qwrite(xml).await?,
         }
         xml.q.write_event_async(Event::End(end)).await
@@ -45,9 +46,8 @@ impl<E: Extension> QWrite for PropertyUpdate<E> {
     }
 }
 
-
 /// PROPFIND RESPONSE, PROPPATCH RESPONSE, COPY RESPONSE, MOVE RESPONSE
-/// DELETE RESPONSE, 
+/// DELETE RESPONSE,
 impl<E: Extension> QWrite for Multistatus<E> {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let start = xml.create_dav_element("multistatus");
@@ -140,7 +140,6 @@ impl<E: Extension> QWrite for Remove<E> {
     }
 }
 
-
 impl<E: Extension> QWrite for PropName<E> {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let start = xml.create_dav_element("prop");
@@ -176,14 +175,15 @@ impl<E: Extension> QWrite for AnyProperty<E> {
     }
 }
 
-
 impl QWrite for Href {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let start = xml.create_dav_element("href");
         let end = start.to_end();
 
         xml.q.write_event_async(Event::Start(start.clone())).await?;
-        xml.q.write_event_async(Event::Text(BytesText::new(&self.0))).await?;
+        xml.q
+            .write_event_async(Event::Text(BytesText::new(&self.0)))
+            .await?;
         xml.q.write_event_async(Event::End(end)).await
     }
 }
@@ -216,9 +216,9 @@ impl<E: Extension> QWrite for StatusOrPropstat<E> {
                     href.qwrite(xml).await?;
                 }
                 status.qwrite(xml).await
-            },
+            }
             Self::PropStat(href, propstat_list) => {
-                href.qwrite(xml).await?; 
+                href.qwrite(xml).await?;
                 for propstat in propstat_list.iter() {
                     propstat.qwrite(xml).await?;
                 }
@@ -235,8 +235,14 @@ impl QWrite for Status {
 
         xml.q.write_event_async(Event::Start(start.clone())).await?;
 
-        let txt = format!("HTTP/1.1 {} {}", self.0.as_str(), self.0.canonical_reason().unwrap_or("No reason"));
-        xml.q.write_event_async(Event::Text(BytesText::new(&txt))).await?;
+        let txt = format!(
+            "HTTP/1.1 {} {}",
+            self.0.as_str(),
+            self.0.canonical_reason().unwrap_or("No reason")
+        );
+        xml.q
+            .write_event_async(Event::Text(BytesText::new(&txt)))
+            .await?;
 
         xml.q.write_event_async(Event::End(end)).await?;
 
@@ -250,7 +256,9 @@ impl QWrite for ResponseDescription {
         let end = start.to_end();
 
         xml.q.write_event_async(Event::Start(start.clone())).await?;
-        xml.q.write_event_async(Event::Text(BytesText::new(&self.0))).await?;
+        xml.q
+            .write_event_async(Event::Text(BytesText::new(&self.0)))
+            .await?;
         xml.q.write_event_async(Event::End(end)).await
     }
 }
@@ -296,62 +304,76 @@ impl<E: Extension> QWrite for Property<E> {
                 let end = start.to_end();
 
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
-                xml.q.write_event_async(Event::Text(BytesText::new(&date.to_rfc3339()))).await?;
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new(&date.to_rfc3339())))
+                    .await?;
                 xml.q.write_event_async(Event::End(end)).await?;
-            },
+            }
             DisplayName(name) => {
                 // <D:displayname>Example collection</D:displayname>
                 let start = xml.create_dav_element("displayname");
                 let end = start.to_end();
 
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
-                xml.q.write_event_async(Event::Text(BytesText::new(name))).await?;
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new(name)))
+                    .await?;
                 xml.q.write_event_async(Event::End(end)).await?;
-            },
+            }
             GetContentLanguage(lang) => {
                 let start = xml.create_dav_element("getcontentlanguage");
                 let end = start.to_end();
 
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
-                xml.q.write_event_async(Event::Text(BytesText::new(lang))).await?;
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new(lang)))
+                    .await?;
                 xml.q.write_event_async(Event::End(end)).await?;
-            },
+            }
             GetContentLength(len) => {
                 // <D:getcontentlength>4525</D:getcontentlength>
                 let start = xml.create_dav_element("getcontentlength");
                 let end = start.to_end();
 
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
-                xml.q.write_event_async(Event::Text(BytesText::new(&len.to_string()))).await?;
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new(&len.to_string())))
+                    .await?;
                 xml.q.write_event_async(Event::End(end)).await?;
-            },
+            }
             GetContentType(ct) => {
                 // <D:getcontenttype>text/html</D:getcontenttype>
                 let start = xml.create_dav_element("getcontenttype");
                 let end = start.to_end();
 
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
-                xml.q.write_event_async(Event::Text(BytesText::new(&ct))).await?;
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new(&ct)))
+                    .await?;
                 xml.q.write_event_async(Event::End(end)).await?;
-            },
+            }
             GetEtag(et) => {
                 // <D:getetag>"zzyzx"</D:getetag>
                 let start = xml.create_dav_element("getetag");
                 let end = start.to_end();
 
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
-                xml.q.write_event_async(Event::Text(BytesText::new(et))).await?;
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new(et)))
+                    .await?;
                 xml.q.write_event_async(Event::End(end)).await?;
-            },
+            }
             GetLastModified(date) => {
                 // <D:getlastmodified>Mon, 12 Jan 1998 09:25:56 GMT</D:getlastmodified>
                 let start = xml.create_dav_element("getlastmodified");
                 let end = start.to_end();
 
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
-                xml.q.write_event_async(Event::Text(BytesText::new(&date.to_rfc2822()))).await?;
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new(&date.to_rfc2822())))
+                    .await?;
                 xml.q.write_event_async(Event::End(end)).await?;
-            },
+            }
             LockDiscovery(many_locks) => {
                 // <D:lockdiscovery><D:activelock> ... </D:activelock></D:lockdiscovery>
                 let start = xml.create_dav_element("lockdiscovery");
@@ -362,17 +384,17 @@ impl<E: Extension> QWrite for Property<E> {
                     lock.qwrite(xml).await?;
                 }
                 xml.q.write_event_async(Event::End(end)).await?;
-            },
+            }
             ResourceType(many_types) => {
                 // <D:resourcetype><D:collection/></D:resourcetype>
-                
+
                 // <D:resourcetype/>
-                
+
                 // <x:resourcetype xmlns:x="DAV:">
                 //   <x:collection/>
                 //   <f:search-results xmlns:f="http://www.example.com/ns"/>
                 // </x:resourcetype>
-    
+
                 let start = xml.create_dav_element("resourcetype");
                 if many_types.is_empty() {
                     xml.q.write_event_async(Event::Empty(start)).await?;
@@ -384,7 +406,7 @@ impl<E: Extension> QWrite for Property<E> {
                     }
                     xml.q.write_event_async(Event::End(end)).await?;
                 }
-            },
+            }
             SupportedLock(many_entries) => {
                 // <D:supportedlock/>
 
@@ -401,7 +423,7 @@ impl<E: Extension> QWrite for Property<E> {
                     }
                     xml.q.write_event_async(Event::End(end)).await?;
                 }
-            },
+            }
             Extension(inner) => inner.qwrite(xml).await?,
         };
         Ok(())
@@ -413,8 +435,10 @@ impl<E: Extension> QWrite for ResourceType<E> {
         match self {
             Self::Collection => {
                 let empty_collection = xml.create_dav_element("collection");
-                xml.q.write_event_async(Event::Empty(empty_collection)).await
-            },
+                xml.q
+                    .write_event_async(Event::Empty(empty_collection))
+                    .await
+            }
             Self::Extension(inner) => inner.qwrite(xml).await,
         }
     }
@@ -425,7 +449,7 @@ impl<E: Extension> QWrite for Include<E> {
         let start = xml.create_dav_element("include");
         let end = start.to_end();
 
-        xml.q.write_event_async(Event::Start(start.clone())).await?;  
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
         for prop in self.0.iter() {
             prop.qwrite(xml).await?;
         }
@@ -505,8 +529,8 @@ impl QWrite for LockType {
             Self::Write => {
                 let empty_write = xml.create_dav_element("write");
                 xml.q.write_event_async(Event::Empty(empty_write)).await?
-            },
-        }; 
+            }
+        };
         xml.q.write_event_async(Event::End(end)).await
     }
 }
@@ -521,12 +545,12 @@ impl QWrite for LockScope {
             Self::Exclusive => {
                 let empty_tag = xml.create_dav_element("exclusive");
                 xml.q.write_event_async(Event::Empty(empty_tag)).await?
-            },
+            }
             Self::Shared => {
                 let empty_tag = xml.create_dav_element("shared");
                 xml.q.write_event_async(Event::Empty(empty_tag)).await?
-            },
-        }; 
+            }
+        };
         xml.q.write_event_async(Event::End(end)).await
     }
 }
@@ -538,7 +562,11 @@ impl QWrite for Owner {
 
         xml.q.write_event_async(Event::Start(start.clone())).await?;
         match self {
-            Self::Txt(txt) => xml.q.write_event_async(Event::Text(BytesText::new(&txt))).await?,
+            Self::Txt(txt) => {
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new(&txt)))
+                    .await?
+            }
             Self::Href(href) => href.qwrite(xml).await?,
             Self::Unknown => (),
         }
@@ -553,9 +581,21 @@ impl QWrite for Depth {
 
         xml.q.write_event_async(Event::Start(start.clone())).await?;
         match self {
-            Self::Zero => xml.q.write_event_async(Event::Text(BytesText::new("0"))).await?,
-            Self::One => xml.q.write_event_async(Event::Text(BytesText::new("1"))).await?,
-            Self::Infinity => xml.q.write_event_async(Event::Text(BytesText::new("infinity"))).await?,
+            Self::Zero => {
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new("0")))
+                    .await?
+            }
+            Self::One => {
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new("1")))
+                    .await?
+            }
+            Self::Infinity => {
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new("infinity")))
+                    .await?
+            }
         };
         xml.q.write_event_async(Event::End(end)).await
     }
@@ -570,9 +610,15 @@ impl QWrite for Timeout {
         match self {
             Self::Seconds(count) => {
                 let txt = format!("Second-{}", count);
-                xml.q.write_event_async(Event::Text(BytesText::new(&txt))).await?
-            },
-            Self::Infinite => xml.q.write_event_async(Event::Text(BytesText::new("Infinite"))).await?
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new(&txt)))
+                    .await?
+            }
+            Self::Infinite => {
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new("Infinite")))
+                    .await?
+            }
         };
         xml.q.write_event_async(Event::End(end)).await
     }
@@ -620,8 +666,10 @@ impl<E: Extension> QWrite for Violation<E> {
         };
 
         match self {
-            Violation::LockTokenMatchesRequestUri => atom("lock-token-matches-request-uri").await, 
-            Violation::LockTokenSubmitted(hrefs) if hrefs.is_empty() => atom("lock-token-submitted").await,
+            Violation::LockTokenMatchesRequestUri => atom("lock-token-matches-request-uri").await,
+            Violation::LockTokenSubmitted(hrefs) if hrefs.is_empty() => {
+                atom("lock-token-submitted").await
+            }
             Violation::LockTokenSubmitted(hrefs) => {
                 let start = xml.create_dav_element("lock-token-submitted");
                 let end = start.to_end();
@@ -631,8 +679,10 @@ impl<E: Extension> QWrite for Violation<E> {
                     href.qwrite(xml).await?;
                 }
                 xml.q.write_event_async(Event::End(end)).await
-            },
-            Violation::NoConflictingLock(hrefs) if hrefs.is_empty() => atom("no-conflicting-lock").await,
+            }
+            Violation::NoConflictingLock(hrefs) if hrefs.is_empty() => {
+                atom("no-conflicting-lock").await
+            }
             Violation::NoConflictingLock(hrefs) => {
                 let start = xml.create_dav_element("no-conflicting-lock");
                 let end = start.to_end();
@@ -642,11 +692,13 @@ impl<E: Extension> QWrite for Violation<E> {
                     href.qwrite(xml).await?;
                 }
                 xml.q.write_event_async(Event::End(end)).await
-            },
+            }
             Violation::NoExternalEntities => atom("no-external-entities").await,
             Violation::PreservedLiveProperties => atom("preserved-live-properties").await,
             Violation::PropfindFiniteDepth => atom("propfind-finite-depth").await,
-            Violation::CannotModifyProtectedProperty => atom("cannot-modify-protected-property").await,
+            Violation::CannotModifyProtectedProperty => {
+                atom("cannot-modify-protected-property").await
+            }
             Violation::Extension(inner) => inner.qwrite(xml).await,
         }
     }
@@ -654,30 +706,32 @@ impl<E: Extension> QWrite for Violation<E> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::xml;
+    use super::*;
     use crate::realization::Core;
     use tokio::io::AsyncWriteExt;
 
     /// To run only the unit tests and avoid the behavior ones:
     /// cargo test --bin aerogramme
-    
+
     async fn serialize(elem: &impl QWrite) -> String {
         let mut buffer = Vec::new();
         let mut tokio_buffer = tokio::io::BufWriter::new(&mut buffer);
         let q = quick_xml::writer::Writer::new_with_indent(&mut tokio_buffer, b' ', 4);
-        let ns_to_apply = vec![ ("xmlns:D".into(), "DAV:".into()) ];
+        let ns_to_apply = vec![("xmlns:D".into(), "DAV:".into())];
         let mut writer = Writer { q, ns_to_apply };
 
         elem.qwrite(&mut writer).await.expect("xml serialization");
         tokio_buffer.flush().await.expect("tokio buffer flush");
         let got = std::str::from_utf8(buffer.as_slice()).unwrap();
 
-        return got.into()
+        return got.into();
     }
 
     async fn deserialize<T: xml::Node<T>>(src: &str) -> T {
-        let mut rdr = xml::Reader::new(quick_xml::reader::NsReader::from_reader(src.as_bytes())).await.unwrap();
+        let mut rdr = xml::Reader::new(quick_xml::reader::NsReader::from_reader(src.as_bytes()))
+            .await
+            .unwrap();
         rdr.find().await.unwrap()
     }
 
@@ -688,15 +742,18 @@ mod tests {
         let got = serialize(&orig).await;
         let expected = r#"<D:href xmlns:D="DAV:">/SOGo/dav/so/</D:href>"#;
 
-        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(
+            &got, expected,
+            "\n---GOT---\n{got}\n---EXP---\n{expected}\n"
+        );
         assert_eq!(deserialize::<Href>(got.as_str()).await, orig)
     }
 
     #[tokio::test]
     async fn basic_multistatus() {
-        let orig = Multistatus::<Core> { 
-            responses: vec![], 
-            responsedescription: Some(ResponseDescription("Hello world".into())) 
+        let orig = Multistatus::<Core> {
+            responses: vec![],
+            responsedescription: Some(ResponseDescription("Hello world".into())),
         };
         let got = serialize(&orig).await;
 
@@ -704,18 +761,18 @@ mod tests {
     <D:responsedescription>Hello world</D:responsedescription>
 </D:multistatus>"#;
 
-        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(
+            &got, expected,
+            "\n---GOT---\n{got}\n---EXP---\n{expected}\n"
+        );
         assert_eq!(deserialize::<Multistatus::<Core>>(got.as_str()).await, orig)
     }
 
-
     #[tokio::test]
     async fn rfc_error_delete_locked() {
-        let orig = Error::<Core>(vec![
-                Violation::LockTokenSubmitted(vec![
-                    Href("/locked/".into())
-                ])
-            ]);
+        let orig = Error::<Core>(vec![Violation::LockTokenSubmitted(vec![Href(
+            "/locked/".into(),
+        )])]);
         let got = serialize(&orig).await;
 
         let expected = r#"<D:error xmlns:D="DAV:">
@@ -724,7 +781,10 @@ mod tests {
     </D:lock-token-submitted>
 </D:error>"#;
 
-        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(
+            &got, expected,
+            "\n---GOT---\n{got}\n---EXP---\n{expected}\n"
+        );
         assert_eq!(deserialize::<Error<Core>>(got.as_str()).await, orig)
     }
 
@@ -738,7 +798,10 @@ mod tests {
     <D:propname/>
 </D:propfind>"#;
 
-        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(
+            &got, expected,
+            "\n---GOT---\n{got}\n---EXP---\n{expected}\n"
+        );
         assert_eq!(deserialize::<PropFind::<Core>>(got.as_str()).await, orig)
     }
 
@@ -759,7 +822,7 @@ mod tests {
                             status: Status(http::status::StatusCode::OK),
                             error: None,
                             responsedescription: None,
-                        }]
+                        }],
                     ),
                     error: None,
                     responsedescription: None,
@@ -782,8 +845,8 @@ mod tests {
                             status: Status(http::status::StatusCode::OK),
                             error: None,
                             responsedescription: None,
-                        }
-                    ]),
+                        }],
+                    ),
                     error: None,
                     responsedescription: None,
                     location: None,
@@ -825,8 +888,10 @@ mod tests {
     </D:response>
 </D:multistatus>"#;
 
-
-        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(
+            &got, expected,
+            "\n---GOT---\n{got}\n---EXP---\n{expected}\n"
+        );
         assert_eq!(deserialize::<Multistatus::<Core>>(got.as_str()).await, orig)
     }
 
@@ -835,17 +900,20 @@ mod tests {
         let orig = PropFind::<Core>::AllProp(None);
         let got = serialize(&orig).await;
 
-    let expected = r#"<D:propfind xmlns:D="DAV:">
+        let expected = r#"<D:propfind xmlns:D="DAV:">
     <D:allprop/>
 </D:propfind>"#;
 
-        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(
+            &got, expected,
+            "\n---GOT---\n{got}\n---EXP---\n{expected}\n"
+        );
         assert_eq!(deserialize::<PropFind::<Core>>(got.as_str()).await, orig)
     }
 
     #[tokio::test]
     async fn rfc_allprop_res() {
-        use chrono::{FixedOffset,TimeZone};
+        use chrono::{FixedOffset, TimeZone};
 
         let orig = Multistatus::<Core> {
             responses: vec![
@@ -853,28 +921,34 @@ mod tests {
                     status_or_propstat: StatusOrPropstat::PropStat(
                         Href("/container/".into()),
                         vec![PropStat {
-                        prop: AnyProp(vec![
-                            AnyProperty::Value(Property::CreationDate(FixedOffset::west_opt(8 * 3600)
-                                                   .unwrap()
-                                                   .with_ymd_and_hms(1997, 12, 1, 17, 42, 21)
-                                                   .unwrap())),
-                            AnyProperty::Value(Property::DisplayName("Example collection".into())),
-                            AnyProperty::Value(Property::ResourceType(vec![ResourceType::Collection])),
-                            AnyProperty::Value(Property::SupportedLock(vec![
-                                LockEntry {
-                                    lockscope: LockScope::Exclusive,
-                                    locktype: LockType::Write,
-                                },
-                                LockEntry {
-                                    lockscope: LockScope::Shared,
-                                    locktype: LockType::Write,
-                                },
-                            ])),
-                        ]),
-                        status: Status(http::status::StatusCode::OK),
-                        error: None,
-                        responsedescription: None,
-                        }]
+                            prop: AnyProp(vec![
+                                AnyProperty::Value(Property::CreationDate(
+                                    FixedOffset::west_opt(8 * 3600)
+                                        .unwrap()
+                                        .with_ymd_and_hms(1997, 12, 1, 17, 42, 21)
+                                        .unwrap(),
+                                )),
+                                AnyProperty::Value(Property::DisplayName(
+                                    "Example collection".into(),
+                                )),
+                                AnyProperty::Value(Property::ResourceType(vec![
+                                    ResourceType::Collection,
+                                ])),
+                                AnyProperty::Value(Property::SupportedLock(vec![
+                                    LockEntry {
+                                        lockscope: LockScope::Exclusive,
+                                        locktype: LockType::Write,
+                                    },
+                                    LockEntry {
+                                        lockscope: LockScope::Shared,
+                                        locktype: LockType::Write,
+                                    },
+                                ])),
+                            ]),
+                            status: Status(http::status::StatusCode::OK),
+                            error: None,
+                            responsedescription: None,
+                        }],
                     ),
                     error: None,
                     responsedescription: None,
@@ -884,37 +958,43 @@ mod tests {
                     status_or_propstat: StatusOrPropstat::PropStat(
                         Href("/container/front.html".into()),
                         vec![PropStat {
-                        prop: AnyProp(vec![
-                            AnyProperty::Value(Property::CreationDate(FixedOffset::west_opt(8 * 3600)
-                                .unwrap()
-                                .with_ymd_and_hms(1997, 12, 1, 18, 27, 21)
-                                .unwrap())),
-                            AnyProperty::Value(Property::DisplayName("Example HTML resource".into())),
-                            AnyProperty::Value(Property::GetContentLength(4525)),
-                            AnyProperty::Value(Property::GetContentType("text/html".into())),
-                            AnyProperty::Value(Property::GetEtag(r#""zzyzx""#.into())),
-                            AnyProperty::Value(Property::GetLastModified(FixedOffset::east_opt(0)
-                                .unwrap()
-                                .with_ymd_and_hms(1998, 1, 12, 9, 25, 56)
-                                .unwrap())),
-                            //@FIXME know bug, can't disambiguate between an empty resource
-                            //type value and a request resource type
-                            AnyProperty::Request(PropertyRequest::ResourceType),
-                            AnyProperty::Value(Property::SupportedLock(vec![
-                                LockEntry {
-                                    lockscope: LockScope::Exclusive,
-                                    locktype: LockType::Write,
-                                },
-                                LockEntry {
-                                    lockscope: LockScope::Shared,
-                                    locktype: LockType::Write,
-                                },
-                            ])),
-                        ]),
-                        status: Status(http::status::StatusCode::OK),
-                        error: None,
-                        responsedescription: None,
-                        }]
+                            prop: AnyProp(vec![
+                                AnyProperty::Value(Property::CreationDate(
+                                    FixedOffset::west_opt(8 * 3600)
+                                        .unwrap()
+                                        .with_ymd_and_hms(1997, 12, 1, 18, 27, 21)
+                                        .unwrap(),
+                                )),
+                                AnyProperty::Value(Property::DisplayName(
+                                    "Example HTML resource".into(),
+                                )),
+                                AnyProperty::Value(Property::GetContentLength(4525)),
+                                AnyProperty::Value(Property::GetContentType("text/html".into())),
+                                AnyProperty::Value(Property::GetEtag(r#""zzyzx""#.into())),
+                                AnyProperty::Value(Property::GetLastModified(
+                                    FixedOffset::east_opt(0)
+                                        .unwrap()
+                                        .with_ymd_and_hms(1998, 1, 12, 9, 25, 56)
+                                        .unwrap(),
+                                )),
+                                //@FIXME know bug, can't disambiguate between an empty resource
+                                //type value and a request resource type
+                                AnyProperty::Request(PropertyRequest::ResourceType),
+                                AnyProperty::Value(Property::SupportedLock(vec![
+                                    LockEntry {
+                                        lockscope: LockScope::Exclusive,
+                                        locktype: LockType::Write,
+                                    },
+                                    LockEntry {
+                                        lockscope: LockScope::Shared,
+                                        locktype: LockType::Write,
+                                    },
+                                ])),
+                            ]),
+                            status: Status(http::status::StatusCode::OK),
+                            error: None,
+                            responsedescription: None,
+                        }],
                     ),
                     error: None,
                     responsedescription: None,
@@ -993,15 +1073,18 @@ mod tests {
     </D:response>
 </D:multistatus>"#;
 
-        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(
+            &got, expected,
+            "\n---GOT---\n{got}\n---EXP---\n{expected}\n"
+        );
         assert_eq!(deserialize::<Multistatus::<Core>>(got.as_str()).await, orig)
     }
 
     #[tokio::test]
     async fn rfc_allprop_include() {
         let orig = PropFind::<Core>::AllProp(Some(Include(vec![
-           PropertyRequest::DisplayName,
-           PropertyRequest::ResourceType,
+            PropertyRequest::DisplayName,
+            PropertyRequest::ResourceType,
         ])));
 
         let got = serialize(&orig).await;
@@ -1014,19 +1097,20 @@ mod tests {
     </D:include>
 </D:propfind>"#;
 
-        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(
+            &got, expected,
+            "\n---GOT---\n{got}\n---EXP---\n{expected}\n"
+        );
         assert_eq!(deserialize::<PropFind::<Core>>(got.as_str()).await, orig)
     }
 
     #[tokio::test]
     async fn rfc_propertyupdate() {
         let orig = PropertyUpdate::<Core>(vec![
-            PropertyUpdateItem::Set(Set(PropValue(vec![
-                Property::GetContentLanguage("fr-FR".into()),
-            ]))),
-            PropertyUpdateItem::Remove(Remove(PropName(vec![
-                PropertyRequest::DisplayName,
-            ]))),
+            PropertyUpdateItem::Set(Set(PropValue(vec![Property::GetContentLanguage(
+                "fr-FR".into(),
+            )]))),
+            PropertyUpdateItem::Remove(Remove(PropName(vec![PropertyRequest::DisplayName]))),
         ]);
         let got = serialize(&orig).await;
 
@@ -1043,8 +1127,14 @@ mod tests {
     </D:remove>
 </D:propertyupdate>"#;
 
-        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
-        assert_eq!(deserialize::<PropertyUpdate::<Core>>(got.as_str()).await, orig)
+        assert_eq!(
+            &got, expected,
+            "\n---GOT---\n{got}\n---EXP---\n{expected}\n"
+        );
+        assert_eq!(
+            deserialize::<PropertyUpdate::<Core>>(got.as_str()).await,
+            orig
+        )
     }
 
     #[tokio::test]
@@ -1053,7 +1143,7 @@ mod tests {
             responses: vec![Response {
                 status_or_propstat: StatusOrPropstat::Status(
                     vec![Href("http://www.example.com/container/resource3".into())],
-                    Status(http::status::StatusCode::from_u16(423).unwrap())
+                    Status(http::status::StatusCode::from_u16(423).unwrap()),
                 ),
                 error: Some(Error(vec![Violation::LockTokenSubmitted(vec![])])),
                 responsedescription: None,
@@ -1074,7 +1164,10 @@ mod tests {
     </D:response>
 </D:multistatus>"#;
 
-        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(
+            &got, expected,
+            "\n---GOT---\n{got}\n---EXP---\n{expected}\n"
+        );
         assert_eq!(deserialize::<Multistatus::<Core>>(got.as_str()).await, orig)
     }
 
@@ -1083,7 +1176,9 @@ mod tests {
         let orig = LockInfo {
             lockscope: LockScope::Exclusive,
             locktype: LockType::Write,
-            owner: Some(Owner::Href(Href("http://example.org/~ejw/contact.html".into()))),
+            owner: Some(Owner::Href(Href(
+                "http://example.org/~ejw/contact.html".into(),
+            ))),
         };
 
         let got = serialize(&orig).await;
@@ -1100,23 +1195,30 @@ mod tests {
     </D:owner>
 </D:lockinfo>"#;
 
-        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(
+            &got, expected,
+            "\n---GOT---\n{got}\n---EXP---\n{expected}\n"
+        );
         assert_eq!(deserialize::<LockInfo>(got.as_str()).await, orig)
     }
 
     #[tokio::test]
     async fn rfc_simple_lock_response() {
-        let orig = PropValue::<Core>(vec![
-            Property::LockDiscovery(vec![ActiveLock {
-                lockscope: LockScope::Exclusive,
-                locktype: LockType::Write,
-                depth: Depth::Infinity,
-                owner: Some(Owner::Href(Href("http://example.org/~ejw/contact.html".into()))),
-                timeout: Some(Timeout::Seconds(604800)),
-                locktoken: Some(LockToken(Href("urn:uuid:e71d4fae-5dec-22d6-fea5-00a0c91e6be4".into()))),
-                lockroot: LockRoot(Href("http://example.com/workspace/webdav/proposal.doc".into())),
-            }]),
-        ]);
+        let orig = PropValue::<Core>(vec![Property::LockDiscovery(vec![ActiveLock {
+            lockscope: LockScope::Exclusive,
+            locktype: LockType::Write,
+            depth: Depth::Infinity,
+            owner: Some(Owner::Href(Href(
+                "http://example.org/~ejw/contact.html".into(),
+            ))),
+            timeout: Some(Timeout::Seconds(604800)),
+            locktoken: Some(LockToken(Href(
+                "urn:uuid:e71d4fae-5dec-22d6-fea5-00a0c91e6be4".into(),
+            ))),
+            lockroot: LockRoot(Href(
+                "http://example.com/workspace/webdav/proposal.doc".into(),
+            )),
+        }])]);
 
         let got = serialize(&orig).await;
 
@@ -1144,7 +1246,10 @@ mod tests {
     </D:lockdiscovery>
 </D:prop>"#;
 
-        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(
+            &got, expected,
+            "\n---GOT---\n{got}\n---EXP---\n{expected}\n"
+        );
         assert_eq!(deserialize::<PropValue::<Core>>(got.as_str()).await, orig)
     }
 }

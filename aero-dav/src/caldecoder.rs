@@ -1,10 +1,10 @@
-use quick_xml::events::Event;
 use chrono::NaiveDateTime;
+use quick_xml::events::Event;
 
-use super::types as dav;
 use super::caltypes::*;
-use super::xml::{QRead, IRead, Reader, DAV_URN, CAL_URN};
 use super::error::ParsingError;
+use super::types as dav;
+use super::xml::{IRead, QRead, Reader, CAL_URN, DAV_URN};
 
 // ---- ROOT ELEMENTS ---
 impl<E: dav::Extension> QRead<MkCalendar<E>> for MkCalendar<E> {
@@ -29,7 +29,7 @@ impl<E: dav::Extension> QRead<Report<E>> for Report<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         match CalendarQuery::<E>::qread(xml).await {
             Err(ParsingError::Recoverable) => (),
-            otherwise => return otherwise.map(Self::Query)
+            otherwise => return otherwise.map(Self::Query),
         }
 
         match CalendarMultiget::<E>::qread(xml).await {
@@ -61,7 +61,11 @@ impl<E: dav::Extension> QRead<CalendarQuery<E>> for CalendarQuery<E> {
         xml.close().await?;
 
         match filter {
-            Some(filter) => Ok(CalendarQuery { selector, filter, timezone }),
+            Some(filter) => Ok(CalendarQuery {
+                selector,
+                filter,
+                timezone,
+            }),
             _ => Err(ParsingError::MissingChild),
         }
     }
@@ -100,39 +104,70 @@ impl QRead<FreeBusyQuery> for FreeBusyQuery {
     }
 }
 
-
 // ---- EXTENSIONS ---
 impl QRead<Violation> for Violation {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        if xml.maybe_open(DAV_URN, "resource-must-be-null").await?.is_some() {
+        if xml
+            .maybe_open(DAV_URN, "resource-must-be-null")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
             Ok(Self::ResourceMustBeNull)
         } else if xml.maybe_open(DAV_URN, "need-privileges").await?.is_some() {
             xml.close().await?;
             Ok(Self::NeedPrivileges)
-        } else if xml.maybe_open(CAL_URN, "calendar-collection-location-ok").await?.is_some() {
+        } else if xml
+            .maybe_open(CAL_URN, "calendar-collection-location-ok")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
             Ok(Self::CalendarCollectionLocationOk)
-        } else if xml.maybe_open(CAL_URN, "valid-calendar-data").await?.is_some() {
+        } else if xml
+            .maybe_open(CAL_URN, "valid-calendar-data")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
             Ok(Self::ValidCalendarData)
-        } else if xml.maybe_open(CAL_URN, "initialize-calendar-collection").await?.is_some() {
+        } else if xml
+            .maybe_open(CAL_URN, "initialize-calendar-collection")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
             Ok(Self::InitializeCalendarCollection)
-        } else if xml.maybe_open(CAL_URN, "supported-calendar-data").await?.is_some() {
+        } else if xml
+            .maybe_open(CAL_URN, "supported-calendar-data")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
             Ok(Self::SupportedCalendarData)
-        } else if xml.maybe_open(CAL_URN, "valid-calendar-object-resource").await?.is_some() {
+        } else if xml
+            .maybe_open(CAL_URN, "valid-calendar-object-resource")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
             Ok(Self::ValidCalendarObjectResource)
-        } else if xml.maybe_open(CAL_URN, "supported-calendar-component").await?.is_some() {
+        } else if xml
+            .maybe_open(CAL_URN, "supported-calendar-component")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
             Ok(Self::SupportedCalendarComponent)
         } else if xml.maybe_open(CAL_URN, "no-uid-conflict").await?.is_some() {
             let href = xml.find().await?;
             xml.close().await?;
             Ok(Self::NoUidConflict(href))
-        } else if xml.maybe_open(CAL_URN, "max-resource-size").await?.is_some() {
+        } else if xml
+            .maybe_open(CAL_URN, "max-resource-size")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
             Ok(Self::MaxResourceSize)
         } else if xml.maybe_open(CAL_URN, "min-date-time").await?.is_some() {
@@ -144,7 +179,11 @@ impl QRead<Violation> for Violation {
         } else if xml.maybe_open(CAL_URN, "max-instances").await?.is_some() {
             xml.close().await?;
             Ok(Self::MaxInstances)
-        } else if xml.maybe_open(CAL_URN, "max-attendees-per-instance").await?.is_some() {
+        } else if xml
+            .maybe_open(CAL_URN, "max-attendees-per-instance")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
             Ok(Self::MaxAttendeesPerInstance)
         } else if xml.maybe_open(CAL_URN, "valid-filter").await?.is_some() {
@@ -167,7 +206,11 @@ impl QRead<Violation> for Violation {
             }
             xml.close().await?;
             Ok(Self::SupportedFilter { comp, prop, param })
-        } else if xml.maybe_open(CAL_URN, "number-of-matches-within-limits").await?.is_some() {
+        } else if xml
+            .maybe_open(CAL_URN, "number-of-matches-within-limits")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
             Ok(Self::NumberOfMatchesWithinLimits)
         } else {
@@ -178,72 +221,112 @@ impl QRead<Violation> for Violation {
 
 impl QRead<Property> for Property {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        if xml.maybe_open_start(CAL_URN, "calendar-home-set").await?.is_some() {
+        if xml
+            .maybe_open_start(CAL_URN, "calendar-home-set")
+            .await?
+            .is_some()
+        {
             let href = xml.find().await?;
             xml.close().await?;
-            return Ok(Property::CalendarHomeSet(href))
+            return Ok(Property::CalendarHomeSet(href));
         }
-        if xml.maybe_open_start(CAL_URN, "calendar-description").await?.is_some() {
+        if xml
+            .maybe_open_start(CAL_URN, "calendar-description")
+            .await?
+            .is_some()
+        {
             let lang = xml.prev_attr("xml:lang");
             let text = xml.tag_string().await?;
             xml.close().await?;
-            return Ok(Property::CalendarDescription { lang, text })
+            return Ok(Property::CalendarDescription { lang, text });
         }
 
-        if xml.maybe_open_start(CAL_URN, "calendar-timezone").await?.is_some() {
+        if xml
+            .maybe_open_start(CAL_URN, "calendar-timezone")
+            .await?
+            .is_some()
+        {
             let tz = xml.tag_string().await?;
             xml.close().await?;
-            return Ok(Property::CalendarTimezone(tz))
+            return Ok(Property::CalendarTimezone(tz));
         }
 
-        if xml.maybe_open_start(CAL_URN, "supported-calendar-component-set").await?.is_some() {
+        if xml
+            .maybe_open_start(CAL_URN, "supported-calendar-component-set")
+            .await?
+            .is_some()
+        {
             let comp = xml.collect().await?;
             xml.close().await?;
-            return Ok(Property::SupportedCalendarComponentSet(comp))
+            return Ok(Property::SupportedCalendarComponentSet(comp));
         }
 
-        if xml.maybe_open_start(CAL_URN, "supported-calendar-data").await?.is_some() {
+        if xml
+            .maybe_open_start(CAL_URN, "supported-calendar-data")
+            .await?
+            .is_some()
+        {
             let mime = xml.collect().await?;
             xml.close().await?;
-            return Ok(Property::SupportedCalendarData(mime))
+            return Ok(Property::SupportedCalendarData(mime));
         }
 
-        if xml.maybe_open_start(CAL_URN, "max-resource-size").await?.is_some() {
+        if xml
+            .maybe_open_start(CAL_URN, "max-resource-size")
+            .await?
+            .is_some()
+        {
             let sz = xml.tag_string().await?.parse::<u64>()?;
             xml.close().await?;
-            return Ok(Property::MaxResourceSize(sz))
+            return Ok(Property::MaxResourceSize(sz));
         }
 
-        if xml.maybe_open_start(CAL_URN, "max-date-time").await?.is_some() {
+        if xml
+            .maybe_open_start(CAL_URN, "max-date-time")
+            .await?
+            .is_some()
+        {
             let dtstr = xml.tag_string().await?;
             let dt = NaiveDateTime::parse_from_str(dtstr.as_str(), ICAL_DATETIME_FMT)?.and_utc();
             xml.close().await?;
-            return Ok(Property::MaxDateTime(dt))
+            return Ok(Property::MaxDateTime(dt));
         }
 
-        if xml.maybe_open_start(CAL_URN, "max-instances").await?.is_some() {
+        if xml
+            .maybe_open_start(CAL_URN, "max-instances")
+            .await?
+            .is_some()
+        {
             let sz = xml.tag_string().await?.parse::<u64>()?;
             xml.close().await?;
-            return Ok(Property::MaxInstances(sz))
+            return Ok(Property::MaxInstances(sz));
         }
 
-        if xml.maybe_open_start(CAL_URN, "max-attendees-per-instance").await?.is_some() {
+        if xml
+            .maybe_open_start(CAL_URN, "max-attendees-per-instance")
+            .await?
+            .is_some()
+        {
             let sz = xml.tag_string().await?.parse::<u64>()?;
             xml.close().await?;
-            return Ok(Property::MaxAttendeesPerInstance(sz))
+            return Ok(Property::MaxAttendeesPerInstance(sz));
         }
 
-        if xml.maybe_open_start(CAL_URN, "supported-collation-set").await?.is_some() {
+        if xml
+            .maybe_open_start(CAL_URN, "supported-collation-set")
+            .await?
+            .is_some()
+        {
             let cols = xml.collect().await?;
             xml.close().await?;
-            return Ok(Property::SupportedCollationSet(cols))
+            return Ok(Property::SupportedCollationSet(cols));
         }
 
         let mut dirty = false;
         let mut caldata: Option<CalendarDataPayload> = None;
         xml.maybe_read(&mut caldata, &mut dirty).await?;
         if let Some(cal) = caldata {
-            return Ok(Property::CalendarData(cal))
+            return Ok(Property::CalendarData(cal));
         }
 
         Err(ParsingError::Recoverable)
@@ -252,54 +335,88 @@ impl QRead<Property> for Property {
 
 impl QRead<PropertyRequest> for PropertyRequest {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        if xml.maybe_open(CAL_URN, "calendar-home-set").await?.is_some() {
+        if xml
+            .maybe_open(CAL_URN, "calendar-home-set")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
-            return Ok(Self::CalendarHomeSet)
-        } 
-        if xml.maybe_open(CAL_URN, "calendar-description").await?.is_some() {
-            xml.close().await?;
-            return Ok(Self::CalendarDescription)
-        } 
-        if xml.maybe_open(CAL_URN, "calendar-timezone").await?.is_some() {
-            xml.close().await?;
-            return Ok(Self::CalendarTimezone)
+            return Ok(Self::CalendarHomeSet);
         }
-        if xml.maybe_open(CAL_URN, "supported-calendar-component-set").await?.is_some() {
+        if xml
+            .maybe_open(CAL_URN, "calendar-description")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
-            return Ok(Self::SupportedCalendarComponentSet)
+            return Ok(Self::CalendarDescription);
         }
-        if xml.maybe_open(CAL_URN, "supported-calendar-data").await?.is_some() {
+        if xml
+            .maybe_open(CAL_URN, "calendar-timezone")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
-            return Ok(Self::SupportedCalendarData)
+            return Ok(Self::CalendarTimezone);
         }
-        if xml.maybe_open(CAL_URN, "max-resource-size").await?.is_some() {
+        if xml
+            .maybe_open(CAL_URN, "supported-calendar-component-set")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
-            return Ok(Self::MaxResourceSize)
+            return Ok(Self::SupportedCalendarComponentSet);
+        }
+        if xml
+            .maybe_open(CAL_URN, "supported-calendar-data")
+            .await?
+            .is_some()
+        {
+            xml.close().await?;
+            return Ok(Self::SupportedCalendarData);
+        }
+        if xml
+            .maybe_open(CAL_URN, "max-resource-size")
+            .await?
+            .is_some()
+        {
+            xml.close().await?;
+            return Ok(Self::MaxResourceSize);
         }
         if xml.maybe_open(CAL_URN, "min-date-time").await?.is_some() {
             xml.close().await?;
-            return Ok(Self::MinDateTime)
+            return Ok(Self::MinDateTime);
         }
         if xml.maybe_open(CAL_URN, "max-date-time").await?.is_some() {
             xml.close().await?;
-            return Ok(Self::MaxDateTime)
+            return Ok(Self::MaxDateTime);
         }
         if xml.maybe_open(CAL_URN, "max-instances").await?.is_some() {
             xml.close().await?;
-            return Ok(Self::MaxInstances)
+            return Ok(Self::MaxInstances);
         }
-        if xml.maybe_open(CAL_URN, "max-attendees-per-instance").await?.is_some() {
+        if xml
+            .maybe_open(CAL_URN, "max-attendees-per-instance")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
-            return Ok(Self::MaxAttendeesPerInstance)
+            return Ok(Self::MaxAttendeesPerInstance);
         }
-        if xml.maybe_open(CAL_URN, "supported-collation-set").await?.is_some() {
+        if xml
+            .maybe_open(CAL_URN, "supported-collation-set")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
-            return Ok(Self::SupportedCollationSet)
+            return Ok(Self::SupportedCollationSet);
         }
         let mut dirty = false;
         let mut m_cdr = None;
         xml.maybe_read(&mut m_cdr, &mut dirty).await?;
-        m_cdr.ok_or(ParsingError::Recoverable).map(Self::CalendarData)
+        m_cdr
+            .ok_or(ParsingError::Recoverable)
+            .map(Self::CalendarData)
     }
 }
 
@@ -307,7 +424,7 @@ impl QRead<ResourceType> for ResourceType {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         if xml.maybe_open(CAL_URN, "calendar").await?.is_some() {
             xml.close().await?;
-            return Ok(Self::Calendar)
+            return Ok(Self::Calendar);
         }
         Err(ParsingError::Recoverable)
     }
@@ -338,7 +455,10 @@ impl QRead<CalendarDataSupport> for CalendarDataSupport {
         let ct = xml.prev_attr("content-type");
         let vs = xml.prev_attr("version");
         match (ct, vs) {
-            (Some(content_type), Some(version)) => Ok(Self { content_type, version }),
+            (Some(content_type), Some(version)) => Ok(Self {
+                content_type,
+                version,
+            }),
             _ => Err(ParsingError::Recoverable),
         }
     }
@@ -351,9 +471,13 @@ impl QRead<CalendarDataRequest> for CalendarDataRequest {
         let (mut comp, mut recurrence, mut limit_freebusy_set) = (None, None, None);
 
         if !xml.parent_has_child() {
-            return Ok(Self { mime, comp, recurrence, limit_freebusy_set })
+            return Ok(Self {
+                mime,
+                comp,
+                recurrence,
+                limit_freebusy_set,
+            });
         }
-
 
         loop {
             let mut dirty = false;
@@ -367,11 +491,15 @@ impl QRead<CalendarDataRequest> for CalendarDataRequest {
                     _ => xml.skip().await?,
                 };
             }
-
         }
 
         xml.close().await?;
-        Ok(Self { mime, comp, recurrence, limit_freebusy_set })
+        Ok(Self {
+            mime,
+            comp,
+            recurrence,
+            limit_freebusy_set,
+        })
     }
 }
 
@@ -389,17 +517,25 @@ impl QRead<Comp> for Comp {
         let (mut prop_kind, mut comp_kind) = (None, None);
 
         let bs = xml.open(CAL_URN, "comp").await?;
-        let name = Component::new(xml.prev_attr("name").ok_or(ParsingError::MissingAttribute)?);
+        let name = Component::new(
+            xml.prev_attr("name")
+                .ok_or(ParsingError::MissingAttribute)?,
+        );
 
         // Return early if it's an empty tag
         if matches!(bs, Event::Empty(_)) {
             xml.close().await?;
-            return Ok(Self { name, prop_kind, comp_kind })
+            return Ok(Self {
+                name,
+                prop_kind,
+                comp_kind,
+            });
         }
 
         loop {
-            let mut dirty = false; 
-            let (mut tmp_prop_kind, mut tmp_comp_kind): (Option<PropKind>, Option<CompKind>) = (None, None);
+            let mut dirty = false;
+            let (mut tmp_prop_kind, mut tmp_comp_kind): (Option<PropKind>, Option<CompKind>) =
+                (None, None);
 
             xml.maybe_read(&mut tmp_prop_kind, &mut dirty).await?;
             Box::pin(xml.maybe_read(&mut tmp_comp_kind, &mut dirty)).await?;
@@ -408,17 +544,16 @@ impl QRead<Comp> for Comp {
             // Merge
             match (tmp_prop_kind, &mut prop_kind) {
                 (Some(PropKind::Prop(mut a)), Some(PropKind::Prop(ref mut b))) => b.append(&mut a),
-                (Some(PropKind::AllProp), v) =>  *v = Some(PropKind::AllProp),
+                (Some(PropKind::AllProp), v) => *v = Some(PropKind::AllProp),
                 (Some(x), b) => *b = Some(x),
                 (None, _) => (),
             };
             match (tmp_comp_kind, &mut comp_kind) {
                 (Some(CompKind::Comp(mut a)), Some(CompKind::Comp(ref mut b))) => b.append(&mut a),
-                (Some(CompKind::AllComp), v) =>  *v = Some(CompKind::AllComp),
+                (Some(CompKind::AllComp), v) => *v = Some(CompKind::AllComp),
                 (Some(a), b) => *b = Some(a),
                 (None, _) => (),
             };
-
 
             if !dirty {
                 match xml.peek() {
@@ -426,17 +561,24 @@ impl QRead<Comp> for Comp {
                     _ => xml.skip().await?,
                 };
             }
-        };
+        }
 
         xml.close().await?;
-        Ok(Self { name, prop_kind, comp_kind })
+        Ok(Self {
+            name,
+            prop_kind,
+            comp_kind,
+        })
     }
 }
 
 impl QRead<CompSupport> for CompSupport {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CAL_URN, "comp").await?;
-        let inner = Component::new(xml.prev_attr("name").ok_or(ParsingError::MissingAttribute)?);
+        let inner = Component::new(
+            xml.prev_attr("name")
+                .ok_or(ParsingError::MissingAttribute)?,
+        );
         xml.close().await?;
         Ok(Self(inner))
     }
@@ -450,18 +592,18 @@ impl QRead<CompKind> for CompKind {
 
             if xml.maybe_open(CAL_URN, "allcomp").await?.is_some() {
                 xml.close().await?;
-                return Ok(CompKind::AllComp)
+                return Ok(CompKind::AllComp);
             }
 
             xml.maybe_push(&mut comp, &mut dirty).await?;
 
             if !dirty {
-                break
+                break;
             }
         }
         match &comp[..] {
-             [] => Err(ParsingError::Recoverable),
-             _ => Ok(CompKind::Comp(comp)),
+            [] => Err(ParsingError::Recoverable),
+            _ => Ok(CompKind::Comp(comp)),
         }
     }
 }
@@ -474,13 +616,13 @@ impl QRead<PropKind> for PropKind {
 
             if xml.maybe_open(CAL_URN, "allprop").await?.is_some() {
                 xml.close().await?;
-                return Ok(PropKind::AllProp)
+                return Ok(PropKind::AllProp);
             }
 
             xml.maybe_push(&mut prop, &mut dirty).await?;
 
             if !dirty {
-                break
+                break;
             }
         }
 
@@ -497,7 +639,9 @@ impl QRead<RecurrenceModifier> for RecurrenceModifier {
             Err(ParsingError::Recoverable) => (),
             otherwise => return otherwise.map(RecurrenceModifier::Expand),
         }
-        LimitRecurrenceSet::qread(xml).await.map(RecurrenceModifier::LimitRecurrenceSet)
+        LimitRecurrenceSet::qread(xml)
+            .await
+            .map(RecurrenceModifier::LimitRecurrenceSet)
     }
 }
 
@@ -508,11 +652,11 @@ impl QRead<Expand> for Expand {
             (Some(start), Some(end)) => (start, end),
             _ => return Err(ParsingError::MissingAttribute),
         };
-        
+
         let start = NaiveDateTime::parse_from_str(rstart.as_str(), ICAL_DATETIME_FMT)?.and_utc();
         let end = NaiveDateTime::parse_from_str(rend.as_str(), ICAL_DATETIME_FMT)?.and_utc();
         if start > end {
-            return Err(ParsingError::InvalidValue)
+            return Err(ParsingError::InvalidValue);
         }
 
         xml.close().await?;
@@ -527,11 +671,11 @@ impl QRead<LimitRecurrenceSet> for LimitRecurrenceSet {
             (Some(start), Some(end)) => (start, end),
             _ => return Err(ParsingError::MissingAttribute),
         };
-        
+
         let start = NaiveDateTime::parse_from_str(rstart.as_str(), ICAL_DATETIME_FMT)?.and_utc();
         let end = NaiveDateTime::parse_from_str(rend.as_str(), ICAL_DATETIME_FMT)?.and_utc();
         if start > end {
-            return Err(ParsingError::InvalidValue)
+            return Err(ParsingError::InvalidValue);
         }
 
         xml.close().await?;
@@ -546,11 +690,11 @@ impl QRead<LimitFreebusySet> for LimitFreebusySet {
             (Some(start), Some(end)) => (start, end),
             _ => return Err(ParsingError::MissingAttribute),
         };
-        
+
         let start = NaiveDateTime::parse_from_str(rstart.as_str(), ICAL_DATETIME_FMT)?.and_utc();
         let end = NaiveDateTime::parse_from_str(rend.as_str(), ICAL_DATETIME_FMT)?.and_utc();
         if start > end {
-            return Err(ParsingError::InvalidValue)
+            return Err(ParsingError::InvalidValue);
         }
 
         xml.close().await?;
@@ -563,20 +707,21 @@ impl<E: dav::Extension> QRead<CalendarSelector<E>> for CalendarSelector<E> {
         // allprop
         if let Some(_) = xml.maybe_open(DAV_URN, "allprop").await? {
             xml.close().await?;
-            return Ok(Self::AllProp)
+            return Ok(Self::AllProp);
         }
 
         // propname
         if let Some(_) = xml.maybe_open(DAV_URN, "propname").await? {
             xml.close().await?;
-            return Ok(Self::PropName)
+            return Ok(Self::PropName);
         }
 
         // prop
         let (mut maybe_prop, mut dirty) = (None, false);
-        xml.maybe_read::<dav::PropName<E>>(&mut maybe_prop, &mut dirty).await?;
+        xml.maybe_read::<dav::PropName<E>>(&mut maybe_prop, &mut dirty)
+            .await?;
         if let Some(prop) = maybe_prop {
-            return Ok(Self::Prop(prop))
+            return Ok(Self::Prop(prop));
         }
 
         Err(ParsingError::Recoverable)
@@ -586,10 +731,16 @@ impl<E: dav::Extension> QRead<CalendarSelector<E>> for CalendarSelector<E> {
 impl QRead<CompFilter> for CompFilter {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CAL_URN, "comp-filter").await?;
-        let name = Component::new(xml.prev_attr("name").ok_or(ParsingError::MissingAttribute)?);
+        let name = Component::new(
+            xml.prev_attr("name")
+                .ok_or(ParsingError::MissingAttribute)?,
+        );
         let additional_rules = Box::pin(xml.maybe_find()).await?;
         xml.close().await?;
-        Ok(Self { name, additional_rules })
+        Ok(Self {
+            name,
+            additional_rules,
+        })
     }
 }
 
@@ -604,7 +755,7 @@ impl QRead<CompFilterRules> for CompFilterRules {
 
             if xml.maybe_open(CAL_URN, "is-not-defined").await?.is_some() {
                 xml.close().await?;
-                return Ok(Self::IsNotDefined)
+                return Ok(Self::IsNotDefined);
             }
 
             xml.maybe_read(&mut time_range, &mut dirty).await?;
@@ -621,7 +772,11 @@ impl QRead<CompFilterRules> for CompFilterRules {
 
         match (&time_range, &prop_filter[..], &comp_filter[..]) {
             (None, [], []) => Err(ParsingError::Recoverable),
-            _ => Ok(Self::Matches(CompFilterMatch { time_range, prop_filter, comp_filter })),
+            _ => Ok(Self::Matches(CompFilterMatch {
+                time_range,
+                prop_filter,
+                comp_filter,
+            })),
         }
     }
 }
@@ -635,10 +790,16 @@ impl QRead<CompFilterMatch> for CompFilterMatch {
 impl QRead<PropFilter> for PropFilter {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CAL_URN, "prop-filter").await?;
-        let name = ComponentProperty(xml.prev_attr("name").ok_or(ParsingError::MissingAttribute)?);
+        let name = ComponentProperty(
+            xml.prev_attr("name")
+                .ok_or(ParsingError::MissingAttribute)?,
+        );
         let additional_rules = xml.maybe_find().await?;
         xml.close().await?;
-        Ok(Self { name, additional_rules })
+        Ok(Self {
+            name,
+            additional_rules,
+        })
     }
 }
 
@@ -653,7 +814,7 @@ impl QRead<PropFilterRules> for PropFilterRules {
 
             if xml.maybe_open(CAL_URN, "is-not-defined").await?.is_some() {
                 xml.close().await?;
-                return Ok(Self::IsNotDefined)
+                return Ok(Self::IsNotDefined);
             }
 
             xml.maybe_read(&mut time_range, &mut dirty).await?;
@@ -670,7 +831,11 @@ impl QRead<PropFilterRules> for PropFilterRules {
 
         match (&time_range, &time_or_text, &param_filter[..]) {
             (None, None, []) => Err(ParsingError::Recoverable),
-            _ => Ok(PropFilterRules::Match(PropFilterMatch { time_range, time_or_text, param_filter })),
+            _ => Ok(PropFilterRules::Match(PropFilterMatch {
+                time_range,
+                time_or_text,
+                param_filter,
+            })),
         }
     }
 }
@@ -684,10 +849,16 @@ impl QRead<PropFilterMatch> for PropFilterMatch {
 impl QRead<ParamFilter> for ParamFilter {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CAL_URN, "param-filter").await?;
-        let name = PropertyParameter(xml.prev_attr("name").ok_or(ParsingError::MissingAttribute)?);
+        let name = PropertyParameter(
+            xml.prev_attr("name")
+                .ok_or(ParsingError::MissingAttribute)?,
+        );
         let additional_rules = xml.maybe_find().await?;
         xml.close().await?;
-        Ok(Self { name, additional_rules })
+        Ok(Self {
+            name,
+            additional_rules,
+        })
     }
 }
 
@@ -708,7 +879,11 @@ impl QRead<TextMatch> for TextMatch {
         let negate_condition = xml.prev_attr("negate-condition").map(|v| v == "yes");
         let text = xml.tag_string().await?;
         xml.close().await?;
-        Ok(Self { collation, negate_condition, text })
+        Ok(Self {
+            collation,
+            negate_condition,
+            text,
+        })
     }
 }
 
@@ -716,7 +891,7 @@ impl QRead<ParamFilterMatch> for ParamFilterMatch {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         if xml.maybe_open(CAL_URN, "is-not-defined").await?.is_some() {
             xml.close().await?;
-            return Ok(Self::IsNotDefined)
+            return Ok(Self::IsNotDefined);
         }
         TextMatch::qread(xml).await.map(Self::Match)
     }
@@ -745,11 +920,15 @@ impl QRead<TimeRange> for TimeRange {
         xml.open(CAL_URN, "time-range").await?;
 
         let start = match xml.prev_attr("start") {
-            Some(r) => Some(NaiveDateTime::parse_from_str(r.as_str(), ICAL_DATETIME_FMT)?.and_utc()),
+            Some(r) => {
+                Some(NaiveDateTime::parse_from_str(r.as_str(), ICAL_DATETIME_FMT)?.and_utc())
+            }
             _ => None,
         };
         let end = match xml.prev_attr("end") {
-            Some(r) => Some(NaiveDateTime::parse_from_str(r.as_str(), ICAL_DATETIME_FMT)?.and_utc()),
+            Some(r) => {
+                Some(NaiveDateTime::parse_from_str(r.as_str(), ICAL_DATETIME_FMT)?.and_utc())
+            }
             _ => None,
         };
 
@@ -758,10 +937,10 @@ impl QRead<TimeRange> for TimeRange {
         match (start, end) {
             (Some(start), Some(end)) => {
                 if start > end {
-                    return Err(ParsingError::InvalidValue)
+                    return Err(ParsingError::InvalidValue);
                 }
                 Ok(TimeRange::FullRange(start, end))
-            },
+            }
             (Some(start), None) => Ok(TimeRange::OnlyStart(start)),
             (None, Some(end)) => Ok(TimeRange::OnlyEnd(end)),
             (None, None) => Err(ParsingError::MissingAttribute),
@@ -771,8 +950,11 @@ impl QRead<TimeRange> for TimeRange {
 
 impl QRead<CalProp> for CalProp {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        xml.open(CAL_URN, "prop").await?;        
-        let name = ComponentProperty(xml.prev_attr("name").ok_or(ParsingError::MissingAttribute)?);
+        xml.open(CAL_URN, "prop").await?;
+        let name = ComponentProperty(
+            xml.prev_attr("name")
+                .ok_or(ParsingError::MissingAttribute)?,
+        );
         let novalue = xml.prev_attr("novalue").map(|v| v == "yes");
         xml.close().await?;
         Ok(Self { name, novalue })
@@ -782,21 +964,23 @@ impl QRead<CalProp> for CalProp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{Utc, TimeZone};
     use crate::realization::Calendar;
     use crate::xml::Node;
+    use chrono::{TimeZone, Utc};
     //use quick_reader::NsReader;
 
     async fn deserialize<T: Node<T>>(src: &str) -> T {
-        let mut rdr = Reader::new(quick_xml::NsReader::from_reader(src.as_bytes())).await.unwrap();
+        let mut rdr = Reader::new(quick_xml::NsReader::from_reader(src.as_bytes()))
+            .await
+            .unwrap();
         rdr.find().await.unwrap()
     }
 
     #[tokio::test]
     async fn basic_mkcalendar() {
-        let expected = MkCalendar(dav::Set(dav::PropValue(vec![
-            dav::Property::DisplayName("Lisa's Events".into()),
-        ])));
+        let expected = MkCalendar(dav::Set(dav::PropValue(vec![dav::Property::DisplayName(
+            "Lisa's Events".into(),
+        )])));
 
         let src = r#"
 <?xml version="1.0" encoding="utf-8" ?>
@@ -856,61 +1040,89 @@ END:VCALENDAR]]></C:calendar-timezone>
         let expected = CalendarQuery {
             selector: Some(CalendarSelector::Prop(dav::PropName(vec![
                 dav::PropertyRequest::GetEtag,
-                dav::PropertyRequest::Extension(PropertyRequest::CalendarData(CalendarDataRequest {
-                    mime: None,
-                    comp: Some(Comp {
-                        name: Component::VCalendar,
-                        prop_kind: Some(PropKind::Prop(vec![
-                            CalProp {
+                dav::PropertyRequest::Extension(PropertyRequest::CalendarData(
+                    CalendarDataRequest {
+                        mime: None,
+                        comp: Some(Comp {
+                            name: Component::VCalendar,
+                            prop_kind: Some(PropKind::Prop(vec![CalProp {
                                 name: ComponentProperty("VERSION".into()),
                                 novalue: None,
-                            }
-                        ])),
-                        comp_kind: Some(CompKind::Comp(vec![
-                            Comp {
-                                name: Component::VEvent,
-                                prop_kind: Some(PropKind::Prop(vec![
-                                    CalProp { name: ComponentProperty("SUMMARY".into()), novalue: None },
-                                    CalProp { name: ComponentProperty("UID".into()), novalue: None },
-                                    CalProp { name: ComponentProperty("DTSTART".into()), novalue: None },
-                                    CalProp { name: ComponentProperty("DTEND".into()), novalue: None },
-                                    CalProp { name: ComponentProperty("DURATION".into()), novalue: None },
-                                    CalProp { name: ComponentProperty("RRULE".into()), novalue: None },
-                                    CalProp { name: ComponentProperty("RDATE".into()), novalue: None },
-                                    CalProp { name: ComponentProperty("EXRULE".into()), novalue: None },
-                                    CalProp { name: ComponentProperty("EXDATE".into()), novalue: None },
-                                    CalProp { name: ComponentProperty("RECURRENCE-ID".into()), novalue: None },
-                                ])),
-                                comp_kind: None,
-                            },
-                            Comp {
-                                name: Component::VTimeZone,
-                                prop_kind: None,
-                                comp_kind: None,
-                            }
-                        ])),
-                    }),
-                    recurrence: None,
-                    limit_freebusy_set: None,
-                })),
+                            }])),
+                            comp_kind: Some(CompKind::Comp(vec![
+                                Comp {
+                                    name: Component::VEvent,
+                                    prop_kind: Some(PropKind::Prop(vec![
+                                        CalProp {
+                                            name: ComponentProperty("SUMMARY".into()),
+                                            novalue: None,
+                                        },
+                                        CalProp {
+                                            name: ComponentProperty("UID".into()),
+                                            novalue: None,
+                                        },
+                                        CalProp {
+                                            name: ComponentProperty("DTSTART".into()),
+                                            novalue: None,
+                                        },
+                                        CalProp {
+                                            name: ComponentProperty("DTEND".into()),
+                                            novalue: None,
+                                        },
+                                        CalProp {
+                                            name: ComponentProperty("DURATION".into()),
+                                            novalue: None,
+                                        },
+                                        CalProp {
+                                            name: ComponentProperty("RRULE".into()),
+                                            novalue: None,
+                                        },
+                                        CalProp {
+                                            name: ComponentProperty("RDATE".into()),
+                                            novalue: None,
+                                        },
+                                        CalProp {
+                                            name: ComponentProperty("EXRULE".into()),
+                                            novalue: None,
+                                        },
+                                        CalProp {
+                                            name: ComponentProperty("EXDATE".into()),
+                                            novalue: None,
+                                        },
+                                        CalProp {
+                                            name: ComponentProperty("RECURRENCE-ID".into()),
+                                            novalue: None,
+                                        },
+                                    ])),
+                                    comp_kind: None,
+                                },
+                                Comp {
+                                    name: Component::VTimeZone,
+                                    prop_kind: None,
+                                    comp_kind: None,
+                                },
+                            ])),
+                        }),
+                        recurrence: None,
+                        limit_freebusy_set: None,
+                    },
+                )),
             ]))),
             filter: Filter(CompFilter {
                 name: Component::VCalendar,
                 additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
                     prop_filter: vec![],
-                    comp_filter: vec![
-                        CompFilter {
-                            name: Component::VEvent,
-                            additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
-                                prop_filter: vec![],
-                                comp_filter: vec![],
-                                time_range: Some(TimeRange::FullRange(
-                                    Utc.with_ymd_and_hms(2006, 1, 4, 0, 0, 0).unwrap(),
-                                    Utc.with_ymd_and_hms(2006, 1, 5, 0, 0, 0).unwrap(),
-                                )),
-                            })),
-                        },
-                    ],
+                    comp_filter: vec![CompFilter {
+                        name: Component::VEvent,
+                        additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
+                            prop_filter: vec![],
+                            comp_filter: vec![],
+                            time_range: Some(TimeRange::FullRange(
+                                Utc.with_ymd_and_hms(2006, 1, 4, 0, 0, 0).unwrap(),
+                                Utc.with_ymd_and_hms(2006, 1, 5, 0, 0, 0).unwrap(),
+                            )),
+                        })),
+                    }],
                     time_range: None,
                 })),
             }),
@@ -958,26 +1170,28 @@ END:VCALENDAR]]></C:calendar-timezone>
     }
 
     #[tokio::test]
-    async fn rfc_calendar_query_res() {        
+    async fn rfc_calendar_query_res() {
         let expected = dav::Multistatus::<Calendar> {
             responses: vec![
                 dav::Response {
                     status_or_propstat: dav::StatusOrPropstat::PropStat(
                         dav::Href("http://cal.example.com/bernard/work/abcd2.ics".into()),
-                        vec![
-                            dav::PropStat {
-                                prop: dav::AnyProp(vec![ 
-                                    dav::AnyProperty::Value(dav::Property::GetEtag("\"fffff-abcd2\"".into())),
-                                    dav::AnyProperty::Value(dav::Property::Extension(Property::CalendarData(CalendarDataPayload {
+                        vec![dav::PropStat {
+                            prop: dav::AnyProp(vec![
+                                dav::AnyProperty::Value(dav::Property::GetEtag(
+                                    "\"fffff-abcd2\"".into(),
+                                )),
+                                dav::AnyProperty::Value(dav::Property::Extension(
+                                    Property::CalendarData(CalendarDataPayload {
                                         mime: None,
                                         payload: "BEGIN:VCALENDAR".into(),
-                                    }))),
-                                ]),
-                                status: dav::Status(http::status::StatusCode::OK),
-                                error: None,
-                                responsedescription: None,
-                            },
-                        ],
+                                    }),
+                                )),
+                            ]),
+                            status: dav::Status(http::status::StatusCode::OK),
+                            error: None,
+                            responsedescription: None,
+                        }],
                     ),
                     error: None,
                     location: None,
@@ -986,20 +1200,22 @@ END:VCALENDAR]]></C:calendar-timezone>
                 dav::Response {
                     status_or_propstat: dav::StatusOrPropstat::PropStat(
                         dav::Href("http://cal.example.com/bernard/work/abcd3.ics".into()),
-                        vec![
-                            dav::PropStat {
-                                prop: dav::AnyProp(vec![ 
-                                    dav::AnyProperty::Value(dav::Property::GetEtag("\"fffff-abcd3\"".into())),
-                                    dav::AnyProperty::Value(dav::Property::Extension(Property::CalendarData(CalendarDataPayload {
+                        vec![dav::PropStat {
+                            prop: dav::AnyProp(vec![
+                                dav::AnyProperty::Value(dav::Property::GetEtag(
+                                    "\"fffff-abcd3\"".into(),
+                                )),
+                                dav::AnyProperty::Value(dav::Property::Extension(
+                                    Property::CalendarData(CalendarDataPayload {
                                         mime: None,
                                         payload: "BEGIN:VCALENDAR".into(),
-                                    }))),
-                                ]),
-                                status: dav::Status(http::status::StatusCode::OK),
-                                error: None,
-                                responsedescription: None,
-                            },
-                        ],
+                                    }),
+                                )),
+                            ]),
+                            status: dav::Status(http::status::StatusCode::OK),
+                            error: None,
+                            responsedescription: None,
+                        }],
                     ),
                     error: None,
                     location: None,
@@ -1039,36 +1255,38 @@ END:VCALENDAR]]></C:calendar-timezone>
     }
 
     #[tokio::test]
-    async fn rfc_recurring_evt() {    
+    async fn rfc_recurring_evt() {
         let expected = CalendarQuery::<Calendar> {
             selector: Some(CalendarSelector::Prop(dav::PropName(vec![
-                dav::PropertyRequest::Extension(PropertyRequest::CalendarData(CalendarDataRequest{
-                    mime: None,
-                    comp: None,
-                    recurrence: Some(RecurrenceModifier::LimitRecurrenceSet(LimitRecurrenceSet (
-                        Utc.with_ymd_and_hms(2006, 1, 3, 0, 0, 0).unwrap(),
-                        Utc.with_ymd_and_hms(2006, 1, 5, 0, 0, 0).unwrap(),
-                    ))),
-                    limit_freebusy_set: None,
-                })),
+                dav::PropertyRequest::Extension(PropertyRequest::CalendarData(
+                    CalendarDataRequest {
+                        mime: None,
+                        comp: None,
+                        recurrence: Some(RecurrenceModifier::LimitRecurrenceSet(
+                            LimitRecurrenceSet(
+                                Utc.with_ymd_and_hms(2006, 1, 3, 0, 0, 0).unwrap(),
+                                Utc.with_ymd_and_hms(2006, 1, 5, 0, 0, 0).unwrap(),
+                            ),
+                        )),
+                        limit_freebusy_set: None,
+                    },
+                )),
             ]))),
             filter: Filter(CompFilter {
                 name: Component::VCalendar,
                 additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
                     prop_filter: vec![],
-                    comp_filter: vec![
-                        CompFilter {
-                            name: Component::VEvent,
-                            additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
-                                prop_filter: vec![],
-                                comp_filter: vec![],
-                                time_range: Some(TimeRange::FullRange(
-                                    Utc.with_ymd_and_hms(2006, 1, 3, 0, 0, 0).unwrap(),
-                                    Utc.with_ymd_and_hms(2006, 1, 5, 0, 0, 0).unwrap(),
-                                )),
-                            })),
-                        },
-                    ],
+                    comp_filter: vec![CompFilter {
+                        name: Component::VEvent,
+                        additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
+                            prop_filter: vec![],
+                            comp_filter: vec![],
+                            time_range: Some(TimeRange::FullRange(
+                                Utc.with_ymd_and_hms(2006, 1, 3, 0, 0, 0).unwrap(),
+                                Utc.with_ymd_and_hms(2006, 1, 5, 0, 0, 0).unwrap(),
+                            )),
+                        })),
+                    }],
                     time_range: None,
                 })),
             }),
@@ -1104,32 +1322,34 @@ END:VCALENDAR]]></C:calendar-timezone>
         let expected = CalendarQuery::<Calendar> {
             selector: Some(CalendarSelector::Prop(dav::PropName(vec![
                 dav::PropertyRequest::GetEtag,
-                dav::PropertyRequest::Extension(PropertyRequest::CalendarData(CalendarDataRequest {
-                    mime: None,
-                    comp: None,
-                    recurrence: None,
-                    limit_freebusy_set: None,
-                }))
+                dav::PropertyRequest::Extension(PropertyRequest::CalendarData(
+                    CalendarDataRequest {
+                        mime: None,
+                        comp: None,
+                        recurrence: None,
+                        limit_freebusy_set: None,
+                    },
+                )),
             ]))),
             filter: Filter(CompFilter {
                 name: Component::VCalendar,
                 additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
                     time_range: None,
                     prop_filter: vec![],
-                    comp_filter: vec![
-                        CompFilter {
-                            name: Component::VTodo,
-                            additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
-                                time_range: None,
-                                comp_filter: vec![],
-                                prop_filter: vec![
-                                    PropFilter {
-                                        name: ComponentProperty("COMPLETED".into()),
-                                        additional_rules: Some(PropFilterRules::IsNotDefined),
-                                    },
-                                    PropFilter {
-                                        name: ComponentProperty("STATUS".into()),
-                                        additional_rules: Some(PropFilterRules::Match(PropFilterMatch {
+                    comp_filter: vec![CompFilter {
+                        name: Component::VTodo,
+                        additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
+                            time_range: None,
+                            comp_filter: vec![],
+                            prop_filter: vec![
+                                PropFilter {
+                                    name: ComponentProperty("COMPLETED".into()),
+                                    additional_rules: Some(PropFilterRules::IsNotDefined),
+                                },
+                                PropFilter {
+                                    name: ComponentProperty("STATUS".into()),
+                                    additional_rules: Some(PropFilterRules::Match(
+                                        PropFilterMatch {
                                             time_range: None,
                                             param_filter: vec![],
                                             time_or_text: Some(TimeOrText::Text(TextMatch {
@@ -1137,12 +1357,12 @@ END:VCALENDAR]]></C:calendar-timezone>
                                                 negate_condition: Some(true),
                                                 text: "CANCELLED".into(),
                                             })),
-                                        })),
-                                    },
-                                ],
-                            })),
-                        }
-                    ],
+                                        },
+                                    )),
+                                },
+                            ],
+                        })),
+                    }],
                 })),
             }),
             timezone: None,
@@ -1169,9 +1389,7 @@ END:VCALENDAR]]></C:calendar-timezone>
      </C:filter>
    </C:calendar-query>"#;
 
-
         let got = deserialize::<CalendarQuery<Calendar>>(src).await;
         assert_eq!(got, expected)
-
     }
 }

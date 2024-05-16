@@ -1,8 +1,8 @@
-use super::types as dav;
-use super::caltypes as cal;
 use super::acltypes as acl;
-use super::xml;
+use super::caltypes as cal;
 use super::error;
+use super::types as dav;
+use super::xml;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Disabled(());
@@ -12,12 +12,15 @@ impl xml::QRead<Disabled> for Disabled {
     }
 }
 impl xml::QWrite for Disabled {
-    async fn qwrite(&self, _xml: &mut xml::Writer<impl xml::IWrite>) -> Result<(), quick_xml::Error> {
+    async fn qwrite(
+        &self,
+        _xml: &mut xml::Writer<impl xml::IWrite>,
+    ) -> Result<(), quick_xml::Error> {
         unreachable!()
     }
 }
 
-/// The base WebDAV 
+/// The base WebDAV
 ///
 /// Any extension is disabled through an object we can't build
 /// due to a private inner element.
@@ -33,8 +36,7 @@ impl dav::Extension for Core {
 // WebDAV with the base Calendar implementation (RFC4791)
 #[derive(Debug, PartialEq, Clone)]
 pub struct Calendar {}
-impl dav::Extension for Calendar
-{
+impl dav::Extension for Calendar {
     type Error = cal::Violation;
     type Property = cal::Property;
     type PropertyRequest = cal::PropertyRequest;
@@ -44,8 +46,7 @@ impl dav::Extension for Calendar
 // ACL
 #[derive(Debug, PartialEq, Clone)]
 pub struct Acl {}
-impl dav::Extension for Acl
-{
+impl dav::Extension for Acl {
     type Error = Disabled;
     type Property = acl::Property;
     type PropertyRequest = acl::PropertyRequest;
@@ -77,7 +78,10 @@ impl xml::QRead<Property> for Property {
     }
 }
 impl xml::QWrite for Property {
-    async fn qwrite(&self, xml: &mut xml::Writer<impl xml::IWrite>) -> Result<(), quick_xml::Error> {
+    async fn qwrite(
+        &self,
+        xml: &mut xml::Writer<impl xml::IWrite>,
+    ) -> Result<(), quick_xml::Error> {
         match self {
             Self::Cal(c) => c.qwrite(xml).await,
             Self::Acl(a) => a.qwrite(xml).await,
@@ -96,11 +100,16 @@ impl xml::QRead<PropertyRequest> for PropertyRequest {
             Err(error::ParsingError::Recoverable) => (),
             otherwise => return otherwise.map(PropertyRequest::Cal),
         }
-        acl::PropertyRequest::qread(xml).await.map(PropertyRequest::Acl)
+        acl::PropertyRequest::qread(xml)
+            .await
+            .map(PropertyRequest::Acl)
     }
 }
 impl xml::QWrite for PropertyRequest {
-    async fn qwrite(&self, xml: &mut xml::Writer<impl xml::IWrite>) -> Result<(), quick_xml::Error> {
+    async fn qwrite(
+        &self,
+        xml: &mut xml::Writer<impl xml::IWrite>,
+    ) -> Result<(), quick_xml::Error> {
         match self {
             Self::Cal(c) => c.qwrite(xml).await,
             Self::Acl(a) => a.qwrite(xml).await,
@@ -123,7 +132,10 @@ impl xml::QRead<ResourceType> for ResourceType {
     }
 }
 impl xml::QWrite for ResourceType {
-    async fn qwrite(&self, xml: &mut xml::Writer<impl xml::IWrite>) -> Result<(), quick_xml::Error> {
+    async fn qwrite(
+        &self,
+        xml: &mut xml::Writer<impl xml::IWrite>,
+    ) -> Result<(), quick_xml::Error> {
         match self {
             Self::Cal(c) => c.qwrite(xml).await,
             Self::Acl(a) => a.qwrite(xml).await,

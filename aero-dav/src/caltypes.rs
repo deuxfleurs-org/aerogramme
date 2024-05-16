@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use chrono::{DateTime,Utc};
 use super::types as dav;
+use chrono::{DateTime, Utc};
 
 pub const ICAL_DATETIME_FMT: &str = "%Y%m%dT%H%M%SZ";
 
@@ -12,7 +12,6 @@ pub const ICAL_DATETIME_FMT: &str = "%Y%m%dT%H%M%SZ";
 // https://sabre.io/dav/building-a-caldav-client/
 // For reference, non-official extensions documented by SabreDAV:
 // https://github.com/apple/ccs-calendarserver/tree/master/doc/Extensions
-
 
 // ----- Root elements -----
 
@@ -33,17 +32,16 @@ pub const ICAL_DATETIME_FMT: &str = "%Y%m%dT%H%M%SZ";
 #[derive(Debug, PartialEq, Clone)]
 pub struct MkCalendar<E: dav::Extension>(pub dav::Set<E>);
 
-
 /// If a response body for a successful request is included, it MUST
 /// be a CALDAV:mkcalendar-response XML element.
 ///
 /// <!ELEMENT mkcalendar-response ANY>
 ///
 /// ----
-/// 
+///
 /// ANY is not satisfying, so looking at RFC5689
 /// https://www.rfc-editor.org/rfc/rfc5689.html#section-5.2
-/// 
+///
 /// Definition:
 ///
 /// <!ELEMENT mkcol-response (propstat+)>
@@ -63,9 +61,9 @@ pub enum Report<E: dav::Extension> {
 /// Namespace:  urn:ietf:params:xml:ns:caldav
 ///
 /// Purpose:  Defines a report for querying calendar object resources.
-/// 
+///
 /// Description:  See Section 7.8.
-/// 
+///
 /// Definition:
 ///
 /// <!ELEMENT calendar-query ((DAV:allprop |
@@ -131,7 +129,7 @@ pub enum PropertyRequest {
     MaxDateTime,
     MaxInstances,
     MaxAttendeesPerInstance,
-    SupportedCollationSet,    
+    SupportedCollationSet,
     CalendarData(CalendarDataRequest),
 }
 
@@ -163,7 +161,7 @@ pub enum Property {
     CalendarHomeSet(dav::Href),
 
     /// Name:  calendar-description
-    /// 
+    ///
     /// Namespace:  urn:ietf:params:xml:ns:caldav
     ///
     /// Purpose:  Provides a human-readable description of the calendar
@@ -192,10 +190,7 @@ pub enum Property {
     /// <C:calendar-description xml:lang="fr-CA"
     ///     xmlns:C="urn:ietf:params:xml:ns:caldav"
     /// >Calendrier de Mathilde Desruisseaux</C:calendar-description>
-    CalendarDescription {
-        lang: Option<String>,
-        text: String,
-    },
+    CalendarDescription { lang: Option<String>, text: String },
 
     /// 5.2.2.  CALDAV:calendar-timezone Property
     ///
@@ -232,7 +227,7 @@ pub enum Property {
     /// sequence "]]>", which is the end delimiter for the CDATA section.
     ///
     ///    Definition:
-    /// 
+    ///
     /// ```xmlschema
     /// <!ELEMENT calendar-timezone (#PCDATA)>
     ///     PCDATA value: an iCalendar object with exactly one VTIMEZONE component.
@@ -630,7 +625,7 @@ pub enum Property {
     /// WebDAV property.  However, the CALDAV:calendar-data XML element is
     /// not a WebDAV property and, as such, is not returned in PROPFIND
     /// responses, nor used in PROPPATCH requests.
-    /// 
+    ///
     /// Note:  The iCalendar data embedded within the CALDAV:calendar-data
     /// XML element MUST follow the standard XML character data encoding
     /// rules, including use of &lt;, &gt;, &amp; etc. entity encoding or
@@ -649,7 +644,7 @@ pub enum Violation {
     /// (CALDAV:calendar-collection-location-ok): The Request-URI MUST
     /// identify a location where a calendar collection can be created;
     CalendarCollectionLocationOk,
-    
+
     /// (CALDAV:valid-calendar-data): The time zone specified in CALDAV:
     /// calendar-timezone property MUST be a valid iCalendar object
     /// containing a single valid VTIMEZONE component.
@@ -712,7 +707,7 @@ pub enum Violation {
     /// date-time property value (Section 5.2.6) on the calendar
     /// collection where the resource will be stored;
     MinDateTime,
-    
+
     /// (CALDAV:max-date-time): The resource submitted in the PUT request,
     /// or targeted by a COPY or MOVE request, MUST have all of its
     /// iCalendar DATE or DATE-TIME property values (for each recurring
@@ -784,15 +779,15 @@ pub enum Violation {
 /// To deal with this, this specification makes use of the IANA Collation
 /// Registry defined in [RFC4790] to specify collations that may be used
 /// to carry out the text comparison operations with a well-defined rule.
-/// 
+///
 /// The comparisons used in CalDAV are all "substring" matches, as per
 /// [RFC4790], Section 4.2.  Collations supported by the server MUST
 /// support "substring" match operations.
-/// 
+///
 /// CalDAV servers are REQUIRED to support the "i;ascii-casemap" and
 /// "i;octet" collations, as described in [RFC4790], and MAY support
 /// other collations.
-/// 
+///
 /// Servers MUST advertise the set of collations that they support via
 /// the CALDAV:supported-collation-set property defined on any resource
 /// that supports reports that use collations.
@@ -807,7 +802,7 @@ pub enum Violation {
 ///
 /// Wildcards (as defined in [RFC4790], Section 3.2) MUST NOT be used in
 /// the collation identifier.
-/// 
+///
 /// If the client chooses a collation not supported by the server, the
 /// server MUST respond with a CALDAV:supported-collation precondition
 /// error response.
@@ -915,7 +910,7 @@ pub struct CompSupport(pub Component);
 /// Description:  The CALDAV:allcomp XML element can be used when the
 /// client wants all types of components returned by a calendaring
 /// REPORT request.
-/// 
+///
 /// Definition:
 ///
 /// <!ELEMENT allcomp EMPTY>
@@ -997,7 +992,7 @@ pub enum RecurrenceModifier {
 /// recurrence set into calendar components that define exactly one
 /// recurrence instance, and MUST return only those whose scheduled
 /// time intersect a specified time range.
-/// 
+///
 /// The "start" attribute specifies the inclusive start of the time
 /// range, and the "end" attribute specifies the non-inclusive end of
 /// the time range.  Both attributes are specified as date with UTC
@@ -1189,7 +1184,7 @@ pub struct CompFilterMatch {
 /// Name:  prop-filter
 ///
 /// Namespace:  urn:ietf:params:xml:ns:caldav
-/// 
+///
 /// Purpose:  Specifies search criteria on calendar properties.
 ///
 /// Description:  The CALDAV:prop-filter XML element specifies a query
@@ -1352,8 +1347,6 @@ pub enum ParamFilterMatch {
 /// <!ELEMENT is-not-defined EMPTY>
 /* CURRENTLY INLINED */
 
-
-
 /// Name:  timezone
 ///
 /// Namespace:  urn:ietf:params:xml:ns:caldav
@@ -1475,7 +1468,7 @@ impl PropertyParameter {
     }
 }
 
-#[derive(Default,Debug,PartialEq,Clone)]
+#[derive(Default, Debug, PartialEq, Clone)]
 pub enum Collation {
     #[default]
     AsciiCaseMap,
@@ -1492,9 +1485,9 @@ impl Collation {
     }
     pub fn new(v: String) -> Self {
         match v.as_str() {
-             "i;ascii-casemap" => Self::AsciiCaseMap,
-              "i;octet" => Self::Octet,
-              _ => Self::Unknown(v),
+            "i;ascii-casemap" => Self::AsciiCaseMap,
+            "i;octet" => Self::Octet,
+            _ => Self::Unknown(v),
         }
     }
 }

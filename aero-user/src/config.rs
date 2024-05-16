@@ -11,7 +11,6 @@ pub struct CompanionConfig {
     pub pid: Option<PathBuf>,
     pub imap: ImapUnsecureConfig,
     // @FIXME Add DAV
-
     #[serde(flatten)]
     pub users: LoginStaticConfig,
 }

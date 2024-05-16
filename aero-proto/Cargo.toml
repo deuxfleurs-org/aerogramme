@@ -35,3 +35,4 @@ smtp-message.workspace = true
 smtp-server.workspace = true
 tracing.workspace = true
 quick-xml.workspace = true
+icalendar.workspace = true

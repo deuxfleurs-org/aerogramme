@@ -1,8 +1,8 @@
 use futures::Future;
 use rand::prelude::*;
 
-use super::types::*;
 use super::decode::auth_plain;
+use super::types::*;
 
 #[derive(Debug)]
 pub enum AuthRes {
@@ -29,10 +29,10 @@ impl State {
     }
 
     async fn try_auth_plain<X, F>(&self, data: &[u8], login: X) -> AuthRes
-    where 
-        X: FnOnce(String, String) -> F, 
-        F: Future<Output=bool>,
-     {
+    where
+        X: FnOnce(String, String) -> F,
+        F: Future<Output = bool>,
+    {
         // Check that we can extract user's login+pass
         let (ubin, pbin) = match auth_plain(&data) {
             Ok(([], (authz, user, pass))) if authz == user || authz == EMPTY_AUTHZ => (user, pass),
@@ -65,10 +65,10 @@ impl State {
         }
     }
 
-    pub async fn progress<F,X>(&mut self, cmd: ClientCommand, login: X)
-    where 
-        X: FnOnce(String, String) -> F, 
-        F: Future<Output=bool>,
+    pub async fn progress<F, X>(&mut self, cmd: ClientCommand, login: X)
+    where
+        X: FnOnce(String, String) -> F,
+        F: Future<Output = bool>,
     {
         let new_state = 'state: {
             match (std::mem::replace(self, State::Error), cmd) {

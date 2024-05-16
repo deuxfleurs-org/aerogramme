@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use crate::unique_ident::UniqueIdent;
 use super::mailbox::Mailbox;
 use super::query::{Query, QueryScope};
 use super::uidindex::UidIndex;
+use crate::unique_ident::UniqueIdent;
 
 /// A Frozen Mailbox has a snapshot of the current mailbox
 /// state that is desynchronized with the real mailbox state.

@@ -1,6 +1,6 @@
-mod middleware;
-mod controller;
 mod codec;
+mod controller;
+mod middleware;
 mod node;
 mod resource;
 
@@ -8,19 +8,19 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use anyhow::Result;
+use futures::future::FutureExt;
+use futures::stream::{FuturesUnordered, StreamExt};
+use hyper::rt::{Read, Write};
+use hyper::server::conn::http1 as http;
 use hyper::service::service_fn;
 use hyper::{Request, Response};
-use hyper::server::conn::http1 as http;
-use hyper::rt::{Read, Write};
 use hyper_util::rt::TokioIo;
-use futures::stream::{FuturesUnordered, StreamExt};
+use rustls_pemfile::{certs, private_key};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
+use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio_rustls::TlsAcceptor;
-use tokio::net::TcpStream;
-use futures::future::FutureExt;
-use tokio::io::{AsyncRead, AsyncWrite};
-use rustls_pemfile::{certs, private_key};
 
 use aero_user::config::{DavConfig, DavUnsecureConfig};
 use aero_user::login::ArcLoginProvider;
@@ -90,7 +90,7 @@ impl Server {
                 Ok(v) => v,
                 Err(e) => {
                     tracing::error!(err=?e, "TLS acceptor failed");
-                    continue
+                    continue;
                 }
             };
 
@@ -100,21 +100,31 @@ impl Server {
                 //abitrarily bound
                 //@FIXME replace with a handler supporting http2 and TLS
 
-                match http::Builder::new().serve_connection(stream, service_fn(|req: Request<hyper::body::Incoming>| {
-                    let login = login.clone();
-                    tracing::info!("{:?} {:?}", req.method(), req.uri());
-                    async {
-                        match middleware::auth(login, req, |user, request| async { Controller::route(user, request).await }.boxed()).await {
-                            Ok(v) => Ok(v),
-                            Err(e) => {
-                                tracing::error!(err=?e, "internal error");
-                                Response::builder()
-                                    .status(500)
-                                    .body(codec::text_body("Internal error"))
-                            },
-                        }
-                    }
-                })).await {
+                match http::Builder::new()
+                    .serve_connection(
+                        stream,
+                        service_fn(|req: Request<hyper::body::Incoming>| {
+                            let login = login.clone();
+                            tracing::info!("{:?} {:?}", req.method(), req.uri());
+                            async {
+                                match middleware::auth(login, req, |user, request| {
+                                    async { Controller::route(user, request).await }.boxed()
+                                })
+                                .await
+                                {
+                                    Ok(v) => Ok(v),
+                                    Err(e) => {
+                                        tracing::error!(err=?e, "internal error");
+                                        Response::builder()
+                                            .status(500)
+                                            .body(codec::text_body("Internal error"))
+                                    }
+                                }
+                            }
+                        }),
+                    )
+                    .await
+                {
                     Err(e) => tracing::warn!(err=?e, "connection failed"),
                     Ok(()) => tracing::trace!("connection terminated with success"),
                 }
@@ -148,7 +158,6 @@ impl Server {
 //     <A:calendar-color/>
 //   </D:prop>
 // </D:propfind>
-
 
 // <D:propfind xmlns:D='DAV:' xmlns:A='http://apple.com/ns/ical/' xmlns:C='urn:ietf:params:xml:ns:caldav'>
 //   <D:prop>

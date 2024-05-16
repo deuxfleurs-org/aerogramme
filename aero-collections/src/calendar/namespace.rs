@@ -1,16 +1,16 @@
 use anyhow::{bail, Result};
-use std::collections::{HashMap, BTreeMap};
-use std::sync::{Weak, Arc};
+use std::collections::{BTreeMap, HashMap};
+use std::sync::{Arc, Weak};
 
 use serde::{Deserialize, Serialize};
 
 use aero_bayou::timestamp::now_msec;
-use aero_user::storage;
 use aero_user::cryptoblob::{open_deserialize, seal_serialize};
+use aero_user::storage;
 
+use super::Calendar;
 use crate::unique_ident::{gen_ident, UniqueIdent};
 use crate::user::User;
-use super::Calendar;
 
 pub(crate) const CAL_LIST_PK: &str = "calendars";
 pub(crate) const CAL_LIST_SK: &str = "list";
@@ -46,7 +46,7 @@ impl CalendarNs {
         }
 
         let cal = Arc::new(Calendar::open(&user.creds, id).await?);
-        
+
         let mut cache = self.0.lock().unwrap();
         if let Some(concurrent_cal) = cache.get(&id).and_then(Weak::upgrade) {
             drop(cal); // we worked for nothing but at least we didn't starve someone else
@@ -117,13 +117,15 @@ impl CalendarNs {
             CalendarExists::Created(_) => (),
         }
         list.save(user, ct).await?;
-        
+
         Ok(())
     }
 
     /// Has calendar
     pub async fn has(&self, user: &Arc<User>, name: &str) -> Result<bool> {
-        CalendarList::load(user).await.map(|(list, _)| list.has(name))
+        CalendarList::load(user)
+            .await
+            .map(|(list, _)| list.has(name))
     }
 }
 
@@ -161,7 +163,8 @@ impl CalendarList {
 
                 for v in row_vals {
                     if let storage::Alternative::Value(vbytes) = v {
-                        let list2 = open_deserialize::<CalendarList>(&vbytes, &user.creds.keys.master)?;
+                        let list2 =
+                            open_deserialize::<CalendarList>(&vbytes, &user.creds.keys.master)?;
                         list.merge(list2);
                     }
                 }
@@ -200,7 +203,7 @@ impl CalendarList {
     /// (Don't forget to save if it returns CalendarExists::Created)
     fn create(&mut self, name: &str) -> CalendarExists {
         if let Some(CalendarListEntry {
-            id_lww: (_, Some(id))
+            id_lww: (_, Some(id)),
         }) = self.0.get(name)
         {
             return CalendarExists::Existed(*id);
@@ -222,9 +225,10 @@ impl CalendarList {
 
     /// For a given calendar name, get its Unique Identifier
     fn get(&self, name: &str) -> Option<UniqueIdent> {
-        self.0.get(name).map(|CalendarListEntry { 
-            id_lww: (_, ident),
-        }| *ident).flatten()
+        self.0
+            .get(name)
+            .map(|CalendarListEntry { id_lww: (_, ident) }| *ident)
+            .flatten()
     }
 
     /// Check if a given calendar name exists
@@ -271,9 +275,7 @@ impl CalendarList {
                     (now_msec(), id)
                 }
             }
-            Some(CalendarListEntry {
-                id_lww,
-            }) => {
+            Some(CalendarListEntry { id_lww }) => {
                 if id_lww.1 == id {
                     // Entry is already equals to the requested id (Option<UniqueIdent)
                     // Nothing to do
@@ -281,20 +283,15 @@ impl CalendarList {
                 } else {
                     // Entry does not equal to what we know internally
                     // We update the Last Write Win CRDT here with the new id value
-                    (
-                        std::cmp::max(id_lww.0 + 1, now_msec()),
-                        id,
-                    )
+                    (std::cmp::max(id_lww.0 + 1, now_msec()), id)
                 }
             }
         };
 
         // If we did not return here, that's because we have to update
         // something in our internal index.
-        self.0.insert(
-            name.into(),
-            CalendarListEntry { id_lww: (ts, id) },
-        );
+        self.0
+            .insert(name.into(), CalendarListEntry { id_lww: (ts, id) });
         Some(())
     }
 

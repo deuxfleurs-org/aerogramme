@@ -10,16 +10,16 @@ use futures::{
     stream::{FuturesOrdered, FuturesUnordered},
     StreamExt,
 };
+use smtp_message::{DataUnescaper, Email, EscapedDataReader, Reply, ReplyCode};
+use smtp_server::{reply, Config, ConnectionMetadata, Decision, MailMetadata};
 use tokio::net::TcpListener;
 use tokio::select;
 use tokio::sync::watch;
 use tokio_util::compat::*;
-use smtp_message::{DataUnescaper, Email, EscapedDataReader, Reply, ReplyCode};
-use smtp_server::{reply, Config, ConnectionMetadata, Decision, MailMetadata};
 
+use aero_collections::mail::incoming::EncryptedMessage;
 use aero_user::config::*;
 use aero_user::login::*;
-use aero_collections::mail::incoming::EncryptedMessage;
 
 pub struct LmtpServer {
     bind_addr: SocketAddr,

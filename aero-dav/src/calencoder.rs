@@ -1,10 +1,9 @@
+use quick_xml::events::{BytesText, Event};
 use quick_xml::Error as QError;
-use quick_xml::events::{Event, BytesText};
 
 use super::caltypes::*;
-use super::xml::{Node, QWrite, IWrite, Writer};
 use super::types::Extension;
-
+use super::xml::{IWrite, Node, QWrite, Writer};
 
 // ==================== Calendar Types Serialization =========================
 
@@ -54,7 +53,7 @@ impl<E: Extension> QWrite for CalendarQuery<E> {
             selector.qwrite(xml).await?;
         }
         self.filter.qwrite(xml).await?;
-        if let Some(tz) = &self.timezone  {
+        if let Some(tz) = &self.timezone {
             tz.qwrite(xml).await?;
         }
         xml.q.write_event_async(Event::End(end)).await
@@ -106,8 +105,8 @@ impl QWrite for PropertyRequest {
             Self::MinDateTime => atom("min-date-time").await,
             Self::MaxDateTime => atom("max-date-time").await,
             Self::MaxInstances => atom("max-instances").await,
-            Self::MaxAttendeesPerInstance =>  atom("max-attendees-per-instance").await,
-            Self::SupportedCollationSet =>  atom("supported-collation-set").await,    
+            Self::MaxAttendeesPerInstance => atom("max-attendees-per-instance").await,
+            Self::SupportedCollationSet => atom("supported-collation-set").await,
             Self::CalendarData(req) => req.qwrite(xml).await,
         }
     }
@@ -130,17 +129,21 @@ impl QWrite for Property {
                 let end = start.to_end();
 
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
-                xml.q.write_event_async(Event::Text(BytesText::new(text))).await?;
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new(text)))
+                    .await?;
                 xml.q.write_event_async(Event::End(end)).await
-            },
+            }
             Self::CalendarTimezone(payload) => {
                 let start = xml.create_cal_element("calendar-timezone");
                 let end = start.to_end();
 
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
-                xml.q.write_event_async(Event::Text(BytesText::new(payload))).await?;
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new(payload)))
+                    .await?;
                 xml.q.write_event_async(Event::End(end)).await
-            },
+            }
             Self::SupportedCalendarComponentSet(many_comp) => {
                 let start = xml.create_cal_element("supported-calendar-component-set");
                 let end = start.to_end();
@@ -150,7 +153,7 @@ impl QWrite for Property {
                     comp.qwrite(xml).await?;
                 }
                 xml.q.write_event_async(Event::End(end)).await
-            },
+            }
             Self::SupportedCalendarData(many_mime) => {
                 let start = xml.create_cal_element("supported-calendar-data");
                 let end = start.to_end();
@@ -160,49 +163,59 @@ impl QWrite for Property {
                     mime.qwrite(xml).await?;
                 }
                 xml.q.write_event_async(Event::End(end)).await
-            },
+            }
             Self::MaxResourceSize(bytes) => {
                 let start = xml.create_cal_element("max-resource-size");
                 let end = start.to_end();
 
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
-                xml.q.write_event_async(Event::Text(BytesText::new(bytes.to_string().as_str()))).await?;
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new(bytes.to_string().as_str())))
+                    .await?;
                 xml.q.write_event_async(Event::End(end)).await
-            },
+            }
             Self::MinDateTime(dt) => {
                 let start = xml.create_cal_element("min-date-time");
                 let end = start.to_end();
 
                 let dtstr = format!("{}", dt.format(ICAL_DATETIME_FMT));
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
-                xml.q.write_event_async(Event::Text(BytesText::new(dtstr.as_str()))).await?;
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new(dtstr.as_str())))
+                    .await?;
                 xml.q.write_event_async(Event::End(end)).await
-            },
+            }
             Self::MaxDateTime(dt) => {
                 let start = xml.create_cal_element("max-date-time");
                 let end = start.to_end();
 
                 let dtstr = format!("{}", dt.format(ICAL_DATETIME_FMT));
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
-                xml.q.write_event_async(Event::Text(BytesText::new(dtstr.as_str()))).await?;
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new(dtstr.as_str())))
+                    .await?;
                 xml.q.write_event_async(Event::End(end)).await
-            },
+            }
             Self::MaxInstances(count) => {
                 let start = xml.create_cal_element("max-instances");
                 let end = start.to_end();
 
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
-                xml.q.write_event_async(Event::Text(BytesText::new(count.to_string().as_str()))).await?;
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new(count.to_string().as_str())))
+                    .await?;
                 xml.q.write_event_async(Event::End(end)).await
-            },
+            }
             Self::MaxAttendeesPerInstance(count) => {
                 let start = xml.create_cal_element("max-attendees-per-instance");
                 let end = start.to_end();
 
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
-                xml.q.write_event_async(Event::Text(BytesText::new(count.to_string().as_str()))).await?;
+                xml.q
+                    .write_event_async(Event::Text(BytesText::new(count.to_string().as_str())))
+                    .await?;
                 xml.q.write_event_async(Event::End(end)).await
-            },
+            }
             Self::SupportedCollationSet(many_collations) => {
                 let start = xml.create_cal_element("supported-collation-set");
                 let end = start.to_end();
@@ -211,8 +224,8 @@ impl QWrite for Property {
                 for collation in many_collations.iter() {
                     collation.qwrite(xml).await?;
                 }
-                xml.q.write_event_async(Event::End(end)).await               
-            },
+                xml.q.write_event_async(Event::End(end)).await
+            }
             Self::CalendarData(inner) => inner.qwrite(xml).await,
         }
     }
@@ -225,7 +238,7 @@ impl QWrite for ResourceType {
             Self::Calendar => {
                 let empty_tag = xml.create_cal_element("calendar");
                 xml.q.write_event_async(Event::Empty(empty_tag)).await
-            },
+            }
         }
     }
 }
@@ -245,7 +258,7 @@ impl QWrite for Violation {
             Self::NeedPrivileges => {
                 let empty_tag = xml.create_dav_element("need-privileges");
                 xml.q.write_event_async(Event::Empty(empty_tag)).await
-            },
+            }
 
             // Regular CalDAV errors
             Self::ResourceMustBeNull => atom("resource-must-be-null").await,
@@ -262,7 +275,7 @@ impl QWrite for Violation {
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
                 href.qwrite(xml).await?;
                 xml.q.write_event_async(Event::End(end)).await
-            },
+            }
             Self::MaxResourceSize => atom("max-resource-size").await,
             Self::MinDateTime => atom("min-date-time").await,
             Self::MaxDateTime => atom("max-date-time").await,
@@ -284,12 +297,11 @@ impl QWrite for Violation {
                     param_item.qwrite(xml).await?;
                 }
                 xml.q.write_event_async(Event::End(end)).await
-            },
+            }
             Self::NumberOfMatchesWithinLimits => atom("number-of-matches-within-limits").await,
         }
     }
 }
-
 
 // ---------------------------- Inner XML ------------------------------------
 impl QWrite for SupportedCollation {
@@ -300,19 +312,20 @@ impl QWrite for SupportedCollation {
         xml.q.write_event_async(Event::Start(start.clone())).await?;
         self.0.qwrite(xml).await?;
         xml.q.write_event_async(Event::End(end)).await
-
     }
 }
 
 impl QWrite for Collation {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let col = match self {
-           Self::AsciiCaseMap => "i;ascii-casemap",
-           Self::Octet => "i;octet",
-           Self::Unknown(v) => v.as_str(),
+            Self::AsciiCaseMap => "i;ascii-casemap",
+            Self::Octet => "i;octet",
+            Self::Unknown(v) => v.as_str(),
         };
 
-        xml.q.write_event_async(Event::Text(BytesText::new(col))).await
+        xml.q
+            .write_event_async(Event::Text(BytesText::new(col)))
+            .await
     }
 }
 
@@ -332,7 +345,9 @@ impl QWrite for CalendarDataPayload {
         let end = start.to_end();
 
         xml.q.write_event_async(Event::Start(start.clone())).await?;
-        xml.q.write_event_async(Event::Text(BytesText::new(self.payload.as_str()))).await?;
+        xml.q
+            .write_event_async(Event::Text(BytesText::new(self.payload.as_str())))
+            .await?;
         xml.q.write_event_async(Event::End(end)).await
     }
 }
@@ -347,7 +362,7 @@ impl QWrite for CalendarDataRequest {
 
         // Empty tag
         if self.comp.is_none() && self.recurrence.is_none() && self.limit_freebusy_set.is_none() {
-            return xml.q.write_event_async(Event::Empty(start.clone())).await
+            return xml.q.write_event_async(Event::Empty(start.clone())).await;
         }
 
         let end = start.to_end();
@@ -392,7 +407,7 @@ impl QWrite for Comp {
                     comp_kind.qwrite(xml).await?;
                 }
                 xml.q.write_event_async(Event::End(end)).await
-            },
+            }
         }
     }
 }
@@ -411,7 +426,7 @@ impl QWrite for CompKind {
             Self::AllComp => {
                 let empty_tag = xml.create_cal_element("allcomp");
                 xml.q.write_event_async(Event::Empty(empty_tag)).await
-            },
+            }
             Self::Comp(many_comp) => {
                 for comp in many_comp.iter() {
                     // Required: recursion in an async fn requires boxing
@@ -420,7 +435,10 @@ impl QWrite for CompKind {
                     // For more information about this error, try `rustc --explain E0391`.
                     // https://github.com/rust-lang/rust/issues/78649
                     #[inline(always)]
-                    fn recurse<'a>(comp: &'a Comp, xml: &'a mut Writer<impl IWrite>) -> futures::future::BoxFuture<'a, Result<(), QError>> {
+                    fn recurse<'a>(
+                        comp: &'a Comp,
+                        xml: &'a mut Writer<impl IWrite>,
+                    ) -> futures::future::BoxFuture<'a, Result<(), QError>> {
                         Box::pin(comp.qwrite(xml))
                     }
                     recurse(comp, xml).await?;
@@ -437,7 +455,7 @@ impl QWrite for PropKind {
             Self::AllProp => {
                 let empty_tag = xml.create_cal_element("allprop");
                 xml.q.write_event_async(Event::Empty(empty_tag)).await
-            },
+            }
             Self::Prop(many_prop) => {
                 for prop in many_prop.iter() {
                     prop.qwrite(xml).await?;
@@ -473,8 +491,14 @@ impl QWrite for RecurrenceModifier {
 impl QWrite for Expand {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut empty = xml.create_cal_element("expand");
-        empty.push_attribute(("start", format!("{}", self.0.format(ICAL_DATETIME_FMT)).as_str()));
-        empty.push_attribute(("end", format!("{}", self.1.format(ICAL_DATETIME_FMT)).as_str()));
+        empty.push_attribute((
+            "start",
+            format!("{}", self.0.format(ICAL_DATETIME_FMT)).as_str(),
+        ));
+        empty.push_attribute((
+            "end",
+            format!("{}", self.1.format(ICAL_DATETIME_FMT)).as_str(),
+        ));
         xml.q.write_event_async(Event::Empty(empty)).await
     }
 }
@@ -482,8 +506,14 @@ impl QWrite for Expand {
 impl QWrite for LimitRecurrenceSet {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut empty = xml.create_cal_element("limit-recurrence-set");
-        empty.push_attribute(("start", format!("{}", self.0.format(ICAL_DATETIME_FMT)).as_str()));
-        empty.push_attribute(("end", format!("{}", self.1.format(ICAL_DATETIME_FMT)).as_str()));
+        empty.push_attribute((
+            "start",
+            format!("{}", self.0.format(ICAL_DATETIME_FMT)).as_str(),
+        ));
+        empty.push_attribute((
+            "end",
+            format!("{}", self.1.format(ICAL_DATETIME_FMT)).as_str(),
+        ));
         xml.q.write_event_async(Event::Empty(empty)).await
     }
 }
@@ -491,8 +521,14 @@ impl QWrite for LimitRecurrenceSet {
 impl QWrite for LimitFreebusySet {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut empty = xml.create_cal_element("limit-freebusy-set");
-        empty.push_attribute(("start", format!("{}", self.0.format(ICAL_DATETIME_FMT)).as_str()));
-        empty.push_attribute(("end", format!("{}", self.1.format(ICAL_DATETIME_FMT)).as_str()));
+        empty.push_attribute((
+            "start",
+            format!("{}", self.0.format(ICAL_DATETIME_FMT)).as_str(),
+        ));
+        empty.push_attribute((
+            "end",
+            format!("{}", self.1.format(ICAL_DATETIME_FMT)).as_str(),
+        ));
         xml.q.write_event_async(Event::Empty(empty)).await
     }
 }
@@ -503,11 +539,11 @@ impl<E: Extension> QWrite for CalendarSelector<E> {
             Self::AllProp => {
                 let empty_tag = xml.create_dav_element("allprop");
                 xml.q.write_event_async(Event::Empty(empty_tag)).await
-            },
+            }
             Self::PropName => {
                 let empty_tag = xml.create_dav_element("propname");
                 xml.q.write_event_async(Event::Empty(empty_tag)).await
-            },
+            }
             Self::Prop(prop) => prop.qwrite(xml).await,
         }
     }
@@ -534,10 +570,10 @@ impl QWrite for CompFilter {
 impl QWrite for CompFilterRules {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
-            Self::IsNotDefined =>  {
+            Self::IsNotDefined => {
                 let empty_tag = xml.create_dav_element("is-not-defined");
                 xml.q.write_event_async(Event::Empty(empty_tag)).await
-            },
+            }
             Self::Matches(cfm) => cfm.qwrite(xml).await,
         }
     }
@@ -559,7 +595,10 @@ impl QWrite for CompFilterMatch {
             // For more information about this error, try `rustc --explain E0391`.
             // https://github.com/rust-lang/rust/issues/78649
             #[inline(always)]
-            fn recurse<'a>(comp: &'a CompFilter, xml: &'a mut Writer<impl IWrite>) -> futures::future::BoxFuture<'a, Result<(), QError>> {
+            fn recurse<'a>(
+                comp: &'a CompFilter,
+                xml: &'a mut Writer<impl IWrite>,
+            ) -> futures::future::BoxFuture<'a, Result<(), QError>> {
                 Box::pin(comp.qwrite(xml))
             }
             recurse(comp_item, xml).await?;
@@ -591,7 +630,7 @@ impl QWrite for PropFilterRules {
             Self::IsNotDefined => {
                 let empty_tag = xml.create_dav_element("is-not-defined");
                 xml.q.write_event_async(Event::Empty(empty_tag)).await
-            },
+            }
             Self::Match(prop_match) => prop_match.qwrite(xml).await,
         }
     }
@@ -635,7 +674,9 @@ impl QWrite for TextMatch {
         let end = start.to_end();
 
         xml.q.write_event_async(Event::Start(start.clone())).await?;
-        xml.q.write_event_async(Event::Text(BytesText::new(self.text.as_str()))).await?;
+        xml.q
+            .write_event_async(Event::Text(BytesText::new(self.text.as_str())))
+            .await?;
         xml.q.write_event_async(Event::End(end)).await
     }
 }
@@ -663,7 +704,7 @@ impl QWrite for ParamFilterMatch {
             Self::IsNotDefined => {
                 let empty_tag = xml.create_dav_element("is-not-defined");
                 xml.q.write_event_async(Event::Empty(empty_tag)).await
-            },
+            }
             Self::Match(tm) => tm.qwrite(xml).await,
         }
     }
@@ -675,7 +716,9 @@ impl QWrite for TimeZone {
         let end = start.to_end();
 
         xml.q.write_event_async(Event::Start(start.clone())).await?;
-        xml.q.write_event_async(Event::Text(BytesText::new(self.0.as_str()))).await?;
+        xml.q
+            .write_event_async(Event::Text(BytesText::new(self.0.as_str())))
+            .await?;
         xml.q.write_event_async(Event::End(end)).await
     }
 }
@@ -695,11 +738,20 @@ impl QWrite for TimeRange {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut empty = xml.create_cal_element("time-range");
         match self {
-            Self::OnlyStart(start) => empty.push_attribute(("start", format!("{}", start.format(ICAL_DATETIME_FMT)).as_str())),
-            Self::OnlyEnd(end) => empty.push_attribute(("end", format!("{}", end.format(ICAL_DATETIME_FMT)).as_str())),
+            Self::OnlyStart(start) => empty.push_attribute((
+                "start",
+                format!("{}", start.format(ICAL_DATETIME_FMT)).as_str(),
+            )),
+            Self::OnlyEnd(end) => {
+                empty.push_attribute(("end", format!("{}", end.format(ICAL_DATETIME_FMT)).as_str()))
+            }
             Self::FullRange(start, end) => {
-                empty.push_attribute(("start", format!("{}", start.format(ICAL_DATETIME_FMT)).as_str()));
-                empty.push_attribute(("end", format!("{}", end.format(ICAL_DATETIME_FMT)).as_str()));
+                empty.push_attribute((
+                    "start",
+                    format!("{}", start.format(ICAL_DATETIME_FMT)).as_str(),
+                ));
+                empty
+                    .push_attribute(("end", format!("{}", end.format(ICAL_DATETIME_FMT)).as_str()));
             }
         }
         xml.q.write_event_async(Event::Empty(empty)).await
@@ -709,16 +761,16 @@ impl QWrite for TimeRange {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types as dav;
     use crate::realization::Calendar;
+    use crate::types as dav;
+    use chrono::{TimeZone, Utc};
     use tokio::io::AsyncWriteExt;
-    use chrono::{Utc,TimeZone};
 
     async fn serialize(elem: &impl QWrite) -> String {
         let mut buffer = Vec::new();
         let mut tokio_buffer = tokio::io::BufWriter::new(&mut buffer);
         let q = quick_xml::writer::Writer::new_with_indent(&mut tokio_buffer, b' ', 4);
-        let ns_to_apply = vec![ 
+        let ns_to_apply = vec![
             ("xmlns:D".into(), "DAV:".into()),
             ("xmlns:C".into(), "urn:ietf:params:xml:ns:caldav".into()),
         ];
@@ -728,91 +780,120 @@ mod tests {
         tokio_buffer.flush().await.expect("tokio buffer flush");
         let got = std::str::from_utf8(buffer.as_slice()).unwrap();
 
-        return got.into()
+        return got.into();
     }
 
     #[tokio::test]
     async fn basic_violation() {
-        let got = serialize(
-            &dav::Error::<Calendar>(vec![
-                dav::Violation::Extension(Violation::ResourceMustBeNull),
-            ])
-        ).await;
+        let got = serialize(&dav::Error::<Calendar>(vec![dav::Violation::Extension(
+            Violation::ResourceMustBeNull,
+        )]))
+        .await;
 
         let expected = r#"<D:error xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
     <C:resource-must-be-null/>
 </D:error>"#;
 
-        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(
+            &got, expected,
+            "\n---GOT---\n{got}\n---EXP---\n{expected}\n"
+        );
     }
 
     #[tokio::test]
     async fn rfc_calendar_query1_req() {
-        let got = serialize(
-            &CalendarQuery::<Calendar> {
-                selector: Some(CalendarSelector::Prop(dav::PropName(vec![
-                    dav::PropertyRequest::GetEtag,
-                    dav::PropertyRequest::Extension(PropertyRequest::CalendarData(CalendarDataRequest {
+        let got = serialize(&CalendarQuery::<Calendar> {
+            selector: Some(CalendarSelector::Prop(dav::PropName(vec![
+                dav::PropertyRequest::GetEtag,
+                dav::PropertyRequest::Extension(PropertyRequest::CalendarData(
+                    CalendarDataRequest {
                         mime: None,
                         comp: Some(Comp {
                             name: Component::VCalendar,
-                            prop_kind: Some(PropKind::Prop(vec![
-                                    CalProp {
-                                        name: ComponentProperty("VERSION".into()),
-                                        novalue: None,
-                                    }
-                                ])),
+                            prop_kind: Some(PropKind::Prop(vec![CalProp {
+                                name: ComponentProperty("VERSION".into()),
+                                novalue: None,
+                            }])),
                             comp_kind: Some(CompKind::Comp(vec![
-                                    Comp {
-                                        name: Component::VEvent,
-                                        prop_kind: Some(PropKind::Prop(vec![
-                                            CalProp { name: ComponentProperty("SUMMARY".into()), novalue: None },
-                                            CalProp { name: ComponentProperty("UID".into()), novalue: None },
-                                            CalProp { name: ComponentProperty("DTSTART".into()), novalue: None },
-                                            CalProp { name: ComponentProperty("DTEND".into()), novalue: None },
-                                            CalProp { name: ComponentProperty("DURATION".into()), novalue: None },
-                                            CalProp { name: ComponentProperty("RRULE".into()), novalue: None },
-                                            CalProp { name: ComponentProperty("RDATE".into()), novalue: None },
-                                            CalProp { name: ComponentProperty("EXRULE".into()), novalue: None },
-                                            CalProp { name: ComponentProperty("EXDATE".into()), novalue: None },
-                                            CalProp { name: ComponentProperty("RECURRENCE-ID".into()), novalue: None },
-                                        ])),
-                                        comp_kind: None,
-                                    },
-                                    Comp {
-                                        name: Component::VTimeZone,
-                                        prop_kind: None,
-                                        comp_kind: None,
-                                    }
-                                ])),
-                            }),
+                                Comp {
+                                    name: Component::VEvent,
+                                    prop_kind: Some(PropKind::Prop(vec![
+                                        CalProp {
+                                            name: ComponentProperty("SUMMARY".into()),
+                                            novalue: None,
+                                        },
+                                        CalProp {
+                                            name: ComponentProperty("UID".into()),
+                                            novalue: None,
+                                        },
+                                        CalProp {
+                                            name: ComponentProperty("DTSTART".into()),
+                                            novalue: None,
+                                        },
+                                        CalProp {
+                                            name: ComponentProperty("DTEND".into()),
+                                            novalue: None,
+                                        },
+                                        CalProp {
+                                            name: ComponentProperty("DURATION".into()),
+                                            novalue: None,
+                                        },
+                                        CalProp {
+                                            name: ComponentProperty("RRULE".into()),
+                                            novalue: None,
+                                        },
+                                        CalProp {
+                                            name: ComponentProperty("RDATE".into()),
+                                            novalue: None,
+                                        },
+                                        CalProp {
+                                            name: ComponentProperty("EXRULE".into()),
+                                            novalue: None,
+                                        },
+                                        CalProp {
+                                            name: ComponentProperty("EXDATE".into()),
+                                            novalue: None,
+                                        },
+                                        CalProp {
+                                            name: ComponentProperty("RECURRENCE-ID".into()),
+                                            novalue: None,
+                                        },
+                                    ])),
+                                    comp_kind: None,
+                                },
+                                Comp {
+                                    name: Component::VTimeZone,
+                                    prop_kind: None,
+                                    comp_kind: None,
+                                },
+                            ])),
+                        }),
                         recurrence: None,
                         limit_freebusy_set: None,
-                    })),
-                ]))),
-                filter: Filter(CompFilter {
-                    name: Component::VCalendar,
-                    additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
-                        time_range: None,
-                        prop_filter: vec![],
-                        comp_filter: vec![
-                            CompFilter {
-                                name: Component::VEvent,
-                                additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
-                                    time_range: Some(TimeRange::FullRange(
-                                       Utc.with_ymd_and_hms(2006,1,4,0,0,0).unwrap(),
-                                       Utc.with_ymd_and_hms(2006,1,5,0,0,0).unwrap(),
-                                    )),
-                                    prop_filter: vec![],
-                                    comp_filter: vec![],
-                                })),
-                            },
-                        ],
-                    })),
-                }),
-                timezone: None,
-            }
-        ).await;
+                    },
+                )),
+            ]))),
+            filter: Filter(CompFilter {
+                name: Component::VCalendar,
+                additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
+                    time_range: None,
+                    prop_filter: vec![],
+                    comp_filter: vec![CompFilter {
+                        name: Component::VEvent,
+                        additional_rules: Some(CompFilterRules::Matches(CompFilterMatch {
+                            time_range: Some(TimeRange::FullRange(
+                                Utc.with_ymd_and_hms(2006, 1, 4, 0, 0, 0).unwrap(),
+                                Utc.with_ymd_and_hms(2006, 1, 5, 0, 0, 0).unwrap(),
+                            )),
+                            prop_filter: vec![],
+                            comp_filter: vec![],
+                        })),
+                    }],
+                })),
+            }),
+            timezone: None,
+        })
+        .await;
 
         let expected = r#"<C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
     <D:prop>
@@ -844,59 +925,69 @@ mod tests {
         </C:comp-filter>
     </C:filter>
 </C:calendar-query>"#;
-        
-        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+
+        assert_eq!(
+            &got, expected,
+            "\n---GOT---\n{got}\n---EXP---\n{expected}\n"
+        );
     }
 
     #[tokio::test]
     async fn rfc_calendar_query1_res() {
-        let got = serialize(
-            &dav::Multistatus::<Calendar> {
-                responses: vec![
-                    dav::Response {
-                        status_or_propstat: dav::StatusOrPropstat::PropStat(
-                            dav::Href("http://cal.example.com/bernard/work/abcd2.ics".into()),
-                            vec![dav::PropStat {
+        let got = serialize(&dav::Multistatus::<Calendar> {
+            responses: vec![
+                dav::Response {
+                    status_or_propstat: dav::StatusOrPropstat::PropStat(
+                        dav::Href("http://cal.example.com/bernard/work/abcd2.ics".into()),
+                        vec![dav::PropStat {
                             prop: dav::AnyProp(vec![
-                                dav::AnyProperty::Value(dav::Property::GetEtag("\"fffff-abcd2\"".into())),
-                                dav::AnyProperty::Value(dav::Property::Extension(Property::CalendarData(CalendarDataPayload {
-                                    mime: None,
-                                    payload: "PLACEHOLDER".into()
-                                }))),
+                                dav::AnyProperty::Value(dav::Property::GetEtag(
+                                    "\"fffff-abcd2\"".into(),
+                                )),
+                                dav::AnyProperty::Value(dav::Property::Extension(
+                                    Property::CalendarData(CalendarDataPayload {
+                                        mime: None,
+                                        payload: "PLACEHOLDER".into(),
+                                    }),
+                                )),
                             ]),
                             status: dav::Status(http::status::StatusCode::OK),
                             error: None,
                             responsedescription: None,
-                            }]
-                        ),
-                        location: None,
-                        error: None,
-                        responsedescription: None,
-                    },
-                    dav::Response {
-                        status_or_propstat: dav::StatusOrPropstat::PropStat(
-                            dav::Href("http://cal.example.com/bernard/work/abcd3.ics".into()),
-                            vec![dav::PropStat {
+                        }],
+                    ),
+                    location: None,
+                    error: None,
+                    responsedescription: None,
+                },
+                dav::Response {
+                    status_or_propstat: dav::StatusOrPropstat::PropStat(
+                        dav::Href("http://cal.example.com/bernard/work/abcd3.ics".into()),
+                        vec![dav::PropStat {
                             prop: dav::AnyProp(vec![
-                                dav::AnyProperty::Value(dav::Property::GetEtag("\"fffff-abcd3\"".into())),
-                                dav::AnyProperty::Value(dav::Property::Extension(Property::CalendarData(CalendarDataPayload{
-                                    mime: None,
-                                    payload: "PLACEHOLDER".into(),
-                                }))),
+                                dav::AnyProperty::Value(dav::Property::GetEtag(
+                                    "\"fffff-abcd3\"".into(),
+                                )),
+                                dav::AnyProperty::Value(dav::Property::Extension(
+                                    Property::CalendarData(CalendarDataPayload {
+                                        mime: None,
+                                        payload: "PLACEHOLDER".into(),
+                                    }),
+                                )),
                             ]),
                             status: dav::Status(http::status::StatusCode::OK),
                             error: None,
                             responsedescription: None,
-                            }]
-                        ),
-                        location: None,
-                        error: None,
-                        responsedescription: None,
-                    },
-                ],
-                responsedescription: None,
-            }, 
-        ).await;
+                        }],
+                    ),
+                    location: None,
+                    error: None,
+                    responsedescription: None,
+                },
+            ],
+            responsedescription: None,
+        })
+        .await;
 
         let expected = r#"<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
     <D:response>
@@ -921,7 +1012,9 @@ mod tests {
     </D:response>
 </D:multistatus>"#;
 
-
-        assert_eq!(&got, expected, "\n---GOT---\n{got}\n---EXP---\n{expected}\n");
+        assert_eq!(
+            &got, expected,
+            "\n---GOT---\n{got}\n---EXP---\n{expected}\n"
+        );
     }
 }

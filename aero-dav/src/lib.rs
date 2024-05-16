@@ -7,19 +7,19 @@ pub mod error;
 pub mod xml;
 
 // webdav
-pub mod types;
-pub mod encoder;
 pub mod decoder;
+pub mod encoder;
+pub mod types;
 
 // calendar
-pub mod caltypes;
-pub mod calencoder;
 pub mod caldecoder;
+pub mod calencoder;
+pub mod caltypes;
 
 // acl (wip)
-pub mod acltypes;
-pub mod aclencoder;
 pub mod acldecoder;
+pub mod aclencoder;
+pub mod acltypes;
 
 // versioning (wip)
 mod versioningtypes;

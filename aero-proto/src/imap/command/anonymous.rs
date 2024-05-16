@@ -4,8 +4,8 @@ use imap_codec::imap_types::core::AString;
 use imap_codec::imap_types::response::Code;
 use imap_codec::imap_types::secret::Secret;
 
-use aero_user::login::ArcLoginProvider;
 use aero_collections::user::User;
+use aero_user::login::ArcLoginProvider;
 
 use crate::imap::capability::ServerCapability;
 use crate::imap::command::anystate;

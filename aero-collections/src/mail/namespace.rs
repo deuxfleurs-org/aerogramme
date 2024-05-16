@@ -104,7 +104,11 @@ impl MailboxList {
     /// Ensures mailbox `name` maps to id `id`.
     /// If it already mapped to that, returns None.
     /// If a change had to be done, returns Some(new uidvalidity in mailbox).
-    pub(crate) fn set_mailbox(&mut self, name: &str, id: Option<UniqueIdent>) -> Option<ImapUidvalidity> {
+    pub(crate) fn set_mailbox(
+        &mut self,
+        name: &str,
+        id: Option<UniqueIdent>,
+    ) -> Option<ImapUidvalidity> {
         let (ts, id, uidvalidity) = match self.0.get_mut(name) {
             None => {
                 if id.is_none() {

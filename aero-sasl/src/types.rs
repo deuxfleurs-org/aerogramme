@@ -159,5 +159,3 @@ pub enum ServerCommand {
         extra_parameters: Vec<Vec<u8>>,
     },
 }
-
-

@@ -4,12 +4,12 @@ use anyhow::{anyhow, bail, Result};
 use tokio::sync::RwLock;
 
 use aero_bayou::Bayou;
-use aero_user::login::Credentials;
 use aero_user::cryptoblob::{self, gen_key, Key};
+use aero_user::login::Credentials;
 use aero_user::storage::{self, BlobRef, BlobVal, Store};
 
+use crate::davdag::{BlobId, DavDag, IndexEntry, SyncChange, Token};
 use crate::unique_ident::*;
-use crate::davdag::{DavDag, IndexEntry, Token, BlobId, SyncChange};
 
 pub struct Calendar {
     pub(super) id: UniqueIdent,
@@ -17,10 +17,7 @@ pub struct Calendar {
 }
 
 impl Calendar {
-    pub(crate) async fn open(
-        creds: &Credentials,
-        id: UniqueIdent,
-        ) -> Result<Self> {
+    pub(crate) async fn open(creds: &Credentials, id: UniqueIdent) -> Result<Self> {
         let bayou_path = format!("calendar/dag/{}", id);
         let cal_path = format!("calendar/events/{}", id);
 
@@ -126,7 +123,7 @@ impl CalendarInternal {
     async fn put<'a>(&mut self, name: &str, evt: &'a [u8]) -> Result<(Token, IndexEntry)> {
         let message_key = gen_key();
         let blob_id = gen_ident();
-        
+
         let encrypted_msg_key = cryptoblob::seal(&message_key.as_ref(), &self.encryption_key)?;
         let key_header = base64::engine::general_purpose::STANDARD.encode(&encrypted_msg_key);
 
@@ -138,9 +135,7 @@ impl CalendarInternal {
         )
         .with_meta(MESSAGE_KEY.to_string(), key_header);
 
-        let etag = self.storage
-            .blob_insert(blob_val)
-            .await?;
+        let etag = self.storage.blob_insert(blob_val).await?;
 
         // Add entry to Bayou
         let entry: IndexEntry = (blob_id, name.to_string(), etag);
@@ -181,7 +176,7 @@ impl CalendarInternal {
 
         let heads = davstate.heads_vec();
         let token = match heads.as_slice() {
-            [ token ] => *token,
+            [token] => *token,
             _ => {
                 let op_mg = davstate.op_merge();
                 let token = op_mg.token();

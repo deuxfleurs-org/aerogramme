@@ -8,9 +8,9 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 use tokio_util::bytes::BytesMut;
 
+use aero_sasl::{decode::client_command, encode::Encode, flow::State};
 use aero_user::config::AuthConfig;
 use aero_user::login::ArcLoginProvider;
-use aero_sasl::{flow::State, decode::client_command, encode::Encode};
 
 pub struct AuthServer {
     login_provider: ArcLoginProvider,

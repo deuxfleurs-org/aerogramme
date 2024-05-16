@@ -90,6 +90,7 @@ dependencies = [
  "http-body-util",
  "hyper 1.2.0",
  "hyper-util",
+ "icalendar",
  "imap-codec",
  "imap-flow",
  "quick-xml",

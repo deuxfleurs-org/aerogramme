@@ -2,9 +2,9 @@ use async_trait::async_trait;
 use ldap3::{LdapConnAsync, Scope, SearchEntry};
 use log::debug;
 
+use super::*;
 use crate::config::*;
 use crate::storage;
-use super::*;
 
 pub struct LdapLoginProvider {
     ldap_server: String,

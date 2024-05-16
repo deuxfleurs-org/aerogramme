@@ -10,10 +10,10 @@ pub enum ParsingError {
     TagNotFound,
     InvalidValue,
     Utf8Error(std::str::Utf8Error),
-    QuickXml(quick_xml::Error), 
+    QuickXml(quick_xml::Error),
     Chrono(chrono::format::ParseError),
     Int(std::num::ParseIntError),
-    Eof
+    Eof,
 }
 impl std::fmt::Display for ParsingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

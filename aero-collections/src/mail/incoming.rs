@@ -8,16 +8,16 @@ use futures::{future::BoxFuture, FutureExt};
 use tokio::sync::watch;
 use tracing::{debug, error, info, warn};
 
+use aero_bayou::timestamp::now_msec;
 use aero_user::cryptoblob;
 use aero_user::login::{Credentials, PublicCredentials};
 use aero_user::storage;
-use aero_bayou::timestamp::now_msec;
 
 use crate::mail::mailbox::Mailbox;
 use crate::mail::uidindex::ImapUidvalidity;
+use crate::mail::IMF;
 use crate::unique_ident::*;
 use crate::user::User;
-use crate::mail::IMF;
 
 const INCOMING_PK: &str = "incoming";
 const INCOMING_LOCK_SK: &str = "lock";

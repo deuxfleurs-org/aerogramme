@@ -14,10 +14,10 @@ use imap_codec::imap_types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
 use imap_codec::imap_types::response::{Code, CodeOther, Data};
 use imap_codec::imap_types::status::{StatusDataItem, StatusDataItemName};
 
-use aero_collections::mail::uidindex::*;
-use aero_collections::user::User;
-use aero_collections::mail::IMF;
 use aero_collections::mail::namespace::MAILBOX_HIERARCHY_DELIMITER as MBX_HIER_DELIM_RAW;
+use aero_collections::mail::uidindex::*;
+use aero_collections::mail::IMF;
+use aero_collections::user::User;
 
 use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anystate, MailboxName};

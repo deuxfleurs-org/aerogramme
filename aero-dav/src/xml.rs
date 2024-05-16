@@ -1,8 +1,8 @@
 use futures::Future;
-use quick_xml::events::{Event, BytesStart};
+use quick_xml::events::{BytesStart, Event};
 use quick_xml::name::ResolveResult;
 use quick_xml::reader::NsReader;
-use tokio::io::{AsyncWrite, AsyncBufRead};
+use tokio::io::{AsyncBufRead, AsyncWrite};
 
 use super::error::ParsingError;
 
@@ -17,7 +17,10 @@ pub trait IRead = AsyncBufRead + Unpin;
 
 // Serialization/Deserialization traits
 pub trait QWrite {
-    fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> impl Future<Output = Result<(), quick_xml::Error>> + Send;
+    fn qwrite(
+        &self,
+        xml: &mut Writer<impl IWrite>,
+    ) -> impl Future<Output = Result<(), quick_xml::Error>> + Send;
 }
 pub trait QRead<T> {
     fn qread(xml: &mut Reader<impl IRead>) -> impl Future<Output = Result<T, ParsingError>>;
@@ -44,7 +47,11 @@ impl<T: IWrite> Writer<T> {
     fn create_ns_element(&mut self, ns: &str, name: &str) -> BytesStart<'static> {
         let mut start = BytesStart::new(format!("{}:{}", ns, name));
         if !self.ns_to_apply.is_empty() {
-            start.extend_attributes(self.ns_to_apply.iter().map(|(k, n)| (k.as_str(), n.as_str())));
+            start.extend_attributes(
+                self.ns_to_apply
+                    .iter()
+                    .map(|(k, n)| (k.as_str(), n.as_str())),
+            );
             self.ns_to_apply.clear()
         }
         start
@@ -66,16 +73,26 @@ impl<T: IRead> Reader<T> {
         let parents = vec![];
         let prev = Event::Eof;
         buf.clear();
-        Ok(Self { cur, prev, parents, rdr, buf })
+        Ok(Self {
+            cur,
+            prev,
+            parents,
+            rdr,
+            buf,
+        })
     }
 
     /// read one more tag
     /// do not expose it publicly
     async fn next(&mut self) -> Result<Event<'static>, ParsingError> {
-       let evt = self.rdr.read_event_into_async(&mut self.buf).await?.into_owned(); 
-       self.buf.clear();
-       self.prev = std::mem::replace(&mut self.cur, evt);
-       Ok(self.prev.clone())
+        let evt = self
+            .rdr
+            .read_event_into_async(&mut self.buf)
+            .await?
+            .into_owned();
+        self.buf.clear();
+        self.prev = std::mem::replace(&mut self.cur, evt);
+        Ok(self.prev.clone())
     }
 
     /// skip a node at current level
@@ -84,9 +101,12 @@ impl<T: IRead> Reader<T> {
         //println!("skipping inside node {:?} value {:?}", self.parents.last(), self.cur);
         match &self.cur {
             Event::Start(b) => {
-                let _span = self.rdr.read_to_end_into_async(b.to_end().name(), &mut self.buf).await?;
+                let _span = self
+                    .rdr
+                    .read_to_end_into_async(b.to_end().name(), &mut self.buf)
+                    .await?;
                 self.next().await
-            },
+            }
             Event::End(_) => Err(ParsingError::WrongToken),
             Event::Eof => Err(ParsingError::Eof),
             _ => self.next().await,
@@ -100,13 +120,13 @@ impl<T: IRead> Reader<T> {
             Event::End(be) => be.name(),
             _ => return false,
         };
-    
+
         let (extr_ns, local) = self.rdr.resolve_element(qname);
 
         if local.into_inner() != key.as_bytes() {
-            return false
+            return false;
         }
-        
+
         match extr_ns {
             ResolveResult::Bound(v) => v.into_inner() == ns,
             _ => false,
@@ -142,7 +162,7 @@ impl<T: IRead> Reader<T> {
                 Event::CData(unescaped) => {
                     acc.push_str(std::str::from_utf8(unescaped.as_ref())?);
                     self.next().await?
-                },
+                }
                 Event::Text(escaped) => {
                     acc.push_str(escaped.unescape()?.as_ref());
                     self.next().await?
@@ -153,33 +173,41 @@ impl<T: IRead> Reader<T> {
         }
     }
 
-    pub async fn maybe_read<N: Node<N>>(&mut self, t: &mut Option<N>, dirty: &mut bool) -> Result<(), ParsingError> {
+    pub async fn maybe_read<N: Node<N>>(
+        &mut self,
+        t: &mut Option<N>,
+        dirty: &mut bool,
+    ) -> Result<(), ParsingError> {
         if !self.parent_has_child() {
-            return Ok(())
+            return Ok(());
         }
 
         match N::qread(self).await {
-            Ok(v) => { 
-                *t = Some(v); 
+            Ok(v) => {
+                *t = Some(v);
                 *dirty = true;
-                Ok(()) 
-            },
+                Ok(())
+            }
             Err(ParsingError::Recoverable) => Ok(()),
             Err(e) => Err(e),
         }
     }
 
-    pub async fn maybe_push<N: Node<N>>(&mut self, t: &mut Vec<N>, dirty: &mut bool) -> Result<(), ParsingError> {
+    pub async fn maybe_push<N: Node<N>>(
+        &mut self,
+        t: &mut Vec<N>,
+        dirty: &mut bool,
+    ) -> Result<(), ParsingError> {
         if !self.parent_has_child() {
-            return Ok(())
+            return Ok(());
         }
 
         match N::qread(self).await {
-            Ok(v) => { 
-                t.push(v); 
+            Ok(v) => {
+                t.push(v);
                 *dirty = true;
-                Ok(()) 
-            },
+                Ok(())
+            }
             Err(ParsingError::Recoverable) => Ok(()),
             Err(e) => Err(e),
         }
@@ -220,7 +248,7 @@ impl<T: IRead> Reader<T> {
     pub async fn collect<N: Node<N>>(&mut self) -> Result<Vec<N>, ParsingError> {
         let mut acc = Vec::new();
         if !self.parent_has_child() {
-            return Ok(acc)
+            return Ok(acc);
         }
 
         loop {
@@ -229,7 +257,7 @@ impl<T: IRead> Reader<T> {
                     Event::End(_) => return Ok(acc),
                     _ => {
                         self.skip().await?;
-                    },
+                    }
                 },
                 Ok(v) => acc.push(v),
                 Err(e) => return Err(e),
@@ -242,13 +270,13 @@ impl<T: IRead> Reader<T> {
         let evt = match self.peek() {
             Event::Empty(_) if self.is_tag(ns, key) => {
                 // hack to make `prev_attr` works
-                // here we duplicate the current tag 
-                // as in other words, we virtually moved one token 
+                // here we duplicate the current tag
+                // as in other words, we virtually moved one token
                 // which is useful for prev_attr and any logic based on
                 // self.prev + self.open() on empty nodes
                 self.prev = self.cur.clone();
                 self.cur.clone()
-            },
+            }
             Event::Start(_) if self.is_tag(ns, key) => self.next().await?,
             _ => return Err(ParsingError::Recoverable),
         };
@@ -258,7 +286,11 @@ impl<T: IRead> Reader<T> {
         Ok(evt)
     }
 
-    pub async fn open_start(&mut self,  ns: &[u8], key: &str) -> Result<Event<'static>, ParsingError> {
+    pub async fn open_start(
+        &mut self,
+        ns: &[u8],
+        key: &str,
+    ) -> Result<Event<'static>, ParsingError> {
         //println!("try open start tag {:?}, on {:?}", key, self.peek());
         let evt = match self.peek() {
             Event::Start(_) if self.is_tag(ns, key) => self.next().await?,
@@ -270,7 +302,11 @@ impl<T: IRead> Reader<T> {
         Ok(evt)
     }
 
-    pub async fn maybe_open(&mut self, ns: &[u8], key: &str) -> Result<Option<Event<'static>>, ParsingError> {
+    pub async fn maybe_open(
+        &mut self,
+        ns: &[u8],
+        key: &str,
+    ) -> Result<Option<Event<'static>>, ParsingError> {
         match self.open(ns, key).await {
             Ok(v) => Ok(Some(v)),
             Err(ParsingError::Recoverable) => Ok(None),
@@ -278,7 +314,11 @@ impl<T: IRead> Reader<T> {
         }
     }
 
-    pub async fn maybe_open_start(&mut self, ns: &[u8], key: &str) -> Result<Option<Event<'static>>, ParsingError> {
+    pub async fn maybe_open_start(
+        &mut self,
+        ns: &[u8],
+        key: &str,
+    ) -> Result<Option<Event<'static>>, ParsingError> {
         match self.open_start(ns, key).await {
             Ok(v) => Ok(Some(v)),
             Err(ParsingError::Recoverable) => Ok(None),
@@ -289,9 +329,12 @@ impl<T: IRead> Reader<T> {
     pub fn prev_attr(&self, attr: &str) -> Option<String> {
         match &self.prev {
             Event::Start(bs) | Event::Empty(bs) => match bs.try_get_attribute(attr) {
-                Ok(Some(attr)) => attr.decode_and_unescape_value(&self.rdr).ok().map(|v| v.into_owned()),
+                Ok(Some(attr)) => attr
+                    .decode_and_unescape_value(&self.rdr)
+                    .ok()
+                    .map(|v| v.into_owned()),
                 _ => None,
-            }
+            },
             _ => None,
         }
     }
@@ -303,7 +346,7 @@ impl<T: IRead> Reader<T> {
         // Handle the empty case
         if !self.parent_has_child() {
             self.parents.pop();
-            return self.next().await 
+            return self.next().await;
         }
 
         // Handle the start/end case
@@ -311,11 +354,10 @@ impl<T: IRead> Reader<T> {
             match self.peek() {
                 Event::End(_) => {
                     self.parents.pop();
-                    return self.next().await
-                },
+                    return self.next().await;
+                }
                 _ => self.skip().await?,
             };
         }
     }
 }
-

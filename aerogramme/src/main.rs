@@ -7,9 +7,9 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use nix::{sys::signal, unistd::Pid};
 
+use crate::server::Server;
 use aero_user::config::*;
 use aero_user::login::{static_provider::*, *};
-use crate::server::Server;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]

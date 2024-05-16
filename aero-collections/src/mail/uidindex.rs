@@ -3,8 +3,8 @@ use std::num::{NonZeroU32, NonZeroU64};
 use im::{HashMap, OrdMap, OrdSet};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use aero_bayou::*;
 use crate::unique_ident::UniqueIdent;
+use aero_bayou::*;
 
 pub type ModSeq = NonZeroU64;
 pub type ImapUid = NonZeroU32;

@@ -1,9 +1,9 @@
 pub mod incoming;
 pub mod mailbox;
+pub mod namespace;
 pub mod query;
 pub mod snapshot;
 pub mod uidindex;
-pub mod namespace;
 
 // Internet Message Format
 // aka RFC 822 - RFC 2822 - RFC 5322

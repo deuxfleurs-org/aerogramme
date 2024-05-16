@@ -1,9 +1,9 @@
-use quick_xml::events::Event;
 use chrono::DateTime;
+use quick_xml::events::Event;
 
-use super::types::*;
 use super::error::ParsingError;
-use super::xml::{Node, QRead, Reader, IRead, DAV_URN};
+use super::types::*;
+use super::xml::{IRead, Node, QRead, Reader, DAV_URN};
 
 //@TODO (1) Rewrite all objects as Href,
 // where we return Ok(None) instead of trying to find the object at any cost.
@@ -25,20 +25,21 @@ impl<E: Extension> QRead<PropFind<E>> for PropFind<E> {
             if let Some(_) = xml.maybe_open(DAV_URN, "allprop").await? {
                 xml.close().await?;
                 let includ = xml.maybe_find::<Include<E>>().await?;
-                break PropFind::AllProp(includ)
+                break PropFind::AllProp(includ);
             }
 
             // propname
             if let Some(_) = xml.maybe_open(DAV_URN, "propname").await? {
                 xml.close().await?;
-                break PropFind::PropName
+                break PropFind::PropName;
             }
 
             // prop
             let (mut maybe_prop, mut dirty) = (None, false);
-            xml.maybe_read::<PropName<E>>(&mut maybe_prop, &mut dirty).await?;
+            xml.maybe_read::<PropName<E>>(&mut maybe_prop, &mut dirty)
+                .await?;
             if let Some(prop) = maybe_prop {
-                break PropFind::Prop(prop)
+                break PropFind::Prop(prop);
             }
 
             // not found, skipping
@@ -80,7 +81,10 @@ impl<E: Extension> QRead<Multistatus<E>> for Multistatus<E> {
         }
 
         xml.close().await?;
-        Ok(Multistatus { responses, responsedescription })
+        Ok(Multistatus {
+            responses,
+            responsedescription,
+        })
     }
 }
 
@@ -91,7 +95,8 @@ impl QRead<LockInfo> for LockInfo {
         let (mut m_scope, mut m_type, mut owner) = (None, None, None);
         loop {
             let mut dirty = false;
-            xml.maybe_read::<LockScope>(&mut m_scope, &mut dirty).await?;
+            xml.maybe_read::<LockScope>(&mut m_scope, &mut dirty)
+                .await?;
             xml.maybe_read::<LockType>(&mut m_type, &mut dirty).await?;
             xml.maybe_read::<Owner>(&mut owner, &mut dirty).await?;
 
@@ -104,7 +109,11 @@ impl QRead<LockInfo> for LockInfo {
         }
         xml.close().await?;
         match (m_scope, m_type) {
-            (Some(lockscope), Some(locktype)) => Ok(LockInfo { lockscope, locktype, owner }),
+            (Some(lockscope), Some(locktype)) => Ok(LockInfo {
+                lockscope,
+                locktype,
+                owner,
+            }),
             _ => Err(ParsingError::MissingChild),
         }
     }
@@ -121,7 +130,6 @@ impl<E: Extension> QRead<PropValue<E>> for PropValue<E> {
     }
 }
 
-
 /// Error response
 impl<E: Extension> QRead<Error<E>> for Error<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
@@ -132,13 +140,12 @@ impl<E: Extension> QRead<Error<E>> for Error<E> {
     }
 }
 
-
-
 // ---- INNER XML
 impl<E: Extension> QRead<Response<E>> for Response<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(DAV_URN, "response").await?;
-        let (mut status, mut error, mut responsedescription, mut location) = (None, None, None, None);
+        let (mut status, mut error, mut responsedescription, mut location) =
+            (None, None, None, None);
         let mut href = Vec::new();
         let mut propstat = Vec::new();
 
@@ -146,28 +153,38 @@ impl<E: Extension> QRead<Response<E>> for Response<E> {
             let mut dirty = false;
             xml.maybe_read::<Status>(&mut status, &mut dirty).await?;
             xml.maybe_push::<Href>(&mut href, &mut dirty).await?;
-            xml.maybe_push::<PropStat<E>>(&mut propstat, &mut dirty).await?;
+            xml.maybe_push::<PropStat<E>>(&mut propstat, &mut dirty)
+                .await?;
             xml.maybe_read::<Error<E>>(&mut error, &mut dirty).await?;
-            xml.maybe_read::<ResponseDescription>(&mut responsedescription, &mut dirty).await?;
-            xml.maybe_read::<Location>(&mut location, &mut dirty).await?;
+            xml.maybe_read::<ResponseDescription>(&mut responsedescription, &mut dirty)
+                .await?;
+            xml.maybe_read::<Location>(&mut location, &mut dirty)
+                .await?;
 
             if !dirty {
                 match xml.peek() {
                     Event::End(_) => break,
-                    _ => { xml.skip().await? },
+                    _ => xml.skip().await?,
                 };
             }
         }
 
         xml.close().await?;
         match (status, &propstat[..], &href[..]) {
-            (Some(status), &[], &[_, ..]) => Ok(Response { 
-                status_or_propstat: StatusOrPropstat::Status(href, status), 
-                error, responsedescription, location,
+            (Some(status), &[], &[_, ..]) => Ok(Response {
+                status_or_propstat: StatusOrPropstat::Status(href, status),
+                error,
+                responsedescription,
+                location,
             }),
             (None, &[_, ..], &[_, ..]) => Ok(Response {
-                status_or_propstat: StatusOrPropstat::PropStat(href.into_iter().next().unwrap(), propstat),
-                error, responsedescription, location,
+                status_or_propstat: StatusOrPropstat::PropStat(
+                    href.into_iter().next().unwrap(),
+                    propstat,
+                ),
+                error,
+                responsedescription,
+                location,
             }),
             (Some(_), &[_, ..], _) => Err(ParsingError::InvalidValue),
             _ => Err(ParsingError::MissingChild),
@@ -179,14 +196,17 @@ impl<E: Extension> QRead<PropStat<E>> for PropStat<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(DAV_URN, "propstat").await?;
 
-        let (mut m_any_prop,  mut m_status, mut error, mut responsedescription) = (None, None, None, None);
+        let (mut m_any_prop, mut m_status, mut error, mut responsedescription) =
+            (None, None, None, None);
 
         loop {
             let mut dirty = false;
-            xml.maybe_read::<AnyProp<E>>(&mut m_any_prop, &mut dirty).await?;
+            xml.maybe_read::<AnyProp<E>>(&mut m_any_prop, &mut dirty)
+                .await?;
             xml.maybe_read::<Status>(&mut m_status, &mut dirty).await?;
             xml.maybe_read::<Error<E>>(&mut error, &mut dirty).await?;
-            xml.maybe_read::<ResponseDescription>(&mut responsedescription, &mut dirty).await?;
+            xml.maybe_read::<ResponseDescription>(&mut responsedescription, &mut dirty)
+                .await?;
 
             if !dirty {
                 match xml.peek() {
@@ -198,7 +218,12 @@ impl<E: Extension> QRead<PropStat<E>> for PropStat<E> {
 
         xml.close().await?;
         match (m_any_prop, m_status) {
-            (Some(prop), Some(status)) => Ok(PropStat { prop, status, error, responsedescription }),
+            (Some(prop), Some(status)) => Ok(PropStat {
+                prop,
+                status,
+                error,
+                responsedescription,
+            }),
             _ => Err(ParsingError::MissingChild),
         }
     }
@@ -208,8 +233,12 @@ impl QRead<Status> for Status {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(DAV_URN, "status").await?;
         let fullcode = xml.tag_string().await?;
-        let txtcode = fullcode.splitn(3, ' ').nth(1).ok_or(ParsingError::InvalidValue)?;
-        let code = http::status::StatusCode::from_bytes(txtcode.as_bytes()).or(Err(ParsingError::InvalidValue))?;
+        let txtcode = fullcode
+            .splitn(3, ' ')
+            .nth(1)
+            .ok_or(ParsingError::InvalidValue)?;
+        let code = http::status::StatusCode::from_bytes(txtcode.as_bytes())
+            .or(Err(ParsingError::InvalidValue))?;
         xml.close().await?;
         Ok(Status(code))
     }
@@ -263,27 +292,55 @@ impl<E: Extension> QRead<Set<E>> for Set<E> {
 
 impl<E: Extension> QRead<Violation<E>> for Violation<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        if xml.maybe_open(DAV_URN, "lock-token-matches-request-uri").await?.is_some() {
+        if xml
+            .maybe_open(DAV_URN, "lock-token-matches-request-uri")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
             Ok(Violation::LockTokenMatchesRequestUri)
-        } else if xml.maybe_open(DAV_URN, "lock-token-submitted").await?.is_some() {
+        } else if xml
+            .maybe_open(DAV_URN, "lock-token-submitted")
+            .await?
+            .is_some()
+        {
             let links = xml.collect::<Href>().await?;
             xml.close().await?;
             Ok(Violation::LockTokenSubmitted(links))
-        } else if xml.maybe_open(DAV_URN, "no-conflicting-lock").await?.is_some() {
+        } else if xml
+            .maybe_open(DAV_URN, "no-conflicting-lock")
+            .await?
+            .is_some()
+        {
             let links = xml.collect::<Href>().await?;
             xml.close().await?;
             Ok(Violation::NoConflictingLock(links))
-        } else if xml.maybe_open(DAV_URN, "no-external-entities").await?.is_some() {
+        } else if xml
+            .maybe_open(DAV_URN, "no-external-entities")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
             Ok(Violation::NoExternalEntities)
-        } else if xml.maybe_open(DAV_URN, "preserved-live-properties").await?.is_some() {
+        } else if xml
+            .maybe_open(DAV_URN, "preserved-live-properties")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
             Ok(Violation::PreservedLiveProperties)
-        } else if xml.maybe_open(DAV_URN, "propfind-finite-depth").await?.is_some() {
+        } else if xml
+            .maybe_open(DAV_URN, "propfind-finite-depth")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
             Ok(Violation::PropfindFiniteDepth)
-        } else if xml.maybe_open(DAV_URN, "cannot-modify-protected-property").await?.is_some() {
+        } else if xml
+            .maybe_open(DAV_URN, "cannot-modify-protected-property")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
             Ok(Violation::CannotModifyProtectedProperty)
         } else {
@@ -323,7 +380,7 @@ impl<E: Extension> QRead<AnyProperty<E>> for AnyProperty<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         match Property::qread(xml).await {
             Err(ParsingError::Recoverable) => (),
-            otherwise => return otherwise.map(Self::Value)
+            otherwise => return otherwise.map(Self::Value),
         }
         PropertyRequest::qread(xml).await.map(Self::Request)
     }
@@ -335,7 +392,11 @@ impl<E: Extension> QRead<PropertyRequest<E>> for PropertyRequest<E> {
             Some(PropertyRequest::CreationDate)
         } else if xml.maybe_open(DAV_URN, "displayname").await?.is_some() {
             Some(PropertyRequest::DisplayName)
-        } else if xml.maybe_open(DAV_URN, "getcontentlanguage").await?.is_some() {
+        } else if xml
+            .maybe_open(DAV_URN, "getcontentlanguage")
+            .await?
+            .is_some()
+        {
             Some(PropertyRequest::GetContentLanguage)
         } else if xml.maybe_open(DAV_URN, "getcontentlength").await?.is_some() {
             Some(PropertyRequest::GetContentLength)
@@ -359,8 +420,10 @@ impl<E: Extension> QRead<PropertyRequest<E>> for PropertyRequest<E> {
             Some(pr) => {
                 xml.close().await?;
                 Ok(pr)
-            },
-            None => E::PropertyRequest::qread(xml).await.map(PropertyRequest::Extension),
+            }
+            None => E::PropertyRequest::qread(xml)
+                .await
+                .map(PropertyRequest::Extension),
         }
     }
 }
@@ -368,46 +431,86 @@ impl<E: Extension> QRead<PropertyRequest<E>> for PropertyRequest<E> {
 impl<E: Extension> QRead<Property<E>> for Property<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         // Core WebDAV properties
-        if xml.maybe_open_start(DAV_URN, "creationdate").await?.is_some() {
+        if xml
+            .maybe_open_start(DAV_URN, "creationdate")
+            .await?
+            .is_some()
+        {
             let datestr = xml.tag_string().await?;
             xml.close().await?;
-            return Ok(Property::CreationDate(DateTime::parse_from_rfc3339(datestr.as_str())?))
-        } else if xml.maybe_open_start(DAV_URN, "displayname").await?.is_some() {
+            return Ok(Property::CreationDate(DateTime::parse_from_rfc3339(
+                datestr.as_str(),
+            )?));
+        } else if xml
+            .maybe_open_start(DAV_URN, "displayname")
+            .await?
+            .is_some()
+        {
             let name = xml.tag_string().await?;
             xml.close().await?;
-            return Ok(Property::DisplayName(name))
-        } else if xml.maybe_open_start(DAV_URN, "getcontentlanguage").await?.is_some() {
+            return Ok(Property::DisplayName(name));
+        } else if xml
+            .maybe_open_start(DAV_URN, "getcontentlanguage")
+            .await?
+            .is_some()
+        {
             let lang = xml.tag_string().await?;
             xml.close().await?;
-            return Ok(Property::GetContentLanguage(lang))
-        } else if xml.maybe_open_start(DAV_URN, "getcontentlength").await?.is_some() {
+            return Ok(Property::GetContentLanguage(lang));
+        } else if xml
+            .maybe_open_start(DAV_URN, "getcontentlength")
+            .await?
+            .is_some()
+        {
             let cl = xml.tag_string().await?.parse::<u64>()?;
             xml.close().await?;
-            return Ok(Property::GetContentLength(cl))
-        } else if xml.maybe_open_start(DAV_URN, "getcontenttype").await?.is_some() {
+            return Ok(Property::GetContentLength(cl));
+        } else if xml
+            .maybe_open_start(DAV_URN, "getcontenttype")
+            .await?
+            .is_some()
+        {
             let ct = xml.tag_string().await?;
             xml.close().await?;
-            return Ok(Property::GetContentType(ct))
+            return Ok(Property::GetContentType(ct));
         } else if xml.maybe_open_start(DAV_URN, "getetag").await?.is_some() {
             let etag = xml.tag_string().await?;
             xml.close().await?;
-            return Ok(Property::GetEtag(etag))
-        } else if xml.maybe_open_start(DAV_URN, "getlastmodified").await?.is_some() {
+            return Ok(Property::GetEtag(etag));
+        } else if xml
+            .maybe_open_start(DAV_URN, "getlastmodified")
+            .await?
+            .is_some()
+        {
             let datestr = xml.tag_string().await?;
             xml.close().await?;
-            return Ok(Property::GetLastModified(DateTime::parse_from_rfc2822(datestr.as_str())?))
-        } else if xml.maybe_open_start(DAV_URN, "lockdiscovery").await?.is_some() {
+            return Ok(Property::GetLastModified(DateTime::parse_from_rfc2822(
+                datestr.as_str(),
+            )?));
+        } else if xml
+            .maybe_open_start(DAV_URN, "lockdiscovery")
+            .await?
+            .is_some()
+        {
             let acc = xml.collect::<ActiveLock>().await?;
             xml.close().await?;
-            return Ok(Property::LockDiscovery(acc))
-        } else if xml.maybe_open_start(DAV_URN, "resourcetype").await?.is_some() {
+            return Ok(Property::LockDiscovery(acc));
+        } else if xml
+            .maybe_open_start(DAV_URN, "resourcetype")
+            .await?
+            .is_some()
+        {
             let acc = xml.collect::<ResourceType<E>>().await?;
             xml.close().await?;
-            return Ok(Property::ResourceType(acc))
-        } else if xml.maybe_open_start(DAV_URN, "supportedlock").await?.is_some() {
+            return Ok(Property::ResourceType(acc));
+        } else if xml
+            .maybe_open_start(DAV_URN, "supportedlock")
+            .await?
+            .is_some()
+        {
             let acc = xml.collect::<LockEntry>().await?;
             xml.close().await?;
-            return Ok(Property::SupportedLock(acc))
+            return Ok(Property::SupportedLock(acc));
         }
 
         // Option 2: an extension property, delegating
@@ -418,31 +521,49 @@ impl<E: Extension> QRead<Property<E>> for Property<E> {
 impl QRead<ActiveLock> for ActiveLock {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(DAV_URN, "activelock").await?;
-        let (mut m_scope, mut m_type, mut m_depth, mut owner, mut timeout, mut locktoken, mut m_root) = 
-            (None, None, None, None, None, None, None);
+        let (
+            mut m_scope,
+            mut m_type,
+            mut m_depth,
+            mut owner,
+            mut timeout,
+            mut locktoken,
+            mut m_root,
+        ) = (None, None, None, None, None, None, None);
 
         loop {
             let mut dirty = false;
-            xml.maybe_read::<LockScope>(&mut m_scope, &mut dirty).await?;
+            xml.maybe_read::<LockScope>(&mut m_scope, &mut dirty)
+                .await?;
             xml.maybe_read::<LockType>(&mut m_type, &mut dirty).await?;
             xml.maybe_read::<Depth>(&mut m_depth, &mut dirty).await?;
             xml.maybe_read::<Owner>(&mut owner, &mut dirty).await?;
             xml.maybe_read::<Timeout>(&mut timeout, &mut dirty).await?;
-            xml.maybe_read::<LockToken>(&mut locktoken, &mut dirty).await?;
+            xml.maybe_read::<LockToken>(&mut locktoken, &mut dirty)
+                .await?;
             xml.maybe_read::<LockRoot>(&mut m_root, &mut dirty).await?;
 
             if !dirty {
                 match xml.peek() {
                     Event::End(_) => break,
-                    _ => { xml.skip().await?; },
+                    _ => {
+                        xml.skip().await?;
+                    }
                 }
             }
         }
 
         xml.close().await?;
         match (m_scope, m_type, m_depth, m_root) {
-            (Some(lockscope), Some(locktype), Some(depth), Some(lockroot)) =>
-                Ok(ActiveLock { lockscope, locktype, depth, owner, timeout, locktoken, lockroot }),
+            (Some(lockscope), Some(locktype), Some(depth), Some(lockroot)) => Ok(ActiveLock {
+                lockscope,
+                locktype,
+                depth,
+                owner,
+                timeout,
+                locktoken,
+                lockroot,
+            }),
             _ => Err(ParsingError::MissingChild),
         }
     }
@@ -465,7 +586,7 @@ impl QRead<Depth> for Depth {
 impl QRead<Owner> for Owner {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(DAV_URN, "owner").await?;
-        
+
         let mut owner = Owner::Unknown;
         loop {
             match xml.peek() {
@@ -475,17 +596,21 @@ impl QRead<Owner> for Owner {
                         owner = Owner::Txt(txt);
                     }
                 }
-                Event::Start(_) | Event::Empty(_) => {
-                    match Href::qread(xml).await {
-                        Ok(href) => { owner = Owner::Href(href); },
-                        Err(ParsingError::Recoverable) => { xml.skip().await?; },
-                        Err(e) => return Err(e),
+                Event::Start(_) | Event::Empty(_) => match Href::qread(xml).await {
+                    Ok(href) => {
+                        owner = Owner::Href(href);
                     }
-                }
+                    Err(ParsingError::Recoverable) => {
+                        xml.skip().await?;
+                    }
+                    Err(e) => return Err(e),
+                },
                 Event::End(_) => break,
-                _ => { xml.skip().await?; },
+                _ => {
+                    xml.skip().await?;
+                }
             }
-        };
+        }
         xml.close().await?;
         Ok(owner)
     }
@@ -495,7 +620,7 @@ impl QRead<Timeout> for Timeout {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         const SEC_PFX: &str = "Second-";
         xml.open(DAV_URN, "timeout").await?;
-        
+
         let timeout = match xml.tag_string().await?.as_str() {
             "Infinite" => Timeout::Infinite,
             seconds => match seconds.strip_prefix(SEC_PFX) {
@@ -531,10 +656,12 @@ impl<E: Extension> QRead<ResourceType<E>> for ResourceType<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         if xml.maybe_open(DAV_URN, "collection").await?.is_some() {
             xml.close().await?;
-            return Ok(ResourceType::Collection)
+            return Ok(ResourceType::Collection);
         }
-        
-        E::ResourceType::qread(xml).await.map(ResourceType::Extension)
+
+        E::ResourceType::qread(xml)
+            .await
+            .map(ResourceType::Extension)
     }
 }
 
@@ -545,8 +672,10 @@ impl QRead<LockEntry> for LockEntry {
 
         loop {
             let mut dirty = false;
-            xml.maybe_read::<LockScope>(&mut maybe_scope, &mut dirty).await?;
-            xml.maybe_read::<LockType>(&mut maybe_type, &mut dirty).await?;
+            xml.maybe_read::<LockScope>(&mut maybe_scope, &mut dirty)
+                .await?;
+            xml.maybe_read::<LockType>(&mut maybe_type, &mut dirty)
+                .await?;
             if !dirty {
                 match xml.peek() {
                     Event::End(_) => break,
@@ -557,7 +686,10 @@ impl QRead<LockEntry> for LockEntry {
 
         xml.close().await?;
         match (maybe_scope, maybe_type) {
-            (Some(lockscope), Some(locktype)) => Ok(LockEntry { lockscope, locktype }),
+            (Some(lockscope), Some(locktype)) => Ok(LockEntry {
+                lockscope,
+                locktype,
+            }),
             _ => Err(ParsingError::MissingChild),
         }
     }
@@ -570,12 +702,12 @@ impl QRead<LockScope> for LockScope {
         let lockscope = loop {
             if xml.maybe_open(DAV_URN, "exclusive").await?.is_some() {
                 xml.close().await?;
-                break LockScope::Exclusive
-            } 
+                break LockScope::Exclusive;
+            }
 
             if xml.maybe_open(DAV_URN, "shared").await?.is_some() {
                 xml.close().await?;
-                break LockScope::Shared
+                break LockScope::Shared;
             }
 
             xml.skip().await?;
@@ -593,7 +725,7 @@ impl QRead<LockType> for LockType {
         let locktype = loop {
             if xml.maybe_open(DAV_URN, "write").await?.is_some() {
                 xml.close().await?;
-                break LockType::Write
+                break LockType::Write;
             }
 
             xml.skip().await?;
@@ -616,8 +748,8 @@ impl QRead<Href> for Href {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{FixedOffset, TimeZone};
     use crate::realization::Core;
+    use chrono::{FixedOffset, TimeZone};
     use quick_xml::reader::NsReader;
 
     #[tokio::test]
@@ -630,8 +762,10 @@ mod tests {
 </D:propfind>
 "#;
 
-        let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
-        let got = rdr.find::<PropFind::<Core>>().await.unwrap();
+        let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes()))
+            .await
+            .unwrap();
+        let got = rdr.find::<PropFind<Core>>().await.unwrap();
 
         assert_eq!(got, PropFind::<Core>::PropName);
     }
@@ -654,18 +788,23 @@ mod tests {
 </D:propfind>
 "#;
 
-        let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
-        let got = rdr.find::<PropFind::<Core>>().await.unwrap();
+        let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes()))
+            .await
+            .unwrap();
+        let got = rdr.find::<PropFind<Core>>().await.unwrap();
 
-        assert_eq!(got, PropFind::Prop(PropName(vec![
-            PropertyRequest::DisplayName,
-            PropertyRequest::GetContentLength,
-            PropertyRequest::GetContentType,
-            PropertyRequest::GetEtag,
-            PropertyRequest::GetLastModified,
-            PropertyRequest::ResourceType,
-            PropertyRequest::SupportedLock,
-        ])));
+        assert_eq!(
+            got,
+            PropFind::Prop(PropName(vec![
+                PropertyRequest::DisplayName,
+                PropertyRequest::GetContentLength,
+                PropertyRequest::GetContentType,
+                PropertyRequest::GetEtag,
+                PropertyRequest::GetLastModified,
+                PropertyRequest::ResourceType,
+                PropertyRequest::SupportedLock,
+            ]))
+        );
     }
 
     #[tokio::test]
@@ -677,16 +816,18 @@ mod tests {
        </D:lock-token-submitted>
      </D:error>"#;
 
-        let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
-        let got = rdr.find::<Error::<Core>>().await.unwrap();
+        let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes()))
+            .await
+            .unwrap();
+        let got = rdr.find::<Error<Core>>().await.unwrap();
 
-        assert_eq!(got, Error(vec![
-            Violation::LockTokenSubmitted(vec![
-                Href("/locked/".into())
-            ])
-        ]));
+        assert_eq!(
+            got,
+            Error(vec![Violation::LockTokenSubmitted(vec![Href(
+                "/locked/".into()
+            )])])
+        );
     }
-
 
     #[tokio::test]
     async fn rfc_propertyupdate() {
@@ -706,13 +847,18 @@ mod tests {
        </D:remove>
      </D:propertyupdate>"#;
 
-        let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
-        let got = rdr.find::<PropertyUpdate::<Core>>().await.unwrap();
+        let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes()))
+            .await
+            .unwrap();
+        let got = rdr.find::<PropertyUpdate<Core>>().await.unwrap();
 
-        assert_eq!(got, PropertyUpdate(vec![
-            PropertyUpdateItem::Set(Set(PropValue(vec![]))),
-            PropertyUpdateItem::Remove(Remove(PropName(vec![]))),
-        ]));
+        assert_eq!(
+            got,
+            PropertyUpdate(vec![
+                PropertyUpdateItem::Set(Set(PropValue(vec![]))),
+                PropertyUpdateItem::Remove(Remove(PropName(vec![]))),
+            ])
+        );
     }
 
     #[tokio::test]
@@ -728,14 +874,21 @@ mod tests {
 </D:lockinfo>
 "#;
 
-        let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
+        let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes()))
+            .await
+            .unwrap();
         let got = rdr.find::<LockInfo>().await.unwrap();
 
-        assert_eq!(got, LockInfo {
-            lockscope: LockScope::Exclusive,
-            locktype: LockType::Write,
-            owner: Some(Owner::Href(Href("http://example.org/~ejw/contact.html".into()))),
-        });
+        assert_eq!(
+            got,
+            LockInfo {
+                lockscope: LockScope::Exclusive,
+                locktype: LockType::Write,
+                owner: Some(Owner::Href(Href(
+                    "http://example.org/~ejw/contact.html".into()
+                ))),
+            }
+        );
     }
 
     #[tokio::test]
@@ -777,58 +930,62 @@ mod tests {
      </multistatus>
 "#;
 
-        let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
-        let got = rdr.find::<Multistatus::<Core>>().await.unwrap();
+        let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes()))
+            .await
+            .unwrap();
+        let got = rdr.find::<Multistatus<Core>>().await.unwrap();
 
-        assert_eq!(got, Multistatus {
-            responses: vec![
-                Response {
-                    status_or_propstat: StatusOrPropstat::PropStat(
-                        Href("http://www.example.com/container/".into()),
-                        vec![PropStat {
-                            prop: AnyProp(vec![
-                                AnyProperty::Request(PropertyRequest::CreationDate),
-                                AnyProperty::Request(PropertyRequest::DisplayName),
-                                AnyProperty::Request(PropertyRequest::ResourceType),
-                                AnyProperty::Request(PropertyRequest::SupportedLock),
-                            ]),
-                            status: Status(http::status::StatusCode::OK),
-                            error: None,
-                            responsedescription: None,
-                        }],
-                    ),
-                    error: None,
-                    responsedescription: None,
-                    location: None,
-                },
-                Response {
-                    status_or_propstat: StatusOrPropstat::PropStat(
-                        Href("http://www.example.com/container/front.html".into()),
-                        vec![PropStat {
-                            prop: AnyProp(vec![
-                                AnyProperty::Request(PropertyRequest::CreationDate),
-                                AnyProperty::Request(PropertyRequest::DisplayName),
-                                AnyProperty::Request(PropertyRequest::GetContentLength),
-                                AnyProperty::Request(PropertyRequest::GetContentType),
-                                AnyProperty::Request(PropertyRequest::GetEtag),
-                                AnyProperty::Request(PropertyRequest::GetLastModified),
-                                AnyProperty::Request(PropertyRequest::ResourceType),
-                                AnyProperty::Request(PropertyRequest::SupportedLock),
-                            ]),
-                            status: Status(http::status::StatusCode::OK),
-                            error: None,
-                            responsedescription: None,
-                        }],
-                    ),
-                    error: None,
-                    responsedescription: None,
-                    location: None,
-                },
-            ],
-            responsedescription: None,
-        });
+        assert_eq!(
+            got,
+            Multistatus {
+                responses: vec![
+                    Response {
+                        status_or_propstat: StatusOrPropstat::PropStat(
+                            Href("http://www.example.com/container/".into()),
+                            vec![PropStat {
+                                prop: AnyProp(vec![
+                                    AnyProperty::Request(PropertyRequest::CreationDate),
+                                    AnyProperty::Request(PropertyRequest::DisplayName),
+                                    AnyProperty::Request(PropertyRequest::ResourceType),
+                                    AnyProperty::Request(PropertyRequest::SupportedLock),
+                                ]),
+                                status: Status(http::status::StatusCode::OK),
+                                error: None,
+                                responsedescription: None,
+                            }],
+                        ),
+                        error: None,
+                        responsedescription: None,
+                        location: None,
+                    },
+                    Response {
+                        status_or_propstat: StatusOrPropstat::PropStat(
+                            Href("http://www.example.com/container/front.html".into()),
+                            vec![PropStat {
+                                prop: AnyProp(vec![
+                                    AnyProperty::Request(PropertyRequest::CreationDate),
+                                    AnyProperty::Request(PropertyRequest::DisplayName),
+                                    AnyProperty::Request(PropertyRequest::GetContentLength),
+                                    AnyProperty::Request(PropertyRequest::GetContentType),
+                                    AnyProperty::Request(PropertyRequest::GetEtag),
+                                    AnyProperty::Request(PropertyRequest::GetLastModified),
+                                    AnyProperty::Request(PropertyRequest::ResourceType),
+                                    AnyProperty::Request(PropertyRequest::SupportedLock),
+                                ]),
+                                status: Status(http::status::StatusCode::OK),
+                                error: None,
+                                responsedescription: None,
+                            }],
+                        ),
+                        error: None,
+                        responsedescription: None,
+                        location: None,
+                    },
+                ],
+                responsedescription: None,
+            }
+        );
     }
-
 
     #[tokio::test]
     async fn rfc_multistatus_value() {
@@ -888,78 +1045,103 @@ mod tests {
        </D:response>
      </D:multistatus>"#;
 
-        let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes())).await.unwrap();
-        let got = rdr.find::<Multistatus::<Core>>().await.unwrap();
+        let mut rdr = Reader::new(NsReader::from_reader(src.as_bytes()))
+            .await
+            .unwrap();
+        let got = rdr.find::<Multistatus<Core>>().await.unwrap();
 
-        assert_eq!(got, Multistatus {
-            responses: vec![
-                Response {
-                status_or_propstat: StatusOrPropstat::PropStat(
-                        Href("/container/".into()),
-                        vec![PropStat {
-                            prop: AnyProp(vec![
-                                AnyProperty::Value(Property::CreationDate(FixedOffset::west_opt(8 * 3600).unwrap().with_ymd_and_hms(1997, 12, 01, 17, 42, 21).unwrap())),
-                                AnyProperty::Value(Property::DisplayName("Example collection".into())),
-                                AnyProperty::Value(Property::ResourceType(vec![ResourceType::Collection])),
-                                AnyProperty::Value(Property::SupportedLock(vec![
-                                    LockEntry {
-                                        lockscope: LockScope::Exclusive,
-                                        locktype: LockType::Write,
-                                    },
-                                    LockEntry {
-                                        lockscope: LockScope::Shared,
-                                        locktype: LockType::Write,
-                                    },
-                                ])),
-                            ]),
-                            status: Status(http::status::StatusCode::OK),
-                            error: None,
-                            responsedescription: None,
-                        }],
-                    ),
-                    error: None,
-                    responsedescription: None,
-                    location: None,
-
-                },
-                Response {
-                    status_or_propstat: StatusOrPropstat::PropStat(
-                        Href("/container/front.html".into()),
-                        vec![PropStat {
-                            prop: AnyProp(vec![
-                                AnyProperty::Value(Property::CreationDate(FixedOffset::west_opt(8 * 3600).unwrap().with_ymd_and_hms(1997, 12, 01, 18, 27, 21).unwrap())),
-                                AnyProperty::Value(Property::DisplayName("Example HTML resource".into())),
-                                AnyProperty::Value(Property::GetContentLength(4525)),
-                                AnyProperty::Value(Property::GetContentType("text/html".into())),
-                                AnyProperty::Value(Property::GetEtag(r#""zzyzx""#.into())),
-                                AnyProperty::Value(Property::GetLastModified(FixedOffset::west_opt(0).unwrap().with_ymd_and_hms(1998, 01, 12, 09, 25, 56).unwrap())),
-                                //@FIXME know bug, can't disambiguate between an empty resource
-                                //type value and a request resource type
-                                AnyProperty::Request(PropertyRequest::ResourceType),
-                                AnyProperty::Value(Property::SupportedLock(vec![
-                                    LockEntry {
-                                        lockscope: LockScope::Exclusive,
-                                        locktype: LockType::Write,
-                                    },
-                                    LockEntry {
-                                        lockscope: LockScope::Shared,
-                                        locktype: LockType::Write,
-                                    },
-                                ])),
-                            ]),
-                            status: Status(http::status::StatusCode::OK),
-                            error: None,
-                            responsedescription: None,
-                        }],
-                    ),
-                    error: None,
-                    responsedescription: None,
-                    location: None,
-
-                },
-            ],
-            responsedescription: None,
-        });
+        assert_eq!(
+            got,
+            Multistatus {
+                responses: vec![
+                    Response {
+                        status_or_propstat: StatusOrPropstat::PropStat(
+                            Href("/container/".into()),
+                            vec![PropStat {
+                                prop: AnyProp(vec![
+                                    AnyProperty::Value(Property::CreationDate(
+                                        FixedOffset::west_opt(8 * 3600)
+                                            .unwrap()
+                                            .with_ymd_and_hms(1997, 12, 01, 17, 42, 21)
+                                            .unwrap()
+                                    )),
+                                    AnyProperty::Value(Property::DisplayName(
+                                        "Example collection".into()
+                                    )),
+                                    AnyProperty::Value(Property::ResourceType(vec![
+                                        ResourceType::Collection
+                                    ])),
+                                    AnyProperty::Value(Property::SupportedLock(vec![
+                                        LockEntry {
+                                            lockscope: LockScope::Exclusive,
+                                            locktype: LockType::Write,
+                                        },
+                                        LockEntry {
+                                            lockscope: LockScope::Shared,
+                                            locktype: LockType::Write,
+                                        },
+                                    ])),
+                                ]),
+                                status: Status(http::status::StatusCode::OK),
+                                error: None,
+                                responsedescription: None,
+                            }],
+                        ),
+                        error: None,
+                        responsedescription: None,
+                        location: None,
+                    },
+                    Response {
+                        status_or_propstat: StatusOrPropstat::PropStat(
+                            Href("/container/front.html".into()),
+                            vec![PropStat {
+                                prop: AnyProp(vec![
+                                    AnyProperty::Value(Property::CreationDate(
+                                        FixedOffset::west_opt(8 * 3600)
+                                            .unwrap()
+                                            .with_ymd_and_hms(1997, 12, 01, 18, 27, 21)
+                                            .unwrap()
+                                    )),
+                                    AnyProperty::Value(Property::DisplayName(
+                                        "Example HTML resource".into()
+                                    )),
+                                    AnyProperty::Value(Property::GetContentLength(4525)),
+                                    AnyProperty::Value(Property::GetContentType(
+                                        "text/html".into()
+                                    )),
+                                    AnyProperty::Value(Property::GetEtag(r#""zzyzx""#.into())),
+                                    AnyProperty::Value(Property::GetLastModified(
+                                        FixedOffset::west_opt(0)
+                                            .unwrap()
+                                            .with_ymd_and_hms(1998, 01, 12, 09, 25, 56)
+                                            .unwrap()
+                                    )),
+                                    //@FIXME know bug, can't disambiguate between an empty resource
+                                    //type value and a request resource type
+                                    AnyProperty::Request(PropertyRequest::ResourceType),
+                                    AnyProperty::Value(Property::SupportedLock(vec![
+                                        LockEntry {
+                                            lockscope: LockScope::Exclusive,
+                                            locktype: LockType::Write,
+                                        },
+                                        LockEntry {
+                                            lockscope: LockScope::Shared,
+                                            locktype: LockType::Write,
+                                        },
+                                    ])),
+                                ]),
+                                status: Status(http::status::StatusCode::OK),
+                                error: None,
+                                responsedescription: None,
+                            }],
+                        ),
+                        error: None,
+                        responsedescription: None,
+                        location: None,
+                    },
+                ],
+                responsedescription: None,
+            }
+        );
     }
-
 }

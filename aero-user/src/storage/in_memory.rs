@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::ops::Bound::{self, Excluded, Included, Unbounded};
 use std::sync::RwLock;
 
-use sodiumoxide::{hex, crypto::hash};
+use sodiumoxide::{crypto::hash, hex};
 use tokio::sync::Notify;
 
 use crate::storage::*;

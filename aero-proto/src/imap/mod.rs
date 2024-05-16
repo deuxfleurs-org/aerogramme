@@ -17,14 +17,14 @@ use std::net::SocketAddr;
 
 use anyhow::{anyhow, bail, Result};
 use futures::stream::{FuturesUnordered, StreamExt};
-use tokio::net::TcpListener;
-use tokio::sync::mpsc;
-use tokio::sync::watch;
 use imap_codec::imap_types::response::{Code, CommandContinuationRequest, Response, Status};
 use imap_codec::imap_types::{core::Text, response::Greeting};
 use imap_flow::server::{ServerFlow, ServerFlowEvent, ServerFlowOptions};
 use imap_flow::stream::AnyStream;
 use rustls_pemfile::{certs, private_key};
+use tokio::net::TcpListener;
+use tokio::sync::mpsc;
+use tokio::sync::watch;
 use tokio_rustls::TlsAcceptor;
 
 use aero_user::config::{ImapConfig, ImapUnsecureConfig};
