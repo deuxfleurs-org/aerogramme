@@ -137,7 +137,7 @@ impl Controller {
             }
             cal::Report::Query(q) => {
                 calprop = q.selector;
-                ok_node = apply_filter(&self.user, self.node.children(&self.user).await, q.filter)
+                ok_node = apply_filter(self.node.children(&self.user).await, &q.filter)
                     .try_collect()
                     .await?;
             }
@@ -327,13 +327,11 @@ impl<'a> Path<'a> {
 //@FIXME move somewhere else
 //@FIXME naive implementation, must be refactored later
 use futures::stream::Stream;
-use icalendar;
-fn apply_filter(
-    user: &ArcUser,
+fn apply_filter<'a>(
     nodes: Vec<Box<dyn DavNode>>,
-    filter: cal::Filter,
-) -> impl Stream<Item = std::result::Result<Box<dyn DavNode>, std::io::Error>> {
-    futures::stream::iter(nodes).filter_map(|single_node| async move {
+    filter: &'a cal::Filter,
+) -> impl Stream<Item = std::result::Result<Box<dyn DavNode>, std::io::Error>> + 'a {
+    futures::stream::iter(nodes).filter_map(move |single_node| async move {
         // Get ICS
         let chunks: Vec<_> = match single_node.content().try_collect().await {
             Ok(v) => v,
@@ -346,11 +344,53 @@ fn apply_filter(
         });
 
         // Parse ICS
-        let ics = icalendar::parser::read_calendar(&raw_ics).unwrap();
+        let ics = match icalendar::parser::read_calendar(&raw_ics) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!(err=?e, "Unable to parse ICS in calendar-query");
+                return Some(Err(std::io::Error::from(std::io::ErrorKind::InvalidData)));
+            }
+        };
 
         // Do checks
+        //@FIXME VCalendar root component is hardcoded
+        let root_filter = &filter.0;
+        if root_filter.name != cal::Component::VCalendar {
+            return None;
+        }
+
+        let matcher = match &root_filter.additional_rules {
+            None => return Some(Ok(single_node)),
+            Some(cal::CompFilterRules::IsNotDefined) => return None,
+            Some(cal::CompFilterRules::Matches(m)) => m,
+        };
+
+        let evts = ics
+            .components
+            .iter()
+            .all(|single_comp| is_component_match(single_comp, matcher));
 
         // Object has been kept
         Some(Ok(single_node))
+    })
+}
+
+fn is_component_match(
+    component: &icalendar::parser::Component,
+    matcher: &cal::CompFilterMatch,
+) -> bool {
+    if let Some(time_range) = &matcher.time_range {
+        todo!(); // check DTSTART and DTEND
+    }
+
+    if !matcher.prop_filter.iter().all(|single_prop_filter| {
+        true // check prop filter against component
+    }) {
+        return false;
+    }
+
+    //component.components.iter().any
+    matcher.comp_filter.iter().all(|single_comp_filter| {
+        true //@TODO find component, find
     })
 }
