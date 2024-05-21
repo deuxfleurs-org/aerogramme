@@ -638,9 +638,6 @@ impl QWrite for PropFilterRules {
 
 impl QWrite for PropFilterMatch {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
-        if let Some(time_range) = &self.time_range {
-            time_range.qwrite(xml).await?;
-        }
         if let Some(time_or_text) = &self.time_or_text {
             time_or_text.qwrite(xml).await?;
         }

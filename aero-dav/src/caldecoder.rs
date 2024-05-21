@@ -805,7 +805,6 @@ impl QRead<PropFilter> for PropFilter {
 
 impl QRead<PropFilterRules> for PropFilterRules {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        let mut time_range = None;
         let mut time_or_text = None;
         let mut param_filter = Vec::new();
 
@@ -817,7 +816,6 @@ impl QRead<PropFilterRules> for PropFilterRules {
                 return Ok(Self::IsNotDefined);
             }
 
-            xml.maybe_read(&mut time_range, &mut dirty).await?;
             xml.maybe_read(&mut time_or_text, &mut dirty).await?;
             xml.maybe_push(&mut param_filter, &mut dirty).await?;
 
@@ -829,10 +827,9 @@ impl QRead<PropFilterRules> for PropFilterRules {
             }
         }
 
-        match (&time_range, &time_or_text, &param_filter[..]) {
-            (None, None, []) => Err(ParsingError::Recoverable),
+        match (&time_or_text, &param_filter[..]) {
+            (None, []) => Err(ParsingError::Recoverable),
             _ => Ok(PropFilterRules::Match(PropFilterMatch {
-                time_range,
                 time_or_text,
                 param_filter,
             })),

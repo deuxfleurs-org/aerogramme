@@ -365,32 +365,142 @@ fn apply_filter<'a>(
             Some(cal::CompFilterRules::Matches(m)) => m,
         };
 
-        let evts = ics
+        let is_keep = ics
             .components
             .iter()
-            .all(|single_comp| is_component_match(single_comp, matcher));
+            .any(|single_comp| is_component_match(single_comp, matcher));
 
         // Object has been kept
         Some(Ok(single_node))
     })
 }
 
+fn component_date(
+    component: &icalendar::parser::Component,
+    prop: &str,
+) -> Option<chrono::DateTime<chrono::Utc>> {
+    component
+        .find_prop(prop)
+        .map(|p| p.val.as_str())
+        .map(|raw_dtstart| {
+            NaiveDateTime::parse_from_str(raw_dtstart, cal::ICAL_DATETIME_FMT)
+                .ok()
+                .map(|v| v.and_utc())
+        })
+        .flatten()
+}
+
+use chrono::NaiveDateTime;
 fn is_component_match(
     component: &icalendar::parser::Component,
     matcher: &cal::CompFilterMatch,
 ) -> bool {
     if let Some(time_range) = &matcher.time_range {
-        todo!(); // check DTSTART and DTEND
+        let (dtstart, dtend) = match (
+            component_date(component, "DTSTART"),
+            component_date(component, "DTEND"),
+        ) {
+            (Some(start), None) => (start, start),
+            (None, Some(end)) => (end, end),
+            (Some(start), Some(end)) => (start, end),
+            _ => return false,
+        };
+
+        let is_in_range = match time_range {
+            cal::TimeRange::OnlyStart(after) => &dtend >= after,
+            cal::TimeRange::OnlyEnd(before) => &dtstart <= before,
+            cal::TimeRange::FullRange(after, before) => &dtend >= after && &dtstart <= before,
+        };
+
+        if !is_in_range {
+            return false;
+        }
     }
 
     if !matcher.prop_filter.iter().all(|single_prop_filter| {
-        true // check prop filter against component
+        match (
+            &single_prop_filter.additional_rules,
+            component.find_prop(single_prop_filter.name.0.as_str()),
+        ) {
+            (None, Some(_)) | (Some(cal::PropFilterRules::IsNotDefined), None) => true,
+            (None, None)
+            | (Some(cal::PropFilterRules::IsNotDefined), Some(_))
+            | (Some(cal::PropFilterRules::Match(_)), None) => false,
+            (Some(cal::PropFilterRules::Match(pattern)), Some(prop)) => {
+                // check value
+                match &pattern.time_or_text {
+                    Some(cal::TimeOrText::Time(time_range)) => {
+                        // try parse entry as date
+                        let parsed_date =
+                            match component_date(component, single_prop_filter.name.0.as_str()) {
+                                Some(v) => v,
+                                None => return false,
+                            };
+
+                        // see if entry is in range
+                        let is_in_range = match time_range {
+                            cal::TimeRange::OnlyStart(after) => &parsed_date >= after,
+                            cal::TimeRange::OnlyEnd(before) => &parsed_date <= before,
+                            cal::TimeRange::FullRange(after, before) => {
+                                &parsed_date >= after && &parsed_date <= before
+                            }
+                        };
+                        if !is_in_range {
+                            return false;
+                        }
+
+                        // if you are here, this subcondition is valid
+                    }
+                    Some(cal::TimeOrText::Text(txt_match)) => {
+                        //@FIXME ignoring collation
+                        let is_match = match txt_match.negate_condition {
+                            None | Some(false) => {
+                                prop.val.as_str().contains(txt_match.text.as_str())
+                            }
+                            Some(true) => !prop.val.as_str().contains(txt_match.text.as_str()),
+                        };
+                        if !is_match {
+                            return false;
+                        }
+                    }
+                    None => (), // if not filter on value is set, continue
+                };
+
+                // check parameters
+                pattern.param_filter.iter().all(|single_param_filter| {
+                    let maybe_param = prop.params.iter().find(|candidate| {
+                        candidate.key.as_str() == single_param_filter.name.as_str()
+                    });
+
+                    match (maybe_param, &single_param_filter.additional_rules) {
+                        (Some(_), None) => true,
+                        (None, None) => false,
+                        (Some(_), Some(cal::ParamFilterMatch::IsNotDefined)) => false,
+                        (None, Some(cal::ParamFilterMatch::IsNotDefined)) => true,
+                        (None, Some(cal::ParamFilterMatch::Match(_))) => false,
+                        (Some(param), Some(cal::ParamFilterMatch::Match(txt_match))) => {
+                            let param_val = match &param.val {
+                                Some(v) => v,
+                                None => return false,
+                            };
+
+                            match txt_match.negate_condition {
+                                None | Some(false) => {
+                                    param_val.as_str().contains(txt_match.text.as_str())
+                                }
+                                Some(true) => !param_val.as_str().contains(txt_match.text.as_str()),
+                            }
+                        }
+                    }
+                })
+            }
+        }
     }) {
         return false;
     }
 
     //component.components.iter().any
-    matcher.comp_filter.iter().all(|single_comp_filter| {
+    matcher.comp_filter.iter().any(|single_comp_filter| {
         true //@TODO find component, find
     })
 }

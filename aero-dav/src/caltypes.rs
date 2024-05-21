@@ -1242,7 +1242,6 @@ pub enum PropFilterRules {
 }
 #[derive(Debug, PartialEq, Clone)]
 pub struct PropFilterMatch {
-    pub time_range: Option<TimeRange>,
     pub time_or_text: Option<TimeOrText>,
     pub param_filter: Vec<ParamFilter>,
 }
