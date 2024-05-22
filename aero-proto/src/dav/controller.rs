@@ -353,81 +353,49 @@ fn apply_filter<'a>(
         };
 
         // Do checks
+        // @FIXME: icalendar does not consider VCALENDAR as a component
+        // but WebDAV does...
+        // Build a fake VCALENDAR component for icalendar compatibility, it's a hack
         let root_filter = &filter.0;
-
-        // Find the component in the filter
-        let maybe_comp = ics
-            .components
-            .iter()
-            .find(|candidate| candidate.name.as_str() == root_filter.name.as_str());
-
-        // Apply additional rules
-        let is_keep = match (maybe_comp, &root_filter.additional_rules) {
-            (Some(_), None) => true,
-            (None, Some(cal::CompFilterRules::IsNotDefined)) => true,
-            (None, None) => false,
-            (None, Some(cal::CompFilterRules::Matches(_))) => false,
-            (Some(_), Some(cal::CompFilterRules::IsNotDefined)) => false,
-            (Some(inner_comp), Some(cal::CompFilterRules::Matches(filter))) => {
-                is_component_match(inner_comp, filter)
-            }
+        let fake_vcal_component = icalendar::parser::Component {
+            name: cal::Component::VCalendar.as_str().into(),
+            properties: ics.properties,
+            components: ics.components,
         };
+        tracing::debug!(filter=?root_filter, "calendar-query filter");
 
         // Adjust return value according to filter
-        match is_keep {
+        match is_component_match(&[fake_vcal_component], root_filter) {
             true => Some(Ok(single_node)),
             _ => None,
         }
     })
 }
 
-fn component_date(
-    component: &icalendar::parser::Component,
-    prop: &str,
+fn prop_date(
+    properties: &[icalendar::parser::Property],
+    name: &str,
 ) -> Option<chrono::DateTime<chrono::Utc>> {
-    component
-        .find_prop(prop)
+    properties
+        .iter()
+        .find(|candidate| candidate.name.as_str() == name)
         .map(|p| p.val.as_str())
-        .map(|raw_dtstart| {
-            NaiveDateTime::parse_from_str(raw_dtstart, cal::ICAL_DATETIME_FMT)
+        .map(|raw_time| {
+            tracing::trace!(raw_time = raw_time, "VEVENT raw time");
+            NaiveDateTime::parse_from_str(raw_time, cal::ICAL_DATETIME_FMT)
                 .ok()
                 .map(|v| v.and_utc())
         })
         .flatten()
 }
 
-use chrono::NaiveDateTime;
-fn is_component_match(
-    component: &icalendar::parser::Component,
-    matcher: &cal::CompFilterMatch,
-) -> bool {
-    if let Some(time_range) = &matcher.time_range {
-        let (dtstart, dtend) = match (
-            component_date(component, "DTSTART"),
-            component_date(component, "DTEND"),
-        ) {
-            (Some(start), None) => (start, start),
-            (None, Some(end)) => (end, end),
-            (Some(start), Some(end)) => (start, end),
-            _ => return false,
-        };
-
-        let is_in_range = match time_range {
-            cal::TimeRange::OnlyStart(after) => &dtend >= after,
-            cal::TimeRange::OnlyEnd(before) => &dtstart <= before,
-            cal::TimeRange::FullRange(after, before) => &dtend >= after && &dtstart <= before,
-        };
-
-        if !is_in_range {
-            return false;
-        }
-    }
-
-    if !matcher.prop_filter.iter().all(|single_prop_filter| {
-        match (
-            &single_prop_filter.additional_rules,
-            component.find_prop(single_prop_filter.name.0.as_str()),
-        ) {
+fn is_properties_match(props: &[icalendar::parser::Property], filters: &[cal::PropFilter]) -> bool {
+    filters.iter().all(|single_filter| {
+        // Find the property
+        let single_prop = props
+            .iter()
+            .find(|candidate| candidate.name.as_str() == single_filter.name.0.as_str());
+        match (&single_filter.additional_rules, single_prop) {
             (None, Some(_)) | (Some(cal::PropFilterRules::IsNotDefined), None) => true,
             (None, None)
             | (Some(cal::PropFilterRules::IsNotDefined), Some(_))
@@ -436,12 +404,17 @@ fn is_component_match(
                 // check value
                 match &pattern.time_or_text {
                     Some(cal::TimeOrText::Time(time_range)) => {
-                        // try parse entry as date
-                        let parsed_date =
-                            match component_date(component, single_prop_filter.name.0.as_str()) {
-                                Some(v) => v,
-                                None => return false,
-                            };
+                        let maybe_parsed_date = NaiveDateTime::parse_from_str(
+                            prop.val.as_str(),
+                            cal::ICAL_DATETIME_FMT,
+                        )
+                        .ok()
+                        .map(|v| v.and_utc());
+
+                        let parsed_date = match maybe_parsed_date {
+                            None => return false,
+                            Some(v) => v,
+                        };
 
                         // see if entry is in range
                         let is_in_range = match time_range {
@@ -501,27 +474,70 @@ fn is_component_match(
                 })
             }
         }
-    }) {
-        return false;
-    }
-
-    matcher.comp_filter.iter().all(|single_comp_filter| {
-        // Find the component
-        let maybe_comp = component
-            .components
-            .iter()
-            .find(|candidate| candidate.name.as_str() == single_comp_filter.name.as_str());
-
-        // Filter according to rules
-        match (maybe_comp, &single_comp_filter.additional_rules) {
-            (Some(_), None) => true,
-            (None, Some(cal::CompFilterRules::IsNotDefined)) => true,
-            (None, None) => false,
-            (Some(_), Some(cal::CompFilterRules::IsNotDefined)) => false,
-            (None, Some(cal::CompFilterRules::Matches(_))) => false,
-            (Some(inner_comp), Some(cal::CompFilterRules::Matches(comp_match))) => {
-                is_component_match(inner_comp, comp_match)
-            }
-        }
     })
+}
+
+fn is_in_time_range(
+    properties: &[icalendar::parser::Property],
+    time_range: &cal::TimeRange,
+) -> bool {
+    //@FIXME too naive: https://datatracker.ietf.org/doc/html/rfc4791#section-9.9
+
+    let (dtstart, dtend) = match (
+        prop_date(properties, "DTSTART"),
+        prop_date(properties, "DTEND"),
+    ) {
+        (Some(start), None) => (start, start),
+        (None, Some(end)) => (end, end),
+        (Some(start), Some(end)) => (start, end),
+        _ => {
+            tracing::warn!("unable to extract DTSTART and DTEND from VEVENT");
+            return false;
+        }
+    };
+
+    tracing::trace!(event_start=?dtstart, event_end=?dtend, filter=?time_range, "apply filter on VEVENT");
+    match time_range {
+        cal::TimeRange::OnlyStart(after) => &dtend >= after,
+        cal::TimeRange::OnlyEnd(before) => &dtstart <= before,
+        cal::TimeRange::FullRange(after, before) => &dtend >= after && &dtstart <= before,
+    }
+}
+
+use chrono::NaiveDateTime;
+fn is_component_match(
+    components: &[icalendar::parser::Component],
+    filter: &cal::CompFilter,
+) -> bool {
+    // Find the component among the list
+    let maybe_comp = components
+        .iter()
+        .find(|candidate| candidate.name.as_str() == filter.name.as_str());
+
+    // Filter according to rules
+    match (maybe_comp, &filter.additional_rules) {
+        (Some(_), None) => true,
+        (None, Some(cal::CompFilterRules::IsNotDefined)) => true,
+        (None, None) => false,
+        (Some(_), Some(cal::CompFilterRules::IsNotDefined)) => false,
+        (None, Some(cal::CompFilterRules::Matches(_))) => false,
+        (Some(component), Some(cal::CompFilterRules::Matches(matcher))) => {
+            // check time range
+            if let Some(time_range) = &matcher.time_range {
+                if !is_in_time_range(component.properties.as_ref(), time_range) {
+                    return false;
+                }
+            }
+
+            // check properties
+            if !is_properties_match(component.properties.as_ref(), matcher.prop_filter.as_ref()) {
+                return false;
+            }
+
+            // check inner components
+            matcher.comp_filter.iter().all(|inner_filter| {
+                is_component_match(component.components.as_ref(), &inner_filter)
+            })
+        }
+    }
 }

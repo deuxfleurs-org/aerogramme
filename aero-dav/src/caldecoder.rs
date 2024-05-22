@@ -287,7 +287,7 @@ impl QRead<Property> for Property {
             .is_some()
         {
             let dtstr = xml.tag_string().await?;
-            let dt = NaiveDateTime::parse_from_str(dtstr.as_str(), ICAL_DATETIME_FMT)?.and_utc();
+            let dt = NaiveDateTime::parse_from_str(dtstr.as_str(), CALDAV_DATETIME_FMT)?.and_utc();
             xml.close().await?;
             return Ok(Property::MaxDateTime(dt));
         }
@@ -653,8 +653,8 @@ impl QRead<Expand> for Expand {
             _ => return Err(ParsingError::MissingAttribute),
         };
 
-        let start = NaiveDateTime::parse_from_str(rstart.as_str(), ICAL_DATETIME_FMT)?.and_utc();
-        let end = NaiveDateTime::parse_from_str(rend.as_str(), ICAL_DATETIME_FMT)?.and_utc();
+        let start = NaiveDateTime::parse_from_str(rstart.as_str(), CALDAV_DATETIME_FMT)?.and_utc();
+        let end = NaiveDateTime::parse_from_str(rend.as_str(), CALDAV_DATETIME_FMT)?.and_utc();
         if start > end {
             return Err(ParsingError::InvalidValue);
         }
@@ -672,8 +672,8 @@ impl QRead<LimitRecurrenceSet> for LimitRecurrenceSet {
             _ => return Err(ParsingError::MissingAttribute),
         };
 
-        let start = NaiveDateTime::parse_from_str(rstart.as_str(), ICAL_DATETIME_FMT)?.and_utc();
-        let end = NaiveDateTime::parse_from_str(rend.as_str(), ICAL_DATETIME_FMT)?.and_utc();
+        let start = NaiveDateTime::parse_from_str(rstart.as_str(), CALDAV_DATETIME_FMT)?.and_utc();
+        let end = NaiveDateTime::parse_from_str(rend.as_str(), CALDAV_DATETIME_FMT)?.and_utc();
         if start > end {
             return Err(ParsingError::InvalidValue);
         }
@@ -691,8 +691,8 @@ impl QRead<LimitFreebusySet> for LimitFreebusySet {
             _ => return Err(ParsingError::MissingAttribute),
         };
 
-        let start = NaiveDateTime::parse_from_str(rstart.as_str(), ICAL_DATETIME_FMT)?.and_utc();
-        let end = NaiveDateTime::parse_from_str(rend.as_str(), ICAL_DATETIME_FMT)?.and_utc();
+        let start = NaiveDateTime::parse_from_str(rstart.as_str(), CALDAV_DATETIME_FMT)?.and_utc();
+        let end = NaiveDateTime::parse_from_str(rend.as_str(), CALDAV_DATETIME_FMT)?.and_utc();
         if start > end {
             return Err(ParsingError::InvalidValue);
         }
@@ -918,13 +918,13 @@ impl QRead<TimeRange> for TimeRange {
 
         let start = match xml.prev_attr("start") {
             Some(r) => {
-                Some(NaiveDateTime::parse_from_str(r.as_str(), ICAL_DATETIME_FMT)?.and_utc())
+                Some(NaiveDateTime::parse_from_str(r.as_str(), CALDAV_DATETIME_FMT)?.and_utc())
             }
             _ => None,
         };
         let end = match xml.prev_attr("end") {
             Some(r) => {
-                Some(NaiveDateTime::parse_from_str(r.as_str(), ICAL_DATETIME_FMT)?.and_utc())
+                Some(NaiveDateTime::parse_from_str(r.as_str(), CALDAV_DATETIME_FMT)?.and_utc())
             }
             _ => None,
         };

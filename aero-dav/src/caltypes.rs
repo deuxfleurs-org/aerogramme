@@ -3,7 +3,8 @@
 use super::types as dav;
 use chrono::{DateTime, Utc};
 
-pub const ICAL_DATETIME_FMT: &str = "%Y%m%dT%H%M%SZ";
+pub const ICAL_DATETIME_FMT: &str = "%Y%m%dT%H%M%S";
+pub const CALDAV_DATETIME_FMT: &str = "%Y%m%dT%H%M%SZ";
 
 //@FIXME ACL (rfc3744) is missing, required
 //@FIXME Versioning (rfc3253) is missing, required
