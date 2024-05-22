@@ -429,11 +429,55 @@ fn rfc4918_webdav_core() {
         assert!(root_success.prop.0.iter().find(|p| matches!(p, dav::AnyProperty::Value(dav::Property::GetContentType(_)))).is_none());
         assert!(root_not_found.prop.0.iter().find(|p| matches!(p, dav::AnyProperty::Request(dav::PropertyRequest::GetContentLength))).is_some());
 
-        // depth 1
+        // depth 1 / -> /alice/
+        let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087").header("Depth", "1").send()?.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        let _user_propstats = multistatus.responses.iter()
+            .find_map(|v| match &v.status_or_propstat {
+                dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/alice/" => Some(x),
+                _ => None,
+            })
+            .expect("user collection must exist"); 
 
-        // check tree (calendar, Personal)
+        // depth 1 /alice/ -> /alice/calendar/
+        let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087/alice/").header("Depth", "1").send()?.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        let _user_calendars_propstats = multistatus.responses.iter()
+            .find_map(|v| match &v.status_or_propstat {
+                dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/alice/calendar/" => Some(x),
+                _ => None,
+            })
+            .expect("user collection must exist");
+
+        // depth 1 /alice/calendar/ -> /alice/calendar/Personal/
+        let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087/alice/calendar/").header("Depth", "1").send()?.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        let _user_calendars_propstats = multistatus.responses.iter()
+            .find_map(|v| match &v.status_or_propstat {
+                dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/alice/calendar/Personal/" => Some(x),
+                _ => None,
+            })
+            .expect("Personal calendar must exist");
+
+        // depth 1 /alice/calendar/Personal/ -> empty for now...
+        let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087/alice/calendar/Personal/").header("Depth", "1").send()?.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        assert_eq!(multistatus.responses.len(), 1);
 
         // --- PUT ---
+        let resp = http.request(reqwest::Method::from_bytes(b"PUT")?, "http://localhost:8087/alice/calendar/Personal/rfc2.ics").header("If-None-Match", "*").body(ICAL_RFC2).send()?;
+        assert_eq!(resp.status(), 201);
+
+        let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087/alice/calendar/Personal/").header("Depth", "1").send()?.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        assert_eq!(multistatus.responses.len(), 2);
+
+        let resp = http.request(reqwest::Method::from_bytes(b"PUT")?, "http://localhost:8087/alice/calendar/Personal/rfc3.ics").header("If-None-Match", "*").body(ICAL_RFC3).send()?;
+        assert_eq!(resp.status(), 201);
+
+        let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087/alice/calendar/Personal/").header("Depth", "1").send()?.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        assert_eq!(multistatus.responses.len(), 3);
 
         // --- GET ---
         
