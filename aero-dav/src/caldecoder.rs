@@ -1347,7 +1347,6 @@ END:VCALENDAR]]></C:calendar-timezone>
                                     name: ComponentProperty("STATUS".into()),
                                     additional_rules: Some(PropFilterRules::Match(
                                         PropFilterMatch {
-                                            time_range: None,
                                             param_filter: vec![],
                                             time_or_text: Some(TimeOrText::Text(TextMatch {
                                                 collation: None,

@@ -33,7 +33,7 @@ pub enum BodySection<'a> {
 ///
 /// Example of message sections:
 ///
-/// ```
+/// ```text
 ///    HEADER     ([RFC-2822] header of the message)
 ///    TEXT       ([RFC-2822] text body of the message) MULTIPART/MIXED
 ///    1          TEXT/PLAIN

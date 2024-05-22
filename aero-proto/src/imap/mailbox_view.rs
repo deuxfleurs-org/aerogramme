@@ -638,13 +638,13 @@ mod tests {
     use imap_codec::ResponseCodec;
     use std::fs;
 
-    use crate::cryptoblob;
+    use aero_user::cryptoblob;
+    use aero_collections::mail::mailbox::MailMeta;
+    use aero_collections::mail::query::QueryResult;
+    use aero_collections::unique_ident;
+
     use crate::imap::index::MailIndex;
-    use crate::imap::mail_view::MailView;
     use crate::imap::mime_view;
-    use crate::mail::mailbox::MailMeta;
-    use crate::mail::query::QueryResult;
-    use crate::mail::unique_ident;
 
     #[test]
     fn mailview_body_ext() -> Result<()> {
@@ -745,8 +745,8 @@ mod tests {
 
         for pref in prefixes.iter() {
             println!("{}", pref);
-            let txt = fs::read(format!("{}.eml", pref))?;
-            let oracle = fs::read(format!("{}.dovecot.body", pref))?;
+            let txt = fs::read(format!("../{}.eml", pref))?;
+            let oracle = fs::read(format!("../{}.dovecot.body", pref))?;
             let message = eml_codec::parse_message(&txt).unwrap().1;
 
             let test_repr = Response::Data(Data::Fetch {
