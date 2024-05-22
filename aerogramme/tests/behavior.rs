@@ -19,6 +19,7 @@ fn main() {
     // WebDAV
     rfc4918_webdav_core();
     rfc5397_webdav_principal();
+    rfc4791_webdav_caldav();
     println!("✅ SUCCESS 🌟🚀🥳🙏🥹");
 }
 
@@ -549,7 +550,56 @@ fn rfc5397_webdav_principal() {
     .expect("test fully run")
 }
 
-// @TODO CALDAV
-// @TODO find calendar-home-set
+fn rfc4791_webdav_caldav() {
+    println!("🧪 rfc4791_webdav_caldav");
+    common::aerogramme_provider_daemon_dev(|_imap, _lmtp, http| {
+        // Check calendar discovery from principal
+        let propfind_req = r#"<?xml version="1.0" encoding="utf-8" ?>
+        <D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+            <D:prop><C:calendar-home-set/></D:prop>
+        </D:propfind>"#;
+
+        let body = http
+            .request(
+                reqwest::Method::from_bytes(b"PROPFIND")?,
+                "http://localhost:8087/alice/",
+            )
+            .body(propfind_req)
+            .send()?
+            .text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        let principal_propstats = multistatus
+            .responses
+            .iter()
+            .find_map(|v| match &v.status_or_propstat {
+                dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/alice/" => {
+                    Some(x)
+                }
+                _ => None,
+            })
+            .expect("propstats for root must exist");
+        let principal_success = principal_propstats
+            .iter()
+            .find(|p| p.status.0.as_u16() == 200)
+            .expect("current-user-principal must exist");
+        let calendar_home_set = principal_success
+            .prop
+            .0
+            .iter()
+            .find_map(|v| match v {
+                dav::AnyProperty::Value(dav::Property::Extension(realization::Property::Cal(
+                    cal::Property::CalendarHomeSet(dav::Href(x)),
+                ))) => Some(x),
+                _ => None,
+            })
+            .expect("request returns a calendar home set");
+        assert_eq!(calendar_home_set, "/alice/calendar/");
+
+
+
+        Ok(())
+    })
+    .expect("test fully run")
+}
 
 // @TODO SYNC
