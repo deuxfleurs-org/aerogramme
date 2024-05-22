@@ -223,7 +223,15 @@ impl Controller {
             })
             .boxed();
 
-        let etag = self.node.put(put_policy, stream_of_bytes).await?;
+        let etag = match self.node.put(put_policy, stream_of_bytes).await {
+            Ok(etag) => etag,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                tracing::warn!("put pre-condition failed");
+                let response = Response::builder().status(412).body(text_body(""))?;
+                return Ok(response);
+            }
+            Err(e) => Err(e)?,
+        };
 
         let response = Response::builder()
             .status(201)

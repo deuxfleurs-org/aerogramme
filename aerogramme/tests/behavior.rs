@@ -465,24 +465,54 @@ fn rfc4918_webdav_core() {
         assert_eq!(multistatus.responses.len(), 1);
 
         // --- PUT ---
-        let resp = http.request(reqwest::Method::from_bytes(b"PUT")?, "http://localhost:8087/alice/calendar/Personal/rfc2.ics").header("If-None-Match", "*").body(ICAL_RFC2).send()?;
+        // first object
+        let resp = http.put("http://localhost:8087/alice/calendar/Personal/rfc2.ics").header("If-None-Match", "*").body(ICAL_RFC2).send()?;
+        let obj1_etag = resp.headers().get("etag").expect("etag must be set");
         assert_eq!(resp.status(), 201);
 
         let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087/alice/calendar/Personal/").header("Depth", "1").send()?.text()?;
         let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
         assert_eq!(multistatus.responses.len(), 2);
 
-        let resp = http.request(reqwest::Method::from_bytes(b"PUT")?, "http://localhost:8087/alice/calendar/Personal/rfc3.ics").header("If-None-Match", "*").body(ICAL_RFC3).send()?;
+        // second object
+        let resp = http.put("http://localhost:8087/alice/calendar/Personal/rfc3.ics").header("If-None-Match", "*").body(ICAL_RFC3).send()?;
         assert_eq!(resp.status(), 201);
 
         let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087/alice/calendar/Personal/").header("Depth", "1").send()?.text()?;
         let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
         assert_eq!(multistatus.responses.len(), 3);
 
+        // can't create an event on an existing path
+        let resp = http.put("http://localhost:8087/alice/calendar/Personal/rfc2.ics").header("If-None-Match", "*").body(ICAL_RFC1).send()?;
+        assert_eq!(resp.status(), 412);
+
+        // update first object by knowing its ETag
+        let resp = http.put("http://localhost:8087/alice/calendar/Personal/rfc2.ics").header("If-Match", obj1_etag).body(ICAL_RFC1).send()?;
+        assert_eq!(resp.status(), 201);
+
         // --- GET ---
+        let body = http.get("http://localhost:8087/alice/calendar/Personal/rfc2.ics").send()?.text()?;
+        assert_eq!(body.as_bytes(), ICAL_RFC1);
+
+        let body = http.get("http://localhost:8087/alice/calendar/Personal/rfc3.ics").send()?.text()?;
+        assert_eq!(body.as_bytes(), ICAL_RFC3);
         
         // --- DELETE ---
+        // delete 1st object
+        let resp = http.delete("http://localhost:8087/alice/calendar/Personal/rfc2.ics").send()?;
+        assert_eq!(resp.status(), 204);
 
+        let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087/alice/calendar/Personal/").header("Depth", "1").send()?.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        assert_eq!(multistatus.responses.len(), 2);
+
+        // delete 2nd object
+        let resp = http.delete("http://localhost:8087/alice/calendar/Personal/rfc3.ics").send()?;
+        assert_eq!(resp.status(), 204);
+
+        let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087/alice/calendar/Personal/").header("Depth", "1").send()?.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        assert_eq!(multistatus.responses.len(), 1);
 
         Ok(())
     })
