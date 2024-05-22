@@ -353,25 +353,31 @@ fn apply_filter<'a>(
         };
 
         // Do checks
-        //@FIXME VCalendar root component is hardcoded
         let root_filter = &filter.0;
-        if root_filter.name != cal::Component::VCalendar {
-            return None;
-        }
 
-        let matcher = match &root_filter.additional_rules {
-            None => return Some(Ok(single_node)),
-            Some(cal::CompFilterRules::IsNotDefined) => return None,
-            Some(cal::CompFilterRules::Matches(m)) => m,
-        };
-
-        let is_keep = ics
+        // Find the component in the filter
+        let maybe_comp = ics
             .components
             .iter()
-            .any(|single_comp| is_component_match(single_comp, matcher));
+            .find(|candidate| candidate.name.as_str() == root_filter.name.as_str());
 
-        // Object has been kept
-        Some(Ok(single_node))
+        // Apply additional rules
+        let is_keep = match (maybe_comp, &root_filter.additional_rules) {
+            (Some(_), None) => true,
+            (None, Some(cal::CompFilterRules::IsNotDefined)) => true,
+            (None, None) => false,
+            (None, Some(cal::CompFilterRules::Matches(_))) => false,
+            (Some(_), Some(cal::CompFilterRules::IsNotDefined)) => false,
+            (Some(inner_comp), Some(cal::CompFilterRules::Matches(filter))) => {
+                is_component_match(inner_comp, filter)
+            }
+        };
+
+        // Adjust return value according to filter
+        match is_keep {
+            true => Some(Ok(single_node)),
+            _ => None,
+        }
     })
 }
 
@@ -499,8 +505,23 @@ fn is_component_match(
         return false;
     }
 
-    //component.components.iter().any
-    matcher.comp_filter.iter().any(|single_comp_filter| {
-        true //@TODO find component, find
+    matcher.comp_filter.iter().all(|single_comp_filter| {
+        // Find the component
+        let maybe_comp = component
+            .components
+            .iter()
+            .find(|candidate| candidate.name.as_str() == single_comp_filter.name.as_str());
+
+        // Filter according to rules
+        match (maybe_comp, &single_comp_filter.additional_rules) {
+            (Some(_), None) => true,
+            (None, Some(cal::CompFilterRules::IsNotDefined)) => true,
+            (None, None) => false,
+            (Some(_), Some(cal::CompFilterRules::IsNotDefined)) => false,
+            (None, Some(cal::CompFilterRules::Matches(_))) => false,
+            (Some(inner_comp), Some(cal::CompFilterRules::Matches(comp_match))) => {
+                is_component_match(inner_comp, comp_match)
+            }
+        }
     })
 }
