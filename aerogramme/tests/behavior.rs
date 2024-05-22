@@ -18,6 +18,7 @@ fn main() {
 
     // WebDAV
     rfc4918_webdav_core();
+    rfc5397_webdav_principal();
     println!("✅ SUCCESS 🌟🚀🥳🙏🥹");
 }
 
@@ -360,8 +361,9 @@ fn rfc5819_imapext_liststatus() {
     .expect("test fully run");
 }
 
+use aero_dav::acltypes as acl;
 use aero_dav::caltypes as cal;
-use aero_dav::realization::All;
+use aero_dav::realization::{self, All};
 use aero_dav::types as dav;
 
 use crate::common::dav_deserialize;
@@ -379,7 +381,7 @@ fn rfc4918_webdav_core() {
                 _ => None,
             })
             .expect("propstats for root must exist"); 
-        
+
         let root_success = root_propstats.iter().find(|p| p.status.0.as_u16() == 200).expect("some propstats for root must be 200");
         let display_name = root_success.prop.0.iter()
             .find_map(|v| match v { dav::AnyProperty::Value(dav::Property::DisplayName(x)) => Some(x), _ => None } )
@@ -496,7 +498,7 @@ fn rfc4918_webdav_core() {
 
         let body = http.get("http://localhost:8087/alice/calendar/Personal/rfc3.ics").send()?.text()?;
         assert_eq!(body.as_bytes(), ICAL_RFC3);
-        
+
         // --- DELETE ---
         // delete 1st object
         let resp = http.delete("http://localhost:8087/alice/calendar/Personal/rfc2.ics").send()?;
@@ -519,8 +521,35 @@ fn rfc4918_webdav_core() {
     .expect("test fully run");
 }
 
-// @TODO ACL
+fn rfc5397_webdav_principal() {
+    println!("🧪 rfc5397_webdav_principal");
+    common::aerogramme_provider_daemon_dev(|_imap, _lmtp, http| {
+        // Find principal
+        let propfind_req = r#"<?xml version="1.0" encoding="utf-8" ?><propfind xmlns="DAV:"><prop><current-user-principal/></prop></propfind>"#;
+        let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087").body(propfind_req).send()?.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        let root_propstats = multistatus.responses.iter()
+            .find_map(|v| match &v.status_or_propstat {
+                dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/" => Some(x),
+                _ => None,
+            })
+            .expect("propstats for root must exist");
+
+        let root_success = root_propstats.iter().find(|p| p.status.0.as_u16() == 200).expect("current-user-principal must exist");
+        let principal = root_success.prop.0.iter()
+            .find_map(|v| match v {
+                dav::AnyProperty::Value(dav::Property::Extension(realization::Property::Acl(acl::Property::CurrentUserPrincipal(acl::User::Authenticated(dav::Href(x)))))) => Some(x),
+                _ => None,
+            })
+            .expect("request returned an authenticated principal");
+        assert_eq!(principal, "/alice/");
+
+        Ok(())
+    })
+    .expect("test fully run")
+}
 
 // @TODO CALDAV
+// @TODO find calendar-home-set
 
 // @TODO SYNC
