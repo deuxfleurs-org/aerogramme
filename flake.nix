@@ -185,6 +185,8 @@
     # Shell
     shell = gpkgs.mkShell {
       buildInputs = [
+        gpkgs.openssl
+        gpkgs.pkg-config
         cargo2nix.packages.x86_64-linux.default
         fenix.packages.x86_64-linux.complete.toolchain
         #fenix.packages.x86_64-linux.rust-analyzer

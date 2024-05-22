@@ -8,10 +8,13 @@ use std::net::{Shutdown, TcpStream};
 use std::process::Command;
 use std::thread;
 
+use reqwest::blocking::Client;
+use reqwest::header;
+
 use constants::SMALL_DELAY;
 
 pub fn aerogramme_provider_daemon_dev(
-    mut fx: impl FnMut(&mut TcpStream, &mut TcpStream) -> Result<()>,
+    mut fx: impl FnMut(&mut TcpStream, &mut TcpStream, &mut Client) -> Result<()>,
 ) -> Result<()> {
     // Check port is not used (= free) before starting the test
     let mut max_retry = 20;
@@ -53,8 +56,15 @@ pub fn aerogramme_provider_daemon_dev(
     let mut lmtp_socket =
         TcpStream::connect("[::1]:1025").context("lmtp socket must be connected")?;
 
-    println!("-- ready to test imap features --");
-    let result = fx(&mut imap_socket, &mut lmtp_socket);
+    let mut headers = header::HeaderMap::new();
+    headers.insert(
+        header::AUTHORIZATION,
+        header::HeaderValue::from_static("Basic YWxpY2U6aHVudGVyMg=="),
+    );
+    let mut http_client = Client::builder().default_headers(headers).build()?;
+
+    println!("-- ready to test features --");
+    let result = fx(&mut imap_socket, &mut lmtp_socket, &mut http_client);
     println!("-- test teardown --");
 
     imap_socket
@@ -96,4 +106,14 @@ pub fn read_first_u32(inp: &str) -> Result<u32> {
         .take_while(|c| c.is_digit(10))
         .collect::<String>()
         .parse::<u32>()?)
+}
+
+use aero_dav::xml::{Node, Reader};
+pub fn dav_deserialize<T: Node<T>>(src: &str) -> T {
+    futures::executor::block_on(async {
+        let mut rdr = Reader::new(quick_xml::NsReader::from_reader(src.as_bytes()))
+            .await
+            .expect("build reader");
+        rdr.find().await.expect("parse XML")
+    })
 }

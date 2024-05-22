@@ -638,10 +638,10 @@ mod tests {
     use imap_codec::ResponseCodec;
     use std::fs;
 
-    use aero_user::cryptoblob;
     use aero_collections::mail::mailbox::MailMeta;
     use aero_collections::mail::query::QueryResult;
     use aero_collections::unique_ident;
+    use aero_user::cryptoblob;
 
     use crate::imap::index::MailIndex;
     use crate::imap::mime_view;

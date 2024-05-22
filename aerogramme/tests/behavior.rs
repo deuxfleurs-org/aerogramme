@@ -5,21 +5,25 @@ use crate::common::constants::*;
 use crate::common::fragments::*;
 
 fn main() {
-    rfc3501_imap4rev1_base();
+    // IMAP
+    /*rfc3501_imap4rev1_base();
     rfc6851_imapext_move();
     rfc4551_imapext_condstore();
     rfc2177_imapext_idle();
-    rfc5161_imapext_enable(); // 1
-    rfc3691_imapext_unselect(); // 2
-    rfc7888_imapext_literal(); // 3
-    rfc4315_imapext_uidplus(); // 4
-    rfc5819_imapext_liststatus(); // 5
+    rfc5161_imapext_enable();
+    rfc3691_imapext_unselect();
+    rfc7888_imapext_literal();
+    rfc4315_imapext_uidplus();
+    rfc5819_imapext_liststatus();*/
+
+    // WebDAV
+    rfc4918_webdav_core();
     println!("✅ SUCCESS 🌟🚀🥳🙏🥹");
 }
 
 fn rfc3501_imap4rev1_base() {
     println!("🧪 rfc3501_imap4rev1_base");
-    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {
+    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket, _dav_socket| {
         connect(imap_socket).context("server says hello")?;
         capability(imap_socket, Extension::None).context("check server capabilities")?;
         login(imap_socket, Account::Alice).context("login test")?;
@@ -69,7 +73,7 @@ fn rfc3501_imap4rev1_base() {
 
 fn rfc3691_imapext_unselect() {
     println!("🧪 rfc3691_imapext_unselect");
-    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {
+    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket, _dav_socket| {
         connect(imap_socket).context("server says hello")?;
 
         lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
@@ -118,7 +122,7 @@ fn rfc3691_imapext_unselect() {
 
 fn rfc5161_imapext_enable() {
     println!("🧪 rfc5161_imapext_enable");
-    common::aerogramme_provider_daemon_dev(|imap_socket, _lmtp_socket| {
+    common::aerogramme_provider_daemon_dev(|imap_socket, _lmtp_socket, _dav_socket| {
         connect(imap_socket).context("server says hello")?;
         login(imap_socket, Account::Alice).context("login test")?;
         enable(imap_socket, Enable::Utf8Accept, Some(Enable::Utf8Accept))?;
@@ -132,7 +136,7 @@ fn rfc5161_imapext_enable() {
 
 fn rfc6851_imapext_move() {
     println!("🧪 rfc6851_imapext_move");
-    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {
+    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket, _dav_socket| {
         connect(imap_socket).context("server says hello")?;
 
         capability(imap_socket, Extension::Move).context("check server capabilities")?;
@@ -174,7 +178,7 @@ fn rfc6851_imapext_move() {
 
 fn rfc7888_imapext_literal() {
     println!("🧪 rfc7888_imapext_literal");
-    common::aerogramme_provider_daemon_dev(|imap_socket, _lmtp_socket| {
+    common::aerogramme_provider_daemon_dev(|imap_socket, _lmtp_socket, _dav_socket| {
         connect(imap_socket).context("server says hello")?;
 
         capability(imap_socket, Extension::LiteralPlus).context("check server capabilities")?;
@@ -187,7 +191,7 @@ fn rfc7888_imapext_literal() {
 
 fn rfc4551_imapext_condstore() {
     println!("🧪 rfc4551_imapext_condstore");
-    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {
+    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket, _dav_socket| {
         // Setup the test
         connect(imap_socket).context("server says hello")?;
 
@@ -245,7 +249,7 @@ fn rfc4551_imapext_condstore() {
 
 fn rfc2177_imapext_idle() {
     println!("🧪 rfc2177_imapext_idle");
-    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {
+    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket, _dav_socket| {
         // Test setup, check capability
         connect(imap_socket).context("server says hello")?;
         capability(imap_socket, Extension::Idle).context("check server capabilities")?;
@@ -266,7 +270,7 @@ fn rfc2177_imapext_idle() {
 
 fn rfc4315_imapext_uidplus() {
     println!("🧪 rfc4315_imapext_uidplus");
-    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {
+    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket, _dav_socket| {
         // Test setup, check capability, insert 2 emails
         connect(imap_socket).context("server says hello")?;
         capability(imap_socket, Extension::UidPlus).context("check server capabilities")?;
@@ -320,7 +324,7 @@ fn rfc4315_imapext_uidplus() {
 /// ```
 fn rfc5819_imapext_liststatus() {
     println!("🧪 rfc5819_imapext_liststatus");
-    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket| {
+    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket, _dav_socket| {
         // Test setup, check capability, add 2 emails, read 1
         connect(imap_socket).context("server says hello")?;
         capability(imap_socket, Extension::ListStatus).context("check server capabilities")?;
@@ -355,3 +359,94 @@ fn rfc5819_imapext_liststatus() {
     })
     .expect("test fully run");
 }
+
+use aero_dav::caltypes as cal;
+use aero_dav::realization::All;
+use aero_dav::types as dav;
+
+use crate::common::dav_deserialize;
+
+fn rfc4918_webdav_core() {
+    println!("🧪 rfc4918_webdav_core");
+    common::aerogramme_provider_daemon_dev(|_imap, _lmtp, http| {
+        // --- PROPFIND ---
+        // empty request body (assume "allprop")
+        let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087").send()?.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        let root_propstats = multistatus.responses.iter()
+            .find_map(|v| match &v.status_or_propstat {
+                dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/" => Some(x),
+                _ => None,
+            })
+            .expect("propstats for root must exist"); 
+        
+        let root_success = root_propstats.iter().find(|p| p.status.0.as_u16() == 200).expect("some propstats for root must be 200");
+        let display_name = root_success.prop.0.iter()
+            .find_map(|v| match v { dav::AnyProperty::Value(dav::Property::DisplayName(x)) => Some(x), _ => None } )
+            .expect("root has a display name");
+        let content_type = root_success.prop.0.iter()
+            .find_map(|v| match v { dav::AnyProperty::Value(dav::Property::GetContentType(x)) => Some(x), _ => None } )
+            .expect("root has a content type");
+        let resource_type = root_success.prop.0.iter()
+            .find_map(|v| match v { dav::AnyProperty::Value(dav::Property::ResourceType(x)) => Some(x), _ => None } )
+            .expect("root has a resource type");
+
+        assert_eq!(display_name, "DAV Root");
+        assert_eq!(content_type, "httpd/unix-directory");
+        assert_eq!(resource_type, &[ dav::ResourceType::Collection ]);
+
+        // propname
+        let propfind_req = r#"<?xml version="1.0" encoding="utf-8" ?><propfind xmlns="DAV:"><propname/></propfind>"#;
+        let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087").body(propfind_req).send()?.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        let root_propstats = multistatus.responses.iter()
+            .find_map(|v| match &v.status_or_propstat {
+                dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/" => Some(x),
+                _ => None,
+            })
+            .expect("propstats for root must exist"); 
+        let root_success = root_propstats.iter().find(|p| p.status.0.as_u16() == 200).expect("some propstats for root must be 200");
+        assert!(root_success.prop.0.iter().find(|p| matches!(p, dav::AnyProperty::Request(dav::PropertyRequest::DisplayName))).is_some());
+        assert!(root_success.prop.0.iter().find(|p| matches!(p, dav::AnyProperty::Request(dav::PropertyRequest::ResourceType))).is_some());
+        assert!(root_success.prop.0.iter().find(|p| matches!(p, dav::AnyProperty::Request(dav::PropertyRequest::GetContentType))).is_some());
+
+        // list of properties
+        let propfind_req = r#"<?xml version="1.0" encoding="utf-8" ?><propfind xmlns="DAV:"><prop><displayname/><getcontentlength/></prop></propfind>"#;
+        let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087").body(propfind_req).send()?.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        let root_propstats = multistatus.responses.iter()
+            .find_map(|v| match &v.status_or_propstat {
+                dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/" => Some(x),
+                _ => None,
+            })
+            .expect("propstats for root must exist"); 
+
+        let root_success = root_propstats.iter().find(|p| p.status.0.as_u16() == 200).expect("some propstats for root must be 200");
+        let root_not_found = root_propstats.iter().find(|p| p.status.0.as_u16() == 404).expect("some propstats for root must be not found");
+
+        assert!(root_success.prop.0.iter().find(|p| matches!(p, dav::AnyProperty::Value(dav::Property::DisplayName(x)) if x == "DAV Root")).is_some());
+        assert!(root_success.prop.0.iter().find(|p| matches!(p, dav::AnyProperty::Value(dav::Property::ResourceType(_)))).is_none());
+        assert!(root_success.prop.0.iter().find(|p| matches!(p, dav::AnyProperty::Value(dav::Property::GetContentType(_)))).is_none());
+        assert!(root_not_found.prop.0.iter().find(|p| matches!(p, dav::AnyProperty::Request(dav::PropertyRequest::GetContentLength))).is_some());
+
+        // depth 1
+
+        // check tree (calendar, Personal)
+
+        // --- PUT ---
+
+        // --- GET ---
+        
+        // --- DELETE ---
+
+
+        Ok(())
+    })
+    .expect("test fully run");
+}
+
+// @TODO ACL
+
+// @TODO CALDAV
+
+// @TODO SYNC
