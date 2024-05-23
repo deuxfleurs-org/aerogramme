@@ -581,15 +581,59 @@ fn rfc4791_webdav_caldav() {
             .header("If-None-Match", "*")
             .body(ICAL_RFC4)
             .send()?;
-        let obj4_etag = resp.headers().get("etag").expect("etag must be set");
+        let _obj4_etag = resp.headers().get("etag").expect("etag must be set");
         assert_eq!(resp.status(), 201);
         let resp = http
             .put("http://localhost:8087/alice/calendar/Personal/rfc5.ics")
             .header("If-None-Match", "*")
             .body(ICAL_RFC5)
             .send()?;
-        let obj5_etag = resp.headers().get("etag").expect("etag must be set");
+        let _obj5_etag = resp.headers().get("etag").expect("etag must be set");
         assert_eq!(resp.status(), 201);
+
+        // A generic function to check a <calendar-data/> query result
+        let check_full_cal =
+            |multistatus: &dav::Multistatus<All>,
+             (ref_path, ref_etag, ref_ical): (&str, &str, &[u8])| {
+                let obj_stats = multistatus
+                    .responses
+                    .iter()
+                    .find_map(|v| match &v.status_or_propstat {
+                        dav::StatusOrPropstat::PropStat(dav::Href(p), x)
+                            if p.as_str() == ref_path =>
+                        {
+                            Some(x)
+                        }
+                        _ => None,
+                    })
+                    .expect("propstats must exist");
+                let obj_success = obj_stats
+                    .iter()
+                    .find(|p| p.status.0.as_u16() == 200)
+                    .expect("some propstats must be 200");
+                let etag = obj_success
+                    .prop
+                    .0
+                    .iter()
+                    .find_map(|p| match p {
+                        dav::AnyProperty::Value(dav::Property::GetEtag(x)) => Some(x),
+                        _ => None,
+                    })
+                    .expect("etag is return in propstats");
+                assert_eq!(etag.as_str(), ref_etag);
+                let calendar_data = obj_success
+                    .prop
+                    .0
+                    .iter()
+                    .find_map(|p| match p {
+                        dav::AnyProperty::Value(dav::Property::Extension(
+                            realization::Property::Cal(cal::Property::CalendarData(x)),
+                        )) => Some(x),
+                        _ => None,
+                    })
+                    .expect("calendar data is returned in propstats");
+                assert_eq!(calendar_data.payload.as_bytes(), ref_ical);
+            };
 
         // --- AUTODISCOVERY ---
         // Check calendar discovery from principal
@@ -635,7 +679,7 @@ fn rfc4791_webdav_caldav() {
         assert_eq!(calendar_home_set, "/alice/calendar/");
 
         // Check calendar access support
-        let resp = http
+        let _resp = http
             .request(
                 reqwest::Method::from_bytes(b"OPTIONS")?,
                 "http://localhost:8087/alice/calendar/",
@@ -643,10 +687,8 @@ fn rfc4791_webdav_caldav() {
             .send()?;
         //@FIXME not yet supported. returns DAV: 1 ; expects DAV: 1 calendar-access
 
-        //@FIXME missing support for calendar-data...
-        //println!("{:?}", resp);
-
         // --- REPORT calendar-query ---
+        //@FIXME missing support for calendar-data...
         // 7.8.8.  Example: Retrieval of Events Only
         let cal_query = r#"<?xml version="1.0" encoding="utf-8" ?>
             <C:calendar-query xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -678,47 +720,50 @@ fn rfc4791_webdav_caldav() {
         ]
         .iter()
         .for_each(|(ref_path, ref_etag, ref_ical)| {
-            let obj_stats = multistatus
-                .responses
-                .iter()
-                .find_map(|v| match &v.status_or_propstat {
-                    dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == *ref_path => {
-                        Some(x)
-                    }
-                    _ => None,
-                })
-                .expect("propstats must exist");
-            let obj_success = obj_stats
-                .iter()
-                .find(|p| p.status.0.as_u16() == 200)
-                .expect("some propstats must be 200");
-            let etag = obj_success
-                .prop
-                .0
-                .iter()
-                .find_map(|p| match p {
-                    dav::AnyProperty::Value(dav::Property::GetEtag(x)) => Some(x),
-                    _ => None,
-                })
-                .expect("etag is return in propstats");
-            assert_eq!(
-                etag.as_str(),
-                ref_etag
-                    .to_str()
-                    .expect("header value is convertible to string")
-            );
-            let calendar_data = obj_success
-                .prop
-                .0
-                .iter()
-                .find_map(|p| match p {
-                    dav::AnyProperty::Value(dav::Property::Extension(
-                        realization::Property::Cal(cal::Property::CalendarData(x)),
-                    )) => Some(x),
-                    _ => None,
-                })
-                .expect("calendar data is returned in propstats");
-            assert_eq!(calendar_data.payload.as_bytes(), *ref_ical);
+            check_full_cal(
+                &multistatus,
+                (
+                    ref_path,
+                    ref_etag.to_str().expect("etag header convertible to str"),
+                    ref_ical,
+                ),
+            )
+        });
+
+        // --- REPORT calendar-multiget ---
+        let cal_query = r#"<?xml version="1.0" encoding="utf-8" ?>
+            <C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                <D:prop>
+                    <D:getetag/>
+                    <C:calendar-data/>
+                </D:prop>
+                <D:href>/alice/calendar/Personal/rfc1.ics</D:href>
+                <D:href>/alice/calendar/Personal/rfc3.ics</D:href>
+            </C:calendar-multiget>"#;
+        let resp = http
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/calendar/Personal/",
+            )
+            .body(cal_query)
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
+        assert_eq!(multistatus.responses.len(), 2);
+        [
+            ("/alice/calendar/Personal/rfc1.ics", obj1_etag, ICAL_RFC1),
+            ("/alice/calendar/Personal/rfc3.ics", obj3_etag, ICAL_RFC3),
+        ]
+        .iter()
+        .for_each(|(ref_path, ref_etag, ref_ical)| {
+            check_full_cal(
+                &multistatus,
+                (
+                    ref_path,
+                    ref_etag.to_str().expect("etag header convertible to str"),
+                    ref_ical,
+                ),
+            )
         });
 
         Ok(())
