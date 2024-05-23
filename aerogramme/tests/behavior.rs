@@ -553,6 +553,45 @@ fn rfc5397_webdav_principal() {
 fn rfc4791_webdav_caldav() {
     println!("🧪 rfc4791_webdav_caldav");
     common::aerogramme_provider_daemon_dev(|_imap, _lmtp, http| {
+        // --- INITIAL TEST SETUP ---
+        // Add entries (3 VEVENT, 1 FREEBUSY, 1 VTODO)
+        let resp = http
+            .put("http://localhost:8087/alice/calendar/Personal/rfc1.ics")
+            .header("If-None-Match", "*")
+            .body(ICAL_RFC1)
+            .send()?;
+        let obj1_etag = resp.headers().get("etag").expect("etag must be set");
+        assert_eq!(resp.status(), 201);
+        let resp = http
+            .put("http://localhost:8087/alice/calendar/Personal/rfc2.ics")
+            .header("If-None-Match", "*")
+            .body(ICAL_RFC2)
+            .send()?;
+        let obj2_etag = resp.headers().get("etag").expect("etag must be set");
+        assert_eq!(resp.status(), 201);
+        let resp = http
+            .put("http://localhost:8087/alice/calendar/Personal/rfc3.ics")
+            .header("If-None-Match", "*")
+            .body(ICAL_RFC3)
+            .send()?;
+        let obj3_etag = resp.headers().get("etag").expect("etag must be set");
+        assert_eq!(resp.status(), 201);
+        let resp = http
+            .put("http://localhost:8087/alice/calendar/Personal/rfc4.ics")
+            .header("If-None-Match", "*")
+            .body(ICAL_RFC4)
+            .send()?;
+        let obj4_etag = resp.headers().get("etag").expect("etag must be set");
+        assert_eq!(resp.status(), 201);
+        let resp = http
+            .put("http://localhost:8087/alice/calendar/Personal/rfc5.ics")
+            .header("If-None-Match", "*")
+            .body(ICAL_RFC5)
+            .send()?;
+        let obj5_etag = resp.headers().get("etag").expect("etag must be set");
+        assert_eq!(resp.status(), 201);
+
+        // --- AUTODISCOVERY ---
         // Check calendar discovery from principal
         let propfind_req = r#"<?xml version="1.0" encoding="utf-8" ?>
         <D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -595,7 +634,92 @@ fn rfc4791_webdav_caldav() {
             .expect("request returns a calendar home set");
         assert_eq!(calendar_home_set, "/alice/calendar/");
 
+        // Check calendar access support
+        let resp = http
+            .request(
+                reqwest::Method::from_bytes(b"OPTIONS")?,
+                "http://localhost:8087/alice/calendar/",
+            )
+            .send()?;
+        //@FIXME not yet supported. returns DAV: 1 ; expects DAV: 1 calendar-access
 
+        //@FIXME missing support for calendar-data...
+        //println!("{:?}", resp);
+
+        // --- REPORT calendar-query ---
+        // 7.8.8.  Example: Retrieval of Events Only
+        let cal_query = r#"<?xml version="1.0" encoding="utf-8" ?>
+            <C:calendar-query xmlns:C="urn:ietf:params:xml:ns:caldav">
+                <D:prop xmlns:D="DAV:">
+                    <D:getetag/>
+                    <C:calendar-data/>
+                </D:prop>
+                <C:filter>
+                    <C:comp-filter name="VCALENDAR">
+                        <C:comp-filter name="VEVENT"/>
+                    </C:comp-filter>
+                </C:filter>
+            </C:calendar-query>"#;
+        let resp = http
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/calendar/Personal/",
+            )
+            .body(cal_query)
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
+        assert_eq!(multistatus.responses.len(), 3);
+
+        [
+            ("/alice/calendar/Personal/rfc1.ics", obj1_etag, ICAL_RFC1),
+            ("/alice/calendar/Personal/rfc2.ics", obj2_etag, ICAL_RFC2),
+            ("/alice/calendar/Personal/rfc3.ics", obj3_etag, ICAL_RFC3),
+        ]
+        .iter()
+        .for_each(|(ref_path, ref_etag, ref_ical)| {
+            let obj_stats = multistatus
+                .responses
+                .iter()
+                .find_map(|v| match &v.status_or_propstat {
+                    dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == *ref_path => {
+                        Some(x)
+                    }
+                    _ => None,
+                })
+                .expect("propstats must exist");
+            let obj_success = obj_stats
+                .iter()
+                .find(|p| p.status.0.as_u16() == 200)
+                .expect("some propstats must be 200");
+            let etag = obj_success
+                .prop
+                .0
+                .iter()
+                .find_map(|p| match p {
+                    dav::AnyProperty::Value(dav::Property::GetEtag(x)) => Some(x),
+                    _ => None,
+                })
+                .expect("etag is return in propstats");
+            assert_eq!(
+                etag.as_str(),
+                ref_etag
+                    .to_str()
+                    .expect("header value is convertible to string")
+            );
+            let calendar_data = obj_success
+                .prop
+                .0
+                .iter()
+                .find_map(|p| match p {
+                    dav::AnyProperty::Value(dav::Property::Extension(
+                        realization::Property::Cal(cal::Property::CalendarData(x)),
+                    )) => Some(x),
+                    _ => None,
+                })
+                .expect("calendar data is returned in propstats");
+            assert_eq!(calendar_data.payload.as_bytes(), *ref_ical);
+        });
 
         Ok(())
     })

@@ -229,7 +229,10 @@ impl<T: IRead> Reader<T> {
     }
 
     pub async fn maybe_find<N: Node<N>>(&mut self) -> Result<Option<N>, ParsingError> {
-        self.ensure_parent_has_child()?;
+        // We can't find anything inside a self-closed tag
+        if !self.parent_has_child() {
+            return Ok(None);
+        }
 
         loop {
             // Try parse
@@ -238,6 +241,7 @@ impl<T: IRead> Reader<T> {
                 otherwise => return otherwise.map(Some),
             }
 
+            // Skip or stop
             match self.peek() {
                 Event::End(_) => return Ok(None),
                 _ => self.skip().await?,

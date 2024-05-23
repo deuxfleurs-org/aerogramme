@@ -974,6 +974,17 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn simple_comp_filter() {
+        let expected = CompFilter {
+            name: Component::VEvent,
+            additional_rules: None,
+        };
+        let src = r#"<C:comp-filter name="VEVENT" xmlns:C="urn:ietf:params:xml:ns:caldav" />"#;
+        let got = deserialize::<CompFilter>(src).await;
+        assert_eq!(got, expected);
+    }
+
+    #[tokio::test]
     async fn basic_mkcalendar() {
         let expected = MkCalendar(dav::Set(dav::PropValue(vec![dav::Property::DisplayName(
             "Lisa's Events".into(),
