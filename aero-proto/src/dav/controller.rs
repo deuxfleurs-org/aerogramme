@@ -380,6 +380,22 @@ fn apply_filter<'a>(
     })
 }
 
+fn ical_parse_date(dt: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    tracing::trace!(raw_time = dt, "VEVENT raw time");
+    let tmpl = match dt.chars().last() {
+        Some('Z') => cal::UTC_DATETIME_FMT,
+        Some(_) => {
+            tracing::warn!(raw_time=dt, "floating datetime is not properly supported yet");
+            cal::FLOATING_DATETIME_FMT
+        },
+        None => return None
+    };
+
+    NaiveDateTime::parse_from_str(dt, tmpl)
+        .ok()
+        .map(|v| v.and_utc())
+}
+
 fn prop_date(
     properties: &[icalendar::parser::Property],
     name: &str,
@@ -388,12 +404,7 @@ fn prop_date(
         .iter()
         .find(|candidate| candidate.name.as_str() == name)
         .map(|p| p.val.as_str())
-        .map(|raw_time| {
-            tracing::trace!(raw_time = raw_time, "VEVENT raw time");
-            NaiveDateTime::parse_from_str(raw_time, cal::ICAL_DATETIME_FMT)
-                .ok()
-                .map(|v| v.and_utc())
-        })
+        .map(ical_parse_date)
         .flatten()
 }
 
@@ -412,12 +423,7 @@ fn is_properties_match(props: &[icalendar::parser::Property], filters: &[cal::Pr
                 // check value
                 match &pattern.time_or_text {
                     Some(cal::TimeOrText::Time(time_range)) => {
-                        let maybe_parsed_date = NaiveDateTime::parse_from_str(
-                            prop.val.as_str(),
-                            cal::ICAL_DATETIME_FMT,
-                        )
-                        .ok()
-                        .map(|v| v.and_utc());
+                        let maybe_parsed_date = ical_parse_date(prop.val.as_str()); 
 
                         let parsed_date = match maybe_parsed_date {
                             None => return false,

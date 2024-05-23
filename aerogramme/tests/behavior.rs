@@ -592,9 +592,9 @@ fn rfc4791_webdav_caldav() {
         assert_eq!(resp.status(), 201);
 
         // A generic function to check a <calendar-data/> query result
-        let check_full_cal =
+        let check_cal =
             |multistatus: &dav::Multistatus<All>,
-             (ref_path, ref_etag, ref_ical): (&str, &str, &[u8])| {
+             (ref_path, ref_etag, ref_ical): (&str, Option<&str>, Option<&[u8]>)| {
                 let obj_stats = multistatus
                     .responses
                     .iter()
@@ -616,11 +616,10 @@ fn rfc4791_webdav_caldav() {
                     .0
                     .iter()
                     .find_map(|p| match p {
-                        dav::AnyProperty::Value(dav::Property::GetEtag(x)) => Some(x),
+                        dav::AnyProperty::Value(dav::Property::GetEtag(x)) => Some(x.as_str()),
                         _ => None,
-                    })
-                    .expect("etag is return in propstats");
-                assert_eq!(etag.as_str(), ref_etag);
+                    });
+                assert_eq!(etag, ref_etag);
                 let calendar_data = obj_success
                     .prop
                     .0
@@ -628,11 +627,10 @@ fn rfc4791_webdav_caldav() {
                     .find_map(|p| match p {
                         dav::AnyProperty::Value(dav::Property::Extension(
                             realization::Property::Cal(cal::Property::CalendarData(x)),
-                        )) => Some(x),
+                        )) => Some(x.payload.as_bytes()),
                         _ => None,
-                    })
-                    .expect("calendar data is returned in propstats");
-                assert_eq!(calendar_data.payload.as_bytes(), ref_ical);
+                    });
+                assert_eq!(calendar_data, ref_ical);
             };
 
         // --- AUTODISCOVERY ---
@@ -720,15 +718,42 @@ fn rfc4791_webdav_caldav() {
         ]
         .iter()
         .for_each(|(ref_path, ref_etag, ref_ical)| {
-            check_full_cal(
+            check_cal(
                 &multistatus,
                 (
                     ref_path,
-                    ref_etag.to_str().expect("etag header convertible to str"),
-                    ref_ical,
+                    Some(ref_etag.to_str().expect("etag header convertible to str")),
+                    Some(ref_ical),
                 ),
             )
         });
+
+        // 8.2.1.2.  Synchronize by Time Range (here: July 2006)
+        let cal_query = r#" <?xml version="1.0" encoding="utf-8" ?>
+            <C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                <D:prop>
+                    <D:getetag/>
+                </D:prop>
+                <C:filter>
+                    <C:comp-filter name="VCALENDAR">
+                        <C:comp-filter name="VEVENT">
+                            <C:time-range start="20060701T000000Z" end="20060801T000000Z"/>
+                        </C:comp-filter>
+                    </C:comp-filter>
+                </C:filter>
+            </C:calendar-query>"#;
+        let resp = http
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/calendar/Personal/",
+            )
+            .body(cal_query)
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
+        assert_eq!(multistatus.responses.len(), 1);
+        check_cal(&multistatus, ("/alice/calendar/Personal/rfc2.ics", Some(obj2_etag.to_str().expect("etag header convertible to str")), None));
+
 
         // --- REPORT calendar-multiget ---
         let cal_query = r#"<?xml version="1.0" encoding="utf-8" ?>
@@ -756,12 +781,12 @@ fn rfc4791_webdav_caldav() {
         ]
         .iter()
         .for_each(|(ref_path, ref_etag, ref_ical)| {
-            check_full_cal(
+            check_cal(
                 &multistatus,
                 (
                     ref_path,
-                    ref_etag.to_str().expect("etag header convertible to str"),
-                    ref_ical,
+                    Some(ref_etag.to_str().expect("etag header convertible to str")),
+                    Some(ref_ical),
                 ),
             )
         });

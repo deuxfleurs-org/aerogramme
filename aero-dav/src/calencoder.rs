@@ -178,7 +178,7 @@ impl QWrite for Property {
                 let start = xml.create_cal_element("min-date-time");
                 let end = start.to_end();
 
-                let dtstr = format!("{}", dt.format(CALDAV_DATETIME_FMT));
+                let dtstr = format!("{}", dt.format(UTC_DATETIME_FMT));
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
                 xml.q
                     .write_event_async(Event::Text(BytesText::new(dtstr.as_str())))
@@ -189,7 +189,7 @@ impl QWrite for Property {
                 let start = xml.create_cal_element("max-date-time");
                 let end = start.to_end();
 
-                let dtstr = format!("{}", dt.format(CALDAV_DATETIME_FMT));
+                let dtstr = format!("{}", dt.format(UTC_DATETIME_FMT));
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
                 xml.q
                     .write_event_async(Event::Text(BytesText::new(dtstr.as_str())))
@@ -493,11 +493,11 @@ impl QWrite for Expand {
         let mut empty = xml.create_cal_element("expand");
         empty.push_attribute((
             "start",
-            format!("{}", self.0.format(CALDAV_DATETIME_FMT)).as_str(),
+            format!("{}", self.0.format(UTC_DATETIME_FMT)).as_str(),
         ));
         empty.push_attribute((
             "end",
-            format!("{}", self.1.format(CALDAV_DATETIME_FMT)).as_str(),
+            format!("{}", self.1.format(UTC_DATETIME_FMT)).as_str(),
         ));
         xml.q.write_event_async(Event::Empty(empty)).await
     }
@@ -508,11 +508,11 @@ impl QWrite for LimitRecurrenceSet {
         let mut empty = xml.create_cal_element("limit-recurrence-set");
         empty.push_attribute((
             "start",
-            format!("{}", self.0.format(CALDAV_DATETIME_FMT)).as_str(),
+            format!("{}", self.0.format(UTC_DATETIME_FMT)).as_str(),
         ));
         empty.push_attribute((
             "end",
-            format!("{}", self.1.format(CALDAV_DATETIME_FMT)).as_str(),
+            format!("{}", self.1.format(UTC_DATETIME_FMT)).as_str(),
         ));
         xml.q.write_event_async(Event::Empty(empty)).await
     }
@@ -523,11 +523,11 @@ impl QWrite for LimitFreebusySet {
         let mut empty = xml.create_cal_element("limit-freebusy-set");
         empty.push_attribute((
             "start",
-            format!("{}", self.0.format(CALDAV_DATETIME_FMT)).as_str(),
+            format!("{}", self.0.format(UTC_DATETIME_FMT)).as_str(),
         ));
         empty.push_attribute((
             "end",
-            format!("{}", self.1.format(CALDAV_DATETIME_FMT)).as_str(),
+            format!("{}", self.1.format(UTC_DATETIME_FMT)).as_str(),
         ));
         xml.q.write_event_async(Event::Empty(empty)).await
     }
@@ -737,20 +737,20 @@ impl QWrite for TimeRange {
         match self {
             Self::OnlyStart(start) => empty.push_attribute((
                 "start",
-                format!("{}", start.format(CALDAV_DATETIME_FMT)).as_str(),
+                format!("{}", start.format(UTC_DATETIME_FMT)).as_str(),
             )),
             Self::OnlyEnd(end) => empty.push_attribute((
                 "end",
-                format!("{}", end.format(CALDAV_DATETIME_FMT)).as_str(),
+                format!("{}", end.format(UTC_DATETIME_FMT)).as_str(),
             )),
             Self::FullRange(start, end) => {
                 empty.push_attribute((
                     "start",
-                    format!("{}", start.format(CALDAV_DATETIME_FMT)).as_str(),
+                    format!("{}", start.format(UTC_DATETIME_FMT)).as_str(),
                 ));
                 empty.push_attribute((
                     "end",
-                    format!("{}", end.format(CALDAV_DATETIME_FMT)).as_str(),
+                    format!("{}", end.format(UTC_DATETIME_FMT)).as_str(),
                 ));
             }
         }
