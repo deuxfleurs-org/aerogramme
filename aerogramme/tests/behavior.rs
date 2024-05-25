@@ -684,6 +684,7 @@ fn rfc4791_webdav_caldav() {
             )
             .send()?;
         //@FIXME not yet supported. returns DAV: 1 ; expects DAV: 1 calendar-access
+        // Not used by any client I know, so not implementing it now.
 
         // --- REPORT calendar-query ---
         //@FIXME missing support for calendar-data...
@@ -729,7 +730,7 @@ fn rfc4791_webdav_caldav() {
         });
 
         // 8.2.1.2.  Synchronize by Time Range (here: July 2006)
-        let cal_query = r#" <?xml version="1.0" encoding="utf-8" ?>
+        let cal_query = r#"<?xml version="1.0" encoding="utf-8" ?>
             <C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
                 <D:prop>
                     <D:getetag/>
@@ -753,6 +754,43 @@ fn rfc4791_webdav_caldav() {
         let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
         assert_eq!(multistatus.responses.len(), 1);
         check_cal(&multistatus, ("/alice/calendar/Personal/rfc2.ics", Some(obj2_etag.to_str().expect("etag header convertible to str")), None));
+
+        // 7.8.5.  Example: Retrieval of To-Dos by Alarm Time Range
+        let cal_query = r#"<?xml version="1.0" encoding="utf-8" ?>
+            <C:calendar-query xmlns:C="urn:ietf:params:xml:ns:caldav">
+                <D:prop xmlns:D="DAV:">
+                    <D:getetag/>
+                    <C:calendar-data/>
+                </D:prop>
+                <C:filter>
+                    <C:comp-filter name="VCALENDAR">
+                        <C:comp-filter name="VTODO">
+                            <C:comp-filter name="VALARM">
+                                <C:time-range start="20060106T100000Z" end="20060107T100000Z"/>
+                            </C:comp-filter>
+                        </C:comp-filter>
+                    </C:comp-filter>
+                </C:filter>
+            </C:calendar-query>"#;
+        let resp = http
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/calendar/Personal/",
+            )
+            .body(cal_query)
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
+        //assert_eq!(multistatus.responses.len(), 1);
+
+        // 7.8.6.  Example: Retrieval of Event by UID
+        // @TODO
+
+        // 7.8.7.  Example: Retrieval of Events by PARTSTAT
+        // @TODO
+        
+        // 7.8.9.  Example: Retrieval of All Pending To-Dos
+        // @TODO
 
 
         // --- REPORT calendar-multiget ---

@@ -1,0 +1,15 @@
+[package]
+name = "aero-ical"
+version = "0.3.0"
+authors = ["Alex Auvolat <alex@adnab.me>", "Quentin Dufour <quentin@dufour.io>"]
+edition = "2021"
+license = "EUPL-1.2"
+description = "An iCalendar parser"
+
+[dependencies]
+aero-dav.workspace = true
+
+icalendar.workspace = true
+nom.workspace = true
+chrono.workspace = true
+tracing.workspace = true

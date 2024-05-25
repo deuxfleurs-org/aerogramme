@@ -7,6 +7,7 @@ license = "EUPL-1.2"
 description = "Binding between Aerogramme's internal components and well-known protocols"
 
 [dependencies]
+aero-ical.workspace = true
 aero-sasl.workspace = true
 aero-dav.workspace = true
 aero-user.workspace = true
