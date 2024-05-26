@@ -7,19 +7,18 @@ pub fn is_component_match(
     filter: &cal::CompFilter,
 ) -> bool {
     // Find the component among the list
-    //@FIXME do not handle correctly multiple entities (eg. 3 VEVENT)
-    let maybe_comp = components
+    let maybe_comps = components
         .iter()
-        .find(|candidate| candidate.name.as_str() == filter.name.as_str());
+        .filter(|candidate| candidate.name.as_str() == filter.name.as_str())
+        .collect::<Vec<_>>();
 
     // Filter according to rules
-    match (maybe_comp, &filter.additional_rules) {
-        (Some(_), None) => true,
-        (None, Some(cal::CompFilterRules::IsNotDefined)) => true,
-        (None, None) => false,
-        (Some(_), Some(cal::CompFilterRules::IsNotDefined)) => false,
-        (None, Some(cal::CompFilterRules::Matches(_))) => false,
-        (Some(component), Some(cal::CompFilterRules::Matches(matcher))) => {
+    match (&maybe_comps[..], &filter.additional_rules) {
+        ([_, ..], None) => true,
+        ([], Some(cal::CompFilterRules::IsNotDefined)) => true,
+        ([], None) => false,
+        ([_, ..], Some(cal::CompFilterRules::IsNotDefined)) => false,
+        (comps, Some(cal::CompFilterRules::Matches(matcher))) => comps.iter().any(|component| {
             // check time range
             if let Some(time_range) = &matcher.time_range {
                 if !is_in_time_range(
@@ -41,7 +40,7 @@ pub fn is_component_match(
             matcher.comp_filter.iter().all(|inner_filter| {
                 is_component_match(component, component.components.as_ref(), &inner_filter)
             })
-        }
+        }),
     }
 }
 
@@ -71,80 +70,89 @@ fn prop_parse<T: std::str::FromStr>(
 fn is_properties_match(props: &[icalendar::parser::Property], filters: &[cal::PropFilter]) -> bool {
     filters.iter().all(|single_filter| {
         // Find the property
-        let single_prop = props
+        let candidate_props = props
             .iter()
-            .find(|candidate| candidate.name.as_str() == single_filter.name.0.as_str());
-        match (&single_filter.additional_rules, single_prop) {
-            (None, Some(_)) | (Some(cal::PropFilterRules::IsNotDefined), None) => true,
-            (None, None)
-            | (Some(cal::PropFilterRules::IsNotDefined), Some(_))
-            | (Some(cal::PropFilterRules::Match(_)), None) => false,
-            (Some(cal::PropFilterRules::Match(pattern)), Some(prop)) => {
-                // check value
-                match &pattern.time_or_text {
-                    Some(cal::TimeOrText::Time(time_range)) => {
-                        let maybe_parsed_date = parser::date_time(prop.val.as_str());
+            .filter(|candidate| candidate.name.as_str() == single_filter.name.0.as_str())
+            .collect::<Vec<_>>();
 
-                        let parsed_date = match maybe_parsed_date {
-                            None => return false,
-                            Some(v) => v,
-                        };
+        match (&single_filter.additional_rules, &candidate_props[..]) {
+            (None, [_, ..]) | (Some(cal::PropFilterRules::IsNotDefined), []) => true,
+            (None, []) | (Some(cal::PropFilterRules::IsNotDefined), [_, ..]) => false,
+            (Some(cal::PropFilterRules::Match(pattern)), multi_props) => {
+                multi_props.iter().any(|prop| {
+                    // check value
+                    match &pattern.time_or_text {
+                        Some(cal::TimeOrText::Time(time_range)) => {
+                            let maybe_parsed_date = parser::date_time(prop.val.as_str());
 
-                        // see if entry is in range
-                        let is_in_range = match time_range {
-                            cal::TimeRange::OnlyStart(after) => &parsed_date >= after,
-                            cal::TimeRange::OnlyEnd(before) => &parsed_date <= before,
-                            cal::TimeRange::FullRange(after, before) => {
-                                &parsed_date >= after && &parsed_date <= before
-                            }
-                        };
-                        if !is_in_range {
-                            return false;
-                        }
-
-                        // if you are here, this subcondition is valid
-                    }
-                    Some(cal::TimeOrText::Text(txt_match)) => {
-                        //@FIXME ignoring collation
-                        let is_match = match txt_match.negate_condition {
-                            None | Some(false) => {
-                                prop.val.as_str().contains(txt_match.text.as_str())
-                            }
-                            Some(true) => !prop.val.as_str().contains(txt_match.text.as_str()),
-                        };
-                        if !is_match {
-                            return false;
-                        }
-                    }
-                    None => (), // if not filter on value is set, continue
-                };
-
-                // check parameters
-                pattern.param_filter.iter().all(|single_param_filter| {
-                    let maybe_param = prop.params.iter().find(|candidate| {
-                        candidate.key.as_str() == single_param_filter.name.as_str()
-                    });
-
-                    match (maybe_param, &single_param_filter.additional_rules) {
-                        (Some(_), None) => true,
-                        (None, None) => false,
-                        (Some(_), Some(cal::ParamFilterMatch::IsNotDefined)) => false,
-                        (None, Some(cal::ParamFilterMatch::IsNotDefined)) => true,
-                        (None, Some(cal::ParamFilterMatch::Match(_))) => false,
-                        (Some(param), Some(cal::ParamFilterMatch::Match(txt_match))) => {
-                            let param_val = match &param.val {
-                                Some(v) => v,
+                            let parsed_date = match maybe_parsed_date {
                                 None => return false,
+                                Some(v) => v,
                             };
 
-                            match txt_match.negate_condition {
-                                None | Some(false) => {
-                                    param_val.as_str().contains(txt_match.text.as_str())
+                            // see if entry is in range
+                            let is_in_range = match time_range {
+                                cal::TimeRange::OnlyStart(after) => &parsed_date >= after,
+                                cal::TimeRange::OnlyEnd(before) => &parsed_date <= before,
+                                cal::TimeRange::FullRange(after, before) => {
+                                    &parsed_date >= after && &parsed_date <= before
                                 }
-                                Some(true) => !param_val.as_str().contains(txt_match.text.as_str()),
+                            };
+                            if !is_in_range {
+                                return false;
+                            }
+
+                            // if you are here, this subcondition is valid
+                        }
+                        Some(cal::TimeOrText::Text(txt_match)) => {
+                            //@FIXME ignoring collation
+                            let is_match = match txt_match.negate_condition {
+                                None | Some(false) => {
+                                    prop.val.as_str().contains(txt_match.text.as_str())
+                                }
+                                Some(true) => !prop.val.as_str().contains(txt_match.text.as_str()),
+                            };
+                            if !is_match {
+                                return false;
                             }
                         }
-                    }
+                        None => (), // if not filter on value is set, continue
+                    };
+
+                    // check parameters
+                    pattern.param_filter.iter().all(|single_param_filter| {
+                        let multi_param = prop
+                            .params
+                            .iter()
+                            .filter(|candidate| {
+                                candidate.key.as_str() == single_param_filter.name.as_str()
+                            })
+                            .collect::<Vec<_>>();
+
+                        match (&multi_param[..], &single_param_filter.additional_rules) {
+                            ([.., _], None) => true,
+                            ([], None) => false,
+                            ([.., _], Some(cal::ParamFilterMatch::IsNotDefined)) => false,
+                            ([], Some(cal::ParamFilterMatch::IsNotDefined)) => true,
+                            (many_params, Some(cal::ParamFilterMatch::Match(txt_match))) => {
+                                many_params.iter().any(|param| {
+                                    let param_val = match &param.val {
+                                        Some(v) => v,
+                                        None => return false,
+                                    };
+
+                                    match txt_match.negate_condition {
+                                        None | Some(false) => {
+                                            param_val.as_str().contains(txt_match.text.as_str())
+                                        }
+                                        Some(true) => {
+                                            !param_val.as_str().contains(txt_match.text.as_str())
+                                        }
+                                    }
+                                })
+                            }
+                        }
+                    })
                 })
             }
         }

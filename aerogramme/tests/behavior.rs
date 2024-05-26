@@ -554,7 +554,7 @@ fn rfc4791_webdav_caldav() {
     println!("🧪 rfc4791_webdav_caldav");
     common::aerogramme_provider_daemon_dev(|_imap, _lmtp, http| {
         // --- INITIAL TEST SETUP ---
-        // Add entries (3 VEVENT, 1 FREEBUSY, 1 VTODO)
+        // Add entries
         let resp = http
             .put("http://localhost:8087/alice/calendar/Personal/rfc1.ics")
             .header("If-None-Match", "*")
@@ -595,7 +595,14 @@ fn rfc4791_webdav_caldav() {
             .header("If-None-Match", "*")
             .body(ICAL_RFC6)
             .send()?;
-        let _obj6_etag = resp.headers().get("etag").expect("etag must be set");
+        let obj6_etag = resp.headers().get("etag").expect("etag must be set");
+        assert_eq!(resp.status(), 201);
+        let resp = http
+            .put("http://localhost:8087/alice/calendar/Personal/rfc7.ics")
+            .header("If-None-Match", "*")
+            .body(ICAL_RFC7)
+            .send()?;
+        let obj7_etag = resp.headers().get("etag").expect("etag must be set");
         assert_eq!(resp.status(), 201);
 
         // A generic function to check a <calendar-data/> query result
@@ -684,9 +691,44 @@ fn rfc4791_webdav_caldav() {
             .send()?;
         //@FIXME not yet supported. returns DAV: 1 ; expects DAV: 1 calendar-access
         // Not used by any client I know, so not implementing it now.
+        
+        // --- REPORT calendar-multiget ---
+        let cal_query = r#"<?xml version="1.0" encoding="utf-8" ?>
+            <C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                <D:prop>
+                    <D:getetag/>
+                    <C:calendar-data/>
+                </D:prop>
+                <D:href>/alice/calendar/Personal/rfc1.ics</D:href>
+                <D:href>/alice/calendar/Personal/rfc3.ics</D:href>
+            </C:calendar-multiget>"#;
+        let resp = http
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/calendar/Personal/",
+            )
+            .body(cal_query)
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
+        assert_eq!(multistatus.responses.len(), 2);
+        [
+            ("/alice/calendar/Personal/rfc1.ics", obj1_etag, ICAL_RFC1),
+            ("/alice/calendar/Personal/rfc3.ics", obj3_etag, ICAL_RFC3),
+        ]
+        .iter()
+        .for_each(|(ref_path, ref_etag, ref_ical)| {
+            check_cal(
+                &multistatus,
+                (
+                    ref_path,
+                    Some(ref_etag.to_str().expect("etag header convertible to str")),
+                    Some(ref_ical),
+                ),
+            )
+        });
 
-        // --- REPORT calendar-query ---
-        //@FIXME missing support for calendar-data...
+        // --- REPORT calendar-query, only filtering ---
         // 7.8.8.  Example: Retrieval of Events Only
         let cal_query = r#"<?xml version="1.0" encoding="utf-8" ?>
             <C:calendar-query xmlns:C="urn:ietf:params:xml:ns:caldav">
@@ -709,12 +751,13 @@ fn rfc4791_webdav_caldav() {
             .send()?;
         assert_eq!(resp.status(), 207);
         let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
-        assert_eq!(multistatus.responses.len(), 3);
+        assert_eq!(multistatus.responses.len(), 4);
 
         [
             ("/alice/calendar/Personal/rfc1.ics", obj1_etag, ICAL_RFC1),
             ("/alice/calendar/Personal/rfc2.ics", obj2_etag, ICAL_RFC2),
             ("/alice/calendar/Personal/rfc3.ics", obj3_etag, ICAL_RFC3),
+            ("/alice/calendar/Personal/rfc7.ics", obj7_etag, ICAL_RFC7),
         ]
         .iter()
         .for_each(|(ref_path, ref_etag, ref_ical)| {
@@ -788,26 +831,32 @@ fn rfc4791_webdav_caldav() {
         assert_eq!(resp.status(), 207);
         let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
         assert_eq!(multistatus.responses.len(), 1);
+        check_cal(
+            &multistatus,
+            (
+                "/alice/calendar/Personal/rfc6.ics",
+                Some(obj6_etag.to_str().expect("etag header convertible to str")),
+                Some(ICAL_RFC6),
+            ),
+        );
 
         // 7.8.6.  Example: Retrieval of Event by UID
-        // @TODO
-
-        // 7.8.7.  Example: Retrieval of Events by PARTSTAT
-        // @TODO
-
-        // 7.8.9.  Example: Retrieval of All Pending To-Dos
-        // @TODO
-
-        // --- REPORT calendar-multiget ---
         let cal_query = r#"<?xml version="1.0" encoding="utf-8" ?>
-            <C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-                <D:prop>
+            <C:calendar-query xmlns:C="urn:ietf:params:xml:ns:caldav">
+                <D:prop xmlns:D="DAV:">
                     <D:getetag/>
                     <C:calendar-data/>
                 </D:prop>
-                <D:href>/alice/calendar/Personal/rfc1.ics</D:href>
-                <D:href>/alice/calendar/Personal/rfc3.ics</D:href>
-            </C:calendar-multiget>"#;
+                <C:filter>
+                    <C:comp-filter name="VCALENDAR">
+                        <C:comp-filter name="VEVENT">
+                            <C:prop-filter name="UID">
+                                <C:text-match collation="i;octet">DC6C50A017428C5216A2F1CD@example.com</C:text-match>
+                            </C:prop-filter>
+                        </C:comp-filter>
+                    </C:comp-filter>
+                </C:filter>
+            </C:calendar-query>"#;
         let resp = http
             .request(
                 reqwest::Method::from_bytes(b"REPORT")?,
@@ -817,22 +866,61 @@ fn rfc4791_webdav_caldav() {
             .send()?;
         assert_eq!(resp.status(), 207);
         let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
-        assert_eq!(multistatus.responses.len(), 2);
-        [
-            ("/alice/calendar/Personal/rfc1.ics", obj1_etag, ICAL_RFC1),
-            ("/alice/calendar/Personal/rfc3.ics", obj3_etag, ICAL_RFC3),
-        ]
-        .iter()
-        .for_each(|(ref_path, ref_etag, ref_ical)| {
-            check_cal(
-                &multistatus,
-                (
-                    ref_path,
-                    Some(ref_etag.to_str().expect("etag header convertible to str")),
-                    Some(ref_ical),
-                ),
+        assert_eq!(multistatus.responses.len(), 1);
+        check_cal(
+            &multistatus,
+            (
+                "/alice/calendar/Personal/rfc3.ics",
+                Some(obj3_etag.to_str().expect("etag header convertible to str")),
+                Some(ICAL_RFC3),
+            ),
+        );
+
+
+        // 7.8.7.  Example: Retrieval of Events by PARTSTAT
+        let cal_query = r#"<?xml version="1.0" encoding="utf-8" ?>
+            <C:calendar-query xmlns:C="urn:ietf:params:xml:ns:caldav">
+                <D:prop xmlns:D="DAV:">
+                    <D:getetag/>
+                    <C:calendar-data/>
+                </D:prop>
+                <C:filter>
+                    <C:comp-filter name="VCALENDAR">
+                        <C:comp-filter name="VEVENT">
+                            <C:prop-filter name="ATTENDEE">
+                                <C:text-match collation="i;ascii-casemap">mailto:lisa@example.com</C:text-match>
+                                <C:param-filter name="PARTSTAT">
+                                    <C:text-match collation="i;ascii-casemap">NEEDS-ACTION</C:text-match>
+                                </C:param-filter>
+                            </C:prop-filter>
+                        </C:comp-filter>
+                    </C:comp-filter>
+                </C:filter>
+            </C:calendar-query>"#;
+        let resp = http
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/calendar/Personal/",
             )
-        });
+            .body(cal_query)
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
+        assert_eq!(multistatus.responses.len(), 1);
+        check_cal(
+            &multistatus,
+            (
+                "/alice/calendar/Personal/rfc7.ics",
+                Some(obj7_etag.to_str().expect("etag header convertible to str")),
+                Some(ICAL_RFC7),
+            ),
+        );
+
+        // 7.8.9.  Example: Retrieval of All Pending To-Dos
+        // @TODO
+
+        // --- REPORT calendar-query, with calendar-data tx ---
+        //@FIXME add support for calendar-data...
 
         Ok(())
     })
