@@ -1,5 +1,5 @@
+use crate::parser;
 use aero_dav::caltypes as cal;
-use crate::parser as parser;
 
 pub fn is_component_match(
     parent: &icalendar::parser::Component,
@@ -7,6 +7,7 @@ pub fn is_component_match(
     filter: &cal::CompFilter,
 ) -> bool {
     // Find the component among the list
+    //@FIXME do not handle correctly multiple entities (eg. 3 VEVENT)
     let maybe_comp = components
         .iter()
         .find(|candidate| candidate.name.as_str() == filter.name.as_str());
@@ -21,7 +22,12 @@ pub fn is_component_match(
         (Some(component), Some(cal::CompFilterRules::Matches(matcher))) => {
             // check time range
             if let Some(time_range) = &matcher.time_range {
-                if !is_in_time_range(&filter.name, parent, component.properties.as_ref(), time_range) {
+                if !is_in_time_range(
+                    &filter.name,
+                    parent,
+                    component.properties.as_ref(),
+                    time_range,
+                ) {
                     return false;
                 }
             }
@@ -77,7 +83,7 @@ fn is_properties_match(props: &[icalendar::parser::Property], filters: &[cal::Pr
                 // check value
                 match &pattern.time_or_text {
                     Some(cal::TimeOrText::Time(time_range)) => {
-                        let maybe_parsed_date = parser::date_time(prop.val.as_str()); 
+                        let maybe_parsed_date = parser::date_time(prop.val.as_str());
 
                         let parsed_date = match maybe_parsed_date {
                             None => return false,
@@ -146,8 +152,8 @@ fn is_properties_match(props: &[icalendar::parser::Property], filters: &[cal::Pr
 }
 
 fn resolve_trigger(
-    parent: &icalendar::parser::Component, 
-    properties: &[icalendar::parser::Property]
+    parent: &icalendar::parser::Component,
+    properties: &[icalendar::parser::Property],
 ) -> Option<chrono::DateTime<chrono::Utc>> {
     // A. Do we have a TRIGGER property? If not, returns early
     let maybe_trigger_prop = properties
@@ -160,34 +166,56 @@ fn resolve_trigger(
     };
 
     // B.1 Is it an absolute datetime? If so, returns early
-    let maybe_absolute = trigger_prop.params.iter()
+    let maybe_absolute = trigger_prop
+        .params
+        .iter()
         .find(|param| param.key.as_str() == "VALUE")
-        .map(|param| param.val.as_ref()).flatten()
+        .map(|param| param.val.as_ref())
+        .flatten()
         .map(|v| v.as_str() == "DATE-TIME");
 
     if maybe_absolute.is_some() {
-        return prop_date(properties, "TRIGGER");
+        let final_date = prop_date(properties, "TRIGGER");
+        tracing::trace!(trigger=?final_date, "resolved absolute trigger");
+        return final_date;
     }
 
     // B.2 Otherwise it's a timedelta relative to a parent field.
     // C.1 Parse the timedelta value, returns early if invalid
+    let (_, time_delta) = parser::dur_value(trigger_prop.val.as_str()).ok()?;
 
     // C.2 Get the parent reference absolute datetime, returns early if invalid
-    let maybe_related_field = trigger_prop
+    let maybe_bound = trigger_prop
         .params
         .iter()
         .find(|param| param.key.as_str() == "RELATED")
         .map(|param| param.val.as_ref())
         .flatten();
-    let related_field = maybe_related_field.map(|v| v.as_str()).unwrap_or("DTSTART");
+
+    // If the trigger is set relative to START, then the "DTSTART" property MUST be present in the associated
+    // "VEVENT" or "VTODO" calendar component.
+    //
+    // If an alarm is specified for an event with the trigger set relative to the END,
+    // then the "DTEND" property or the "DTSTART" and "DURATION " properties MUST be present
+    // in the associated "VEVENT" calendar component.
+    //
+    // If the alarm is specified for a to-do with a trigger set relative to the END,
+    // then either the "DUE" property or the "DTSTART" and "DURATION " properties
+    // MUST be present in the associated "VTODO" calendar component.
+    let related_field = match maybe_bound.as_ref().map(|v| v.as_str()) {
+        Some("START") => "DTSTART",
+        Some("END") => "DTEND", //@FIXME must add support for DUE, DTSTART, and DURATION
+        _ => "DTSTART",         // by default use DTSTART
+    };
     let parent_date = match prop_date(parent.properties.as_ref(), related_field) {
         Some(v) => v,
         _ => return None,
     };
 
     // C.3 Compute the final date from the base date + timedelta
-
-    todo!()
+    let final_date = parent_date + time_delta;
+    tracing::trace!(trigger=?final_date, "resolved relative trigger");
+    Some(final_date)
 }
 
 fn is_in_time_range(
@@ -209,10 +237,12 @@ fn is_in_time_range(
         cal::Component::VEvent => {
             let dtstart = match prop_date(properties, "DTSTART") {
                 Some(v) => v,
-                _ => return false, 
+                _ => return false,
             };
             let maybe_dtend = prop_date(properties, "DTEND");
-            let maybe_duration = prop_parse::<i64>(properties, "DURATION").map(|d| chrono::TimeDelta::new(std::cmp::max(d, 0), 0)).flatten();
+            let maybe_duration = prop_parse::<i64>(properties, "DURATION")
+                .map(|d| chrono::TimeDelta::new(std::cmp::max(d, 0), 0))
+                .flatten();
 
             //@FIXME missing "date" management (only support "datetime")
             match (&maybe_dtend, &maybe_duration) {
@@ -223,23 +253,35 @@ fn is_in_time_range(
                 //       | N | N | N | Y | (start <= DTSTART AND end > DTSTART)          |
                 _ => start <= &dtstart && end > &dtstart,
             }
-        },
+        }
         cal::Component::VTodo => {
             let maybe_dtstart = prop_date(properties, "DTSTART");
             let maybe_due = prop_date(properties, "DUE");
             let maybe_completed = prop_date(properties, "COMPLETED");
             let maybe_created = prop_date(properties, "CREATED");
-            let maybe_duration = prop_parse::<i64>(properties, "DURATION").map(|d| chrono::TimeDelta::new(d, 0)).flatten();
+            let maybe_duration = prop_parse::<i64>(properties, "DURATION")
+                .map(|d| chrono::TimeDelta::new(d, 0))
+                .flatten();
 
-            match (maybe_dtstart, maybe_duration, maybe_due, maybe_completed, maybe_created) {
+            match (
+                maybe_dtstart,
+                maybe_duration,
+                maybe_due,
+                maybe_completed,
+                maybe_created,
+            ) {
                 //    | Y | Y | N | * | * | (start  <= DTSTART+DURATION)  AND             |
                 //    |   |   |   |   |   | ((end   >  DTSTART)  OR                       |
                 //    |   |   |   |   |   |  (end   >= DTSTART+DURATION))                 |
-                (Some(dtstart), Some(duration), None, _, _) => *start <= dtstart + duration && (*end > dtstart || *end >= dtstart + duration),
+                (Some(dtstart), Some(duration), None, _, _) => {
+                    *start <= dtstart + duration && (*end > dtstart || *end >= dtstart + duration)
+                }
                 //    | Y | N | Y | * | * | ((start <  DUE)      OR  (start <= DTSTART))  |
                 //    |   |   |   |   |   | AND                                           |
                 //    |   |   |   |   |   | ((end   >  DTSTART)  OR  (end   >= DUE))      |
-                (Some(dtstart), None, Some(due), _, _) => (*start < due || *start <= dtstart) && (*end > dtstart || *end >= due),
+                (Some(dtstart), None, Some(due), _, _) => {
+                    (*start < due || *start <= dtstart) && (*end > dtstart || *end >= due)
+                }
                 //    | Y | N | N | * | * | (start  <= DTSTART)  AND (end >  DTSTART)     |
                 (Some(dtstart), None, None, _, _) => *start <= dtstart && *end > dtstart,
                 //    | N | N | Y | * | * | (start  <  DUE)      AND (end >= DUE)         |
@@ -247,15 +289,20 @@ fn is_in_time_range(
                 //    | N | N | N | Y | Y | ((start <= CREATED)  OR  (start <= COMPLETED))|
                 //    |   |   |   |   |   | AND                                           |
                 //    |   |   |   |   |   | ((end   >= CREATED)  OR  (end   >= COMPLETED))|
-                (None, None, None, Some(completed), Some(created)) => (*start <= created || *start <= completed) && (*end >= created || *end >= completed),
+                (None, None, None, Some(completed), Some(created)) => {
+                    (*start <= created || *start <= completed)
+                        && (*end >= created || *end >= completed)
+                }
                 //    | N | N | N | Y | N | (start  <= COMPLETED) AND (end  >= COMPLETED) |
-                (None, None, None, Some(completed), None) => *start <= completed && *end >= completed,
+                (None, None, None, Some(completed), None) => {
+                    *start <= completed && *end >= completed
+                }
                 //    | N | N | N | N | Y | (end    >  CREATED)                           |
                 (None, None, None, None, Some(created)) => *end > created,
                 //    | N | N | N | N | N | TRUE                                          |
                 _ => true,
             }
-        },
+        }
         cal::Component::VJournal => {
             let maybe_dtstart = prop_date(properties, "DTSTART");
             match maybe_dtstart {
@@ -264,17 +311,20 @@ fn is_in_time_range(
                 //    | N | * | FALSE                                      |
                 None => false,
             }
-        },
+        }
         cal::Component::VFreeBusy => {
             //@FIXME freebusy is not supported yet
             false
-        },
+        }
         cal::Component::VAlarm => {
             //@FIXME does not support REPEAT
             let maybe_trigger = resolve_trigger(parent, properties);
-            //  (start <= trigger-time) AND (end > trigger-time)
-            false
-        },
+            match maybe_trigger {
+                //  (start <= trigger-time) AND (end > trigger-time)
+                Some(trigger_time) => *start <= trigger_time && *end > trigger_time,
+                _ => false,
+            }
+        }
         _ => false,
     }
 }

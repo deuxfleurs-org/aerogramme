@@ -3,6 +3,5 @@
 /// However, for many reason, it's not satisfying:
 /// the goal will be to rewrite it in the end so it better
 /// integrates into Aerogramme
-
 pub mod parser;
 pub mod query;

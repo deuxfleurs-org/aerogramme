@@ -374,7 +374,11 @@ fn apply_filter<'a>(
         tracing::debug!(filter=?root_filter, "calendar-query filter");
 
         // Adjust return value according to filter
-        match is_component_match(&fake_vcal_component, &[fake_vcal_component.clone()], root_filter) {
+        match is_component_match(
+            &fake_vcal_component,
+            &[fake_vcal_component.clone()],
+            root_filter,
+        ) {
             true => Some(Ok(single_node)),
             _ => None,
         }

@@ -739,19 +739,15 @@ impl QWrite for TimeRange {
                 "start",
                 format!("{}", start.format(UTC_DATETIME_FMT)).as_str(),
             )),
-            Self::OnlyEnd(end) => empty.push_attribute((
-                "end",
-                format!("{}", end.format(UTC_DATETIME_FMT)).as_str(),
-            )),
+            Self::OnlyEnd(end) => {
+                empty.push_attribute(("end", format!("{}", end.format(UTC_DATETIME_FMT)).as_str()))
+            }
             Self::FullRange(start, end) => {
                 empty.push_attribute((
                     "start",
                     format!("{}", start.format(UTC_DATETIME_FMT)).as_str(),
                 ));
-                empty.push_attribute((
-                    "end",
-                    format!("{}", end.format(UTC_DATETIME_FMT)).as_str(),
-                ));
+                empty.push_attribute(("end", format!("{}", end.format(UTC_DATETIME_FMT)).as_str()));
             }
         }
         xml.q.write_event_async(Event::Empty(empty)).await

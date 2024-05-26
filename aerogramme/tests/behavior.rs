@@ -590,6 +590,13 @@ fn rfc4791_webdav_caldav() {
             .send()?;
         let _obj5_etag = resp.headers().get("etag").expect("etag must be set");
         assert_eq!(resp.status(), 201);
+        let resp = http
+            .put("http://localhost:8087/alice/calendar/Personal/rfc6.ics")
+            .header("If-None-Match", "*")
+            .body(ICAL_RFC6)
+            .send()?;
+        let _obj6_etag = resp.headers().get("etag").expect("etag must be set");
+        assert_eq!(resp.status(), 201);
 
         // A generic function to check a <calendar-data/> query result
         let check_cal =
@@ -611,25 +618,17 @@ fn rfc4791_webdav_caldav() {
                     .iter()
                     .find(|p| p.status.0.as_u16() == 200)
                     .expect("some propstats must be 200");
-                let etag = obj_success
-                    .prop
-                    .0
-                    .iter()
-                    .find_map(|p| match p {
-                        dav::AnyProperty::Value(dav::Property::GetEtag(x)) => Some(x.as_str()),
-                        _ => None,
-                    });
+                let etag = obj_success.prop.0.iter().find_map(|p| match p {
+                    dav::AnyProperty::Value(dav::Property::GetEtag(x)) => Some(x.as_str()),
+                    _ => None,
+                });
                 assert_eq!(etag, ref_etag);
-                let calendar_data = obj_success
-                    .prop
-                    .0
-                    .iter()
-                    .find_map(|p| match p {
-                        dav::AnyProperty::Value(dav::Property::Extension(
-                            realization::Property::Cal(cal::Property::CalendarData(x)),
-                        )) => Some(x.payload.as_bytes()),
-                        _ => None,
-                    });
+                let calendar_data = obj_success.prop.0.iter().find_map(|p| match p {
+                    dav::AnyProperty::Value(dav::Property::Extension(
+                        realization::Property::Cal(cal::Property::CalendarData(x)),
+                    )) => Some(x.payload.as_bytes()),
+                    _ => None,
+                });
                 assert_eq!(calendar_data, ref_ical);
             };
 
@@ -753,7 +752,14 @@ fn rfc4791_webdav_caldav() {
         assert_eq!(resp.status(), 207);
         let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
         assert_eq!(multistatus.responses.len(), 1);
-        check_cal(&multistatus, ("/alice/calendar/Personal/rfc2.ics", Some(obj2_etag.to_str().expect("etag header convertible to str")), None));
+        check_cal(
+            &multistatus,
+            (
+                "/alice/calendar/Personal/rfc2.ics",
+                Some(obj2_etag.to_str().expect("etag header convertible to str")),
+                None,
+            ),
+        );
 
         // 7.8.5.  Example: Retrieval of To-Dos by Alarm Time Range
         let cal_query = r#"<?xml version="1.0" encoding="utf-8" ?>
@@ -766,7 +772,7 @@ fn rfc4791_webdav_caldav() {
                     <C:comp-filter name="VCALENDAR">
                         <C:comp-filter name="VTODO">
                             <C:comp-filter name="VALARM">
-                                <C:time-range start="20060106T100000Z" end="20060107T100000Z"/>
+                                <C:time-range start="20060201T000000Z" end="20060301T000000Z"/>
                             </C:comp-filter>
                         </C:comp-filter>
                     </C:comp-filter>
@@ -781,17 +787,16 @@ fn rfc4791_webdav_caldav() {
             .send()?;
         assert_eq!(resp.status(), 207);
         let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
-        //assert_eq!(multistatus.responses.len(), 1);
+        assert_eq!(multistatus.responses.len(), 1);
 
         // 7.8.6.  Example: Retrieval of Event by UID
         // @TODO
 
         // 7.8.7.  Example: Retrieval of Events by PARTSTAT
         // @TODO
-        
+
         // 7.8.9.  Example: Retrieval of All Pending To-Dos
         // @TODO
-
 
         // --- REPORT calendar-multiget ---
         let cal_query = r#"<?xml version="1.0" encoding="utf-8" ?>

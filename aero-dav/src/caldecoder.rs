@@ -917,15 +917,11 @@ impl QRead<TimeRange> for TimeRange {
         xml.open(CAL_URN, "time-range").await?;
 
         let start = match xml.prev_attr("start") {
-            Some(r) => {
-                Some(NaiveDateTime::parse_from_str(r.as_str(), UTC_DATETIME_FMT)?.and_utc())
-            }
+            Some(r) => Some(NaiveDateTime::parse_from_str(r.as_str(), UTC_DATETIME_FMT)?.and_utc()),
             _ => None,
         };
         let end = match xml.prev_attr("end") {
-            Some(r) => {
-                Some(NaiveDateTime::parse_from_str(r.as_str(), UTC_DATETIME_FMT)?.and_utc())
-            }
+            Some(r) => Some(NaiveDateTime::parse_from_str(r.as_str(), UTC_DATETIME_FMT)?.and_utc()),
             _ => None,
         };
 
