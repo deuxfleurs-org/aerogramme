@@ -917,7 +917,43 @@ fn rfc4791_webdav_caldav() {
         );
 
         // 7.8.9.  Example: Retrieval of All Pending To-Dos
-        // @TODO
+        let cal_query = r#"<?xml version="1.0" encoding="utf-8" ?>
+            <C:calendar-query xmlns:C="urn:ietf:params:xml:ns:caldav">
+                <D:prop xmlns:D="DAV:">
+                    <D:getetag/>
+                    <C:calendar-data/>
+                </D:prop>
+                <C:filter>
+                    <C:comp-filter name="VCALENDAR">
+                        <C:comp-filter name="VTODO">
+                            <C:prop-filter name="COMPLETED">
+                                <C:is-not-defined/>
+                            </C:prop-filter>
+                            <C:prop-filter name="STATUS">
+                                <C:text-match negate-condition="yes">CANCELLED</C:text-match>
+                            </C:prop-filter>
+                        </C:comp-filter>
+                    </C:comp-filter>
+                </C:filter>
+            </C:calendar-query>"#;
+        let resp = http
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/calendar/Personal/",
+            )
+            .body(cal_query)
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
+        assert_eq!(multistatus.responses.len(), 1);
+        check_cal(
+            &multistatus,
+            (
+                "/alice/calendar/Personal/rfc6.ics",
+                Some(obj6_etag.to_str().expect("etag header convertible to str")),
+                Some(ICAL_RFC6),
+            ),
+        );
 
         // --- REPORT calendar-query, with calendar-data tx ---
         //@FIXME add support for calendar-data...
