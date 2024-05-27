@@ -4,5 +4,5 @@
 /// the goal will be to rewrite it in the end so it better
 /// integrates into Aerogramme
 pub mod parser;
-pub mod query;
 pub mod prune;
+pub mod query;

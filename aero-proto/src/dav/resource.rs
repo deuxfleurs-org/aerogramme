@@ -565,17 +565,49 @@ impl DavNode for EventNode {
                             dav::Property::GetEtag(etag)
                         }
                         dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
-                            cal::PropertyRequest::CalendarData(_req),
-                        )) => {
+                                cal::PropertyRequest::CalendarData(req),
+                                )) => {
                             let ics = String::from_utf8(
                                 this.col.get(this.blob_id).await.or(Err(n.clone()))?,
-                            )
-                            .or(Err(n.clone()))?;
+                                )
+                                .or(Err(n.clone()))?;
+
+                            let new_ics = match &req.comp {
+                                None => ics,
+                                Some(prune_comp) => {
+                                    // parse content
+                                    let ics = match icalendar::parser::read_calendar(&ics) {
+                                        Ok(v) => v,
+                                        Err(e) => {
+                                            tracing::warn!(err=?e, "Unable to parse ICS in calendar-query");
+                                            return Err(n.clone())
+                                        }
+                                    };
+
+                                    // build a fake vcal component for caldav compat
+                                    let fake_vcal_component = icalendar::parser::Component {
+                                        name: cal::Component::VCalendar.as_str().into(),
+                                        properties: ics.properties,
+                                        components: ics.components,
+                                    };
+
+                                    // rebuild component
+                                    let new_comp = match aero_ical::prune::component(&fake_vcal_component, prune_comp) {
+                                        Some(v) => v,
+                                        None => return Err(n.clone()),
+                                    };
+
+                                    // reserialize
+                                    format!("{}", icalendar::parser::Calendar { properties: new_comp.properties, components: new_comp.components })
+                                },
+                            };
+
+
 
                             dav::Property::Extension(all::Property::Cal(
                                 cal::Property::CalendarData(cal::CalendarDataPayload {
                                     mime: None,
-                                    payload: ics,
+                                    payload: new_ics,
                                 }),
                             ))
                         }
@@ -634,14 +666,15 @@ impl DavNode for EventNode {
         // so we load everything in memory
         let calendar = self.col.clone();
         let blob_id = self.blob_id.clone();
-        let r = async move {
-            let content = calendar
+        let calblob = async move {
+            let raw_ics = calendar
                 .get(blob_id)
                 .await
-                .or(Err(std::io::Error::from(std::io::ErrorKind::Interrupted)));
-            Ok(hyper::body::Bytes::from(content?))
+                .or(Err(std::io::Error::from(std::io::ErrorKind::Interrupted)))?;
+
+            Ok(hyper::body::Bytes::from(raw_ics))
         };
-        futures::stream::once(Box::pin(r)).boxed()
+        futures::stream::once(Box::pin(calblob)).boxed()
     }
 
     fn content_type(&self) -> &str {

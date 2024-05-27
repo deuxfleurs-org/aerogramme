@@ -956,7 +956,55 @@ fn rfc4791_webdav_caldav() {
         );
 
         // --- REPORT calendar-query, with calendar-data tx ---
-        //@FIXME add support for calendar-data...
+        let cal_query = r#"<?xml version="1.0" encoding="utf-8" ?>
+            <C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                <D:prop>
+                    <D:getetag/>
+                    <C:calendar-data>
+                        <C:comp name="VCALENDAR">
+                            <C:prop name="VERSION"/>
+                            <C:comp name="VEVENT">
+                                <C:prop name="UID"/>
+                                <C:prop name="DTSTART"/>
+                                <C:prop name="DTEND"/>
+                                <C:prop name="DURATION"/>
+                                <C:prop name="RRULE"/>
+                                <C:prop name="RDATE"/>
+                                <C:prop name="EXRULE"/>
+                                <C:prop name="EXDATE"/>
+                                <C:prop name="RECURRENCE-ID"/>
+                            </C:comp>
+                        <C:comp name="VTIMEZONE"/>
+                    </C:comp>
+                </C:calendar-data>
+            </D:prop>
+            <C:filter>
+                <C:comp-filter name="VCALENDAR">
+                    <C:comp-filter name="VEVENT">
+                        <C:time-range start="20060104T000000Z" end="20060105T000000Z"/>
+                    </C:comp-filter>
+                </C:comp-filter>
+            </C:filter>
+        </C:calendar-query>"#;
+
+        let resp = http
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/calendar/Personal/",
+            )
+            .body(cal_query)
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
+        assert_eq!(multistatus.responses.len(), 1);
+        check_cal(
+            &multistatus,
+            (
+                "/alice/calendar/Personal/rfc3.ics",
+                Some(obj3_etag.to_str().expect("etag header convertible to str")),
+                Some(ICAL_RFC3_STRIPPED),
+            ),
+        );
 
         Ok(())
     })

@@ -333,7 +333,6 @@ impl<'a> Path<'a> {
     }
 }
 
-//@FIXME move somewhere else
 //@FIXME naive implementation, must be refactored later
 use futures::stream::Stream;
 fn apply_filter<'a>(
