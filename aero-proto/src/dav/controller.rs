@@ -9,8 +9,9 @@ use hyper::{body::Bytes, Request, Response};
 
 use aero_collections::user::User;
 use aero_dav::caltypes as cal;
-use aero_dav::realization::All;
+use aero_dav::realization::{self, All};
 use aero_dav::types as dav;
+use aero_dav::versioningtypes as vers;
 use aero_ical::query::is_component_match;
 
 use crate::dav::codec;
@@ -95,7 +96,7 @@ impl Controller {
     async fn report(self) -> Result<HttpResponse> {
         let status = hyper::StatusCode::from_u16(207)?;
 
-        let report = match deserialize::<cal::Report<All>>(self.req).await {
+        let cal_report = match deserialize::<vers::Report<All>>(self.req).await {
             Ok(v) => v,
             Err(e) => {
                 tracing::error!(err=?e, "unable to decode REPORT body");
@@ -110,8 +111,8 @@ impl Controller {
         let calprop: Option<cal::CalendarSelector<All>>;
 
         // Extracting request information
-        match report {
-            cal::Report::Multiget(m) => {
+        match cal_report {
+            vers::Report::Extension(realization::ReportType::Cal(cal::ReportType::Multiget(m))) => {
                 // Multiget is really like a propfind where Depth: 0|1|Infinity is replaced by an arbitrary
                 // list of URLs
                 // Getting the list of nodes
@@ -136,13 +137,16 @@ impl Controller {
                 }
                 calprop = m.selector;
             }
-            cal::Report::Query(q) => {
+            vers::Report::Extension(realization::ReportType::Cal(cal::ReportType::Query(q))) => {
                 calprop = q.selector;
                 ok_node = apply_filter(self.node.children(&self.user).await, &q.filter)
                     .try_collect()
                     .await?;
             }
-            cal::Report::FreeBusy(_) => {
+            vers::Report::Extension(realization::ReportType::Sync(_sync_col)) => {
+                todo!()
+            }
+            _ => {
                 return Ok(Response::builder()
                     .status(501)
                     .body(text_body("Not implemented"))?)

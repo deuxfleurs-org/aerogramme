@@ -1,6 +1,7 @@
 use super::acltypes as acl;
 use super::caltypes as cal;
 use super::error;
+use super::synctypes as sync;
 use super::types as dav;
 use super::xml;
 
@@ -31,6 +32,7 @@ impl dav::Extension for Core {
     type Property = Disabled;
     type PropertyRequest = Disabled;
     type ResourceType = Disabled;
+    type ReportType = Disabled;
 }
 
 // WebDAV with the base Calendar implementation (RFC4791)
@@ -41,6 +43,7 @@ impl dav::Extension for Calendar {
     type Property = cal::Property;
     type PropertyRequest = cal::PropertyRequest;
     type ResourceType = cal::ResourceType;
+    type ReportType = cal::ReportType<Calendar>;
 }
 
 // ACL
@@ -51,6 +54,7 @@ impl dav::Extension for Acl {
     type Property = acl::Property;
     type PropertyRequest = acl::PropertyRequest;
     type ResourceType = acl::ResourceType;
+    type ReportType = Disabled;
 }
 
 // All merged
@@ -61,6 +65,7 @@ impl dav::Extension for All {
     type Property = Property;
     type PropertyRequest = PropertyRequest;
     type ResourceType = ResourceType;
+    type ReportType = ReportType<All>;
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -139,6 +144,34 @@ impl xml::QWrite for ResourceType {
         match self {
             Self::Cal(c) => c.qwrite(xml).await,
             Self::Acl(a) => a.qwrite(xml).await,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ReportType<E: dav::Extension> {
+    Cal(cal::ReportType<E>),
+    Sync(sync::SyncCollection<E>),
+}
+impl<E: dav::Extension> xml::QRead<ReportType<E>> for ReportType<E> {
+    async fn qread(
+        xml: &mut xml::Reader<impl xml::IRead>,
+    ) -> Result<ReportType<E>, error::ParsingError> {
+        match cal::ReportType::qread(xml).await {
+            Err(error::ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(ReportType::Cal),
+        }
+        sync::SyncCollection::qread(xml).await.map(ReportType::Sync)
+    }
+}
+impl<E: dav::Extension> xml::QWrite for ReportType<E> {
+    async fn qwrite(
+        &self,
+        xml: &mut xml::Writer<impl xml::IWrite>,
+    ) -> Result<(), quick_xml::Error> {
+        match self {
+            Self::Cal(c) => c.qwrite(xml).await,
+            Self::Sync(s) => s.qwrite(xml).await,
         }
     }
 }

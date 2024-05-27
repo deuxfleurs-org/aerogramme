@@ -25,7 +25,7 @@ impl<E: dav::Extension> QRead<MkCalendarResponse<E>> for MkCalendarResponse<E> {
     }
 }
 
-impl<E: dav::Extension> QRead<Report<E>> for Report<E> {
+impl<E: dav::Extension> QRead<ReportType<E>> for ReportType<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         match CalendarQuery::<E>::qread(xml).await {
             Err(ParsingError::Recoverable) => (),

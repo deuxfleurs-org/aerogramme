@@ -691,7 +691,7 @@ fn rfc4791_webdav_caldav() {
             .send()?;
         //@FIXME not yet supported. returns DAV: 1 ; expects DAV: 1 calendar-access
         // Not used by any client I know, so not implementing it now.
-        
+
         // --- REPORT calendar-multiget ---
         let cal_query = r#"<?xml version="1.0" encoding="utf-8" ?>
             <C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">

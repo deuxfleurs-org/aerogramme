@@ -33,7 +33,7 @@ impl<E: Extension> QWrite for MkCalendarResponse<E> {
 }
 
 // ----------------------- REPORT METHOD -------------------------------------
-impl<E: Extension> QWrite for Report<E> {
+impl<E: Extension> QWrite for ReportType<E> {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
             Self::Query(v) => v.qwrite(xml).await,

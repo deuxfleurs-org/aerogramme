@@ -51,7 +51,7 @@ pub struct MkCalendarResponse<E: dav::Extension>(pub Vec<dav::PropStat<E>>);
 
 // --- (REPORT PART) ---
 #[derive(Debug, PartialEq, Clone)]
-pub enum Report<E: dav::Extension> {
+pub enum ReportType<E: dav::Extension> {
     Query(CalendarQuery<E>),
     Multiget(CalendarMultiget<E>),
     FreeBusy(FreeBusyQuery),

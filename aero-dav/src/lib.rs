@@ -16,13 +16,20 @@ pub mod caldecoder;
 pub mod calencoder;
 pub mod caltypes;
 
-// acl (wip)
+// acl (partial)
 pub mod acldecoder;
 pub mod aclencoder;
 pub mod acltypes;
 
-// versioning (wip)
-mod versioningtypes;
+// versioning (partial)
+pub mod versioningdecoder;
+pub mod versioningencoder;
+pub mod versioningtypes;
+
+// sync
+pub mod syncdecoder;
+pub mod syncencoder;
+pub mod synctypes;
 
 // final type
 pub mod realization;

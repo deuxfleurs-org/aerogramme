@@ -11,6 +11,7 @@ pub trait Extension: std::fmt::Debug + PartialEq + Clone {
     type Property: xml::Node<Self::Property>;
     type PropertyRequest: xml::Node<Self::PropertyRequest>;
     type ResourceType: xml::Node<Self::ResourceType>;
+    type ReportType: xml::Node<Self::ReportType>;
 }
 
 /// 14.1.  activelock XML Element
@@ -328,6 +329,10 @@ pub enum LockType {
 /// response descriptions contained within the responses.
 ///
 /// <!ELEMENT multistatus (response*, responsedescription?)  >
+///
+/// In WebDAV sync (rfc6578), multistatus is extended:
+///
+/// <!ELEMENT multistatus (response*, responsedescription?, sync-token?) >
 #[derive(Debug, PartialEq, Clone)]
 pub struct Multistatus<E: Extension> {
     pub responses: Vec<Response<E>>,
