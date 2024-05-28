@@ -4,8 +4,21 @@ use super::versioningtypes as vers;
 // RFC 6578
 // https://datatracker.ietf.org/doc/html/rfc6578
 
-//@FIXME add SyncTokenRequest to PropertyRequest
-//@FIXME add SyncToken to Property
+#[derive(Debug, PartialEq, Clone)]
+pub enum PropertyRequest {
+    SyncToken(SyncTokenRequest),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Property {
+    SyncToken(SyncToken),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ReportTypeName {
+    SyncCollection,
+}
+
 //@FIXME add SyncToken to Multistatus
 
 ///  Name:  sync-collection

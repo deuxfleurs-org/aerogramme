@@ -5,6 +5,33 @@ use super::synctypes::*;
 use super::types::Extension;
 use super::xml::{IWrite, QWrite, Writer};
 
+impl QWrite for Property {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        match self {
+            Self::SyncToken(token) => token.qwrite(xml).await,
+        }
+    }
+}
+
+impl QWrite for PropertyRequest {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        match self {
+            Self::SyncToken(token) => token.qwrite(xml).await,
+        }
+    }
+}
+
+impl QWrite for ReportTypeName {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        match self {
+            Self::SyncCollection => {
+                let start = xml.create_dav_element("sync-collection");
+                xml.q.write_event_async(Event::Empty(start)).await
+            }
+        }
+    }
+}
+
 impl<E: Extension> QWrite for SyncCollection<E> {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let start = xml.create_dav_element("sync-collection");
@@ -72,7 +99,7 @@ impl QWrite for SyncLevel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::realization::All;
+    use crate::realization::{self, All};
     use crate::types as dav;
     use crate::versioningtypes as vers;
     use crate::xml::Node;
@@ -92,6 +119,7 @@ mod tests {
         src.qwrite(&mut writer).await.expect("xml serialization");
         tokio_buffer.flush().await.expect("tokio buffer flush");
         let got = std::str::from_utf8(buffer.as_slice()).unwrap();
+        println!("{:?}", got);
 
         // deserialize
         let mut rdr = Reader::new(quick_xml::NsReader::from_reader(got.as_bytes()))
@@ -139,6 +167,33 @@ mod tests {
             limit: None,
             prop: dav::PropName(vec![dav::PropertyRequest::GetEtag]),
         })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn prop_req() {
+        serialize_deserialize(&dav::PropName::<All>(vec![
+            dav::PropertyRequest::Extension(realization::PropertyRequest::Sync(
+                PropertyRequest::SyncToken(SyncTokenRequest::InitialSync),
+            )),
+        ]))
+        .await;
+    }
+
+    #[tokio::test]
+    async fn prop_val() {
+        serialize_deserialize(&dav::PropValue::<All>(vec![
+            dav::Property::Extension(realization::Property::Sync(Property::SyncToken(SyncToken(
+                "http://example.com/ns/sync/1232".into(),
+            )))),
+            dav::Property::Extension(realization::Property::Vers(
+                vers::Property::SupportedReportSet(vec![vers::SupportedReport(
+                    vers::ReportName::Extension(realization::ReportTypeName::Sync(
+                        ReportTypeName::SyncCollection,
+                    )),
+                )]),
+            )),
+        ]))
         .await;
     }
 }

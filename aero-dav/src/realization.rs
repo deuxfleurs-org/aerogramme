@@ -3,6 +3,7 @@ use super::caltypes as cal;
 use super::error;
 use super::synctypes as sync;
 use super::types as dav;
+use super::versioningtypes as vers;
 use super::xml;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -33,6 +34,7 @@ impl dav::Extension for Core {
     type PropertyRequest = Disabled;
     type ResourceType = Disabled;
     type ReportType = Disabled;
+    type ReportTypeName = Disabled;
 }
 
 // WebDAV with the base Calendar implementation (RFC4791)
@@ -44,6 +46,7 @@ impl dav::Extension for Calendar {
     type PropertyRequest = cal::PropertyRequest;
     type ResourceType = cal::ResourceType;
     type ReportType = cal::ReportType<Calendar>;
+    type ReportTypeName = cal::ReportTypeName;
 }
 
 // ACL
@@ -55,6 +58,7 @@ impl dav::Extension for Acl {
     type PropertyRequest = acl::PropertyRequest;
     type ResourceType = acl::ResourceType;
     type ReportType = Disabled;
+    type ReportTypeName = Disabled;
 }
 
 // All merged
@@ -62,27 +66,38 @@ impl dav::Extension for Acl {
 pub struct All {}
 impl dav::Extension for All {
     type Error = cal::Violation;
-    type Property = Property;
+    type Property = Property<All>;
     type PropertyRequest = PropertyRequest;
     type ResourceType = ResourceType;
     type ReportType = ReportType<All>;
+    type ReportTypeName = ReportTypeName;
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Property {
+pub enum Property<E: dav::Extension> {
     Cal(cal::Property),
     Acl(acl::Property),
+    Sync(sync::Property),
+    Vers(vers::Property<E>),
 }
-impl xml::QRead<Property> for Property {
+impl<E: dav::Extension> xml::QRead<Property<E>> for Property<E> {
     async fn qread(xml: &mut xml::Reader<impl xml::IRead>) -> Result<Self, error::ParsingError> {
         match cal::Property::qread(xml).await {
             Err(error::ParsingError::Recoverable) => (),
-            otherwise => return otherwise.map(Property::Cal),
+            otherwise => return otherwise.map(Property::<E>::Cal),
         }
-        acl::Property::qread(xml).await.map(Property::Acl)
+        match acl::Property::qread(xml).await {
+            Err(error::ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(Property::Acl),
+        }
+        match sync::Property::qread(xml).await {
+            Err(error::ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(Property::Sync),
+        }
+        vers::Property::qread(xml).await.map(Property::Vers)
     }
 }
-impl xml::QWrite for Property {
+impl<E: dav::Extension> xml::QWrite for Property<E> {
     async fn qwrite(
         &self,
         xml: &mut xml::Writer<impl xml::IWrite>,
@@ -90,6 +105,8 @@ impl xml::QWrite for Property {
         match self {
             Self::Cal(c) => c.qwrite(xml).await,
             Self::Acl(a) => a.qwrite(xml).await,
+            Self::Sync(s) => s.qwrite(xml).await,
+            Self::Vers(v) => v.qwrite(xml).await,
         }
     }
 }
@@ -98,6 +115,8 @@ impl xml::QWrite for Property {
 pub enum PropertyRequest {
     Cal(cal::PropertyRequest),
     Acl(acl::PropertyRequest),
+    Sync(sync::PropertyRequest),
+    Vers(vers::PropertyRequest),
 }
 impl xml::QRead<PropertyRequest> for PropertyRequest {
     async fn qread(xml: &mut xml::Reader<impl xml::IRead>) -> Result<Self, error::ParsingError> {
@@ -105,9 +124,17 @@ impl xml::QRead<PropertyRequest> for PropertyRequest {
             Err(error::ParsingError::Recoverable) => (),
             otherwise => return otherwise.map(PropertyRequest::Cal),
         }
-        acl::PropertyRequest::qread(xml)
+        match acl::PropertyRequest::qread(xml).await {
+            Err(error::ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(PropertyRequest::Acl),
+        }
+        match sync::PropertyRequest::qread(xml).await {
+            Err(error::ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(PropertyRequest::Sync),
+        }
+        vers::PropertyRequest::qread(xml)
             .await
-            .map(PropertyRequest::Acl)
+            .map(PropertyRequest::Vers)
     }
 }
 impl xml::QWrite for PropertyRequest {
@@ -118,6 +145,8 @@ impl xml::QWrite for PropertyRequest {
         match self {
             Self::Cal(c) => c.qwrite(xml).await,
             Self::Acl(a) => a.qwrite(xml).await,
+            Self::Sync(s) => s.qwrite(xml).await,
+            Self::Vers(v) => v.qwrite(xml).await,
         }
     }
 }
@@ -165,6 +194,34 @@ impl<E: dav::Extension> xml::QRead<ReportType<E>> for ReportType<E> {
     }
 }
 impl<E: dav::Extension> xml::QWrite for ReportType<E> {
+    async fn qwrite(
+        &self,
+        xml: &mut xml::Writer<impl xml::IWrite>,
+    ) -> Result<(), quick_xml::Error> {
+        match self {
+            Self::Cal(c) => c.qwrite(xml).await,
+            Self::Sync(s) => s.qwrite(xml).await,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ReportTypeName {
+    Cal(cal::ReportTypeName),
+    Sync(sync::ReportTypeName),
+}
+impl xml::QRead<ReportTypeName> for ReportTypeName {
+    async fn qread(xml: &mut xml::Reader<impl xml::IRead>) -> Result<Self, error::ParsingError> {
+        match cal::ReportTypeName::qread(xml).await {
+            Err(error::ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(ReportTypeName::Cal),
+        }
+        sync::ReportTypeName::qread(xml)
+            .await
+            .map(ReportTypeName::Sync)
+    }
+}
+impl xml::QWrite for ReportTypeName {
     async fn qwrite(
         &self,
         xml: &mut xml::Writer<impl xml::IWrite>,

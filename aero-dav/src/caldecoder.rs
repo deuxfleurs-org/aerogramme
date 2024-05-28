@@ -104,6 +104,28 @@ impl QRead<FreeBusyQuery> for FreeBusyQuery {
     }
 }
 
+impl QRead<ReportTypeName> for ReportTypeName {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        if xml.maybe_open(DAV_URN, "calendar-query").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::Query);
+        }
+        if xml
+            .maybe_open(DAV_URN, "calendar-multiget")
+            .await?
+            .is_some()
+        {
+            xml.close().await?;
+            return Ok(Self::Multiget);
+        }
+        if xml.maybe_open(DAV_URN, "free-busy-query").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::FreeBusy);
+        }
+        Err(ParsingError::Recoverable)
+    }
+}
+
 // ---- EXTENSIONS ---
 impl QRead<Violation> for Violation {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {

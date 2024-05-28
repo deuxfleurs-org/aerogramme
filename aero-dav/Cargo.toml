@@ -12,3 +12,4 @@ http.workspace = true
 chrono.workspace = true
 tokio.workspace = true
 futures.workspace = true
+tracing.workspace = true

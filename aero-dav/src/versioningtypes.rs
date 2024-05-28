@@ -22,6 +22,26 @@ use super::types as dav;
 // ANY value: a report element type
 
 #[derive(Debug, PartialEq, Clone)]
+pub enum PropertyRequest {
+    SupportedReportSet,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Property<E: dav::Extension> {
+    SupportedReportSet(Vec<SupportedReport<E>>),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct SupportedReport<E: dav::Extension>(pub ReportName<E>);
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ReportName<E: dav::Extension> {
+    VersionTree,
+    ExpandProperty,
+    Extension(E::ReportTypeName),
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Report<E: dav::Extension> {
     VersionTree,    // Not yet implemented
     ExpandProperty, // Not yet implemented

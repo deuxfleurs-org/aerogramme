@@ -5,6 +5,34 @@ use super::synctypes::*;
 use super::types as dav;
 use super::xml::{IRead, QRead, Reader, DAV_URN};
 
+impl QRead<PropertyRequest> for PropertyRequest {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        let mut dirty = false;
+        let mut m_cdr = None;
+        xml.maybe_read(&mut m_cdr, &mut dirty).await?;
+        m_cdr.ok_or(ParsingError::Recoverable).map(Self::SyncToken)
+    }
+}
+
+impl QRead<Property> for Property {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        let mut dirty = false;
+        let mut m_cdr = None;
+        xml.maybe_read(&mut m_cdr, &mut dirty).await?;
+        m_cdr.ok_or(ParsingError::Recoverable).map(Self::SyncToken)
+    }
+}
+
+impl QRead<ReportTypeName> for ReportTypeName {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        if xml.maybe_open(DAV_URN, "sync-collection").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::SyncCollection);
+        }
+        Err(ParsingError::Recoverable)
+    }
+}
+
 impl<E: dav::Extension> QRead<SyncCollection<E>> for SyncCollection<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(DAV_URN, "sync-collection").await?;
@@ -75,7 +103,7 @@ impl QRead<SyncLevel> for SyncLevel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::realization::All;
+    use crate::realization::{self, All};
     use crate::types as dav;
     use crate::versioningtypes as vers;
     use crate::xml::Node;
@@ -171,5 +199,43 @@ mod tests {
             let got = deserialize::<SyncCollection<All>>(src).await;
             assert_eq!(got, expected);
         }
+    }
+
+    #[tokio::test]
+    async fn prop_req() {
+        let expected = dav::PropName::<All>(vec![dav::PropertyRequest::Extension(
+            realization::PropertyRequest::Sync(PropertyRequest::SyncToken(
+                SyncTokenRequest::InitialSync,
+            )),
+        )]);
+        let src = r#"<prop xmlns="DAV:"><sync-token/></prop>"#;
+        let got = deserialize::<dav::PropName<All>>(src).await;
+        assert_eq!(got, expected);
+    }
+
+    #[tokio::test]
+    async fn prop_val() {
+        let expected = dav::PropValue::<All>(vec![
+            dav::Property::Extension(realization::Property::Sync(Property::SyncToken(SyncToken(
+                "http://example.com/ns/sync/1232".into(),
+            )))),
+            dav::Property::Extension(realization::Property::Vers(
+                vers::Property::SupportedReportSet(vec![vers::SupportedReport(
+                    vers::ReportName::Extension(realization::ReportTypeName::Sync(
+                        ReportTypeName::SyncCollection,
+                    )),
+                )]),
+            )),
+        ]);
+        let src = r#"<prop xmlns="DAV:">
+            <sync-token>http://example.com/ns/sync/1232</sync-token>
+            <supported-report-set>
+                <supported-report>
+                    <report><sync-collection/></report>
+                </supported-report>
+            </supported-report-set>
+        </prop>"#;
+        let got = deserialize::<dav::PropValue<All>>(src).await;
+        assert_eq!(got, expected);
     }
 }

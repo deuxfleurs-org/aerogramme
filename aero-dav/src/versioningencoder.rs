@@ -5,6 +5,67 @@ use super::types::Extension;
 use super::versioningtypes::*;
 use super::xml::{IWrite, QWrite, Writer};
 
+// --- extensions to PROP
+impl QWrite for PropertyRequest {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        match self {
+            Self::SupportedReportSet => {
+                let start = xml.create_dav_element("supported-report-set");
+                xml.q.write_event_async(Event::Empty(start)).await
+            }
+        }
+    }
+}
+
+impl<E: Extension> QWrite for Property<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        match self {
+            Self::SupportedReportSet(set) => {
+                let start = xml.create_dav_element("supported-report-set");
+                let end = start.to_end();
+
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                for v in set.iter() {
+                    v.qwrite(xml).await?;
+                }
+                xml.q.write_event_async(Event::End(end)).await
+            }
+        }
+    }
+}
+
+impl<E: Extension> QWrite for SupportedReport<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("supported-report");
+        let end = start.to_end();
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        self.0.qwrite(xml).await?;
+        xml.q.write_event_async(Event::End(end)).await
+    }
+}
+
+impl<E: Extension> QWrite for ReportName<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_dav_element("report");
+        let end = start.to_end();
+
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        match self {
+            Self::VersionTree => {
+                let start = xml.create_dav_element("version-tree");
+                xml.q.write_event_async(Event::Empty(start)).await?;
+            }
+            Self::ExpandProperty => {
+                let start = xml.create_dav_element("expand-property");
+                xml.q.write_event_async(Event::Empty(start)).await?;
+            }
+            Self::Extension(ext) => ext.qwrite(xml).await?,
+        };
+        xml.q.write_event_async(Event::End(end)).await
+    }
+}
+
+// --- root REPORT object ---
 impl<E: Extension> QWrite for Report<E> {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
@@ -15,6 +76,7 @@ impl<E: Extension> QWrite for Report<E> {
     }
 }
 
+// --- limit REPORT parameter ---
 impl QWrite for Limit {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let start = xml.create_dav_element("limit");

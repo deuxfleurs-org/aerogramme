@@ -12,6 +12,7 @@ pub trait Extension: std::fmt::Debug + PartialEq + Clone {
     type PropertyRequest: xml::Node<Self::PropertyRequest>;
     type ResourceType: xml::Node<Self::ResourceType>;
     type ReportType: xml::Node<Self::ReportType>;
+    type ReportTypeName: xml::Node<Self::ReportTypeName>;
 }
 
 /// 14.1.  activelock XML Element

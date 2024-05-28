@@ -33,6 +33,25 @@ impl<E: Extension> QWrite for MkCalendarResponse<E> {
 }
 
 // ----------------------- REPORT METHOD -------------------------------------
+impl QWrite for ReportTypeName {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        match self {
+            Self::Query => {
+                let start = xml.create_dav_element("calendar-query");
+                xml.q.write_event_async(Event::Empty(start)).await
+            }
+            Self::Multiget => {
+                let start = xml.create_dav_element("calendar-multiget");
+                xml.q.write_event_async(Event::Empty(start)).await
+            }
+            Self::FreeBusy => {
+                let start = xml.create_dav_element("free-busy-query");
+                xml.q.write_event_async(Event::Empty(start)).await
+            }
+        }
+    }
+}
+
 impl<E: Extension> QWrite for ReportType<E> {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
