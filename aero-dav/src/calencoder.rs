@@ -950,6 +950,7 @@ mod tests {
     #[tokio::test]
     async fn rfc_calendar_query1_res() {
         let got = serialize(&dav::Multistatus::<Calendar> {
+            extension: None,
             responses: vec![
                 dav::Response {
                     status_or_propstat: dav::StatusOrPropstat::PropStat(

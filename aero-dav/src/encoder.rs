@@ -60,6 +60,9 @@ impl<E: Extension> QWrite for Multistatus<E> {
         if let Some(description) = &self.responsedescription {
             description.qwrite(xml).await?;
         }
+        if let Some(extension) = &self.extension {
+            extension.qwrite(xml).await?;
+        }
 
         xml.q.write_event_async(Event::End(end)).await?;
         Ok(())
@@ -752,6 +755,7 @@ mod tests {
     #[tokio::test]
     async fn basic_multistatus() {
         let orig = Multistatus::<Core> {
+            extension: None,
             responses: vec![],
             responsedescription: Some(ResponseDescription("Hello world".into())),
         };
@@ -808,6 +812,7 @@ mod tests {
     #[tokio::test]
     async fn rfc_propname_res() {
         let orig = Multistatus::<Core> {
+            extension: None,
             responses: vec![
                 Response {
                     status_or_propstat: StatusOrPropstat::PropStat(
@@ -916,6 +921,7 @@ mod tests {
         use chrono::{FixedOffset, TimeZone};
 
         let orig = Multistatus::<Core> {
+            extension: None,
             responses: vec![
                 Response {
                     status_or_propstat: StatusOrPropstat::PropStat(
@@ -1140,6 +1146,7 @@ mod tests {
     #[tokio::test]
     async fn rfc_delete_locked2() {
         let orig = Multistatus::<Core> {
+            extension: None,
             responses: vec![Response {
                 status_or_propstat: StatusOrPropstat::Status(
                     vec![Href("http://www.example.com/container/resource3".into())],

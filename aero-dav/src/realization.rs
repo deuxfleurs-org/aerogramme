@@ -35,6 +35,7 @@ impl dav::Extension for Core {
     type ResourceType = Disabled;
     type ReportType = Disabled;
     type ReportTypeName = Disabled;
+    type Multistatus = Disabled;
 }
 
 // WebDAV with the base Calendar implementation (RFC4791)
@@ -47,6 +48,7 @@ impl dav::Extension for Calendar {
     type ResourceType = cal::ResourceType;
     type ReportType = cal::ReportType<Calendar>;
     type ReportTypeName = cal::ReportTypeName;
+    type Multistatus = Disabled;
 }
 
 // ACL
@@ -59,6 +61,7 @@ impl dav::Extension for Acl {
     type ResourceType = acl::ResourceType;
     type ReportType = Disabled;
     type ReportTypeName = Disabled;
+    type Multistatus = Disabled;
 }
 
 // All merged
@@ -71,6 +74,7 @@ impl dav::Extension for All {
     type ResourceType = ResourceType;
     type ReportType = ReportType<All>;
     type ReportTypeName = ReportTypeName;
+    type Multistatus = Disabled;
 }
 
 #[derive(Debug, PartialEq, Clone)]

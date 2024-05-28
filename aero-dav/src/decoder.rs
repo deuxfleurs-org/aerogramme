@@ -67,11 +67,13 @@ impl<E: Extension> QRead<Multistatus<E>> for Multistatus<E> {
         xml.open(DAV_URN, "multistatus").await?;
         let mut responses = Vec::new();
         let mut responsedescription = None;
+        let mut extension = None;
 
         loop {
             let mut dirty = false;
             xml.maybe_push(&mut responses, &mut dirty).await?;
             xml.maybe_read(&mut responsedescription, &mut dirty).await?;
+            xml.maybe_read(&mut extension, &mut dirty).await?;
             if !dirty {
                 match xml.peek() {
                     Event::End(_) => break,
@@ -84,6 +86,7 @@ impl<E: Extension> QRead<Multistatus<E>> for Multistatus<E> {
         Ok(Multistatus {
             responses,
             responsedescription,
+            extension,
         })
     }
 }
@@ -983,6 +986,7 @@ mod tests {
                     },
                 ],
                 responsedescription: None,
+                extension: None,
             }
         );
     }
@@ -1053,6 +1057,7 @@ mod tests {
         assert_eq!(
             got,
             Multistatus {
+                extension: None,
                 responses: vec![
                     Response {
                         status_or_propstat: StatusOrPropstat::PropStat(

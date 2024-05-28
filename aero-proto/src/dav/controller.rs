@@ -309,6 +309,7 @@ impl Controller {
         dav::Multistatus::<All> {
             responses,
             responsedescription: None,
+            extension: None,
         }
     }
 }

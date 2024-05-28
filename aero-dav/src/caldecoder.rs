@@ -1198,6 +1198,7 @@ END:VCALENDAR]]></C:calendar-timezone>
     #[tokio::test]
     async fn rfc_calendar_query_res() {
         let expected = dav::Multistatus::<Calendar> {
+            extension: None,
             responses: vec![
                 dav::Response {
                     status_or_propstat: dav::StatusOrPropstat::PropStat(
