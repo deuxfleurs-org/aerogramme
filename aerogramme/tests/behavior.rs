@@ -20,6 +20,7 @@ fn main() {
     rfc4918_webdav_core();
     rfc5397_webdav_principal();
     rfc4791_webdav_caldav();
+    rfc6578_webdav_sync();
     println!("✅ SUCCESS 🌟🚀🥳🙏🥹");
 }
 
@@ -365,7 +366,9 @@ fn rfc5819_imapext_liststatus() {
 use aero_dav::acltypes as acl;
 use aero_dav::caltypes as cal;
 use aero_dav::realization::{self, All};
+use aero_dav::synctypes as sync;
 use aero_dav::types as dav;
+use aero_dav::versioningtypes as vers;
 
 use crate::common::dav_deserialize;
 
@@ -1011,4 +1014,103 @@ fn rfc4791_webdav_caldav() {
     .expect("test fully run")
 }
 
-// @TODO SYNC
+fn rfc6578_webdav_sync() {
+    println!("🧪 rfc6578_webdav_sync");
+    common::aerogramme_provider_daemon_dev(|_imap, _lmtp, http| {
+        // propname on a calendar node must return <sync-token/> + <supported-report-set/> (2nd element is theoretically from versioning)
+        let propfind_req = r#"<?xml version="1.0" encoding="utf-8" ?><propfind xmlns="DAV:"><propname/></propfind>"#;
+        let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087/alice/calendar/Personal/").body(propfind_req).send()?.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        let root_propstats = multistatus.responses.iter()
+            .find_map(|v| match &v.status_or_propstat {
+                dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/alice/calendar/Personal/" => Some(x),
+                _ => None,
+            })
+            .expect("propstats for target must exist"); 
+        let root_success = root_propstats.iter().find(|p| p.status.0.as_u16() == 200).expect("some propstats for root must be 200");
+        assert!(root_success.prop.0.iter().find(|p| matches!(p, dav::AnyProperty::Request(dav::PropertyRequest::Extension(
+            realization::PropertyRequest::Sync(sync::PropertyRequest::SyncToken)
+        )))).is_some());
+        assert!(root_success.prop.0.iter().find(|p| matches!(p, dav::AnyProperty::Request(dav::PropertyRequest::Extension(
+            realization::PropertyRequest::Vers(vers::PropertyRequest::SupportedReportSet)
+        )))).is_some());
+
+        // synctoken and supported report set must contains a meaningful value when queried
+        let propfind_req = r#"<?xml version="1.0" encoding="utf-8" ?><propfind xmlns="DAV:"><prop><sync-token/><supported-report-set/></prop></propfind>"#;
+        let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087/alice/calendar/Personal/").body(propfind_req).send()?.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        let root_propstats = multistatus.responses.iter()
+            .find_map(|v| match &v.status_or_propstat {
+                dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/alice/calendar/Personal/" => Some(x),
+                _ => None,
+            })
+            .expect("propstats for target must exist"); 
+
+        let root_success = root_propstats.iter().find(|p| p.status.0.as_u16() == 200).expect("some propstats for root must be 200");
+
+        let init_sync_token = root_success.prop.0.iter().find_map(|p| match p {
+            dav::AnyProperty::Value(dav::Property::Extension(realization::Property::Sync(sync::Property::SyncToken(st)))) => Some(st),
+            _ => None,
+        }).expect("sync_token exists");
+
+        let supported = root_success.prop.0.iter().find_map(|p| match p {
+            dav::AnyProperty::Value(dav::Property::Extension(realization::Property::Vers(vers::Property::SupportedReportSet(s)))) => Some(s),
+            _ => None
+        }).expect("supported report set exists");
+        assert_eq!(&supported[..], &[
+            vers::SupportedReport(vers::ReportName::Extension(realization::ReportTypeName::Cal(cal::ReportTypeName::Multiget))),
+            vers::SupportedReport(vers::ReportName::Extension(realization::ReportTypeName::Cal(cal::ReportTypeName::Query))),
+            vers::SupportedReport(vers::ReportName::Extension(realization::ReportTypeName::Sync(sync::ReportTypeName::SyncCollection))),
+        ]);
+
+
+        // synctoken must change if we add a file
+        let resp = http
+            .put("http://localhost:8087/alice/calendar/Personal/rfc1.ics")
+            .header("If-None-Match", "*")
+            .body(ICAL_RFC1)
+            .send()?;
+        assert_eq!(resp.status(), 201);
+
+        let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087/alice/calendar/Personal/").body(propfind_req).send()?.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+
+        let root_propstats = multistatus.responses.iter()
+            .find_map(|v| match &v.status_or_propstat {
+                dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/alice/calendar/Personal/" => Some(x),
+                _ => None,
+            })
+            .expect("propstats for target must exist"); 
+        let root_success = root_propstats.iter().find(|p| p.status.0.as_u16() == 200).expect("some propstats for root must be 200");
+        let rfc1_sync_token = root_success.prop.0.iter().find_map(|p| match p {
+            dav::AnyProperty::Value(dav::Property::Extension(realization::Property::Sync(sync::Property::SyncToken(st)))) => Some(st),
+            _ => None,
+        }).expect("sync_token exists");
+        assert!(init_sync_token != rfc1_sync_token);
+
+
+        // synctoken must change if we delete a file
+        let resp = http.delete("http://localhost:8087/alice/calendar/Personal/rfc1.ics").send()?;
+        assert_eq!(resp.status(), 204);
+
+        let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087/alice/calendar/Personal/").body(propfind_req).send()?.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+
+        let root_propstats = multistatus.responses.iter()
+            .find_map(|v| match &v.status_or_propstat {
+                dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/alice/calendar/Personal/" => Some(x),
+                _ => None,
+            })
+            .expect("propstats for target must exist"); 
+        let root_success = root_propstats.iter().find(|p| p.status.0.as_u16() == 200).expect("some propstats for root must be 200");
+        let del_sync_token = root_success.prop.0.iter().find_map(|p| match p {
+            dav::AnyProperty::Value(dav::Property::Extension(realization::Property::Sync(sync::Property::SyncToken(st)))) => Some(st),
+            _ => None,
+        }).expect("sync_token exists");
+        assert!(init_sync_token != del_sync_token);
+        assert!(rfc1_sync_token != del_sync_token);
+
+        Ok(())
+    })
+    .expect("test fully run")
+}

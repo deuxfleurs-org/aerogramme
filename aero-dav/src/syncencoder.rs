@@ -16,7 +16,10 @@ impl QWrite for Property {
 impl QWrite for PropertyRequest {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
-            Self::SyncToken(token) => token.qwrite(xml).await,
+            Self::SyncToken => {
+                let start = xml.create_dav_element("sync-token");
+                xml.q.write_event_async(Event::Empty(start)).await
+            }
         }
     }
 }
@@ -180,7 +183,7 @@ mod tests {
     async fn prop_req() {
         serialize_deserialize(&dav::PropName::<All>(vec![
             dav::PropertyRequest::Extension(realization::PropertyRequest::Sync(
-                PropertyRequest::SyncToken(SyncTokenRequest::InitialSync),
+                PropertyRequest::SyncToken,
             )),
         ]))
         .await;

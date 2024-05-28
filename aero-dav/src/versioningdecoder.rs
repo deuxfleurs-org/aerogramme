@@ -21,7 +21,7 @@ impl QRead<PropertyRequest> for PropertyRequest {
 impl<E: dav::Extension> QRead<Property<E>> for Property<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         if xml
-            .maybe_open(DAV_URN, "supported-report-set")
+            .maybe_open_start(DAV_URN, "supported-report-set")
             .await?
             .is_some()
         {

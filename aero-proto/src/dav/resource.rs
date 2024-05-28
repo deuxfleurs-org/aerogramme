@@ -14,7 +14,9 @@ use aero_collections::{
 use aero_dav::acltypes as acl;
 use aero_dav::caltypes as cal;
 use aero_dav::realization::{self as all, All};
+use aero_dav::synctypes as sync;
 use aero_dav::types as dav;
+use aero_dav::versioningtypes as vers;
 
 use super::node::PropertyStream;
 use crate::dav::node::{Content, DavNode, PutPolicy};
@@ -431,38 +433,78 @@ impl DavNode for CalendarNode {
             dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
                 cal::PropertyRequest::SupportedCalendarComponentSet,
             )),
+            dav::PropertyRequest::Extension(all::PropertyRequest::Sync(
+                sync::PropertyRequest::SyncToken,
+            )),
+            dav::PropertyRequest::Extension(all::PropertyRequest::Vers(
+                vers::PropertyRequest::SupportedReportSet,
+            )),
         ])
     }
     fn properties(&self, _user: &ArcUser, prop: dav::PropName<All>) -> PropertyStream<'static> {
         let calname = self.calname.to_string();
+        let col = self.col.clone();
 
         futures::stream::iter(prop.0)
-            .map(move |n| {
-                let prop = match n {
-                    dav::PropertyRequest::DisplayName => {
-                        dav::Property::DisplayName(format!("{} calendar", calname))
-                    }
-                    dav::PropertyRequest::ResourceType => dav::Property::ResourceType(vec![
-                        dav::ResourceType::Collection,
-                        dav::ResourceType::Extension(all::ResourceType::Cal(
-                            cal::ResourceType::Calendar,
+            .then(move |n| {
+                let calname = calname.clone();
+                let col = col.clone();
+
+                async move {
+                    let prop = match n {
+                        dav::PropertyRequest::DisplayName => {
+                            dav::Property::DisplayName(format!("{} calendar", calname))
+                        }
+                        dav::PropertyRequest::ResourceType => dav::Property::ResourceType(vec![
+                            dav::ResourceType::Collection,
+                            dav::ResourceType::Extension(all::ResourceType::Cal(
+                                cal::ResourceType::Calendar,
+                            )),
+                        ]),
+                        //dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
+                        //@FIXME seems wrong but seems to be what Thunderbird expects...
+                        dav::PropertyRequest::GetContentType => {
+                            dav::Property::GetContentType("text/calendar".into())
+                        }
+                        dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
+                            cal::PropertyRequest::SupportedCalendarComponentSet,
+                        )) => dav::Property::Extension(all::Property::Cal(
+                            cal::Property::SupportedCalendarComponentSet(vec![
+                                cal::CompSupport(cal::Component::VEvent),
+                                cal::CompSupport(cal::Component::VTodo),
+                                cal::CompSupport(cal::Component::VJournal),
+                            ]),
                         )),
-                    ]),
-                    //dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
-                    //@FIXME seems wrong but seems to be what Thunderbird expects...
-                    dav::PropertyRequest::GetContentType => {
-                        dav::Property::GetContentType("text/calendar".into())
-                    }
-                    dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
-                        cal::PropertyRequest::SupportedCalendarComponentSet,
-                    )) => dav::Property::Extension(all::Property::Cal(
-                        cal::Property::SupportedCalendarComponentSet(vec![cal::CompSupport(
-                            cal::Component::VEvent,
-                        )]),
-                    )),
-                    v => return Err(v),
-                };
-                Ok(prop)
+                        dav::PropertyRequest::Extension(all::PropertyRequest::Sync(
+                            sync::PropertyRequest::SyncToken,
+                        )) => match col.token().await {
+                            Ok(token) => dav::Property::Extension(all::Property::Sync(
+                                sync::Property::SyncToken(sync::SyncToken(format!(
+                                    "https://aerogramme.0/sync/{}",
+                                    token
+                                ))),
+                            )),
+                            _ => return Err(n.clone()),
+                        },
+                        dav::PropertyRequest::Extension(all::PropertyRequest::Vers(
+                            vers::PropertyRequest::SupportedReportSet,
+                        )) => dav::Property::Extension(all::Property::Vers(
+                            vers::Property::SupportedReportSet(vec![
+                                vers::SupportedReport(vers::ReportName::Extension(
+                                    all::ReportTypeName::Cal(cal::ReportTypeName::Multiget),
+                                )),
+                                vers::SupportedReport(vers::ReportName::Extension(
+                                    all::ReportTypeName::Cal(cal::ReportTypeName::Query),
+                                )),
+                                vers::SupportedReport(vers::ReportName::Extension(
+                                    all::ReportTypeName::Sync(sync::ReportTypeName::SyncCollection),
+                                )),
+                            ]),
+                        )),
+                        v => return Err(v),
+                    };
+                    Ok(prop)
+                }
             })
             .boxed()
     }

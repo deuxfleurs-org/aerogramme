@@ -7,10 +7,11 @@ use super::xml::{IRead, QRead, Reader, DAV_URN};
 
 impl QRead<PropertyRequest> for PropertyRequest {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        let mut dirty = false;
-        let mut m_cdr = None;
-        xml.maybe_read(&mut m_cdr, &mut dirty).await?;
-        m_cdr.ok_or(ParsingError::Recoverable).map(Self::SyncToken)
+        if xml.maybe_open(DAV_URN, "sync-token").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::SyncToken);
+        }
+        return Err(ParsingError::Recoverable);
     }
 }
 
@@ -88,7 +89,6 @@ impl QRead<SyncTokenRequest> for SyncTokenRequest {
 
 impl QRead<SyncToken> for SyncToken {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        println!("sync_token {:?}", xml.peek());
         xml.open(DAV_URN, "sync-token").await?;
         let token = xml.tag_string().await?;
         xml.close().await?;
@@ -213,9 +213,7 @@ mod tests {
     #[tokio::test]
     async fn prop_req() {
         let expected = dav::PropName::<All>(vec![dav::PropertyRequest::Extension(
-            realization::PropertyRequest::Sync(PropertyRequest::SyncToken(
-                SyncTokenRequest::InitialSync,
-            )),
+            realization::PropertyRequest::Sync(PropertyRequest::SyncToken),
         )]);
         let src = r#"<prop xmlns="DAV:"><sync-token/></prop>"#;
         let got = deserialize::<dav::PropName<All>>(src).await;

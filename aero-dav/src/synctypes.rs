@@ -6,7 +6,7 @@ use super::versioningtypes as vers;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum PropertyRequest {
-    SyncToken(SyncTokenRequest),
+    SyncToken,
 }
 
 #[derive(Debug, PartialEq, Clone)]

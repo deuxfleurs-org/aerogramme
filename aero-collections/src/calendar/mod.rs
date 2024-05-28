@@ -56,6 +56,11 @@ impl Calendar {
         self.internal.read().await.davdag.state().clone()
     }
 
+    /// Access the current token
+    pub async fn token(&self) -> Result<Token> {
+        self.internal.write().await.current_token().await
+    }
+
     /// The diff API is a write API as we might need to push a merge node
     /// to get a new sync token
     pub async fn diff(&self, sync_token: Token) -> Result<(Token, Vec<SyncChange>)> {
@@ -174,6 +179,12 @@ impl CalendarInternal {
             .map(|s| s.clone())
             .collect();
 
+        let token = self.current_token().await?;
+        Ok((token, changes))
+    }
+
+    async fn current_token(&mut self) -> Result<Token> {
+        let davstate = self.davdag.state();
         let heads = davstate.heads_vec();
         let token = match heads.as_slice() {
             [token] => *token,
@@ -184,7 +195,6 @@ impl CalendarInternal {
                 token
             }
         };
-
-        Ok((token, changes))
+        Ok(token)
     }
 }
