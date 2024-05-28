@@ -8,7 +8,7 @@ use futures::{future::BoxFuture, future::FutureExt};
 
 use aero_collections::{
     calendar::Calendar,
-    davdag::{BlobId, Etag},
+    davdag::{BlobId, Etag, SyncChange, Token},
     user::User,
 };
 use aero_dav::acltypes as acl;
@@ -20,6 +20,8 @@ use aero_dav::versioningtypes as vers;
 
 use super::node::PropertyStream;
 use crate::dav::node::{Content, DavNode, PutPolicy};
+
+pub const BASE_TOKEN_URI: &str = "https://aerogramme.0/sync/";
 
 #[derive(Clone)]
 pub(crate) struct RootNode {}
@@ -116,6 +118,16 @@ impl DavNode for RootNode {
 
     fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>> {
         async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
+    }
+
+    fn diff<'a>(
+        &self,
+        _sync_token: Option<Token>,
+    ) -> BoxFuture<
+        'a,
+        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
+    > {
+        async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
     }
 }
 
@@ -228,6 +240,15 @@ impl DavNode for HomeNode {
 
     fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>> {
         async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
+    }
+    fn diff<'a>(
+        &self,
+        _sync_token: Option<Token>,
+    ) -> BoxFuture<
+        'a,
+        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
+    > {
+        async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
     }
 }
 
@@ -352,6 +373,15 @@ impl DavNode for CalendarListNode {
 
     fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>> {
         async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
+    }
+    fn diff<'a>(
+        &self,
+        _sync_token: Option<Token>,
+    ) -> BoxFuture<
+        'a,
+        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
+    > {
+        async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
     }
 }
 
@@ -480,8 +510,8 @@ impl DavNode for CalendarNode {
                         )) => match col.token().await {
                             Ok(token) => dav::Property::Extension(all::Property::Sync(
                                 sync::Property::SyncToken(sync::SyncToken(format!(
-                                    "https://aerogramme.0/sync/{}",
-                                    token
+                                    "{}{}",
+                                    BASE_TOKEN_URI, token
                                 ))),
                             )),
                             _ => return Err(n.clone()),
@@ -534,6 +564,48 @@ impl DavNode for CalendarNode {
 
     fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>> {
         async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
+    }
+    fn diff<'a>(
+        &self,
+        sync_token: Option<Token>,
+    ) -> BoxFuture<
+        'a,
+        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
+    > {
+        let col = self.col.clone();
+        let calname = self.calname.clone();
+        async move {
+            let sync_token = sync_token.unwrap();
+            let (new_token, listed_changes) = match col.diff(sync_token).await {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::info!(err=?e, "token resolution failed, maybe a forgotten token");
+                    return Err(std::io::Error::from(std::io::ErrorKind::NotFound));
+                }
+            };
+
+            let mut ok_nodes: Vec<Box<dyn DavNode>> = vec![];
+            let mut rm_nodes: Vec<dav::Href> = vec![];
+            for change in listed_changes.into_iter() {
+                match change {
+                    SyncChange::Ok((filename, blob_id)) => {
+                        let child = Box::new(EventNode {
+                            col: col.clone(),
+                            calname: calname.clone(),
+                            filename,
+                            blob_id,
+                        });
+                        ok_nodes.push(child);
+                    }
+                    SyncChange::NotFound(filename) => {
+                        rm_nodes.push(dav::Href(filename));
+                    }
+                }
+            }
+
+            Ok((new_token, ok_nodes, rm_nodes))
+        }
+        .boxed()
     }
 }
 
@@ -757,6 +829,15 @@ impl DavNode for EventNode {
         }
         .boxed()
     }
+    fn diff<'a>(
+        &self,
+        _sync_token: Option<Token>,
+    ) -> BoxFuture<
+        'a,
+        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
+    > {
+        async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
+    }
 }
 
 #[derive(Clone)]
@@ -848,5 +929,14 @@ impl DavNode for CreateEventNode {
     fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>> {
         // Nothing to delete
         async { Ok(()) }.boxed()
+    }
+    fn diff<'a>(
+        &self,
+        _sync_token: Option<Token>,
+    ) -> BoxFuture<
+        'a,
+        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
+    > {
+        async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
     }
 }

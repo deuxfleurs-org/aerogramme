@@ -42,7 +42,7 @@ pub struct DavDag {
 
 #[derive(Clone, Debug)]
 pub enum SyncChange {
-    Ok(FileName),
+    Ok((FileName, BlobId)),
     NotFound(FileName),
 }
 
@@ -150,7 +150,8 @@ impl DavDag {
 
         // Record the change in the ephemeral synchronization map
         if let Some(sync_token) = sync_token {
-            self.change.insert(sync_token, SyncChange::Ok(filename));
+            self.change
+                .insert(sync_token, SyncChange::Ok((filename, blob_id)));
         }
     }
 

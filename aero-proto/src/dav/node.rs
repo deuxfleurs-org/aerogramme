@@ -3,7 +3,7 @@ use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{BoxStream, StreamExt};
 use hyper::body::Bytes;
 
-use aero_collections::davdag::Etag;
+use aero_collections::davdag::{Etag, Token};
 use aero_dav::realization::All;
 use aero_dav::types as dav;
 
@@ -55,8 +55,14 @@ pub(crate) trait DavNode: Send {
     fn content<'a>(&self) -> Content<'a>;
     /// Delete
     fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>>;
-
-    //@FIXME maybe add etag, maybe add a way to set content
+    /// Sync
+    fn diff<'a>(
+        &self,
+        sync_token: Option<Token>,
+    ) -> BoxFuture<
+        'a,
+        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
+    >;
 
     /// Utility function to get a propname response from a node
     fn response_propname(&self, user: &ArcUser) -> dav::Response<All> {

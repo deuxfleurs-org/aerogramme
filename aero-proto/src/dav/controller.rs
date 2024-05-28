@@ -7,9 +7,10 @@ use hyper::body::Frame;
 use hyper::body::Incoming;
 use hyper::{body::Bytes, Request, Response};
 
-use aero_collections::user::User;
+use aero_collections::{davdag::Token, user::User};
 use aero_dav::caltypes as cal;
 use aero_dav::realization::{self, All};
+use aero_dav::synctypes as sync;
 use aero_dav::types as dav;
 use aero_dav::versioningtypes as vers;
 use aero_ical::query::is_component_match;
@@ -17,7 +18,7 @@ use aero_ical::query::is_component_match;
 use crate::dav::codec;
 use crate::dav::codec::{depth, deserialize, serialize, text_body};
 use crate::dav::node::DavNode;
-use crate::dav::resource::RootNode;
+use crate::dav::resource::{RootNode, BASE_TOKEN_URI};
 
 pub(super) type ArcUser = std::sync::Arc<User>;
 pub(super) type HttpResponse = Response<UnsyncBoxBody<Bytes, std::io::Error>>;
@@ -109,6 +110,7 @@ impl Controller {
         // Internal representation that will handle processed request
         let (mut ok_node, mut not_found) = (Vec::new(), Vec::new());
         let calprop: Option<cal::CalendarSelector<All>>;
+        let extension: Option<realization::Multistatus>;
 
         // Extracting request information
         match cal_report {
@@ -136,15 +138,54 @@ impl Controller {
                     };
                 }
                 calprop = m.selector;
+                extension = None;
             }
             vers::Report::Extension(realization::ReportType::Cal(cal::ReportType::Query(q))) => {
                 calprop = q.selector;
+                extension = None;
                 ok_node = apply_filter(self.node.children(&self.user).await, &q.filter)
                     .try_collect()
                     .await?;
             }
-            vers::Report::Extension(realization::ReportType::Sync(_sync_col)) => {
-                todo!()
+            vers::Report::Extension(realization::ReportType::Sync(sync_col)) => {
+                calprop = Some(cal::CalendarSelector::Prop(sync_col.prop));
+
+                if sync_col.limit.is_some() {
+                    tracing::warn!("limit is not supported, ignoring");
+                }
+                if matches!(sync_col.sync_level, sync::SyncLevel::Infinite) {
+                    tracing::debug!("aerogramme calendar collections are not nested");
+                }
+
+                let token = match sync_col.sync_token {
+                    sync::SyncTokenRequest::InitialSync => None,
+                    sync::SyncTokenRequest::IncrementalSync(token_raw) => {
+                        // parse token
+                        if token_raw.len() != BASE_TOKEN_URI.len() + 48 {
+                            anyhow::bail!("invalid token length")
+                        }
+                        let token = token_raw[BASE_TOKEN_URI.len()..]
+                            .parse()
+                            .or(Err(anyhow::anyhow!("can't parse token")))?;
+                        Some(token)
+                    }
+                };
+                // do the diff
+                let new_token: Token;
+                (new_token, ok_node, not_found) = match self.node.diff(token).await {
+                    Ok(t) => t,
+                    Err(e) => match e.kind() {
+                        std::io::ErrorKind::NotFound => return Ok(Response::builder()
+                            .status(410)
+                            .body(text_body("Diff failed, token might be expired"))?),
+                        _ => return Ok(Response::builder()
+                                .status(500)
+                                .body(text_body("Server error, maybe this operation is not supported on this collection"))?),
+                    },
+                };
+                extension = Some(realization::Multistatus::Sync(sync::Multistatus {
+                    sync_token: sync::SyncToken(new_token.to_string()),
+                }));
             }
             _ => {
                 return Ok(Response::builder()
@@ -162,7 +203,7 @@ impl Controller {
 
         serialize(
             status,
-            Self::multistatus(&self.user, ok_node, not_found, props).await,
+            Self::multistatus(&self.user, ok_node, not_found, props, extension).await,
         )
     }
 
@@ -208,7 +249,7 @@ impl Controller {
         let not_found = vec![];
         serialize(
             status,
-            Self::multistatus(&self.user, nodes, not_found, propname).await,
+            Self::multistatus(&self.user, nodes, not_found, propname, None).await,
         )
     }
 
@@ -277,6 +318,7 @@ impl Controller {
         nodes: Vec<Box<dyn DavNode>>,
         not_found: Vec<dav::Href>,
         props: Option<dav::PropName<All>>,
+        extension: Option<realization::Multistatus>,
     ) -> dav::Multistatus<All> {
         // Collect properties on existing objects
         let mut responses: Vec<dav::Response<All>> = match props {
@@ -309,7 +351,7 @@ impl Controller {
         dav::Multistatus::<All> {
             responses,
             responsedescription: None,
-            extension: None,
+            extension,
         }
     }
 }
