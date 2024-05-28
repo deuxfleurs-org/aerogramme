@@ -68,9 +68,7 @@ impl<E: dav::Extension> QRead<ReportName<E>> for ReportName<E> {
 
 impl<E: dav::Extension> QRead<Report<E>> for Report<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        xml.open(DAV_URN, "report").await?;
-
-        let final_result = if xml.maybe_open(DAV_URN, "version-tree").await?.is_some() {
+        if xml.maybe_open(DAV_URN, "version-tree").await?.is_some() {
             xml.close().await?;
             tracing::warn!("version-tree is not implemented, skipping");
             Ok(Report::VersionTree)
@@ -80,10 +78,7 @@ impl<E: dav::Extension> QRead<Report<E>> for Report<E> {
             Ok(Report::ExpandProperty)
         } else {
             E::ReportType::qread(xml).await.map(Report::Extension)
-        };
-
-        xml.close().await?;
-        final_result
+        }
     }
 }
 
