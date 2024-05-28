@@ -74,7 +74,7 @@ impl dav::Extension for All {
     type ResourceType = ResourceType;
     type ReportType = ReportType<All>;
     type ReportTypeName = ReportTypeName;
-    type Multistatus = Disabled;
+    type Multistatus = Multistatus;
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -234,5 +234,27 @@ impl xml::QWrite for ReportTypeName {
             Self::Cal(c) => c.qwrite(xml).await,
             Self::Sync(s) => s.qwrite(xml).await,
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Multistatus {
+    Sync(sync::Multistatus),
+}
+
+impl xml::QWrite for Multistatus {
+    async fn qwrite(
+        &self,
+        xml: &mut xml::Writer<impl xml::IWrite>,
+    ) -> Result<(), quick_xml::Error> {
+        match self {
+            Self::Sync(s) => s.qwrite(xml).await,
+        }
+    }
+}
+
+impl xml::QRead<Multistatus> for Multistatus {
+    async fn qread(xml: &mut xml::Reader<impl xml::IRead>) -> Result<Self, error::ParsingError> {
+        sync::Multistatus::qread(xml).await.map(Self::Sync)
     }
 }

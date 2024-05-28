@@ -19,6 +19,11 @@ pub enum ReportTypeName {
     SyncCollection,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct Multistatus {
+    pub sync_token: SyncToken,
+}
+
 //@FIXME add SyncToken to Multistatus
 
 ///  Name:  sync-collection

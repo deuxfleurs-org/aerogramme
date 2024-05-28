@@ -33,6 +33,14 @@ impl QRead<ReportTypeName> for ReportTypeName {
     }
 }
 
+impl QRead<Multistatus> for Multistatus {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        SyncToken::qread(xml)
+            .await
+            .map(|sync_token| Multistatus { sync_token })
+    }
+}
+
 impl<E: dav::Extension> QRead<SyncCollection<E>> for SyncCollection<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(DAV_URN, "sync-collection").await?;
@@ -80,6 +88,7 @@ impl QRead<SyncTokenRequest> for SyncTokenRequest {
 
 impl QRead<SyncToken> for SyncToken {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        println!("sync_token {:?}", xml.peek());
         xml.open(DAV_URN, "sync-token").await?;
         let token = xml.tag_string().await?;
         xml.close().await?;

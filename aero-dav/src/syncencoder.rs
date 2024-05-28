@@ -32,6 +32,12 @@ impl QWrite for ReportTypeName {
     }
 }
 
+impl QWrite for Multistatus {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        self.sync_token.qwrite(xml).await
+    }
+}
+
 impl<E: Extension> QWrite for SyncCollection<E> {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let start = xml.create_dav_element("sync-collection");
@@ -194,6 +200,26 @@ mod tests {
                 )]),
             )),
         ]))
+        .await;
+    }
+
+    #[tokio::test]
+    async fn multistatus_ext() {
+        serialize_deserialize(&dav::Multistatus::<All> {
+            responses: vec![dav::Response {
+                status_or_propstat: dav::StatusOrPropstat::Status(
+                    vec![dav::Href("/".into())],
+                    dav::Status(http::status::StatusCode::OK),
+                ),
+                error: None,
+                location: None,
+                responsedescription: None,
+            }],
+            responsedescription: None,
+            extension: Some(realization::Multistatus::Sync(Multistatus {
+                sync_token: SyncToken("http://example.com/ns/sync/1232".into()),
+            })),
+        })
         .await;
     }
 }
