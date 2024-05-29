@@ -61,18 +61,19 @@ impl Controller {
             }
         };
 
+        let dav_hdrs = node.dav_header();
         let ctrl = Self { node, user, req };
 
         match method.as_str() {
             "OPTIONS" => Ok(Response::builder()
                 .status(200)
-                .header("DAV", "1")
+                .header("DAV", dav_hdrs)
                 .header("Allow", "HEAD,GET,PUT,OPTIONS,DELETE,PROPFIND,PROPPATCH,MKCOL,COPY,MOVE,LOCK,UNLOCK,MKCALENDAR,REPORT")
                 .body(codec::text_body(""))?),
             "HEAD" => {
-                tracing::warn!("HEAD not correctly implemented");
+                tracing::warn!("HEAD might not correctly implemented: should return ETags & co");
                 Ok(Response::builder()
-                    .status(404)
+                    .status(200)
                     .body(codec::text_body(""))?)
             },
             "GET" => ctrl.get().await,
@@ -348,11 +349,14 @@ impl Controller {
         }
 
         // Build response
-        dav::Multistatus::<All> {
+        let multistatus = dav::Multistatus::<All> {
             responses,
             responsedescription: None,
             extension,
-        }
+        };
+
+        tracing::debug!(multistatus=?multistatus, "multistatus response");
+        multistatus
     }
 }
 

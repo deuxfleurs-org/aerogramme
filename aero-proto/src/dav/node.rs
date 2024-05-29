@@ -40,7 +40,9 @@ pub(crate) trait DavNode: Send {
     fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All>;
     /// Get the values for the given properties
     fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> PropertyStream<'static>;
-    //fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> Vec<dav::AnyProperty<All>>;
+    /// Get the value of the DAV header to return
+    fn dav_header(&self) -> String;
+
     /// Put an element (create or update)
     fn put<'a>(
         &'a self,

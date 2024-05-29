@@ -139,6 +139,10 @@ impl DavNode for RootNode {
     > {
         async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
     }
+
+    fn dav_header(&self) -> String {
+        "1".into()
+    }
 }
 
 #[derive(Clone)]
@@ -259,6 +263,10 @@ impl DavNode for HomeNode {
         std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
     > {
         async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
+    }
+
+    fn dav_header(&self) -> String {
+        "1, access-control, calendar-access".into()
     }
 }
 
@@ -392,6 +400,10 @@ impl DavNode for CalendarListNode {
         std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
     > {
         async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
+    }
+
+    fn dav_header(&self) -> String {
+        "1, access-control, calendar-access".into()
     }
 }
 
@@ -641,6 +653,9 @@ impl DavNode for CalendarNode {
         }
         .boxed()
     }
+    fn dav_header(&self) -> String {
+        "1, access-control, calendar-access".into()
+    }
 }
 
 #[derive(Clone)]
@@ -872,6 +887,10 @@ impl DavNode for EventNode {
     > {
         async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
     }
+
+    fn dav_header(&self) -> String {
+        "1, access-control".into()
+    }
 }
 
 #[derive(Clone)]
@@ -972,5 +991,9 @@ impl DavNode for CreateEventNode {
         std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
     > {
         async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
+    }
+
+    fn dav_header(&self) -> String {
+        "1, access-control".into()
     }
 }

@@ -98,7 +98,7 @@ impl Server {
             let conn = tokio::spawn(async move {
                 //@FIXME should create a generic "public web" server on which "routers" could be
                 //abitrarily bound
-                //@FIXME replace with a handler supporting http2 and TLS
+                //@FIXME replace with a handler supporting http2
 
                 match http::Builder::new()
                     .serve_connection(
@@ -106,8 +106,9 @@ impl Server {
                         service_fn(|req: Request<hyper::body::Incoming>| {
                             let login = login.clone();
                             tracing::info!("{:?} {:?}", req.method(), req.uri());
+                            tracing::debug!(req=?req, "full request");
                             async {
-                                match middleware::auth(login, req, |user, request| {
+                                let response = match middleware::auth(login, req, |user, request| {
                                     async { Controller::route(user, request).await }.boxed()
                                 })
                                 .await
@@ -119,7 +120,9 @@ impl Server {
                                             .status(500)
                                             .body(codec::text_body("Internal error"))
                                     }
-                                }
+                                };
+                                tracing::debug!(resp=?response, "full response");
+                                response
                             }
                         }),
                     )
