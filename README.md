@@ -19,18 +19,11 @@ A resilient & standards-compliant open-source IMAP server with built-in encrypti
 ## Roadmap
 
   - ✅ 0.1 Better emails parsing.
-  - ✅ 0.2 Support of IMAP4..
+  - ✅ 0.2 IMAP4 support.
   - ✅ 0.3 CalDAV support.
   - ⌛0.4 CardDAV support.
-  - ⌛0.5 Public beta.
-
-## A note about cargo2nix
-
-Currently, you must edit Cargo.nix by hand after running `cargo2nix`.
-Find the `tokio` dependency declaration. 
-Look at tokio's dependencies, the `tracing` is disable through a `if false` logic.
-Activate it by replacing the condition with `if true`.
-
+  - ⌛0.5 Internals rework.
+  - ⌛0.6 Public beta.
 
 ## Sponsors and funding
 
