@@ -6,7 +6,7 @@ use crate::common::fragments::*;
 
 fn main() {
     // IMAP
-    /*rfc3501_imap4rev1_base();
+    rfc3501_imap4rev1_base();
     rfc6851_imapext_move();
     rfc4551_imapext_condstore();
     rfc2177_imapext_idle();
@@ -14,7 +14,7 @@ fn main() {
     rfc3691_imapext_unselect();
     rfc7888_imapext_literal();
     rfc4315_imapext_uidplus();
-    rfc5819_imapext_liststatus();*/
+    rfc5819_imapext_liststatus();
 
     // WebDAV
     rfc4918_webdav_core();
