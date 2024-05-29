@@ -370,7 +370,7 @@ use aero_dav::synctypes as sync;
 use aero_dav::types as dav;
 use aero_dav::versioningtypes as vers;
 
-use crate::common::dav_deserialize;
+use crate::common::{dav_deserialize, dav_serialize};
 
 fn rfc4918_webdav_core() {
     println!("🧪 rfc4918_webdav_core");
@@ -435,6 +435,7 @@ fn rfc4918_webdav_core() {
         assert!(root_success.prop.0.iter().find(|p| matches!(p, dav::AnyProperty::Value(dav::Property::GetContentType(_)))).is_none());
         assert!(root_not_found.prop.0.iter().find(|p| matches!(p, dav::AnyProperty::Request(dav::PropertyRequest::GetContentLength))).is_some());
 
+        // -- HIERARCHY EXPLORATION WITH THE DEPTH: X HEADER FIELD --
         // depth 1 / -> /alice/
         let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087").header("Depth", "1").send()?.text()?;
         let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
@@ -470,7 +471,7 @@ fn rfc4918_webdav_core() {
         let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
         assert_eq!(multistatus.responses.len(), 1);
 
-        // --- PUT ---
+        // --- PUT (add objets) ---
         // first object
         let resp = http.put("http://localhost:8087/alice/calendar/Personal/rfc2.ics").header("If-None-Match", "*").body(ICAL_RFC2).send()?;
         let obj1_etag = resp.headers().get("etag").expect("etag must be set");
@@ -496,14 +497,14 @@ fn rfc4918_webdav_core() {
         let resp = http.put("http://localhost:8087/alice/calendar/Personal/rfc2.ics").header("If-Match", obj1_etag).body(ICAL_RFC1).send()?;
         assert_eq!(resp.status(), 201);
 
-        // --- GET ---
+        // --- GET (fetch objects) ---
         let body = http.get("http://localhost:8087/alice/calendar/Personal/rfc2.ics").send()?.text()?;
         assert_eq!(body.as_bytes(), ICAL_RFC1);
 
         let body = http.get("http://localhost:8087/alice/calendar/Personal/rfc3.ics").send()?.text()?;
         assert_eq!(body.as_bytes(), ICAL_RFC3);
 
-        // --- DELETE ---
+        // --- DELETE (delete objects) ---
         // delete 1st object
         let resp = http.delete("http://localhost:8087/alice/calendar/Personal/rfc2.ics").send()?;
         assert_eq!(resp.status(), 204);
@@ -528,7 +529,7 @@ fn rfc4918_webdav_core() {
 fn rfc5397_webdav_principal() {
     println!("🧪 rfc5397_webdav_principal");
     common::aerogramme_provider_daemon_dev(|_imap, _lmtp, http| {
-        // Find principal
+        // -- AUTODISCOVERY: FIND "PRINCIPAL" AS DEFINED IN WEBDAV ACL (~USER'S HOME) --
         let propfind_req = r#"<?xml version="1.0" encoding="utf-8" ?><propfind xmlns="DAV:"><prop><current-user-principal/></prop></propfind>"#;
         let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087").body(propfind_req).send()?.text()?;
         let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
@@ -1017,7 +1018,8 @@ fn rfc4791_webdav_caldav() {
 fn rfc6578_webdav_sync() {
     println!("🧪 rfc6578_webdav_sync");
     common::aerogramme_provider_daemon_dev(|_imap, _lmtp, http| {
-        // propname on a calendar node must return <sync-token/> + <supported-report-set/> (2nd element is theoretically from versioning)
+        // -- PROPFIND --
+        // propname must return sync-token & supported-report-set (from webdav versioning)
         let propfind_req = r#"<?xml version="1.0" encoding="utf-8" ?><propfind xmlns="DAV:"><propname/></propfind>"#;
         let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087/alice/calendar/Personal/").body(propfind_req).send()?.text()?;
         let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
@@ -1109,6 +1111,180 @@ fn rfc6578_webdav_sync() {
         }).expect("sync_token exists");
         assert!(init_sync_token != del_sync_token);
         assert!(rfc1_sync_token != del_sync_token);
+
+        // -- TEST SYNC CUSTOM REPORT: SYNC-COLLECTION --
+        // 3.8.  Example: Initial DAV:sync-collection Report
+        // Part 1: check the empty case
+        let sync_query = r#"<?xml version="1.0" encoding="utf-8" ?>
+            <D:sync-collection xmlns:D="DAV:">
+                <D:sync-token/>
+                <D:sync-level>1</D:sync-level>
+                <D:prop>
+                    <D:getetag/>
+                </D:prop>
+            </D:sync-collection>
+        "#;
+        let resp = http
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/calendar/Personal/",
+            )
+            .body(sync_query)
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
+        assert_eq!(multistatus.responses.len(), 0);
+        let empty_token = match &multistatus.extension {
+            Some(realization::Multistatus::Sync(sync::Multistatus { sync_token: sync::SyncToken(x) } )) => x,
+            _ => anyhow::bail!("wrong content"),
+        };
+
+        // Part 2: check with one file
+        let resp = http
+            .put("http://localhost:8087/alice/calendar/Personal/rfc1.ics")
+            .header("If-None-Match", "*")
+            .body(ICAL_RFC1)
+            .send()?;
+        assert_eq!(resp.status(), 201);
+
+        let resp = http
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/calendar/Personal/",
+            )
+            .body(sync_query)
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
+        assert_eq!(multistatus.responses.len(), 1);
+        let initial_one_file_token = match &multistatus.extension {
+            Some(realization::Multistatus::Sync(sync::Multistatus { sync_token: sync::SyncToken(x) } )) => x,
+            _ => anyhow::bail!("wrong content"),
+        };
+        assert!(empty_token != initial_one_file_token);
+
+        // 3.9.  Example: DAV:sync-collection Report with Token
+        // Part 1: nothing changed, response must be empty
+        let sync_query = |token: &str| vers::Report::<realization::All>::Extension(realization::ReportType::Sync(sync::SyncCollection {
+            sync_token: sync::SyncTokenRequest::IncrementalSync(token.into()),
+            sync_level: sync::SyncLevel::One,
+            limit: None,
+            prop: dav::PropName(vec![
+                dav::PropertyRequest::GetEtag,
+            ]),
+        }));
+        let resp = http
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/calendar/Personal/",
+            )
+            .body(dav_serialize(&sync_query(initial_one_file_token)))
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
+        assert_eq!(multistatus.responses.len(), 0);
+        let no_change = match &multistatus.extension {
+            Some(realization::Multistatus::Sync(sync::Multistatus { sync_token: sync::SyncToken(x) } )) => x,
+            _ => anyhow::bail!("wrong content"),
+        };
+        assert_eq!(initial_one_file_token, no_change);
+
+        // Part 2: add a new node (rfc2) + remove a node (rfc1)
+        // add rfc2
+        let resp = http
+            .put("http://localhost:8087/alice/calendar/Personal/rfc2.ics")
+            .header("If-None-Match", "*")
+            .body(ICAL_RFC2)
+            .send()?;
+        assert_eq!(resp.status(), 201);
+
+        // delete rfc1
+        let resp = http.delete("http://localhost:8087/alice/calendar/Personal/rfc1.ics").send()?;
+        assert_eq!(resp.status(), 204);
+
+        // call REPORT <sync-collection>
+        let resp = http
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/calendar/Personal/",
+            )
+            .body(dav_serialize(&sync_query(initial_one_file_token)))
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
+        assert_eq!(multistatus.responses.len(), 2);
+        let token_addrm = match &multistatus.extension {
+            Some(realization::Multistatus::Sync(sync::Multistatus { sync_token: sync::SyncToken(x) } )) => x,
+            _ => anyhow::bail!("wrong content"),
+        };
+        assert!(initial_one_file_token != token_addrm);
+
+        // Part 3: remove a node (rfc2) and add it again with new content
+        // delete rfc2
+        let resp = http.delete("http://localhost:8087/alice/calendar/Personal/rfc2.ics").send()?;
+        assert_eq!(resp.status(), 204);
+
+        // add rfc2 with ICAL_RFC3 content
+        let resp = http
+            .put("http://localhost:8087/alice/calendar/Personal/rfc2.ics")
+            .header("If-None-Match", "*")
+            .body(ICAL_RFC3)
+            .send()?;
+        let rfc2_etag = resp.headers().get("etag").expect("etag must be set");
+        assert_eq!(resp.status(), 201);
+
+        // call REPORT <sync-collection>
+        let resp = http
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/calendar/Personal/",
+            )
+            .body(dav_serialize(&sync_query(token_addrm)))
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
+        assert_eq!(multistatus.responses.len(), 1);
+        let token_addrm_same = match &multistatus.extension {
+            Some(realization::Multistatus::Sync(sync::Multistatus { sync_token: sync::SyncToken(x) } )) => x,
+            _ => anyhow::bail!("wrong content"),
+        };
+        assert!(token_addrm_same != token_addrm);
+
+        // Part 4: overwrite an event (rfc1) with new content
+        let resp = http
+            .put("http://localhost:8087/alice/calendar/Personal/rfc1.ics")
+            .header("If-Match", rfc2_etag)
+            .body(ICAL_RFC4)
+            .send()?;
+        assert_eq!(resp.status(), 201);
+
+        // call REPORT <sync-collection>
+        let resp = http
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/calendar/Personal/",
+            )
+            .body(dav_serialize(&sync_query(token_addrm_same)))
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&resp.text()?);
+        assert_eq!(multistatus.responses.len(), 1);
+        let token_addrm_same = match &multistatus.extension {
+            Some(realization::Multistatus::Sync(sync::Multistatus { sync_token: sync::SyncToken(x) } )) => x,
+            _ => anyhow::bail!("wrong content"),
+        };
+        assert!(token_addrm_same != token_addrm);
+
+        // Unknown token must return 410 GONE.
+        // Token can be forgotten as we garbage collect the DAG.
+        let resp = http
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/calendar/Personal/",
+            )
+            .body(dav_serialize(&sync_query("https://aerogramme.0/sync/000000000000000000000000000000000000000000000000")))
+            .send()?;
+        assert_eq!(resp.status(), 410);
 
         Ok(())
     })

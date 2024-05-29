@@ -108,12 +108,29 @@ pub fn read_first_u32(inp: &str) -> Result<u32> {
         .parse::<u32>()?)
 }
 
-use aero_dav::xml::{Node, Reader};
+use aero_dav::xml::{Node, Reader, Writer};
+use tokio::io::AsyncWriteExt;
 pub fn dav_deserialize<T: Node<T>>(src: &str) -> T {
     futures::executor::block_on(async {
         let mut rdr = Reader::new(quick_xml::NsReader::from_reader(src.as_bytes()))
             .await
             .expect("build reader");
         rdr.find().await.expect("parse XML")
+    })
+}
+pub fn dav_serialize<T: Node<T>>(src: &T) -> String {
+    futures::executor::block_on(async {
+        let mut buffer = Vec::new();
+        let mut tokio_buffer = tokio::io::BufWriter::new(&mut buffer);
+        let q = quick_xml::writer::Writer::new_with_indent(&mut tokio_buffer, b' ', 4);
+        let ns_to_apply = vec![
+            ("xmlns:D".into(), "DAV:".into()),
+            ("xmlns:C".into(), "urn:ietf:params:xml:ns:caldav".into()),
+        ];
+        let mut writer = Writer { q, ns_to_apply };
+
+        src.qwrite(&mut writer).await.expect("xml serialization");
+        tokio_buffer.flush().await.expect("tokio buffer flush");
+        std::str::from_utf8(buffer.as_slice()).unwrap().into()
     })
 }

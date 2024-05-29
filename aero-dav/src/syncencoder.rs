@@ -128,7 +128,6 @@ mod tests {
         src.qwrite(&mut writer).await.expect("xml serialization");
         tokio_buffer.flush().await.expect("tokio buffer flush");
         let got = std::str::from_utf8(buffer.as_slice()).unwrap();
-        println!("{:?}", got);
 
         // deserialize
         let mut rdr = Reader::new(quick_xml::NsReader::from_reader(got.as_bytes()))

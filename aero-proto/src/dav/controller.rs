@@ -184,7 +184,7 @@ impl Controller {
                     },
                 };
                 extension = Some(realization::Multistatus::Sync(sync::Multistatus {
-                    sync_token: sync::SyncToken(new_token.to_string()),
+                    sync_token: sync::SyncToken(format!("{}{}", BASE_TOKEN_URI, new_token)),
                 }));
             }
             _ => {

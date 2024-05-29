@@ -177,6 +177,10 @@ impl CalendarInternal {
             .iter()
             .filter_map(|t: &Token| davstate.change.get(t))
             .map(|s| s.clone())
+            .filter(|s| match s {
+                SyncChange::Ok((filename, _)) => davstate.idx_by_filename.get(filename).is_some(),
+                SyncChange::NotFound(filename) => davstate.idx_by_filename.get(filename).is_none(),
+            })
             .collect();
 
         let token = self.current_token().await?;

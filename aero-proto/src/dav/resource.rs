@@ -21,6 +21,16 @@ use aero_dav::versioningtypes as vers;
 use super::node::PropertyStream;
 use crate::dav::node::{Content, DavNode, PutPolicy};
 
+/// Why "https://aerogramme.0"?
+/// Because tokens must be valid URI.
+/// And numeric TLD are ~mostly valid in URI (check the .42 TLD experience)
+/// and at the same time, they are not used sold by the ICANN and there is no plan to use them.
+/// So I am sure that the URL remains invalid, avoiding leaking requests to an hardcoded URL in the
+/// future.
+/// The best option would be to make it configurable ofc, so someone can put a domain name
+/// that they control, it would probably improve compatibility (maybe some WebDAV spec tells us
+/// how to handle/resolve this URI but I am not aware of that...). But that's not the plan for
+/// now. So here we are: https://aerogramme.0.
 pub const BASE_TOKEN_URI: &str = "https://aerogramme.0/sync/";
 
 #[derive(Clone)]
@@ -575,7 +585,31 @@ impl DavNode for CalendarNode {
         let col = self.col.clone();
         let calname = self.calname.clone();
         async move {
-            let sync_token = sync_token.unwrap();
+            let sync_token = match sync_token {
+                Some(v) => v,
+                None => {
+                    let token = col
+                        .token()
+                        .await
+                        .or(Err(std::io::Error::from(std::io::ErrorKind::Interrupted)))?;
+                    let ok_nodes = col
+                        .dag()
+                        .await
+                        .idx_by_filename
+                        .iter()
+                        .map(|(filename, blob_id)| {
+                            Box::new(EventNode {
+                                col: col.clone(),
+                                calname: calname.clone(),
+                                filename: filename.to_string(),
+                                blob_id: *blob_id,
+                            }) as Box<dyn DavNode>
+                        })
+                        .collect();
+
+                    return Ok((token, ok_nodes, vec![]));
+                }
+            };
             let (new_token, listed_changes) = match col.diff(sync_token).await {
                 Ok(v) => v,
                 Err(e) => {
