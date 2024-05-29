@@ -4,3 +4,11 @@ env.sh
 aerogramme.toml
 *.swo
 *.swp
+aerogramme.pid
+cert.pem
+ec_key.pem
+provider-users.toml
+setup.toml
+test.eml
+test.txt
+users.toml

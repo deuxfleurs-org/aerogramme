@@ -18,9 +18,9 @@ A resilient & standards-compliant open-source IMAP server with built-in encrypti
 
 ## Roadmap
 
-  - ✅ 0.1 Better emails parsing (july '23, see [eml-codec](https://git.deuxfleurs.fr/Deuxfleurs/eml-codec)).
-  - ✅ 0.2 Support of IMAP4. (~january '24).
-  - ⌛0.3 CalDAV support. (~february '24).
+  - ✅ 0.1 Better emails parsing.
+  - ✅ 0.2 Support of IMAP4..
+  - ✅ 0.3 CalDAV support.
   - ⌛0.4 CardDAV support.
   - ⌛0.5 Public beta.
 

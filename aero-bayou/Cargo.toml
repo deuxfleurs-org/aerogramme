@@ -1,0 +1,19 @@
+[package]
+name = "aero-bayou"
+version = "0.3.0"
+authors = ["Alex Auvolat <alex@adnab.me>", "Quentin Dufour <quentin@dufour.io>"]
+edition = "2021"
+license = "EUPL-1.2"
+description = "A simplified version of Bayou by Terry et al. (ACM SIGOPS 1995)"
+
+[dependencies]
+aero-user.workspace = true
+
+anyhow.workspace = true
+hex.workspace = true
+tracing.workspace = true
+log.workspace = true
+rand.workspace = true
+serde.workspace = true
+tokio.workspace = true
+

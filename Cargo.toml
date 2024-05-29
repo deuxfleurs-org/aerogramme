@@ -1,15 +1,33 @@
-[package]
-name = "aerogramme"
-version = "0.2.2"
-authors = ["Alex Auvolat <alex@adnab.me>", "Quentin Dufour <quentin@dufour.io>"]
-edition = "2021"
-license = "EUPL-1.2"
-description = "A robust email server"
+[workspace]
+resolver = "2"
+members = [
+  "aero-user",
+  "aero-bayou",
+  "aero-sasl",
+  "aero-dav",
+  "aero-dav/fuzz",
+  "aero-collections",
+  "aero-proto",
+  "aerogramme",
+]
 
-[dependencies]
+default-members = ["aerogramme"]
+
+[workspace.dependencies]
+# internal crates
+aero-user = { version = "0.3.0", path = "aero-user" }
+aero-bayou = { version = "0.3.0", path = "aero-bayou" }
+aero-sasl = { version = "0.3.0", path = "aero-sasl" }
+aero-dav = { version = "0.3.0", path = "aero-dav" }
+aero-ical = { version = "0.3.0", path = "aero-ical" }
+aero-collections = { version = "0.3.0", path = "aero-collections" }
+aero-proto = { version = "0.3.0", path = "aero-proto" }
+aerogramme = { version = "0.3.0", path = "aerogramme" }
+
 # async runtime
-tokio = { version = "1.18", default-features = false, features = ["rt", "rt-multi-thread", "io-util", "net", "time", "macros", "sync", "signal", "fs"] }
+tokio = { version = "1.36", default-features = false, features = ["rt", "rt-multi-thread", "io-util", "net", "time", "macros", "sync", "signal", "fs"] }
 tokio-util = { version = "0.7", features = [ "compat" ]  }
+tokio-stream = { version = "0.1" }
 futures = "0.3"
 
 # debug
@@ -18,6 +36,7 @@ backtrace = "0.3"
 console-subscriber = "0.2"
 tracing-subscriber = "0.3"
 tracing = "0.1"
+thiserror = "1.0.56"
 
 # language extensions
 lazy_static = "1.4"
@@ -32,13 +51,32 @@ chrono = { version = "0.4", default-features = false, features = ["alloc"] }
 nix = { version = "0.27", features = ["signal"] }
 clap = { version = "3.1.18", features = ["derive", "env"] }
 
-# serialization & parsing
+# email protocols
+eml-codec = "0.1.2"
+smtp-message = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
+smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
+imap-codec = { version = "2.0.0", features = ["bounded-static", "ext_condstore_qresync"] }
+imap-flow = { git = "https://github.com/duesee/imap-flow.git", branch = "main" }
+
+# dav protocols
+icalendar = "0.16"
+
+# http & web
+http = "1.1"
+http-body-util = "0.1.1"
+hyper = "1.2"
+hyper-rustls = { version = "0.26", features = ["http2"] }
+hyper-util = { version = "0.1", features = ["full"] }
+reqwest = { version = "0.12", features = [ "blocking" ]} # for testing purposes only
+
+# serialization, compression & parsing
 serde = "1.0.137"
 rmp-serde = "0.15"
 toml = "0.5"
 base64 = "0.21"
 hex = "0.4"
 nom = "7.1"
+quick-xml = { version = "0.31", features = ["async-tokio"] }
 zstd = { version = "0.9", default-features = false }
 
 # cryptography & security
@@ -48,8 +86,6 @@ rand = "0.8.5"
 rustls = "0.22"
 rustls-pemfile = "2.0"
 tokio-rustls = "0.25"
-hyper-rustls = { version = "0.26", features = ["http2"] }
-hyper-util = { version = "0.1", features = ["full"] }
 rpassword = "7.0"
 
 # login
@@ -62,21 +98,6 @@ aws-sdk-s3 = "1"
 aws-smithy-runtime = "1"
 aws-smithy-runtime-api = "1"
 
-# email protocols
-eml-codec = "0.1.2"
-smtp-message = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
-smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
-imap-codec = { version = "2.0.0", features = ["bounded-static", "ext_condstore_qresync"] }
-imap-flow = { git = "https://github.com/duesee/imap-flow.git", branch = "main" }
-thiserror = "1.0.56"
-
-[dev-dependencies]
-
 [patch.crates-io]
 imap-types = { git = "https://github.com/superboum/imap-codec", branch = "custom/aerogramme" }
 imap-codec = { git = "https://github.com/superboum/imap-codec", branch = "custom/aerogramme" }
-
-[[test]]
-name = "behavior"
-path = "tests/behavior.rs"
-harness = false

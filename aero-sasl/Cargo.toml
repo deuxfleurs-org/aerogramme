@@ -1,0 +1,22 @@
+[package]
+name = "aero-sasl"
+version = "0.3.0"
+authors = ["Alex Auvolat <alex@adnab.me>", "Quentin Dufour <quentin@dufour.io>"]
+edition = "2021"
+license = "EUPL-1.2"
+description = "A partial and standalone implementation of the Dovecot SASL Auth Protocol"
+
+[dependencies]
+
+anyhow.workspace = true
+base64.workspace = true
+futures.workspace = true
+nom.workspace = true
+rand.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+hex.workspace = true
+
+#log.workspace = true
+#serde.workspace = true

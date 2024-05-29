@@ -1,0 +1,32 @@
+[package]
+name = "aerogramme"
+version = "0.3.0"
+authors = ["Alex Auvolat <alex@adnab.me>", "Quentin Dufour <quentin@dufour.io>"]
+edition = "2021"
+license = "EUPL-1.2"
+description = "A robust email server"
+
+[dependencies]
+aero-user.workspace = true
+aero-proto.workspace = true
+
+anyhow.workspace = true
+backtrace.workspace = true
+futures.workspace = true
+tokio.workspace = true
+log.workspace = true
+nix.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+rpassword.workspace = true
+
+[dev-dependencies]
+reqwest.workspace = true
+aero-dav.workspace = true
+quick-xml.workspace = true
+
+[[test]]
+name = "behavior"
+path = "tests/behavior.rs"
+harness = false

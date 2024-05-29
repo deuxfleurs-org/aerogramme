@@ -185,13 +185,15 @@
     # Shell
     shell = gpkgs.mkShell {
       buildInputs = [
+        gpkgs.openssl
+        gpkgs.pkg-config
         cargo2nix.packages.x86_64-linux.default
-        fenix.packages.x86_64-linux.minimal.toolchain
-        fenix.packages.x86_64-linux.rust-analyzer
+        fenix.packages.x86_64-linux.complete.toolchain
+        #fenix.packages.x86_64-linux.rust-analyzer
       ];
       shellHook = ''
-        echo "AEROGRAME DEVELOPMENT SHELL ${fenix.packages.x86_64-linux.minimal.rustc}"
-        export RUST_SRC_PATH="${fenix.packages.x86_64-linux.latest.rust-src}/lib/rustlib/src/rust/library"
+        echo "AEROGRAME DEVELOPMENT SHELL ${fenix.packages.x86_64-linux.complete.toolchain}"
+        export RUST_SRC_PATH="${fenix.packages.x86_64-linux.complete.toolchain}/lib/rustlib/src/rust/library"
         export RUST_ANALYZER_INTERNALS_DO_NOT_USE='this is unstable'
       '';
     };
