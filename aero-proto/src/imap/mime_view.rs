@@ -101,7 +101,7 @@ impl<'a> NodeMime<'a> {
         }
     }
 
-    fn rec_subset(self, path: &'a [NonZeroU32]) -> Result<SelectedMime> {
+    fn rec_subset(self, path: &'a [NonZeroU32]) -> Result<SelectedMime<'a>> {
         if path.is_empty() {
             Ok(SelectedMime(self.0))
         } else {
@@ -567,7 +567,7 @@ impl<'a> ExtractedFull<'a> {
 
 /// s is set to static to ensure that only compile time values
 /// checked by developpers are passed.
-fn unchecked_istring(s: &'static str) -> IString {
+fn unchecked_istring(s: &'static str) -> IString<'static> {
     IString::try_from(s).expect("this value is expected to be a valid imap-codec::IString")
 }
 

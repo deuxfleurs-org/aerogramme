@@ -12,6 +12,8 @@ use crate::davdag::{BlobId, DavDag, IndexEntry, SyncChange, Token};
 use crate::unique_ident::*;
 
 pub struct Calendar {
+    // TODO: can this be removed?
+    #[allow(dead_code)]
     pub(super) id: UniqueIdent,
     internal: RwLock<CalendarInternal>,
 }

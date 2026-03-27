@@ -49,11 +49,11 @@ fn is_not_tab_or_esc_or_lf(c: u8) -> bool {
     c != 0x09 && c != 0x01 && c != 0x0a // TAB or 0x01 or LF
 }
 
-fn is_esc<'a>(input: &'a [u8]) -> IResult<&'a [u8], &[u8]> {
+fn is_esc<'a>(input: &'a [u8]) -> IResult<&'a [u8], &'a [u8]> {
     preceded(tag(&[0x01]), take(1usize))(input)
 }
 
-fn parameter<'a>(input: &'a [u8]) -> IResult<&'a [u8], &[u8]> {
+fn parameter<'a>(input: &'a [u8]) -> IResult<&'a [u8], &'a [u8]> {
     recognize(many1(alt((take_while1(is_not_tab_or_esc_or_lf), is_esc))))(input)
 }
 

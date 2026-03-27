@@ -2,7 +2,6 @@ use quick_xml::events::Event;
 use quick_xml::Error as QError;
 
 use super::acltypes::*;
-use super::error::ParsingError;
 use super::xml::{IWrite, QWrite, Writer};
 
 impl QWrite for Property {

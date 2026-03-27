@@ -56,15 +56,15 @@ impl DavNode for RootNode {
         async { Err(anyhow!("Not found")) }.boxed()
     }
 
-    fn children<'a>(&self, user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+    fn children<'a>(&self, _user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
         async { vec![Box::new(HomeNode {}) as Box<dyn DavNode>] }.boxed()
     }
 
-    fn path(&self, user: &ArcUser) -> String {
+    fn path(&self, _user: &ArcUser) -> String {
         "/".into()
     }
 
-    fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All> {
+    fn supported_properties(&self, _user: &ArcUser) -> dav::PropName<All> {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
@@ -106,7 +106,7 @@ impl DavNode for RootNode {
     fn put<'a>(
         &'a self,
         _policy: PutPolicy,
-        stream: Content<'a>,
+        _stream: Content<'a>,
     ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
         futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported)).boxed()
     }
@@ -122,11 +122,11 @@ impl DavNode for RootNode {
         "text/plain"
     }
 
-    fn etag(&self) -> BoxFuture<Option<Etag>> {
+    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
         async { None }.boxed()
     }
 
-    fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>> {
+    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
         async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
     }
 
@@ -185,7 +185,7 @@ impl DavNode for HomeNode {
         format!("/{}/", user.username)
     }
 
-    fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All> {
+    fn supported_properties(&self, _user: &ArcUser) -> dav::PropName<All> {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
@@ -232,7 +232,7 @@ impl DavNode for HomeNode {
     fn put<'a>(
         &'a self,
         _policy: PutPolicy,
-        stream: Content<'a>,
+        _stream: Content<'a>,
     ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
         futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported)).boxed()
     }
@@ -248,11 +248,11 @@ impl DavNode for HomeNode {
         "text/plain"
     }
 
-    fn etag(&self) -> BoxFuture<Option<Etag>> {
+    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
         async { None }.boxed()
     }
 
-    fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>> {
+    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
         async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
     }
     fn diff<'a>(
@@ -337,7 +337,7 @@ impl DavNode for CalendarListNode {
         format!("/{}/calendar/", user.username)
     }
 
-    fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All> {
+    fn supported_properties(&self, _user: &ArcUser) -> dav::PropName<All> {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
@@ -369,7 +369,7 @@ impl DavNode for CalendarListNode {
     fn put<'a>(
         &'a self,
         _policy: PutPolicy,
-        stream: Content<'a>,
+        _stream: Content<'a>,
     ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
         futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported)).boxed()
     }
@@ -385,11 +385,11 @@ impl DavNode for CalendarListNode {
         "text/plain"
     }
 
-    fn etag(&self) -> BoxFuture<Option<Etag>> {
+    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
         async { None }.boxed()
     }
 
-    fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>> {
+    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
         async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
     }
     fn diff<'a>(
@@ -451,7 +451,7 @@ impl DavNode for CalendarNode {
         .boxed()
     }
 
-    fn children<'a>(&self, user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+    fn children<'a>(&self, _user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
         let col = self.col.clone();
         let calname = self.calname.clone();
 
@@ -477,7 +477,7 @@ impl DavNode for CalendarNode {
         format!("/{}/calendar/{}/", user.username, self.calname)
     }
 
-    fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All> {
+    fn supported_properties(&self, _user: &ArcUser) -> dav::PropName<All> {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
@@ -580,11 +580,11 @@ impl DavNode for CalendarNode {
         "text/plain"
     }
 
-    fn etag(&self) -> BoxFuture<Option<Etag>> {
+    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
         async { None }.boxed()
     }
 
-    fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>> {
+    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
         async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
     }
     fn diff<'a>(
@@ -669,9 +669,9 @@ pub(crate) struct EventNode {
 impl DavNode for EventNode {
     fn fetch<'a>(
         &self,
-        user: &'a ArcUser,
+        _user: &'a ArcUser,
         path: &'a [&str],
-        create: bool,
+        _create: bool,
     ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
         if path.len() == 0 {
             let node = Box::new(self.clone()) as Box<dyn DavNode>;
@@ -686,7 +686,7 @@ impl DavNode for EventNode {
         .boxed()
     }
 
-    fn children<'a>(&self, user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+    fn children<'a>(&self, _user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
         async { vec![] }.boxed()
     }
 
@@ -697,7 +697,7 @@ impl DavNode for EventNode {
         )
     }
 
-    fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All> {
+    fn supported_properties(&self, _user: &ArcUser) -> dav::PropName<All> {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
@@ -845,7 +845,7 @@ impl DavNode for EventNode {
         "text/calendar"
     }
 
-    fn etag(&self) -> BoxFuture<Option<Etag>> {
+    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
         let calendar = self.col.clone();
 
         async move {
@@ -859,7 +859,7 @@ impl DavNode for EventNode {
         .boxed()
     }
 
-    fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>> {
+    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
         let calendar = self.col.clone();
         let blob_id = self.blob_id.clone();
 
@@ -903,9 +903,9 @@ pub(crate) struct CreateEventNode {
 impl DavNode for CreateEventNode {
     fn fetch<'a>(
         &self,
-        user: &'a ArcUser,
+        _user: &'a ArcUser,
         path: &'a [&str],
-        create: bool,
+        _create: bool,
     ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
         if path.len() == 0 {
             let node = Box::new(self.clone()) as Box<dyn DavNode>;
@@ -920,7 +920,7 @@ impl DavNode for CreateEventNode {
         .boxed()
     }
 
-    fn children<'a>(&self, user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+    fn children<'a>(&self, _user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
         async { vec![] }.boxed()
     }
 
@@ -931,11 +931,11 @@ impl DavNode for CreateEventNode {
         )
     }
 
-    fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All> {
+    fn supported_properties(&self, _user: &ArcUser) -> dav::PropName<All> {
         dav::PropName(vec![])
     }
 
-    fn properties(&self, _user: &ArcUser, prop: dav::PropName<All>) -> PropertyStream<'static> {
+    fn properties(&self, _user: &ArcUser, _prop: dav::PropName<All>) -> PropertyStream<'static> {
         futures::stream::iter(vec![]).boxed()
     }
 
@@ -976,11 +976,11 @@ impl DavNode for CreateEventNode {
         "text/plain"
     }
 
-    fn etag(&self) -> BoxFuture<Option<Etag>> {
+    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
         async { None }.boxed()
     }
 
-    fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>> {
+    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
         // Nothing to delete
         async { Ok(()) }.boxed()
     }

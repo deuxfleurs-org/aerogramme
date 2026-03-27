@@ -3,7 +3,7 @@ use quick_xml::events::Event;
 
 use super::error::ParsingError;
 use super::types::*;
-use super::xml::{IRead, Node, QRead, Reader, DAV_URN};
+use super::xml::{IRead, QRead, Reader, DAV_URN};
 
 //@TODO (1) Rewrite all objects as Href,
 // where we return Ok(None) instead of trying to find the object at any cost.

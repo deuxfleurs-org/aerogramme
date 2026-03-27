@@ -30,3 +30,6 @@ quick-xml.workspace = true
 name = "behavior"
 path = "tests/behavior.rs"
 harness = false
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
