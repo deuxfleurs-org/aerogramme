@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use imap_codec::imap_types::command::Command;
 use imap_codec::imap_types::core::Literal;
 use imap_codec::imap_types::datetime::DateTime;
@@ -7,7 +7,6 @@ use imap_codec::imap_types::mailbox::Mailbox as MailboxCodec;
 use imap_codec::imap_types::response::{Code, CodeOther};
 
 use aero_collections::user::User;
-use aero_collections::mail::IMF;
 
 use crate::imap::capability::ClientCapability;
 use crate::imap::command::{
@@ -86,12 +85,10 @@ impl<'a> AppendContext<'a> {
         if date.is_some() {
             tracing::warn!("Cannot set date when appending message");
         }
-        let msg = 
-            IMF::try_from(message.data()).map_err(|_| anyhow!("Could not parse e-mail message"))?;
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         // TODO: filter allowed flags? ping @Quentin
         
-        let (uid, uidvalidity, updates) = mbox.append(msg, &flags).await?;
+        let (uid, uidvalidity, updates) = mbox.append(message.data(), &flags).await?;
         let mut resp = Response::build()
             .to_req(self.req)
             .message("APPEND completed")

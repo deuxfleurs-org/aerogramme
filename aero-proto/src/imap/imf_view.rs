@@ -10,39 +10,62 @@ pub struct ImfView<'a>(pub &'a imf::Imf<'a>);
 
 impl<'a> ImfView<'a> {
     pub fn naive_date(&self) -> Result<NaiveDate> {
-        Ok(self.0.date.ok_or(anyhow!("date is not set"))?.date_naive())
+        match &self.0.date {
+            // TODO: check date format
+            imf::DateTimeOpt::Some(d) => Ok(d.0.date_naive()),
+            imf::DateTimeOpt::InvalidMissing => Err(anyhow!("date is not set")),
+        }
     }
 
-    /// Envelope rules are defined in RFC 3501, section 7.4.2
+    /// Envelope rules are defined in RFC3501 ("IMAP 4rev1"), section 7.4.2
     /// https://datatracker.ietf.org/doc/html/rfc3501#section-7.4.2
+    ///
+    /// We also read from the corresponding section of RFC9051 ("IMAP 4rev2",
+    /// section 7.5.2), which is more precise wrt required but missing headers.
     ///
     /// Some important notes:
     ///
+    /// If the From, To, cc, and bcc header lines are absent in the
+    /// [RFC-2822] header, or are present but empty, the corresponding
+    /// member of the envelope is NIL.
     /// If the Sender or Reply-To lines are absent in the [RFC-2822]
     /// header, or are present but empty, the server sets the
     /// corresponding member of the envelope to be the same value as
     /// the from member (the client is not expected to know to do
-    /// this). Note: [RFC-2822] requires that all messages have a valid
+    /// this).
+    /// Note: [RFC-2822] requires that all messages have a valid
     /// From header.  Therefore, the from, sender, and reply-to
-    /// members in the envelope can not be NIL.
+    /// members in the envelope can not be NIL *for a well-formed message*.
+    /// *However, they can be NIL for a malformed or draft message.*
+    /// (emphasized parts are from RFC9051).
     ///
     /// If the Date, Subject, In-Reply-To, and Message-ID header lines
     /// are absent in the [RFC-2822] header, the corresponding member
     /// of the envelope is NIL; if these header lines are present but
     /// empty the corresponding member of the envelope is the empty
     /// string.
+    /// Note: [RFC-2822] requires that all messages have a valid
+    /// Date header.  Therefore, the date member in the envelope can
+    /// not be NIL or the empty string *for a well-formed message*.
+    /// *However, it can be NIL for a malformed or draft message.*
+    /// (emphasized parts are from RFC9051).
 
     //@FIXME return an error if the envelope is invalid instead of panicking
     //@FIXME some fields must be defaulted if there are not set.
     pub fn message_envelope(&self) -> Envelope<'static> {
         let msg = self.0;
-        let from = msg.from.iter().map(convert_mbx).collect::<Vec<_>>();
+        let from = msg.from().map(|mboxl: imf::mailbox::MailboxList| {
+            mboxl.0.iter().map(convert_mbx).collect()
+        }).unwrap_or(vec![]);
 
         Envelope {
             date: NString(
-                msg.date
-                    .as_ref()
-                    .map(|d| IString::try_from(d.to_rfc3339()).unwrap()),
+                match &msg.date {
+                    imf::DateTimeOpt::Some(dt) =>
+                        Some(IString::try_from(dt.0.to_rfc3339()).unwrap()),
+                    imf::DateTimeOpt::InvalidMissing =>
+                        None
+                }
             ),
             subject: NString(
                 msg.subject
@@ -50,7 +73,7 @@ impl<'a> ImfView<'a> {
                     .map(|d| IString::try_from(d.to_string()).unwrap()),
             ),
             sender: msg
-                .sender
+                .sender()
                 .as_ref()
                 .map(|v| vec![convert_mbx(v)])
                 .unwrap_or(from.clone()),
@@ -62,7 +85,7 @@ impl<'a> ImfView<'a> {
             from,
             to: convert_addresses(&msg.to),
             cc: convert_addresses(&msg.cc),
-            bcc: convert_addresses(&msg.bcc),
+            bcc: msg.bcc.as_ref().map(convert_addresses).unwrap_or(vec![]),
             in_reply_to: NString(
                 msg.in_reply_to
                     .iter()
@@ -83,7 +106,11 @@ pub fn convert_addresses(addrlist: &Vec<imf::address::AddressRef>) -> Vec<Addres
     for item in addrlist {
         match item {
             imf::address::AddressRef::Single(a) => acc.push(convert_mbx(a)),
-            imf::address::AddressRef::Many(l) => acc.extend(l.participants.iter().map(convert_mbx)),
+            imf::address::AddressRef::Many(l) => {
+                if let Some(mboxl) = &l.participants {
+                    acc.extend(mboxl.0.iter().map(convert_mbx))
+                }
+            },
         }
     }
     return acc;

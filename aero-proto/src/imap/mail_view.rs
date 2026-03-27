@@ -13,7 +13,7 @@ use imap_codec::imap_types::response::Data;
 
 use eml_codec::{
     imf,
-    part::{composite::Message, AnyPart},
+    message::Message,
 };
 
 use aero_collections::mail::query::QueryResult;
@@ -38,13 +38,11 @@ impl<'a> MailView<'a> {
             query_result,
             content: match query_result {
                 QueryResult::FullResult { content, .. } => {
-                    let (_, parsed) =
-                        eml_codec::parse_message(&content).or(Err(anyhow!("Invalid mail body")))?;
+                    let parsed = eml_codec::parse_message(&content);
                     FetchedMail::full_from_message(parsed)
                 }
                 QueryResult::PartialResult { metadata, .. } => {
-                    let (_, parsed) = eml_codec::parse_message(&metadata.headers)
-                        .or(Err(anyhow!("unable to parse email headers")))?;
+                    let parsed = eml_codec::parse_message(&metadata.headers);
                     FetchedMail::partial_from_message(parsed)
                 }
                 QueryResult::IndexResult { .. } => FetchedMail::IndexOnly,
@@ -54,10 +52,6 @@ impl<'a> MailView<'a> {
 
     pub fn imf(&self) -> Option<ImfView<'_>> {
         self.content.as_imf().map(ImfView)
-    }
-
-    pub fn selected_mime(&'a self) -> Option<mime_view::SelectedMime<'a>> {
-        self.content.as_anypart().ok().map(mime_view::SelectedMime)
     }
 
     pub fn filter(&self, ap: &AttributesProxy) -> Result<(Body<'static>, SeenFlag)> {
@@ -114,20 +108,18 @@ impl<'a> MailView<'a> {
     }
 
     pub fn is_header_contains_pattern(&self, hdr: &[u8], pattern: &[u8]) -> bool {
-        let mime = match self.selected_mime() {
-            None => return false,
-            Some(x) => x,
+        let msg = match self.content.as_partial() {
+            Ok(msg) => msg,
+            Err(_) => return false // XXX hack?
         };
-
-        let val = match mime.header_value(hdr) {
-            None => return false,
-            Some(x) => x,
-        };
-
-        val.windows(pattern.len()).any(|win| win == pattern)
+        mime_view::raw_kv_headers(&msg)
+            .iter()
+            .any(|(k, v)|
+                 k.eq_ignore_ascii_case(hdr) &&
+                 v.windows(pattern.len()).any(|win| win == pattern))
     }
 
-    // Private function, mainly for filter!
+    // Private functions, mainly for filter!
     fn uid(&self) -> MessageDataItem<'static> {
         MessageDataItem::Uid(self.in_idx.uid.clone())
     }
@@ -163,12 +155,14 @@ impl<'a> MailView<'a> {
     }
 
     fn rfc_822_text(&self) -> Result<MessageDataItem<'static>> {
-        let txt: NString = self.content.as_msg()?.raw_body.to_vec().try_into()?;
+        let msg: &Message = self.content.as_msg()?;
+        let txt: NString = msg.mime_body.raw_body().unwrap().to_vec().try_into()?;
         Ok(MessageDataItem::Rfc822Text(txt))
     }
 
     fn rfc822(&self) -> Result<MessageDataItem<'static>> {
-        let full: NString = self.content.as_msg()?.raw_part.to_vec().try_into()?;
+        let msg: &Message = self.content.as_msg()?;
+        let full: NString = msg.raw.unwrap().to_vec().try_into()?;
         Ok(MessageDataItem::Rfc822(full))
     }
 
@@ -182,14 +176,14 @@ impl<'a> MailView<'a> {
 
     fn body(&self) -> Result<MessageDataItem<'static>> {
         Ok(MessageDataItem::Body(mime_view::bodystructure(
-            self.content.as_msg()?.child.as_ref(),
+            self.content.as_msg()?,
             false,
         )?))
     }
 
     fn body_structure(&self) -> Result<MessageDataItem<'static>> {
         Ok(MessageDataItem::BodyStructure(mime_view::bodystructure(
-            self.content.as_msg()?.child.as_ref(),
+            self.content.as_msg()?,
             true,
         )?))
     }
@@ -219,7 +213,7 @@ impl<'a> MailView<'a> {
 
         // Process message
         let (text, origin) =
-            match mime_view::body_ext(self.content.as_anypart()?, section, partial)? {
+            match mime_view::body_ext(self.content.as_msg()?, section, partial)? {
                 mime_view::BodySection::Full(body) => (body, None),
                 mime_view::BodySection::Slice { body, origin_octet } => (body, Some(origin_octet)),
             };
@@ -268,38 +262,37 @@ pub enum SeenFlag {
 
 pub enum FetchedMail<'a> {
     IndexOnly,
-    Partial(AnyPart<'a>),
-    Full(AnyPart<'a>),
+    Partial(Message<'a>),
+    Full(Message<'a>),
 }
 impl<'a> FetchedMail<'a> {
     pub fn full_from_message(msg: Message<'a>) -> Self {
-        Self::Full(AnyPart::Msg(msg))
+        Self::Full(msg)
     }
 
     pub fn partial_from_message(msg: Message<'a>) -> Self {
-        Self::Partial(AnyPart::Msg(msg))
+        Self::Partial(msg)
     }
 
-    pub fn as_anypart(&self) -> Result<&AnyPart<'a>> {
+    pub fn as_partial(&self) -> Result<&Message<'a>> {
         match self {
-            FetchedMail::Full(x) => Ok(&x),
-            FetchedMail::Partial(x) => Ok(&x),
-            _ => bail!("The full message must be fetched, not only its headers"),
+            FetchedMail::Full(msg) => Ok(&msg),
+            FetchedMail::Partial(msg) => Ok(&msg),
+            _ => bail!("The message or itst headers must be fetched"), 
         }
     }
 
     pub fn as_msg(&self) -> Result<&Message<'a>> {
         match self {
-            FetchedMail::Full(AnyPart::Msg(x)) => Ok(&x),
-            FetchedMail::Partial(AnyPart::Msg(x)) => Ok(&x),
-            _ => bail!("The full message must be fetched, not only its headers AND it must be an AnyPart::Msg."),
+            FetchedMail::Full(msg) => Ok(&msg),
+            _ => bail!("The full message must be fetched, not only its headers."),
         }
     }
 
     pub fn as_imf(&self) -> Option<&imf::Imf<'a>> {
         match self {
-            FetchedMail::Full(AnyPart::Msg(x)) => Some(&x.imf),
-            FetchedMail::Partial(AnyPart::Msg(x)) => Some(&x.imf),
+            FetchedMail::Full(msg) => Some(&msg.imf),
+            FetchedMail::Partial(msg) => Some(&msg.imf),
             _ => None,
         }
     }

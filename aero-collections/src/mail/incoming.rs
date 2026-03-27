@@ -15,7 +15,6 @@ use aero_user::storage;
 
 use crate::mail::mailbox::Mailbox;
 use crate::mail::namespace::MailboxNsInner;
-use crate::mail::IMF;
 use crate::unique_ident::*;
 
 const INCOMING_PK: &str = "incoming";
@@ -200,9 +199,8 @@ async fn move_incoming_message(
         .map_err(|_| anyhow!("Cannot decrypt email content"))?;
 
     // 2 parse mail and add to inbox
-    let msg = IMF::try_from(&plain_mail[..]).map_err(|_| anyhow!("Invalid email body"))?;
     inbox
-        .append_from_s3(msg, id, object.blob_ref.clone(), message_key)
+        .append_from_s3(&plain_mail, id, object.blob_ref.clone(), message_key)
         .await?;
 
     // 3 delete from incoming
