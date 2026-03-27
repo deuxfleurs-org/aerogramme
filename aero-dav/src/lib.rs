@@ -1,5 +1,4 @@
 #![feature(type_alias_impl_trait)]
-#![feature(async_closure)]
 #![feature(trait_alias)]
 
 // utils

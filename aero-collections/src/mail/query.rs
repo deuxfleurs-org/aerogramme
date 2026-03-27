@@ -32,7 +32,7 @@ impl QueryScope {
 //type QueryResultStream = Box<dyn Stream<Item = Result<QueryResult>>>;
 
 impl<'a, 'b> Query<'a, 'b> {
-    pub fn fetch(&self) -> BoxStream<Result<QueryResult>> {
+    pub fn fetch(&self) -> BoxStream<'_, Result<QueryResult>> {
         match self.scope {
             QueryScope::Index => Box::pin(
                 futures::stream::iter(self.emails)

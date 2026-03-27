@@ -52,7 +52,7 @@ impl<'a> MailView<'a> {
         })
     }
 
-    pub fn imf(&self) -> Option<ImfView> {
+    pub fn imf(&self) -> Option<ImfView<'_>> {
         self.content.as_imf().map(ImfView)
     }
 

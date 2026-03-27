@@ -319,6 +319,9 @@ impl CalendarListEntry {
 }
 
 pub(crate) enum CalendarExists {
+    // TODO: can the `UniqueIdent`s be removed?
+    #[allow(dead_code)]
     Created(UniqueIdent),
+    #[allow(dead_code)]
     Existed(UniqueIdent),
 }

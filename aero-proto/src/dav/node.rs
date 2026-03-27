@@ -52,11 +52,11 @@ pub(crate) trait DavNode: Send {
     /// Content type of the element
     fn content_type(&self) -> &str;
     /// Get ETag
-    fn etag(&self) -> BoxFuture<Option<Etag>>;
+    fn etag(&self) -> BoxFuture<'_, Option<Etag>>;
     /// Get content
     fn content<'a>(&self) -> Content<'a>;
     /// Delete
-    fn delete(&self) -> BoxFuture<std::result::Result<(), std::io::Error>>;
+    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>>;
     /// Sync
     fn diff<'a>(
         &self,

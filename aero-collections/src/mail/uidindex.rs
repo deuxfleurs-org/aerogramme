@@ -299,7 +299,7 @@ impl FlagIndex {
         self.0.get(f)
     }
 
-    pub fn flags(&self) -> FlagIter {
+    pub fn flags(&self) -> FlagIter<'_> {
         self.0.keys()
     }
 }
