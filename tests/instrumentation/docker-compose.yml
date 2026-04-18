@@ -1,9 +1,10 @@
-version: '3.4'
 services:
   dovecot:
-    image: dovecot/dovecot:2.3.21
+    image: dovecot/dovecot:2.4.3
+    environment:
+      USER_PASSWORD: "pass"
     ports:
-      - "993:993/tcp"
+      - "993:31993/tcp"
 
   maddy:
     build:
@@ -26,4 +27,4 @@ services:
       context: ./docker/courier/
     image: courier
     ports:
-      - "144:143/tcp"
+      - "144:144/tcp"

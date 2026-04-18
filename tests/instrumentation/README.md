@@ -1,5 +1,11 @@
 # Spawn Dovecot+Maddy+Cyrus
 
+Build:
+
+```
+for dir in docker/*; do (cd $dir && docker build .); done
+```
+
 Run:
 
 ```

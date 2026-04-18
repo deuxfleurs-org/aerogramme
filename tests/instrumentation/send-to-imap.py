@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from imaplib import IMAP4_SSL, IMAP4
 from os import listdir
 from os.path import isfile, join
@@ -51,22 +53,22 @@ parameters = {
     "ext": ".cyrus",
     "mb": "INBOX."+base_test_mb,
   },
-  "courier": {
-    "con": IMAP4,
-    "port": 144,
-    "user": "debian",
-    "pw": "debian",
-    "ext": ".courier",
-    "mb": base_test_mb,
-  },
-  "stalwart": {
-    "con": IMAP4_SSL,
-    "port": 1993,
-    "user": "test@example.com",
-    "pw": "pass",
-    "ext": ".stalwart.0.2.0",
-    "mb": base_test_mb,
-  }
+  # "courier": {
+  #   "con": IMAP4,
+  #   "port": 144,
+  #   "user": "debian",
+  #   "pw": "debian",
+  #   "ext": ".courier",
+  #   "mb": base_test_mb,
+  # },
+  # "stalwart": {
+  #   "con": IMAP4_SSL,
+  #   "port": 1993,
+  #   "user": "test@example.com",
+  #   "pw": "pass",
+  #   "ext": ".stalwart.0.2.0",
+  #   "mb": base_test_mb,
+  # }
 }
 
 queue = list(parameters.keys())
