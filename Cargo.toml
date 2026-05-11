@@ -15,14 +15,14 @@ default-members = ["aerogramme"]
 
 [workspace.dependencies]
 # internal crates
-aero-user = { version = "0.3.1", path = "aero-user" }
-aero-bayou = { version = "0.3.1", path = "aero-bayou" }
-aero-sasl = { version = "0.3.1", path = "aero-sasl" }
-aero-dav = { version = "0.3.1", path = "aero-dav" }
-aero-ical = { version = "0.3.1", path = "aero-ical" }
-aero-collections = { version = "0.3.1", path = "aero-collections" }
-aero-proto = { version = "0.3.1", path = "aero-proto" }
-aerogramme = { version = "0.3.1", path = "aerogramme" }
+aero-user = { version = "0.3.2", path = "aero-user" }
+aero-bayou = { version = "0.3.2", path = "aero-bayou" }
+aero-sasl = { version = "0.3.2", path = "aero-sasl" }
+aero-dav = { version = "0.3.2", path = "aero-dav" }
+aero-ical = { version = "0.3.2", path = "aero-ical" }
+aero-collections = { version = "0.3.2", path = "aero-collections" }
+aero-proto = { version = "0.3.2", path = "aero-proto" }
+aerogramme = { version = "0.3.2", path = "aerogramme" }
 
 # async runtime
 tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "io-util", "net", "time", "macros", "sync", "signal", "fs"] }
@@ -83,7 +83,7 @@ zstd = { version = "0.13", default-features = false }
 sodiumoxide = "0.2"
 argon2 = "0.5"
 rand = "0.8"
-rustls = "0.23"
+rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12", ] }
 rustls-pemfile = "2.2"
 tokio-rustls = "0.26"
 rpassword = "7"

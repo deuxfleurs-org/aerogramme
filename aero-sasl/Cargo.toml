@@ -1,6 +1,6 @@
 [package]
 name = "aero-sasl"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["Alex Auvolat <alex@adnab.me>", "Quentin Dufour <quentin@dufour.io>"]
 edition = "2021"
 license = "EUPL-1.2"

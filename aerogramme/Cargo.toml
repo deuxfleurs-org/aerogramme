@@ -1,6 +1,6 @@
 [package]
 name = "aerogramme"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["Alex Auvolat <alex@adnab.me>", "Quentin Dufour <quentin@dufour.io>"]
 edition = "2021"
 license = "EUPL-1.2"
@@ -20,6 +20,7 @@ clap.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 rpassword.workspace = true
+rustls.workspace = true
 
 [dev-dependencies]
 reqwest.workspace = true

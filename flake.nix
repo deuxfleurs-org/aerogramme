@@ -234,6 +234,7 @@ ${alba} container push -t aerogramme:${version} docker/ "docker://docker.io/dxfl
             pkgs.openssl
             pkgs.pkg-config
 	    pkgs.rust-bin.nightly.latest.default
+	    cargo2nix.packages.${system}.cargo2nix
           ];
         };
 

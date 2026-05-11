@@ -165,6 +165,12 @@ async fn main() -> Result<()> {
 
     tracer();
 
+    // Set a default rustls implementation
+    // Try ring first, fall back to aws_lc_rs
+    rustls::crypto::ring::default_provider().install_default().or_else(|_| {
+        rustls::crypto::aws_lc_rs::default_provider().install_default()
+    }).expect("unable to set rustls default provider to ring or aws-lc-rs.");
+
     let args = Args::parse();
     let any_config = if args.dev {
         use std::net::*;
