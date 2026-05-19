@@ -1,4 +1,4 @@
-FROM debian:buster as builder
+FROM debian:trixie as builder
 
 WORKDIR /root
 RUN apt-get update && apt-get install -y openssl && \
