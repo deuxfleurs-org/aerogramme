@@ -1316,9 +1316,6 @@ fn noreg_imap_append_in_current_mailbox() {
         // 2. Run commands that must refresh the mailbox view
         append(imap_socket, Email::Basic).context("insert email in INBOX")?;
 
-        // @FIXME: delete me.
-        //noop_exists(imap_socket, 1).context("noop loop must detect a new email")?;
-
         // 3. If the mailbox view is correctly refreshed, FETCH should workd
         let srv_msg = fetch(
             imap_socket,
