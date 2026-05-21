@@ -21,6 +21,10 @@ fn main() {
     rfc5397_webdav_principal();
     rfc4791_webdav_caldav();
     rfc6578_webdav_sync();
+
+    // Non-regression testing
+    noreg_imap_append_in_current_mailbox();
+
     println!("✅ SUCCESS 🌟🚀🥳🙏🥹");
 }
 
@@ -1289,4 +1293,44 @@ fn rfc6578_webdav_sync() {
         Ok(())
     })
     .expect("test fully run")
+}
+
+fn noreg_imap_append_in_current_mailbox() {
+    /* 
+     * We detected this bug when applying one of our testing Python script to Aerogramme.
+     * The script is basically "SELECT INBOX", "APPEND" then "FETCH BODYSTRUCTURE".
+     * Other IMAP servers are correctly refreshing the mailbox view after APPEND but not
+     * Aerogramme. We did not detect the "bug" earlier as we were using "NOOP" as a way
+     * to refresh our mailbox.
+     */
+    println!("🧪 noreg_imap_append_in_current_mailbox");
+    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket, _dav_socket| {
+        // 1. Setup test
+        connect(imap_socket).context("server says hello")?;
+        capability(imap_socket, Extension::None).context("check server capabilities")?;
+        login(imap_socket, Account::Alice).context("login test")?;
+        let select_res =
+            select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
+        assert!(select_res.contains("* 0 EXISTS"));
+
+        // 2. Run commands that must refresh the mailbox view
+        append(imap_socket, Email::Basic).context("insert email in INBOX")?;
+
+        // @FIXME: delete me.
+        //noop_exists(imap_socket, 1).context("noop loop must detect a new email")?;
+
+        // 3. If the mailbox view is correctly refreshed, FETCH should workd
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Rfc822,
+            FetchMod::None,
+        )
+        .context("message is still present")?;
+        let orig_email = std::str::from_utf8(EMAIL2)?;
+        assert!(srv_msg.contains(orig_email));
+
+        Ok(())
+    })
+    .expect("test fully run");
 }
