@@ -177,71 +177,35 @@ impl IStore for MemStore {
     async fn row_fetch<'a>(&self, select: &Selector<'a>) -> Result<Vec<RowVal>, StorageError> {
         tracing::trace!(select=%select, command="row_fetch");
         let store = self.row.read().or(Err(StorageError::Internal))?;
-
-        match select {
-            Selector::Range {
-                shard,
-                sort_begin,
-                sort_end,
-            } => Ok(store
-                .get(*shard)
-                .unwrap_or(&BTreeMap::new())
-                .range((
-                    sort_begin.map(|b| Included(b.to_string())).unwrap_or(Unbounded),
-                    sort_end.map(|e| Excluded(e.to_string())).unwrap_or(Unbounded),
-                ))
-                .map(|(k, v)| v.to_row_val(RowRef::new(shard, k)))
-                .collect::<Vec<_>>()),
-            Selector::List(rlist) => {
-                let mut acc = vec![];
-                for row_ref in rlist {
-                    let maybe_intval = store
-                        .get(&row_ref.uid.shard)
-                        .map(|v| v.get(&row_ref.uid.sort))
-                        .flatten();
-                    if let Some(intval) = maybe_intval {
-                        acc.push(intval.to_row_val(row_ref.clone()));
-                    }
-                }
-                Ok(acc)
-            }
-            Selector::Prefix { shard, sort_prefix } => {
-                let last_bound = prefix_last_bound(sort_prefix);
-
-                Ok(store
-                    .get(*shard)
-                    .unwrap_or(&BTreeMap::new())
-                    .range((Included(sort_prefix.to_string()), last_bound))
-                    .map(|(k, v)| v.to_row_val(RowRef::new(shard, k)))
-                    .collect::<Vec<_>>())
-            }
-            Selector::Single(row_ref) => {
-                let intval = store
+        let vals = select_keys(&store, select)
+            .into_iter()
+            .map(|row_ref| {
+                let v = store
                     .get(&row_ref.uid.shard)
-                    .ok_or(StorageError::NotFound)?
+                    .unwrap()
                     .get(&row_ref.uid.sort)
-                    .ok_or(StorageError::NotFound)?;
-                Ok(vec![intval.to_row_val((*row_ref).clone())])
+                    .unwrap();
+                v.to_row_val(row_ref)
+            })
+            .collect::<Vec<_>>();
+
+        if let Selector::Single(_) = select {
+            if vals.is_empty() {
+                return Err(StorageError::NotFound)
             }
         }
+
+        Ok(vals)
     }
 
     async fn row_rm<'a>(&self, select: &Selector<'a>) -> Result<(), StorageError> {
         tracing::trace!(select=%select, command="row_rm");
-
-        let values = match select {
-            Selector::Range { .. } | Selector::Prefix { .. } => self
-                .row_fetch(select)
-                .await?
-                .into_iter()
-                .map(|rv| rv.row_ref)
-                .collect::<Vec<_>>(),
-            Selector::List(rlist) => rlist.clone(),
-            Selector::Single(row_ref) => vec![(*row_ref).clone()],
+        let refs = {
+            let store = self.row.read().or(Err(StorageError::Internal))?;
+            select_keys(&store, select)
         };
-
-        for v in values.into_iter() {
-            self.row_rm_single(&v)?;
+        for rref in refs {
+            self.row_rm_single(&rref)?;
         }
         Ok(())
     }
@@ -340,5 +304,56 @@ impl IStore for MemStore {
         let mut store = self.blob.write().or(Err(StorageError::Internal))?;
         store.remove(&blob_ref.0);
         Ok(())
+    }
+}
+
+/// Returns keys of `store` that are selected by `select`. The returned RowRefs
+/// are guaranteed to be valid keys of `store`.
+fn select_keys<'a, 'b, V>(store: &'b HashMap<String, BTreeMap<String, V>>, select: &'b Selector<'a>) ->
+    Vec<RowRef>
+{
+    match select {
+        Selector::Range {
+            shard,
+            sort_begin,
+            sort_end,
+        } =>
+            store
+               .get(*shard)
+               .map(|bt|
+                    bt
+                    .range((
+                        sort_begin.map(|b| Included(b.to_string())).unwrap_or(Unbounded),
+                        sort_end.map(|e| Excluded(e.to_string())).unwrap_or(Unbounded),
+                    ))
+                    .map(|(key, _)| RowRef::new(shard, key))
+                    .collect())
+               .unwrap_or(vec![]),
+        Selector::List(rlist) =>
+            rlist
+            .iter()
+            .filter_map(|row_ref| {
+                let bt = store.get(&row_ref.uid.shard)?;
+                let _ = bt.get(&row_ref.uid.sort)?;
+                Some(row_ref.clone())
+            })
+            .collect::<Vec<_>>(),
+        Selector::Prefix { shard, sort_prefix } => {
+            let last_bound = prefix_last_bound(sort_prefix);
+            store
+                .get(*shard)
+                .map(|bt|
+                     bt
+                     .range((Included(sort_prefix.to_string()), last_bound))
+                     .map(|(key, _)| RowRef::new(shard, key))
+                     .collect())
+                .unwrap_or(vec![])
+        }
+        Selector::Single(row_ref) =>
+            store
+                .get(&row_ref.uid.shard)
+                .and_then(|bt| bt.get(&row_ref.uid.sort))
+                .map(|_| vec![(*row_ref).clone()])
+                .unwrap_or(vec![]),
     }
 }
