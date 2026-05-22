@@ -135,8 +135,8 @@ impl<S: BayouState> Bayou<S> {
             .storage
             .row_fetch(&storage::Selector::Range {
                 shard: &self.path,
-                sort_begin: &ts_ser,
-                sort_end: WATCH_SK,
+                sort_begin: Some(&ts_ser),
+                sort_end: Some(WATCH_SK),
             })
             .await?;
 
@@ -387,8 +387,8 @@ impl<S: BayouState> Bayou<S> {
             self.storage
                 .row_rm(&storage::Selector::Range {
                     shard: &self.path,
-                    sort_begin: "",
-                    sort_end: &ts_ser,
+                    sort_begin: None,
+                    sort_end: Some(&ts_ser),
                 })
                 .await?
         }

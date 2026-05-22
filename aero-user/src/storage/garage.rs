@@ -152,8 +152,8 @@ impl IStore for GarageStore {
                 vec![k2v_client::BatchReadOp {
                     partition_key: shard,
                     filter: k2v_client::Filter {
-                        start: Some(sort_begin),
-                        end: Some(sort_end),
+                        start: *sort_begin,
+                        end: *sort_end,
                         ..k2v_client::Filter::default()
                     },
                     ..k2v_client::BatchReadOp::default()
@@ -261,8 +261,8 @@ impl IStore for GarageStore {
             } => vec![k2v_client::BatchDeleteOp {
                 partition_key: shard,
                 prefix: None,
-                start: Some(sort_begin),
-                end: Some(sort_end),
+                start: *sort_begin,
+                end: *sort_end,
                 single_item: false,
             }],
             Selector::List(row_ref_list) => {

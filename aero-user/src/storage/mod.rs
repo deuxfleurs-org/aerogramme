@@ -125,8 +125,8 @@ impl BlobVal {
 pub enum Selector<'a> {
     Range {
         shard: &'a str,
-        sort_begin: &'a str,
-        sort_end: &'a str,
+        sort_begin: Option<&'a str>,
+        sort_end: Option<&'a str>,
     },
     List(Vec<RowRef>), // list of (shard_key, sort_key)
     #[allow(dead_code)]
@@ -143,7 +143,17 @@ impl<'a> std::fmt::Display for Selector<'a> {
                 shard,
                 sort_begin,
                 sort_end,
-            } => write!(f, "Range({}, [{}, {}[)", shard, sort_begin, sort_end),
+            } => {
+                write!(f, "Range({}, ", shard)?;
+                if let Some(begin) = sort_begin {
+                    write!(f, "{}", begin)?;
+                }
+                write!(f, "..")?;
+                if let Some(end) = sort_end {
+                    write!(f, "{}", end)?;
+                };
+                write!(f, ")")
+            },
             Self::List(list) => write!(f, "List({:?})", list),
             Self::Prefix { shard, sort_prefix } => write!(f, "Prefix({}, {})", shard, sort_prefix),
             Self::Single(row_ref) => write!(f, "Single({})", row_ref),

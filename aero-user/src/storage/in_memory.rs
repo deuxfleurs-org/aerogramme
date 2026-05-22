@@ -187,8 +187,8 @@ impl IStore for MemStore {
                 .get(*shard)
                 .unwrap_or(&BTreeMap::new())
                 .range((
-                    Included(sort_begin.to_string()),
-                    Excluded(sort_end.to_string()),
+                    sort_begin.map(|b| Included(b.to_string())).unwrap_or(Unbounded),
+                    sort_end.map(|e| Excluded(e.to_string())).unwrap_or(Unbounded),
                 ))
                 .map(|(k, v)| v.to_row_val(RowRef::new(shard, k)))
                 .collect::<Vec<_>>()),
