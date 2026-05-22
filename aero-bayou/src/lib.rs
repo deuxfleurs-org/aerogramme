@@ -7,7 +7,7 @@ use anyhow::{anyhow, bail, Result};
 use log::error;
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{watch, Notify};
+use tokio::sync::Notify;
 
 use aero_user::cryptoblob::*;
 use aero_user::login::Credentials;
@@ -52,11 +52,9 @@ pub struct Bayou<S: BayouState> {
     checkpoint: (Timestamp, S),
     history: Vec<(Timestamp, S::Op, Option<S>)>,
 
-    last_sync: Option<Instant>,
     last_try_checkpoint: Option<Instant>,
 
     watch: Arc<K2vWatch>,
-    last_sync_watch_ct: storage::RowRef,
 }
 
 impl<S: BayouState> Bayou<S> {
@@ -73,18 +71,13 @@ impl<S: BayouState> Bayou<S> {
             key: creds.keys.master.clone(),
             checkpoint: (Timestamp::zero(), S::default()),
             history: vec![],
-            last_sync: None,
             last_try_checkpoint: None,
             watch,
-            last_sync_watch_ct: target,
         })
     }
 
     /// Re-reads the state from persistent storage backend
     pub async fn sync(&mut self) -> Result<()> {
-        let new_last_sync = Some(Instant::now());
-        let new_last_sync_watch_ct = self.watch.rx.borrow().clone();
-
         // 1. List checkpoints
         let checkpoints = self.list_checkpoints().await?;
         tracing::debug!("(sync) listed checkpoints: {:?}", checkpoints);
@@ -220,24 +213,6 @@ impl<S: BayouState> Bayou<S> {
             self.history.last_mut().unwrap().2 = Some(state);
         }
 
-        // Save info that sync has been done
-        self.last_sync = new_last_sync;
-        self.last_sync_watch_ct = new_last_sync_watch_ct;
-        Ok(())
-    }
-
-    /// Does a sync() if either of the two conditions is met:
-    /// - last sync was more than CHECKPOINT_INTERVAL/5 ago
-    /// - a change was detected
-    pub async fn opportunistic_sync(&mut self) -> Result<()> {
-        let too_old = match self.last_sync {
-            Some(t) => Instant::now() > t + (CHECKPOINT_INTERVAL / 5),
-            _ => true,
-        };
-        let changed = self.last_sync_watch_ct != *self.watch.rx.borrow();
-        if too_old || changed {
-            self.sync().await?;
-        }
         Ok(())
     }
 
@@ -247,7 +222,7 @@ impl<S: BayouState> Bayou<S> {
 
     /// Applies a new operation on the state. Once this function returns,
     /// the operation has been safely persisted to storage backend.
-    /// Make sure to call `.opportunistic_sync()` before doing this,
+    /// Make sure to call `.sync()` before doing this,
     /// and even before calculating the `op` argument given here.
     pub async fn push(&mut self, op: S::Op) -> Result<()> {
         tracing::debug!("(push) add operation: {:?}", op);
@@ -429,7 +404,6 @@ impl<S: BayouState> Bayou<S> {
 
 struct K2vWatch {
     target: storage::RowRef,
-    rx: watch::Receiver<storage::RowRef>,
     propagate_local_update: Notify,
     learnt_remote_update: Arc<Notify>,
 }
@@ -441,26 +415,23 @@ impl K2vWatch {
     async fn new(creds: &Credentials, target: storage::RowRef) -> Result<Arc<Self>> {
         let storage = creds.storage.build().await?;
 
-        let (tx, rx) = watch::channel::<storage::RowRef>(target.clone());
         let propagate_local_update = Notify::new();
         let learnt_remote_update = Arc::new(Notify::new());
 
         let watch = Arc::new(K2vWatch {
             target,
-            rx,
             propagate_local_update,
             learnt_remote_update,
         });
 
-        tokio::spawn(Self::background_task(Arc::downgrade(&watch), storage, tx));
-
+        tokio::spawn(Self::background_task(Arc::downgrade(&watch), storage));
+ 
         Ok(watch)
     }
 
     async fn background_task(
         self_weak: Weak<Self>,
         storage: storage::Store,
-        tx: watch::Sender<storage::RowRef>,
     ) {
         let (mut row, remote_update) = match Weak::upgrade(&self_weak) {
             Some(this) => (this.target.clone(), this.learnt_remote_update.clone()),
@@ -497,10 +468,6 @@ impl K2vWatch {
                         }
                         Ok(new_value) => {
                             row = new_value.row_ref;
-                            if let Err(e) = tx.send(row.clone()) {
-                                tracing::warn!(err=?e, "(watch) can't record the new log ref");
-                                break;
-                            }
                             tracing::debug!(row=?row, "(watch) learnt remote update");
                             this.learnt_remote_update.notify_waiters();
                         }

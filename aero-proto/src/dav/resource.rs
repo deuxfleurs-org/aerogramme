@@ -817,7 +817,7 @@ impl DavNode for EventNode {
                 .await
                 .or(Err(std::io::ErrorKind::Interrupted))?;
             self.col
-                .opportunistic_sync()
+                .sync()
                 .await
                 .or(Err(std::io::ErrorKind::ConnectionReset))?;
             Ok(etag)
@@ -872,7 +872,7 @@ impl DavNode for EventNode {
                 }
             };
             calendar
-                .opportunistic_sync()
+                .sync()
                 .await
                 .or(Err(std::io::ErrorKind::ConnectionReset))?;
             Ok(())
@@ -957,7 +957,7 @@ impl DavNode for CreateEventNode {
                 .await
                 .or(Err(std::io::ErrorKind::Interrupted))?;
             self.col
-                .opportunistic_sync()
+                .sync()
                 .await
                 .or(Err(std::io::ErrorKind::ConnectionReset))?;
             Ok(etag)

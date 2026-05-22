@@ -58,14 +58,8 @@ impl Mailbox {
     }
 
     /// Sync data with backing store
-    pub async fn force_sync(&self) -> Result<()> {
-        self.mbox.write().await.force_sync().await
-    }
-
-    /// Sync data with backing store only if changes are detected
-    /// or last sync is too old
-    pub async fn opportunistic_sync(&self) -> Result<()> {
-        self.mbox.write().await.opportunistic_sync().await
+    pub async fn sync(&self) -> Result<()> {
+        self.mbox.write().await.sync().await
     }
 
     /// Block until a sync has been done (due to changes in the event log)
@@ -195,13 +189,8 @@ struct MailboxInternal {
 }
 
 impl MailboxInternal {
-    async fn force_sync(&mut self) -> Result<()> {
+    async fn sync(&mut self) -> Result<()> {
         self.uid_index.sync().await?;
-        Ok(())
-    }
-
-    async fn opportunistic_sync(&mut self) -> Result<()> {
-        self.uid_index.opportunistic_sync().await?;
         Ok(())
     }
 
@@ -314,7 +303,7 @@ impl MailboxInternal {
                     .await?;
                 Ok::<_, anyhow::Error>(())
             },
-            self.uid_index.opportunistic_sync()
+            self.uid_index.sync()
         )?;
 
         // Add mail to Bayou mail index
@@ -363,7 +352,7 @@ impl MailboxInternal {
                     .await?;
                 Ok::<_, anyhow::Error>(())
             },
-            self.uid_index.opportunistic_sync()
+            self.uid_index.sync()
         )?;
 
         // Add mail to Bayou mail index
@@ -459,7 +448,7 @@ impl MailboxInternal {
                     .await?;
                 Ok::<_, anyhow::Error>(())
             },
-            self.uid_index.opportunistic_sync(),
+            self.uid_index.sync(),
         )?;
 
         // Add mail to Bayou mail index

@@ -31,7 +31,7 @@ impl FrozenMailbox {
     /// Force the synchronization of the inner mailbox
     /// but do not update the local snapshot
     pub async fn sync(&self) -> Result<()> {
-        self.mailbox.opportunistic_sync().await
+        self.mailbox.sync().await
     }
 
     /// Peek snapshot without updating the frozen mailbox
