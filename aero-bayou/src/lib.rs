@@ -133,7 +133,7 @@ impl<S: BayouState> Bayou<S> {
         tracing::debug!("(sync) looking up operations starting at {}", ts_ser);
         let ops_map = self
             .storage
-            .row_fetch(&storage::Selector::Range {
+            .row_fetch_batch(&storage::Selector::Range {
                 shard: &self.path,
                 sort_begin: Some(&ts_ser),
                 sort_end: Some(WATCH_SK),
@@ -263,7 +263,7 @@ impl<S: BayouState> Bayou<S> {
             storage::RowRef::new(&self.path, &ts.to_string()),
             seal_serialize(&op, &self.key)?,
         );
-        self.storage.row_insert(vec![row_val]).await?;
+        self.storage.row_update(vec![row_val]).await?;
         self.watch.propagate_local_update.notify_one();
 
         let new_state = self.state().apply(&op);
@@ -385,7 +385,7 @@ impl<S: BayouState> Bayou<S> {
             // Delete corresponding range of operations
             let ts_ser = existing_checkpoints[last_to_keep].0.to_string();
             self.storage
-                .row_rm(&storage::Selector::Range {
+                .row_delete_batch(&storage::Selector::Range {
                     shard: &self.path,
                     sort_begin: None,
                     sort_end: Some(&ts_ser),
@@ -502,7 +502,7 @@ impl K2vWatch {
                 _ = this.propagate_local_update.notified() => {
                     let rand = u128::to_be_bytes(thread_rng().gen()).to_vec();
                     let row_val = storage::RowVal::new(row.clone(), rand);
-                    if let Err(e) = storage.row_insert(vec![row_val]).await
+                    if let Err(e) = storage.row_update(vec![row_val]).await
                     {
                         tracing::error!("Error in bayou k2v watch updater loop: {}", e);
                         tokio::time::sleep(Duration::from_secs(30)).await;

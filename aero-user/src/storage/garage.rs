@@ -121,8 +121,8 @@ pub struct GarageStore {
     k2v: k2v_client::K2vClient,
 }
 
-fn causal_to_row_val(row_ref: RowRef, causal_value: k2v_client::CausalValue) -> RowVal {
-    let new_row_ref = row_ref.with_causality(causal_value.causality.into());
+fn causal_to_concurrent_row_val(shard: &str, sort: &str, causal_value: k2v_client::CausalValue) -> ConcurrentRowVal {
+    let new_row_ref = RowRef::new(shard, sort).with_causality(causal_value.causality.into());
     let row_values = causal_value
         .value
         .into_iter()
@@ -132,7 +132,7 @@ fn causal_to_row_val(row_ref: RowRef, causal_value: k2v_client::CausalValue) -> 
         })
         .collect::<Vec<_>>();
 
-    RowVal {
+    ConcurrentRowVal {
         row_ref: new_row_ref,
         value: row_values,
     }
@@ -140,15 +140,47 @@ fn causal_to_row_val(row_ref: RowRef, causal_value: k2v_client::CausalValue) -> 
 
 #[async_trait]
 impl IStore for GarageStore {
-    async fn row_fetch<'a>(&self, select: &Selector<'a>) -> Result<Vec<RowVal>, StorageError> {
-        tracing::trace!(select=%select, command="row_fetch");
-        let (pk_list, batch_op) = match select {
+    async fn row_fetch(&self, shard: &str, sort: &str) -> Result<ConcurrentRowVal, StorageError> {
+        tracing::trace!(shard=%shard, sort=%sort, command="row_fetch");
+        let causal_value = match self
+            .k2v
+            .read_item(shard, sort)
+            .await
+        {
+            Err(k2v_client::Error::NotFound) => {
+                tracing::debug!(
+                    "K2V item not found  shard={}, sort={}, bucket={}",
+                    shard,
+                    sort,
+                    self.bucket,
+                );
+                return Err(StorageError::NotFound);
+            }
+            Err(e) => {
+                tracing::error!(
+                    "K2V read item shard={}, sort={}, bucket={} failed: {}",
+                    shard,
+                    sort,
+                    self.bucket,
+                    e
+                );
+                return Err(StorageError::Internal);
+            }
+            Ok(v) => v,
+        };
+
+        Ok(causal_to_concurrent_row_val(shard, sort, causal_value))
+    }
+    
+    async fn row_fetch_batch<'a>(&self, select: &Selector<'a>) -> Result<Vec<ConcurrentRowVal>, StorageError> {
+        tracing::trace!(select=%select, command="row_fetch_batch");
+        let (shard, batch_op) = match select {
             Selector::Range {
                 shard,
                 sort_begin,
                 sort_end,
             } => (
-                vec![shard.to_string()],
+                shard,
                 vec![k2v_client::BatchReadOp {
                     partition_key: shard,
                     filter: k2v_client::Filter {
@@ -159,17 +191,14 @@ impl IStore for GarageStore {
                     ..k2v_client::BatchReadOp::default()
                 }],
             ),
-            Selector::List(row_ref_list) => (
-                row_ref_list
+            Selector::List { shard, sort_list } => (
+                shard,
+                sort_list
                     .iter()
-                    .map(|row_ref| row_ref.uid.shard.to_string())
-                    .collect::<Vec<_>>(),
-                row_ref_list
-                    .iter()
-                    .map(|row_ref| k2v_client::BatchReadOp {
-                        partition_key: &row_ref.uid.shard,
+                    .map(|sort| k2v_client::BatchReadOp {
+                        partition_key: shard,
                         filter: k2v_client::Filter {
-                            start: Some(&row_ref.uid.sort),
+                            start: Some(sort),
                             ..k2v_client::Filter::default()
                         },
                         single_item: true,
@@ -178,7 +207,7 @@ impl IStore for GarageStore {
                     .collect::<Vec<_>>(),
             ),
             Selector::Prefix { shard, sort_prefix } => (
-                vec![shard.to_string()],
+                shard,
                 vec![k2v_client::BatchReadOp {
                     partition_key: shard,
                     filter: k2v_client::Filter {
@@ -188,37 +217,18 @@ impl IStore for GarageStore {
                     ..k2v_client::BatchReadOp::default()
                 }],
             ),
-            Selector::Single(row_ref) => {
-                let causal_value = match self
-                    .k2v
-                    .read_item(&row_ref.uid.shard, &row_ref.uid.sort)
-                    .await
-                {
-                    Err(k2v_client::Error::NotFound) => {
-                        tracing::debug!(
-                            "K2V item not found  shard={}, sort={}, bucket={}",
-                            row_ref.uid.shard,
-                            row_ref.uid.sort,
-                            self.bucket,
-                        );
-                        return Err(StorageError::NotFound);
-                    }
-                    Err(e) => {
-                        tracing::error!(
-                            "K2V read item shard={}, sort={}, bucket={} failed: {}",
-                            row_ref.uid.shard,
-                            row_ref.uid.sort,
-                            self.bucket,
-                            e
-                        );
-                        return Err(StorageError::Internal);
-                    }
-                    Ok(v) => v,
-                };
-
-                let row_val = causal_to_row_val((*row_ref).clone(), causal_value);
-                return Ok(vec![row_val]);
-            }
+            Selector::Single { shard, sort } => (
+                shard,
+                vec![k2v_client::BatchReadOp {
+                    partition_key: shard,
+                    filter: k2v_client::Filter {
+                        start: Some(sort),
+                        ..k2v_client::Filter::default()
+                    },
+                    single_item: true,
+                    ..k2v_client::BatchReadOp::default()
+                }]
+            )
         };
 
         let all_raw_res = match self.k2v.read_batch(&batch_op).await {
@@ -238,11 +248,10 @@ impl IStore for GarageStore {
         let row_vals =
             all_raw_res
                 .into_iter()
-                .zip(pk_list.into_iter())
-                .fold(vec![], |mut acc, (page, pk)| {
+                .fold(vec![], |mut acc, page| {
                     page.items
                         .into_iter()
-                        .map(|(sk, cv)| causal_to_row_val(RowRef::new(&pk, &sk), cv))
+                        .map(|(sk, cv)| causal_to_concurrent_row_val(shard, &sk, cv))
                         .for_each(|rr| acc.push(rr));
 
                     acc
@@ -251,8 +260,8 @@ impl IStore for GarageStore {
 
         Ok(row_vals)
     }
-    async fn row_rm<'a>(&self, select: &Selector<'a>) -> Result<(), StorageError> {
-        tracing::trace!(select=%select, command="row_rm");
+    async fn row_delete_batch<'a>(&self, select: &Selector<'a>) -> Result<(), StorageError> {
+        tracing::trace!(select=%select, command="row_delete_batch");
         let del_op = match select {
             Selector::Range {
                 shard,
@@ -265,26 +274,17 @@ impl IStore for GarageStore {
                 end: *sort_end,
                 single_item: false,
             }],
-            Selector::List(row_ref_list) => {
-                // Insert null values with causality token = delete
-                let batch_op = row_ref_list
+            Selector::List { shard, sort_list } =>
+                sort_list
                     .iter()
-                    .map(|v| k2v_client::BatchInsertOp {
-                        partition_key: &v.uid.shard,
-                        sort_key: &v.uid.sort,
-                        causality: v.causality.clone().map(|ct| ct.into()),
-                        value: k2v_client::K2vValue::Tombstone,
+                    .map(|sort| k2v_client::BatchDeleteOp {
+                        partition_key: shard,
+                        prefix: None,
+                        start: Some(sort),
+                        end: None,
+                        single_item: true,
                     })
-                    .collect::<Vec<_>>();
-
-                return match self.k2v.insert_batch(&batch_op).await {
-                    Err(e) => {
-                        tracing::error!("Unable to delete the list of values: {}", e);
-                        Err(StorageError::Internal)
-                    }
-                    Ok(_) => Ok(()),
-                };
-            }
+                    .collect::<Vec<_>>(),
             Selector::Prefix { shard, sort_prefix } => vec![k2v_client::BatchDeleteOp {
                 partition_key: shard,
                 prefix: Some(sort_prefix),
@@ -292,26 +292,15 @@ impl IStore for GarageStore {
                 end: None,
                 single_item: false,
             }],
-            Selector::Single(row_ref) => {
-                // Insert null values with causality token = delete
-                let batch_op = vec![k2v_client::BatchInsertOp {
-                    partition_key: &row_ref.uid.shard,
-                    sort_key: &row_ref.uid.sort,
-                    causality: row_ref.causality.clone().map(|ct| ct.into()),
-                    value: k2v_client::K2vValue::Tombstone,
-                }];
-
-                return match self.k2v.insert_batch(&batch_op).await {
-                    Err(e) => {
-                        tracing::error!("Unable to delete the list of values: {}", e);
-                        Err(StorageError::Internal)
-                    }
-                    Ok(_) => Ok(()),
-                };
-            }
+            Selector::Single { shard, sort } => vec![k2v_client::BatchDeleteOp {
+                partition_key: shard,
+                prefix: None,
+                start: Some(sort),
+                end: None,
+                single_item: true,
+            }],
         };
 
-        // Finally here we only have prefix & range
         match self.k2v.delete_batch(&del_op).await {
             Err(e) => {
                 tracing::error!("delete batch error: {}", e);
@@ -321,23 +310,18 @@ impl IStore for GarageStore {
         }
     }
 
-    async fn row_insert(&self, values: Vec<RowVal>) -> Result<(), StorageError> {
-        tracing::trace!(entries=%values.iter().map(|v| v.row_ref.to_string()).collect::<Vec<_>>().join(","), command="row_insert");
+    async fn row_update(&self, values: Vec<RowVal>) -> Result<(), StorageError> {
+        tracing::trace!(entries=%values.iter().map(|v| v.row_ref.to_string()).collect::<Vec<_>>().join(","), command="row_update");
         let batch_ops = values
             .iter()
             .map(|v| k2v_client::BatchInsertOp {
                 partition_key: &v.row_ref.uid.shard,
                 sort_key: &v.row_ref.uid.sort,
                 causality: v.row_ref.causality.clone().map(|ct| ct.into()),
-                value: v
-                    .value
-                    .iter()
-                    .next()
-                    .map(|cv| match cv {
-                        Alternative::Value(buff) => k2v_client::K2vValue::Value(buff.clone()),
-                        Alternative::Tombstone => k2v_client::K2vValue::Tombstone,
-                    })
-                    .unwrap_or(k2v_client::K2vValue::Tombstone),
+                value: match &v.value {
+                    Alternative::Value(buff) => k2v_client::K2vValue::Value(buff.clone()),
+                    Alternative::Tombstone => k2v_client::K2vValue::Tombstone,
+                },
             })
             .collect::<Vec<_>>();
 
@@ -349,13 +333,17 @@ impl IStore for GarageStore {
             Ok(v) => Ok(v),
         }
     }
-    async fn row_poll(&self, value: &RowRef) -> Result<RowVal, StorageError> {
+    async fn row_poll(&self, value: &RowRef) -> Result<ConcurrentRowVal, StorageError> {
         tracing::trace!(entry=%value, command="row_poll");
+        // the k2v poll periodically timeouts when nothing happens;
+        // we automatically retry when it does.
         loop {
+            let shard = &value.uid.shard;
+            let sort = &value.uid.sort;
             if let Some(ct) = &value.causality {
                 match self
                     .k2v
-                    .poll_item(&value.uid.shard, &value.uid.sort, ct.clone().into(), None)
+                    .poll_item(shard, sort, ct.clone().into(), None)
                     .await
                 {
                     Err(e) => {
@@ -363,13 +351,30 @@ impl IStore for GarageStore {
                         return Err(StorageError::Internal);
                     }
                     Ok(None) => continue,
-                    Ok(Some(cv)) => return Ok(causal_to_row_val(value.clone(), cv)),
+                    Ok(Some(cv)) => return Ok(causal_to_concurrent_row_val(shard, sort, cv)),
                 }
             } else {
-                match self.k2v.read_item(&value.uid.shard, &value.uid.sort).await {
+                // `row_poll` must support polling without causality
+                // information. However, K2V PollItem requires that we pass a
+                // causality token. If we don't have one, we do a read instead
+                // and return immediately.
+                match self.k2v.read_item(shard, sort).await {
                     Err(k2v_client::Error::NotFound) => {
+                        // `row_poll` must support polling for a currently
+                        // non-existing value (waiting until it is created).
+                        //
+                        // FIXME This is not supported by K2V PollItem (because
+                        // it requires a causality token). Here we insert a
+                        // dummy value; this is a hack; could we instead extend
+                        // K2V to allow polling for the initial write of a
+                        // (currently) non-existing value?
+                        // FIXME FIXME in fact this inserts a dummy value THEN
+                        // (at the next loop iteration) immediately returns it
+                        // (since we still have no causality info). Surely we
+                        // want to wait instead of returning this dummy value
+                        // to the user?
                         self.k2v
-                            .insert_item(&value.uid.shard, &value.uid.sort, vec![0u8], None)
+                            .insert_item(shard, sort, vec![0u8], None)
                             .await
                             .map_err(|e| {
                                 tracing::error!("Unable to insert item in polling logic: {}", e);
@@ -380,7 +385,7 @@ impl IStore for GarageStore {
                         tracing::error!("Unable to read item in polling logic: {}", e);
                         return Err(StorageError::Internal);
                     }
-                    Ok(cv) => return Ok(causal_to_row_val(value.clone(), cv)),
+                    Ok(cv) => return Ok(causal_to_concurrent_row_val(shard, sort, cv)),
                 }
             }
         }

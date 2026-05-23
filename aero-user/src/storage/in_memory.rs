@@ -62,9 +62,9 @@ impl InternalRowVal {
         self.data.iter().map(InternalData::to_alternative).collect()
     }
 
-    fn to_row_val(&self, row_ref: RowRef) -> RowVal {
-        RowVal {
-            row_ref: row_ref.with_causality(self.version.to_string()),
+    fn to_concurrent_row_val(&self, shard: &str, sort: &str) -> ConcurrentRowVal {
+        ConcurrentRowVal {
+            row_ref: RowRef::new(shard, sort).with_causality(self.version.to_string()),
             value: self.concurrent_values(),
         }
     }
@@ -146,80 +146,58 @@ fn prefix_last_bound(prefix: &str) -> Bound<String> {
     }
 }
 
-impl MemStore {
-    fn row_rm_single(&self, entry: &RowRef) -> Result<(), StorageError> {
-        tracing::trace!(entry=%entry, command="row_rm_single");
-        let mut store = self.row.write().or(Err(StorageError::Internal))?;
-        let shard = &entry.uid.shard;
-        let sort = &entry.uid.sort;
-
-        let cauz = match entry.causality.as_ref().map(|v| v.parse::<u64>()) {
-            Some(Ok(v)) => v,
-            _ => 0,
-        };
-
-        let bt = store.entry(shard.to_string()).or_default();
-        let intval = bt.entry(sort.to_string()).or_default();
-
-        if cauz == intval.version {
-            intval.data.clear();
-        }
-        intval.data.push(InternalData::Tombstone);
-        intval.version += 1;
-        intval.change.notify_waiters();
-
-        Ok(())
-    }
-}
-
 #[async_trait]
 impl IStore for MemStore {
-    async fn row_fetch<'a>(&self, select: &Selector<'a>) -> Result<Vec<RowVal>, StorageError> {
-        tracing::trace!(select=%select, command="row_fetch");
+    async fn row_fetch(&self, shard: &str, sort: &str) -> Result<ConcurrentRowVal, StorageError> {
+        tracing::trace!(shard=%shard, sort=%sort, command="row_fetch");
         let store = self.row.read().or(Err(StorageError::Internal))?;
-        let vals = select_keys(&store, select)
+        let v = store
+            .get(shard)
+            .ok_or(StorageError::NotFound)?
+            .get(sort)
+            .ok_or(StorageError::NotFound)?;
+        Ok(v.to_concurrent_row_val(shard, sort))
+    }
+    
+    async fn row_fetch_batch<'a>(&self, select: &Selector<'a>) -> Result<Vec<ConcurrentRowVal>, StorageError> {
+        tracing::trace!(select=%select, command="row_fetch_batch");
+        let store = self.row.read().or(Err(StorageError::Internal))?;
+        Ok(select_keys(&store, select)
             .into_iter()
-            .map(|row_ref| {
+            .map(|(shard, sort)| {
                 let v = store
-                    .get(&row_ref.uid.shard)
+                    .get(&shard)
                     .unwrap()
-                    .get(&row_ref.uid.sort)
+                    .get(&sort)
                     .unwrap();
-                v.to_row_val(row_ref)
+                v.to_concurrent_row_val(&shard, &sort)
             })
+            .collect::<Vec<_>>())
+    }
+
+    async fn row_delete_batch<'a>(&self, select: &Selector<'a>) -> Result<(), StorageError> {
+        tracing::trace!(select=%select, command="row_delete_batch");
+        // read the current causality for the selected keys, then insert a
+        // tombstone that supersedes each key
+        let del = self
+            .row_fetch_batch(select)
+            .await?
+            .into_iter()
+            .map(|v| RowVal::deleted(v.row_ref))
             .collect::<Vec<_>>();
-
-        if let Selector::Single(_) = select {
-            if vals.is_empty() {
-                return Err(StorageError::NotFound)
-            }
-        }
-
-        Ok(vals)
+        self.row_update(del).await
     }
 
-    async fn row_rm<'a>(&self, select: &Selector<'a>) -> Result<(), StorageError> {
-        tracing::trace!(select=%select, command="row_rm");
-        let refs = {
-            let store = self.row.read().or(Err(StorageError::Internal))?;
-            select_keys(&store, select)
-        };
-        for rref in refs {
-            self.row_rm_single(&rref)?;
-        }
-        Ok(())
-    }
-
-    async fn row_insert(&self, values: Vec<RowVal>) -> Result<(), StorageError> {
-        tracing::trace!(entries=%values.iter().map(|v| v.row_ref.to_string()).collect::<Vec<_>>().join(","), command="row_insert");
+    async fn row_update(&self, values: Vec<RowVal>) -> Result<(), StorageError> {
+        tracing::trace!(entries=%values.iter().map(|v| v.row_ref.to_string()).collect::<Vec<_>>().join(","), command="row_update");
         let mut store = self.row.write().or(Err(StorageError::Internal))?;
         for v in values.into_iter() {
             let shard = v.row_ref.uid.shard;
             let sort = v.row_ref.uid.sort;
 
-            let val = match v.value.into_iter().next() {
-                Some(Alternative::Value(x)) => x,
-                _ => vec![],
+            let val = match v.value {
+                Alternative::Value(x) => InternalData::Value(x),
+                Alternative::Tombstone => InternalData::Tombstone,
             };
 
             let cauz = match v.row_ref.causality.map(|v| v.parse::<u64>()) {
@@ -233,13 +211,14 @@ impl IStore for MemStore {
             if cauz == intval.version {
                 intval.data.clear();
             }
-            intval.data.push(InternalData::Value(val));
+            intval.data.push(val);
             intval.version += 1;
             intval.change.notify_waiters();
         }
         Ok(())
     }
-    async fn row_poll(&self, value: &RowRef) -> Result<RowVal, StorageError> {
+
+    async fn row_poll(&self, value: &RowRef) -> Result<ConcurrentRowVal, StorageError> {
         tracing::trace!(entry=%value, command="row_poll");
         let shard = &value.uid.shard;
         let sort = &value.uid.sort;
@@ -254,15 +233,14 @@ impl IStore for MemStore {
             let intval = bt.entry(sort.to_string()).or_default();
 
             if intval.version != cauz {
-                return Ok(intval.to_row_val(value.clone()));
+                return Ok(intval.to_concurrent_row_val(shard, sort));
             }
             intval.change.clone()
         };
 
         notify_me.notified().await;
 
-        let res = self.row_fetch(&Selector::Single(value)).await?;
-        res.into_iter().next().ok_or(StorageError::NotFound)
+        self.row_fetch(shard, sort).await
     }
 
     async fn blob_fetch(&self, blob_ref: &BlobRef) -> Result<BlobVal, StorageError> {
@@ -307,10 +285,10 @@ impl IStore for MemStore {
     }
 }
 
-/// Returns keys of `store` that are selected by `select`. The returned RowRefs
-/// are guaranteed to be valid keys of `store`.
-fn select_keys<'a, 'b, V>(store: &'b HashMap<String, BTreeMap<String, V>>, select: &'b Selector<'a>) ->
-    Vec<RowRef>
+/// Returns keys of `store` that are selected by `select`, as pairs of (shard, sort).
+/// These are guaranteed to be valid keys of `store`, associated with a value.
+fn select_keys<'a, V>(store: &HashMap<String, BTreeMap<String, V>>, select: &Selector<'a>) ->
+    Vec<(String, String)>
 {
     match select {
         Selector::Range {
@@ -318,7 +296,7 @@ fn select_keys<'a, 'b, V>(store: &'b HashMap<String, BTreeMap<String, V>>, selec
             sort_begin,
             sort_end,
         } =>
-            store
+           store
                .get(*shard)
                .map(|bt|
                     bt
@@ -326,16 +304,16 @@ fn select_keys<'a, 'b, V>(store: &'b HashMap<String, BTreeMap<String, V>>, selec
                         sort_begin.map(|b| Included(b.to_string())).unwrap_or(Unbounded),
                         sort_end.map(|e| Excluded(e.to_string())).unwrap_or(Unbounded),
                     ))
-                    .map(|(key, _)| RowRef::new(shard, key))
+                    .map(|(sort, _)| (shard.to_string(), sort.clone()))
                     .collect())
                .unwrap_or(vec![]),
-        Selector::List(rlist) =>
-            rlist
+        Selector::List { shard, sort_list } =>
+            sort_list
             .iter()
-            .filter_map(|row_ref| {
-                let bt = store.get(&row_ref.uid.shard)?;
-                let _ = bt.get(&row_ref.uid.sort)?;
-                Some(row_ref.clone())
+            .filter_map(|sort| {
+                let bt = store.get(*shard)?;
+                let _ = bt.get(*sort)?;
+                Some((shard.to_string(), sort.to_string()))
             })
             .collect::<Vec<_>>(),
         Selector::Prefix { shard, sort_prefix } => {
@@ -345,15 +323,15 @@ fn select_keys<'a, 'b, V>(store: &'b HashMap<String, BTreeMap<String, V>>, selec
                 .map(|bt|
                      bt
                      .range((Included(sort_prefix.to_string()), last_bound))
-                     .map(|(key, _)| RowRef::new(shard, key))
+                     .map(|(sort, _)| (shard.to_string(), sort.clone()))
                      .collect())
                 .unwrap_or(vec![])
         }
-        Selector::Single(row_ref) =>
+        Selector::Single { shard, sort } =>
             store
-                .get(&row_ref.uid.shard)
-                .and_then(|bt| bt.get(&row_ref.uid.sort))
-                .map(|_| vec![(*row_ref).clone()])
+                .get(*shard)
+                .and_then(|bt| bt.get(*sort))
+                .map(|_| vec![(shard.to_string(), sort.to_string())])
                 .unwrap_or(vec![]),
     }
 }

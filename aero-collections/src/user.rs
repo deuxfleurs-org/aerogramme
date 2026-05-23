@@ -235,20 +235,16 @@ impl User {
     // ---- Mailbox list management ----
 
     async fn load_mailbox_list(&self) -> Result<(MailboxList, Option<storage::RowRef>)> {
-        let row_ref = storage::RowRef::new(MAILBOX_LIST_PK, MAILBOX_LIST_SK);
         let (mut list, row) = match self
             .storage
-            .row_fetch(&storage::Selector::Single(&row_ref))
+            .row_fetch(MAILBOX_LIST_PK, MAILBOX_LIST_SK)
             .await
         {
             Err(storage::StorageError::NotFound) => (MailboxList::new(), None),
             Err(e) => return Err(e.into()),
             Ok(rv) => {
                 let mut list = MailboxList::new();
-                let (row_ref, row_vals) = match rv.into_iter().next() {
-                    Some(row_val) => (row_val.row_ref, row_val.value),
-                    None => (row_ref, vec![]),
-                };
+                let (row_ref, row_vals) = (rv.row_ref, rv.value);
 
                 for v in row_vals {
                     if let storage::Alternative::Value(vbytes) = v {
@@ -314,7 +310,7 @@ impl User {
         let list_blob = seal_serialize(list, &self.creds.keys.master)?;
         let rref = ct.unwrap_or(storage::RowRef::new(MAILBOX_LIST_PK, MAILBOX_LIST_SK));
         let row_val = storage::RowVal::new(rref, list_blob);
-        self.storage.row_insert(vec![row_val]).await?;
+        self.storage.row_update(vec![row_val]).await?;
         Ok(())
     }
 }

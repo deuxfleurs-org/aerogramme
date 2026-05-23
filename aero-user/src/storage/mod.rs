@@ -80,10 +80,32 @@ impl RowRef {
 #[derive(Debug, Clone)]
 pub struct RowVal {
     pub row_ref: RowRef,
-    pub value: ConcurrentValues,
+    pub value: Alternative,
 }
 
 impl RowVal {
+    pub fn new(row_ref: RowRef, value: Vec<u8>) -> Self {
+        Self {
+            row_ref,
+            value: Alternative::Value(value),
+        }
+    }
+
+    pub fn deleted(row_ref: RowRef) -> Self {
+        Self {
+            row_ref,
+            value: Alternative::Tombstone,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ConcurrentRowVal {
+    pub row_ref: RowRef,
+    pub value: ConcurrentValues,
+}
+
+impl ConcurrentRowVal {
     pub fn new(row_ref: RowRef, value: Vec<u8>) -> Self {
         Self {
             row_ref,
@@ -128,13 +150,19 @@ pub enum Selector<'a> {
         sort_begin: Option<&'a str>,
         sort_end: Option<&'a str>,
     },
-    List(Vec<RowRef>), // list of (shard_key, sort_key)
+    List {
+        shard: &'a str,
+        sort_list: &'a[&'a str],
+    },
     #[allow(dead_code)]
     Prefix {
         shard: &'a str,
         sort_prefix: &'a str,
     },
-    Single(&'a RowRef),
+    Single {
+        shard: &'a str,
+        sort: &'a str,
+    },
 }
 impl<'a> std::fmt::Display for Selector<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -154,19 +182,42 @@ impl<'a> std::fmt::Display for Selector<'a> {
                 };
                 write!(f, ")")
             },
-            Self::List(list) => write!(f, "List({:?})", list),
+            Self::List { shard, sort_list } => write!(f, "List({}, {:?})", shard, sort_list),
             Self::Prefix { shard, sort_prefix } => write!(f, "Prefix({}, {})", shard, sort_prefix),
-            Self::Single(row_ref) => write!(f, "Single({})", row_ref),
+            Self::Single { shard, sort } => write!(f, "Single({}, {})", shard, sort),
         }
     }
 }
 
 #[async_trait]
 pub trait IStore {
-    async fn row_fetch<'a>(&self, select: &Selector<'a>) -> Result<Vec<RowVal>, StorageError>;
-    async fn row_rm<'a>(&self, select: &Selector<'a>) -> Result<(), StorageError>;
-    async fn row_insert(&self, values: Vec<RowVal>) -> Result<(), StorageError>;
-    async fn row_poll(&self, value: &RowRef) -> Result<RowVal, StorageError>;
+    /// Read a single value. Fails with `StorageError::NotFound` if there is no
+    /// value for this key in the store.
+    async fn row_fetch(&self, shard: &str, sort: &str) -> Result<ConcurrentRowVal, StorageError>;
+
+    /// Read a batch of values. This function never fails with
+    /// `StorageError::NotFound`. Instead, keys that are not in the store
+    /// (especially for `Selector::Single` and `Selector::List`) are simply
+    /// ignored.
+    async fn row_fetch_batch<'a>(&self, select: &Selector<'a>) -> Result<Vec<ConcurrentRowVal>, StorageError>;
+
+    /// Delete a batch of values. This function does not takes causality
+    /// information as input. Instead, it internally inserts deletion markers
+    /// that supersede all of the current versions of all selected keys.
+    async fn row_delete_batch<'a>(&self, select: &Selector<'a>) -> Result<(), StorageError>;
+
+    /// Inserts or deletes a number of values.
+    /// This takes causality information contained in `values` into account.
+    /// - Inserting a new value or updating an existing one is done by using a
+    /// `RowVal` created using `RowVal::new`.
+    /// - Deleting a value is done by using a `RowVal` created using `RowVal::deleted`.
+    async fn row_update(&self, values: Vec<RowVal>) -> Result<(), StorageError>;
+
+    /// Polls a single key, waiting for a new value. The key does not need to
+    /// currently exist in the store. If `row_ref` does not contain causality
+    /// information, the current value (if any) is returned immediately.
+    /// Otherwise `row_poll` waits until a new value is written.
+    async fn row_poll(&self, row_ref: &RowRef) -> Result<ConcurrentRowVal, StorageError>;
 
     async fn blob_fetch(&self, blob_ref: &BlobRef) -> Result<BlobVal, StorageError>;
     async fn blob_insert(&self, blob_val: BlobVal) -> Result<String, StorageError>;
