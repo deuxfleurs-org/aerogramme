@@ -66,6 +66,13 @@ async fn incoming_mail_watch_process_internal(
                 loop {
                     match storage.row_poll(&incoming_key).await {
                         Ok(row_val) => break row_val.row_ref,
+                        Err(storage::StorageError::NotFound) => {
+                            // initialize the watch ref, then try again
+                            let watch_val = storage::RowVal::new(incoming_key.clone(), gen_ident().0.to_vec());
+                            if let Err(e) = storage.row_update(vec![watch_val]).await {
+                                tracing::warn!(err=?e, "can't initialize incoming watch ref")
+                            }
+                        },
                         Err(e) => {
                             error!("Error in wait_new_mail: {}", e);
                             tokio::time::sleep(Duration::from_secs(30)).await;
@@ -235,6 +242,17 @@ async fn k2v_lock_loop_internal(
         loop {
             debug!("k2v watch lock loop iter: ct = {:?}", ct);
             match storage.row_poll(&ct).await {
+                Err(storage::StorageError::NotFound) => {
+                    // initialize the lock state; an empty byte sequence is
+                    // considered as LockState::Empty in the Ok case below
+                    if let Err(e) = storage
+                        .row_update(vec![storage::RowVal::new(ct.clone(), vec![])])
+                        .await
+                    {
+                        error!("Could not initialize lock ref: {}", e);
+                        tokio::time::sleep(Duration::from_secs(30)).await;
+                    }
+                },
                 Err(e) => {
                     error!(
                         "Error in k2v wait value changed: {} ; assuming we no longer hold lock.",
@@ -361,7 +379,7 @@ async fn k2v_lock_loop_internal(
                 None => row_ref.clone(),
             };
             if let Err(e) = storage
-                .row_insert(vec![storage::RowVal::new(row, lock)])
+                .row_update(vec![storage::RowVal::new(row, lock)])
                 .await
             {
                 error!("Could not take lock: {}", e);
@@ -385,12 +403,12 @@ async fn k2v_lock_loop_internal(
 
     // If lock is ours, release it
     let release = match &*state_rx.borrow() {
-        LockState::Held(pid, _, ct) if *pid == our_pid => Some(ct.clone()),
+        LockState::Held(pid, _, rref) if *pid == our_pid => Some(rref.clone()),
         _ => None,
     };
-    if let Some(ct) = release {
-        match storage.row_rm(&storage::Selector::Single(&ct)).await {
-            Err(e) => warn!("Unable to release lock {:?}: {}", ct, e),
+    if let Some(rref) = release {
+        match storage.row_update(vec![storage::RowVal::deleted(rref.clone())]).await {
+            Err(e) => warn!("Unable to release lock {:?}: {}", rref, e),
             Ok(_) => (),
         };
     }
@@ -417,10 +435,9 @@ impl EncryptedMessage {
         let storage = creds.storage.build().await?;
 
         // Get causality token of previous watch key
-        let query = storage::RowRef::new(INCOMING_PK, INCOMING_WATCH_SK);
-        let watch_ct = match storage.row_fetch(&storage::Selector::Single(&query)).await {
-            Err(_) => query,
-            Ok(cv) => cv.into_iter().next().map(|v| v.row_ref).unwrap_or(query),
+        let watch_rref = match storage.row_fetch(INCOMING_PK, INCOMING_WATCH_SK).await {
+            Err(_) => storage::RowRef::new(INCOMING_PK, INCOMING_WATCH_SK),
+            Ok(rv) => rv.row_ref,
         };
 
         // Write mail to encrypted storage
@@ -436,8 +453,8 @@ impl EncryptedMessage {
         storage.blob_insert(blob_val).await?;
 
         // Update watch key to signal new mail
-        let watch_val = storage::RowVal::new(watch_ct.clone(), gen_ident().0.to_vec());
-        storage.row_insert(vec![watch_val]).await?;
+        let watch_val = storage::RowVal::new(watch_rref, gen_ident().0.to_vec());
+        storage.row_update(vec![watch_val]).await?;
         Ok(())
     }
 }

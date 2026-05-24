@@ -44,27 +44,29 @@ impl InternalData {
 
 #[derive(Debug)]
 struct InternalRowVal {
-    data: Vec<InternalData>,
-    version: u64,
+    data: Vec<(u64, InternalData)>,
     change: Arc<Notify>,
 }
 impl std::default::Default for InternalRowVal {
     fn default() -> Self {
         Self {
             data: vec![],
-            version: 1,
             change: Arc::new(Notify::new()),
         }
     }
 }
 impl InternalRowVal {
-    fn concurrent_values(&self) -> Vec<Alternative> {
-        self.data.iter().map(InternalData::to_alternative).collect()
+    fn max_version(&self) -> u64 {
+        self.data.iter().map(|(v, _)| *v).max().unwrap_or(0)
     }
 
-    fn to_row_val(&self, row_ref: RowRef) -> RowVal {
-        RowVal {
-            row_ref: row_ref.with_causality(self.version.to_string()),
+    fn concurrent_values(&self) -> Vec<Alternative> {
+        self.data.iter().map(|(_, d)| d.to_alternative()).collect()
+    }
+
+    fn to_concurrent_row_val(&self, shard: &str, sort: &str) -> ConcurrentRowVal {
+        ConcurrentRowVal {
+            row_ref: RowRef::new(shard, sort).with_causality(self.max_version().to_string()),
             value: self.concurrent_values(),
         }
     }
@@ -146,116 +148,58 @@ fn prefix_last_bound(prefix: &str) -> Bound<String> {
     }
 }
 
-impl MemStore {
-    fn row_rm_single(&self, entry: &RowRef) -> Result<(), StorageError> {
-        tracing::trace!(entry=%entry, command="row_rm_single");
-        let mut store = self.row.write().or(Err(StorageError::Internal))?;
-        let shard = &entry.uid.shard;
-        let sort = &entry.uid.sort;
-
-        let cauz = match entry.causality.as_ref().map(|v| v.parse::<u64>()) {
-            Some(Ok(v)) => v,
-            _ => 0,
-        };
-
-        let bt = store.entry(shard.to_string()).or_default();
-        let intval = bt.entry(sort.to_string()).or_default();
-
-        if cauz == intval.version {
-            intval.data.clear();
-        }
-        intval.data.push(InternalData::Tombstone);
-        intval.version += 1;
-        intval.change.notify_waiters();
-
-        Ok(())
-    }
-}
-
 #[async_trait]
 impl IStore for MemStore {
-    async fn row_fetch<'a>(&self, select: &Selector<'a>) -> Result<Vec<RowVal>, StorageError> {
-        tracing::trace!(select=%select, command="row_fetch");
+    async fn row_fetch(&self, shard: &str, sort: &str) -> Result<ConcurrentRowVal, StorageError> {
+        tracing::trace!(shard=%shard, sort=%sort, command="row_fetch");
         let store = self.row.read().or(Err(StorageError::Internal))?;
-
-        match select {
-            Selector::Range {
-                shard,
-                sort_begin,
-                sort_end,
-            } => Ok(store
-                .get(*shard)
-                .unwrap_or(&BTreeMap::new())
-                .range((
-                    Included(sort_begin.to_string()),
-                    Excluded(sort_end.to_string()),
-                ))
-                .map(|(k, v)| v.to_row_val(RowRef::new(shard, k)))
-                .collect::<Vec<_>>()),
-            Selector::List(rlist) => {
-                let mut acc = vec![];
-                for row_ref in rlist {
-                    let maybe_intval = store
-                        .get(&row_ref.uid.shard)
-                        .map(|v| v.get(&row_ref.uid.sort))
-                        .flatten();
-                    if let Some(intval) = maybe_intval {
-                        acc.push(intval.to_row_val(row_ref.clone()));
-                    }
-                }
-                Ok(acc)
-            }
-            Selector::Prefix { shard, sort_prefix } => {
-                let last_bound = prefix_last_bound(sort_prefix);
-
-                Ok(store
-                    .get(*shard)
-                    .unwrap_or(&BTreeMap::new())
-                    .range((Included(sort_prefix.to_string()), last_bound))
-                    .map(|(k, v)| v.to_row_val(RowRef::new(shard, k)))
-                    .collect::<Vec<_>>())
-            }
-            Selector::Single(row_ref) => {
-                let intval = store
-                    .get(&row_ref.uid.shard)
-                    .ok_or(StorageError::NotFound)?
-                    .get(&row_ref.uid.sort)
-                    .ok_or(StorageError::NotFound)?;
-                Ok(vec![intval.to_row_val((*row_ref).clone())])
-            }
-        }
+        let v = store
+            .get(shard)
+            .ok_or(StorageError::NotFound)?
+            .get(sort)
+            .ok_or(StorageError::NotFound)?;
+        Ok(v.to_concurrent_row_val(shard, sort))
+    }
+    
+    async fn row_fetch_batch<'a>(&self, select: &Selector<'a>) -> Result<Vec<ConcurrentRowVal>, StorageError> {
+        tracing::trace!(select=%select, command="row_fetch_batch");
+        let store = self.row.read().or(Err(StorageError::Internal))?;
+        Ok(select_keys(&store, select)
+            .into_iter()
+            .map(|(shard, sort)| {
+                let v = store
+                    .get(&shard)
+                    .unwrap()
+                    .get(&sort)
+                    .unwrap();
+                v.to_concurrent_row_val(&shard, &sort)
+            })
+            .collect::<Vec<_>>())
     }
 
-    async fn row_rm<'a>(&self, select: &Selector<'a>) -> Result<(), StorageError> {
-        tracing::trace!(select=%select, command="row_rm");
-
-        let values = match select {
-            Selector::Range { .. } | Selector::Prefix { .. } => self
-                .row_fetch(select)
-                .await?
-                .into_iter()
-                .map(|rv| rv.row_ref)
-                .collect::<Vec<_>>(),
-            Selector::List(rlist) => rlist.clone(),
-            Selector::Single(row_ref) => vec![(*row_ref).clone()],
-        };
-
-        for v in values.into_iter() {
-            self.row_rm_single(&v)?;
-        }
-        Ok(())
+    async fn row_delete_batch<'a>(&self, select: &Selector<'a>) -> Result<(), StorageError> {
+        tracing::trace!(select=%select, command="row_delete_batch");
+        // read the current causality for the selected keys, then insert a
+        // tombstone that supersedes each key
+        let del = self
+            .row_fetch_batch(select)
+            .await?
+            .into_iter()
+            .map(|v| RowVal::deleted(v.row_ref))
+            .collect::<Vec<_>>();
+        self.row_update(del).await
     }
 
-    async fn row_insert(&self, values: Vec<RowVal>) -> Result<(), StorageError> {
-        tracing::trace!(entries=%values.iter().map(|v| v.row_ref.to_string()).collect::<Vec<_>>().join(","), command="row_insert");
+    async fn row_update(&self, values: Vec<RowVal>) -> Result<(), StorageError> {
+        tracing::trace!(entries=%values.iter().map(|v| v.row_ref.to_string()).collect::<Vec<_>>().join(","), command="row_update");
         let mut store = self.row.write().or(Err(StorageError::Internal))?;
         for v in values.into_iter() {
             let shard = v.row_ref.uid.shard;
             let sort = v.row_ref.uid.sort;
 
-            let val = match v.value.into_iter().next() {
-                Some(Alternative::Value(x)) => x,
-                _ => vec![],
+            let val = match v.value {
+                Alternative::Value(x) => InternalData::Value(x),
+                Alternative::Tombstone => InternalData::Tombstone,
             };
 
             let cauz = match v.row_ref.causality.map(|v| v.parse::<u64>()) {
@@ -266,16 +210,19 @@ impl IStore for MemStore {
             let bt = store.entry(shard).or_default();
             let intval = bt.entry(sort).or_default();
 
-            if cauz == intval.version {
-                intval.data.clear();
-            }
-            intval.data.push(InternalData::Value(val));
-            intval.version += 1;
+            let max_version = intval.max_version();
+            intval.data = std::mem::take(&mut intval.data)
+                .into_iter()
+                .filter(|(ver, _)| *ver > cauz)
+                .collect::<Vec<_>>();
+
+            intval.data.push((max_version + 1, val));
             intval.change.notify_waiters();
         }
         Ok(())
     }
-    async fn row_poll(&self, value: &RowRef) -> Result<RowVal, StorageError> {
+
+    async fn row_poll(&self, value: &RowRef) -> Result<ConcurrentRowVal, StorageError> {
         tracing::trace!(entry=%value, command="row_poll");
         let shard = &value.uid.shard;
         let sort = &value.uid.sort;
@@ -286,19 +233,19 @@ impl IStore for MemStore {
 
         let notify_me = {
             let mut store = self.row.write().or(Err(StorageError::Internal))?;
-            let bt = store.entry(shard.to_string()).or_default();
-            let intval = bt.entry(sort.to_string()).or_default();
+            let intval = store
+                .get_mut(shard)
+                .and_then(|bt| bt.get_mut(sort))
+                .ok_or(StorageError::NotFound)?;
 
-            if intval.version != cauz {
-                return Ok(intval.to_row_val(value.clone()));
+            if intval.max_version() > cauz {
+                return Ok(intval.to_concurrent_row_val(shard, sort));
             }
             intval.change.clone()
         };
 
         notify_me.notified().await;
-
-        let res = self.row_fetch(&Selector::Single(value)).await?;
-        res.into_iter().next().ok_or(StorageError::NotFound)
+        self.row_fetch(shard, sort).await
     }
 
     async fn blob_fetch(&self, blob_ref: &BlobRef) -> Result<BlobVal, StorageError> {
@@ -340,5 +287,56 @@ impl IStore for MemStore {
         let mut store = self.blob.write().or(Err(StorageError::Internal))?;
         store.remove(&blob_ref.0);
         Ok(())
+    }
+}
+
+/// Returns keys of `store` that are selected by `select`, as pairs of (shard, sort).
+/// These are guaranteed to be valid keys of `store`, associated with a value.
+fn select_keys<'a, V>(store: &HashMap<String, BTreeMap<String, V>>, select: &Selector<'a>) ->
+    Vec<(String, String)>
+{
+    match select {
+        Selector::Range {
+            shard,
+            sort_begin,
+            sort_end,
+        } =>
+           store
+               .get(*shard)
+               .map(|bt|
+                    bt
+                    .range((
+                        sort_begin.map(|b| Included(b.to_string())).unwrap_or(Unbounded),
+                        sort_end.map(|e| Excluded(e.to_string())).unwrap_or(Unbounded),
+                    ))
+                    .map(|(sort, _)| (shard.to_string(), sort.clone()))
+                    .collect())
+               .unwrap_or(vec![]),
+        Selector::List { shard, sort_list } =>
+            sort_list
+            .iter()
+            .filter_map(|sort| {
+                let bt = store.get(*shard)?;
+                let _ = bt.get(*sort)?;
+                Some((shard.to_string(), sort.to_string()))
+            })
+            .collect::<Vec<_>>(),
+        Selector::Prefix { shard, sort_prefix } => {
+            let last_bound = prefix_last_bound(sort_prefix);
+            store
+                .get(*shard)
+                .map(|bt|
+                     bt
+                     .range((Included(sort_prefix.to_string()), last_bound))
+                     .map(|(sort, _)| (shard.to_string(), sort.clone()))
+                     .collect())
+                .unwrap_or(vec![])
+        }
+        Selector::Single { shard, sort } =>
+            store
+                .get(*shard)
+                .and_then(|bt| bt.get(*sort))
+                .map(|_| vec![(shard.to_string(), sort.to_string())])
+                .unwrap_or(vec![]),
     }
 }

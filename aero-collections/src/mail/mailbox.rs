@@ -213,11 +213,11 @@ impl MailboxInternal {
 
     async fn fetch_meta(&self, ids: &[UniqueIdent]) -> Result<Vec<MailMeta>> {
         let ids = ids.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        let ops = ids
-            .iter()
-            .map(|id| RowRef::new(self.mail_path.as_str(), id.as_str()))
-            .collect::<Vec<_>>();
-        let res_vec = self.storage.row_fetch(&Selector::List(ops)).await?;
+        let sort_list = ids.iter().map(|x| x.as_str()).collect::<Vec<_>>();
+        let res_vec = self.storage.row_fetch_batch(&Selector::List {
+            shard: self.mail_path.as_str(),
+            sort_list: &sort_list,
+        }).await?;
 
         let mut meta_vec = vec![];
         for res in res_vec.into_iter() {
@@ -307,7 +307,7 @@ impl MailboxInternal {
                 };
                 let meta_blob = seal_serialize(&meta, &self.encryption_key)?;
                 self.storage
-                    .row_insert(vec![RowVal::new(
+                    .row_update(vec![RowVal::new(
                         RowRef::new(&self.mail_path, &ident.to_string()),
                         meta_blob,
                     )])
@@ -356,7 +356,7 @@ impl MailboxInternal {
                 };
                 let meta_blob = seal_serialize(&meta, &self.encryption_key)?;
                 self.storage
-                    .row_insert(vec![RowVal::new(
+                    .row_update(vec![RowVal::new(
                         RowRef::new(&self.mail_path, &ident.to_string()),
                         meta_blob,
                     )])
@@ -392,18 +392,13 @@ impl MailboxInternal {
             async {
                 // Delete mail meta from K2V
                 let sk = ident.to_string();
-                let res = self
+                let rv = self
                     .storage
-                    .row_fetch(&storage::Selector::Single(&RowRef::new(
-                        &self.mail_path,
-                        &sk,
-                    )))
+                    .row_fetch(&self.mail_path, &sk)
                     .await?;
-                if let Some(row_val) = res.into_iter().next() {
-                    self.storage
-                        .row_rm(&storage::Selector::Single(&row_val.row_ref))
-                        .await?;
-                }
+                self.storage
+                    .row_update(vec![storage::RowVal::deleted(rv.row_ref)])
+                    .await?;
                 Ok::<_, anyhow::Error>(())
             }
         )?;
@@ -457,7 +452,7 @@ impl MailboxInternal {
                 let meta = &from.fetch_meta(&[source_id]).await?[0];
                 let meta_blob = seal_serialize(meta, &self.encryption_key)?;
                 self.storage
-                    .row_insert(vec![RowVal::new(
+                    .row_update(vec![RowVal::new(
                         RowRef::new(&self.mail_path, &new_id.to_string()),
                         meta_blob,
                     )])
