@@ -213,10 +213,10 @@ pub trait IStore {
     /// - Deleting a value is done by using a `RowVal` created using `RowVal::deleted`.
     async fn row_update(&self, values: Vec<RowVal>) -> Result<(), StorageError>;
 
-    /// Polls a single key, waiting for a new value. The key does not need to
-    /// currently exist in the store. If `row_ref` does not contain causality
-    /// information, the current value (if any) is returned immediately.
-    /// Otherwise `row_poll` waits until a new value is written.
+    /// Polls a single key, waiting for a new value.
+    /// If the key is not in the store, this immediately fails with `StorageError::NotFound`.
+    /// If `row_ref` does not contain causality information, the current value is returned immediately.
+    /// Otherwise `row_poll` waits until a new value is written then returns it.
     async fn row_poll(&self, row_ref: &RowRef) -> Result<ConcurrentRowVal, StorageError>;
 
     async fn blob_fetch(&self, blob_ref: &BlobRef) -> Result<BlobVal, StorageError>;

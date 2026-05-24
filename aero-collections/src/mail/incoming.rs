@@ -66,6 +66,13 @@ async fn incoming_mail_watch_process_internal(
                 loop {
                     match storage.row_poll(&incoming_key).await {
                         Ok(row_val) => break row_val.row_ref,
+                        Err(storage::StorageError::NotFound) => {
+                            // initialize the watch ref, then try again
+                            let watch_val = storage::RowVal::new(incoming_key.clone(), gen_ident().0.to_vec());
+                            if let Err(e) = storage.row_update(vec![watch_val]).await {
+                                tracing::warn!(err=?e, "can't initialize incoming watch ref")
+                            }
+                        },
                         Err(e) => {
                             error!("Error in wait_new_mail: {}", e);
                             tokio::time::sleep(Duration::from_secs(30)).await;
@@ -235,6 +242,17 @@ async fn k2v_lock_loop_internal(
         loop {
             debug!("k2v watch lock loop iter: ct = {:?}", ct);
             match storage.row_poll(&ct).await {
+                Err(storage::StorageError::NotFound) => {
+                    // initialize the lock state; an empty byte sequence is
+                    // considered as LockState::Empty in the Ok case below
+                    if let Err(e) = storage
+                        .row_update(vec![storage::RowVal::new(ct.clone(), vec![])])
+                        .await
+                    {
+                        error!("Could not initialize lock ref: {}", e);
+                        tokio::time::sleep(Duration::from_secs(30)).await;
+                    }
+                },
                 Err(e) => {
                     error!(
                         "Error in k2v wait value changed: {} ; assuming we no longer hold lock.",

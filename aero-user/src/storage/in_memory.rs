@@ -52,7 +52,7 @@ impl std::default::Default for InternalRowVal {
     fn default() -> Self {
         Self {
             data: vec![],
-            version: 1,
+            version: 0,
             change: Arc::new(Notify::new()),
         }
     }
@@ -229,8 +229,10 @@ impl IStore for MemStore {
 
         let notify_me = {
             let mut store = self.row.write().or(Err(StorageError::Internal))?;
-            let bt = store.entry(shard.to_string()).or_default();
-            let intval = bt.entry(sort.to_string()).or_default();
+            let intval = store
+                .get_mut(shard)
+                .and_then(|bt| bt.get_mut(sort))
+                .ok_or(StorageError::NotFound)?;
 
             if intval.version != cauz {
                 return Ok(intval.to_concurrent_row_val(shard, sort));
@@ -239,7 +241,6 @@ impl IStore for MemStore {
         };
 
         notify_me.notified().await;
-
         self.row_fetch(shard, sort).await
     }
 

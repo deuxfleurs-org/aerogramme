@@ -360,26 +360,7 @@ impl IStore for GarageStore {
                 // and return immediately.
                 match self.k2v.read_item(shard, sort).await {
                     Err(k2v_client::Error::NotFound) => {
-                        // `row_poll` must support polling for a currently
-                        // non-existing value (waiting until it is created).
-                        //
-                        // FIXME This is not supported by K2V PollItem (because
-                        // it requires a causality token). Here we insert a
-                        // dummy value; this is a hack; could we instead extend
-                        // K2V to allow polling for the initial write of a
-                        // (currently) non-existing value?
-                        // FIXME FIXME in fact this inserts a dummy value THEN
-                        // (at the next loop iteration) immediately returns it
-                        // (since we still have no causality info). Surely we
-                        // want to wait instead of returning this dummy value
-                        // to the user?
-                        self.k2v
-                            .insert_item(shard, sort, vec![0u8], None)
-                            .await
-                            .map_err(|e| {
-                                tracing::error!("Unable to insert item in polling logic: {}", e);
-                                StorageError::Internal
-                            })?;
+                        return Err(StorageError::NotFound)
                     }
                     Err(e) => {
                         tracing::error!("Unable to read item in polling logic: {}", e);

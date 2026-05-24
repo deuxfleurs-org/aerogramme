@@ -482,6 +482,15 @@ impl K2vWatch {
                 // Watch if another instance has modified the log
                 update = storage.row_poll(&row) => {
                     match update {
+                        Err(storage::StorageError::NotFound) => {
+                            // initialize the row with a dummy value, then try again
+                            if let Err(e) = storage
+                                .row_update(vec![storage::RowVal::new(row.clone(), vec![0u8])])
+                                .await
+                            {
+                                tracing::warn!(err=?e, "(watch) can't initialize the watch ref")
+                            }
+                        },
                         Err(e) => {
                             error!("Error in bayou k2v wait value changed: {}", e);
                             tokio::time::sleep(Duration::from_secs(30)).await;
