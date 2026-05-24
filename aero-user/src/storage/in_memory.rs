@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::ops::Bound::{self, Excluded, Included, Unbounded};
 use std::sync::RwLock;
 
+use serde::{Serialize, Deserialize};
 use sodiumoxide::{crypto::hash, hex};
 use tokio::sync::Notify;
 
@@ -72,6 +73,26 @@ impl InternalRowVal {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct SeenMarker {
+    seen: BTreeMap<String, u64>,
+}
+
+impl SeenMarker {
+    fn encode(&self) -> String {
+        use base64::prelude::*;
+        let bytes = rmp_serde::to_vec(self).expect("SeenMarker encode");
+        BASE64_STANDARD.encode(&bytes)
+    }
+
+    fn decode(s: &str) -> Self {
+        use base64::prelude::*;
+        let bytes = BASE64_STANDARD.decode(s).expect("valid seen_marker");
+        rmp_serde::from_slice::<SeenMarker>(&bytes)
+            .expect("valid seen_marker")
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 struct InternalBlobVal {
     data: Vec<u8>,
@@ -93,8 +114,14 @@ impl InternalBlobVal {
     }
 }
 
-type ArcRow = Arc<RwLock<HashMap<String, BTreeMap<String, InternalRowVal>>>>;
+type ArcRow = Arc<RwLock<Row>>;
 type ArcBlob = Arc<RwLock<BTreeMap<String, InternalBlobVal>>>;
+
+#[derive(Debug)]
+struct Row {
+    table: HashMap<String, BTreeMap<String, InternalRowVal>>,
+    change: Arc<Notify>,
+}
 
 #[derive(Clone, Debug)]
 pub struct MemBuilder {
@@ -111,7 +138,10 @@ impl MemBuilder {
         unicity.extend_from_slice(user.as_bytes());
         Arc::new(Self {
             unicity,
-            row: Arc::new(RwLock::new(HashMap::new())),
+            row: Arc::new(RwLock::new(Row {
+                table: HashMap::new(),
+                change: Arc::new(Notify::new()),
+            })),
             blob: Arc::new(RwLock::new(BTreeMap::new())),
         })
     }
@@ -154,6 +184,7 @@ impl IStore for MemStore {
         tracing::trace!(shard=%shard, sort=%sort, command="row_fetch");
         let store = self.row.read().or(Err(StorageError::Internal))?;
         let v = store
+            .table
             .get(shard)
             .ok_or(StorageError::NotFound)?
             .get(sort)
@@ -164,10 +195,12 @@ impl IStore for MemStore {
     async fn row_fetch_batch<'a>(&self, select: &Selector<'a>) -> Result<Vec<ConcurrentRowVal>, StorageError> {
         tracing::trace!(select=%select, command="row_fetch_batch");
         let store = self.row.read().or(Err(StorageError::Internal))?;
-        Ok(select_keys(&store, select)
+        let (shard, sorts) = select_keys(&store.table, select);
+        Ok(sorts
             .into_iter()
-            .map(|(shard, sort)| {
+            .map(|sort| {
                 let v = store
+                    .table
                     .get(&shard)
                     .unwrap()
                     .get(&sort)
@@ -207,7 +240,7 @@ impl IStore for MemStore {
                 _ => 0,
             };
 
-            let bt = store.entry(shard).or_default();
+            let bt = store.table.entry(shard).or_default();
             let intval = bt.entry(sort).or_default();
 
             let max_version = intval.max_version();
@@ -218,6 +251,7 @@ impl IStore for MemStore {
 
             intval.data.push((max_version + 1, val));
             intval.change.notify_waiters();
+            store.change.notify_waiters();
         }
         Ok(())
     }
@@ -234,6 +268,7 @@ impl IStore for MemStore {
         let notify_me = {
             let mut store = self.row.write().or(Err(StorageError::Internal))?;
             let intval = store
+                .table
                 .get_mut(shard)
                 .and_then(|bt| bt.get_mut(sort))
                 .ok_or(StorageError::NotFound)?;
@@ -246,6 +281,55 @@ impl IStore for MemStore {
 
         notify_me.notified().await;
         self.row_fetch(shard, sort).await
+    }
+
+    async fn row_poll_range<'a>(&self, select: &RangeSelector<'a>, seen_marker: Option<&str>) ->
+        Result<PollRangeResult, StorageError>
+    {
+        tracing::trace!(select=%select, command="row_poll_range");
+        let prev_seen = seen_marker.map(SeenMarker::decode);
+        loop {
+            let change = {
+                let store = self.row.read().or(Err(StorageError::Internal))?;
+                let (shard, sorts) = select_keys(&store.table, &select.as_selector());
+                let vals = sorts
+                    .into_iter()
+                    .map(|sort| {
+                        let intv = store
+                            .table
+                            .get(&shard)
+                            .unwrap()
+                            .get(&sort)
+                            .unwrap();
+                        (sort, intv)
+                    })
+                    .collect::<Vec<_>>();
+
+                let mut new_vals = vec![];
+                let mut seen = BTreeMap::new();
+                for (sort, intv) in vals {
+                    seen.insert(sort.clone(), intv.max_version());
+                    let is_new = match &prev_seen {
+                        None => true,
+                        Some(prev) => intv.max_version() > *prev.seen.get(&sort).unwrap_or(&0)
+                    };
+                    if is_new {
+                        new_vals.push(intv.to_concurrent_row_val(&shard, &sort));
+                    }
+                }
+
+                if prev_seen.is_none() || !new_vals.is_empty() {
+                    return Ok(PollRangeResult {
+                        value: new_vals,
+                        seen_marker: SeenMarker { seen }.encode(),
+                    })
+                }
+
+                store.change.clone()
+            };
+            
+            change.notified().await;
+        }
     }
 
     async fn blob_fetch(&self, blob_ref: &BlobRef) -> Result<BlobVal, StorageError> {
@@ -293,50 +377,57 @@ impl IStore for MemStore {
 /// Returns keys of `store` that are selected by `select`, as pairs of (shard, sort).
 /// These are guaranteed to be valid keys of `store`, associated with a value.
 fn select_keys<'a, V>(store: &HashMap<String, BTreeMap<String, V>>, select: &Selector<'a>) ->
-    Vec<(String, String)>
+    (String, Vec<String>)
 {
     match select {
         Selector::Range {
             shard,
             sort_begin,
             sort_end,
-        } =>
-           store
-               .get(*shard)
-               .map(|bt|
-                    bt
-                    .range((
-                        sort_begin.map(|b| Included(b.to_string())).unwrap_or(Unbounded),
-                        sort_end.map(|e| Excluded(e.to_string())).unwrap_or(Unbounded),
-                    ))
-                    .map(|(sort, _)| (shard.to_string(), sort.clone()))
-                    .collect())
-               .unwrap_or(vec![]),
-        Selector::List { shard, sort_list } =>
-            sort_list
-            .iter()
-            .filter_map(|sort| {
-                let bt = store.get(*shard)?;
-                let _ = bt.get(*sort)?;
-                Some((shard.to_string(), sort.to_string()))
-            })
-            .collect::<Vec<_>>(),
-        Selector::Prefix { shard, sort_prefix } => {
-            let last_bound = prefix_last_bound(sort_prefix);
+        } => (
+            shard.to_string(),
             store
                 .get(*shard)
                 .map(|bt|
                      bt
-                     .range((Included(sort_prefix.to_string()), last_bound))
-                     .map(|(sort, _)| (shard.to_string(), sort.clone()))
+                     .range((
+                         sort_begin.map(|b| Included(b.to_string())).unwrap_or(Unbounded),
+                         sort_end.map(|e| Excluded(e.to_string())).unwrap_or(Unbounded),
+                     ))
+                     .map(|(sort, _)| sort.clone())
                      .collect())
                 .unwrap_or(vec![])
+        ),
+        Selector::List { shard, sort_list } => (
+            shard.to_string(),
+            sort_list
+                .iter()
+                .filter_map(|sort| {
+                    let bt = store.get(*shard)?;
+                    let _ = bt.get(*sort)?;
+                    Some(sort.to_string())
+                })
+                .collect::<Vec<_>>()
+        ),
+        Selector::Prefix { shard, sort_prefix } => {
+            let last_bound = prefix_last_bound(sort_prefix);
+            let sorts = store
+                .get(*shard)
+                .map(|bt|
+                     bt
+                     .range((Included(sort_prefix.to_string()), last_bound))
+                     .map(|(sort, _)| sort.clone())
+                     .collect())
+                .unwrap_or(vec![]);
+            (shard.to_string(), sorts)
         }
-        Selector::Single { shard, sort } =>
+        Selector::Single { shard, sort } => (
+            shard.to_string(),
             store
                 .get(*shard)
                 .and_then(|bt| bt.get(*sort))
-                .map(|_| vec![(shard.to_string(), sort.to_string())])
-                .unwrap_or(vec![]),
+                .map(|_| vec![sort.to_string()])
+                .unwrap_or(vec![])
+        ),
     }
 }
