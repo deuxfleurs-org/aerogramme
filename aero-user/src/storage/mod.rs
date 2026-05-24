@@ -143,7 +143,7 @@ impl BlobVal {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Selector<'a> {
     Range {
         shard: &'a str,
@@ -189,7 +189,7 @@ impl<'a> std::fmt::Display for Selector<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum RangeSelector<'a> {
     Range {
         shard: &'a str,
