@@ -44,27 +44,29 @@ impl InternalData {
 
 #[derive(Debug)]
 struct InternalRowVal {
-    data: Vec<InternalData>,
-    version: u64,
+    data: Vec<(u64, InternalData)>,
     change: Arc<Notify>,
 }
 impl std::default::Default for InternalRowVal {
     fn default() -> Self {
         Self {
             data: vec![],
-            version: 0,
             change: Arc::new(Notify::new()),
         }
     }
 }
 impl InternalRowVal {
+    fn max_version(&self) -> u64 {
+        self.data.iter().map(|(v, _)| *v).max().unwrap_or(0)
+    }
+
     fn concurrent_values(&self) -> Vec<Alternative> {
-        self.data.iter().map(InternalData::to_alternative).collect()
+        self.data.iter().map(|(_, d)| d.to_alternative()).collect()
     }
 
     fn to_concurrent_row_val(&self, shard: &str, sort: &str) -> ConcurrentRowVal {
         ConcurrentRowVal {
-            row_ref: RowRef::new(shard, sort).with_causality(self.version.to_string()),
+            row_ref: RowRef::new(shard, sort).with_causality(self.max_version().to_string()),
             value: self.concurrent_values(),
         }
     }
@@ -208,11 +210,13 @@ impl IStore for MemStore {
             let bt = store.entry(shard).or_default();
             let intval = bt.entry(sort).or_default();
 
-            if cauz == intval.version {
-                intval.data.clear();
-            }
-            intval.data.push(val);
-            intval.version += 1;
+            let max_version = intval.max_version();
+            intval.data = std::mem::take(&mut intval.data)
+                .into_iter()
+                .filter(|(ver, _)| *ver > cauz)
+                .collect::<Vec<_>>();
+
+            intval.data.push((max_version + 1, val));
             intval.change.notify_waiters();
         }
         Ok(())
@@ -234,7 +238,7 @@ impl IStore for MemStore {
                 .and_then(|bt| bt.get_mut(sort))
                 .ok_or(StorageError::NotFound)?;
 
-            if intval.version != cauz {
+            if intval.max_version() > cauz {
                 return Ok(intval.to_concurrent_row_val(shard, sort));
             }
             intval.change.clone()
