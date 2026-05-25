@@ -14,7 +14,6 @@ use aero_user::login::{Credentials, PublicCredentials};
 use aero_user::storage;
 
 use crate::mail::mailbox::Mailbox;
-use crate::mail::uidindex::ImapUidvalidity;
 use crate::mail::IMF;
 use crate::unique_ident::*;
 use crate::user::User;
@@ -37,7 +36,7 @@ const MAIL_CHECK_INTERVAL: Duration = Duration::from_secs(600);
 pub async fn incoming_mail_watch_process(
     user: Weak<User>,
     creds: Credentials,
-    rx_inbox_id: watch::Receiver<Option<(UniqueIdent, ImapUidvalidity)>>,
+    rx_inbox_id: watch::Receiver<Option<UniqueIdent>>,
 ) {
     if let Err(e) = incoming_mail_watch_process_internal(user, creds, rx_inbox_id).await {
         error!("Error in incoming mail watch process: {}", e);
@@ -47,7 +46,7 @@ pub async fn incoming_mail_watch_process(
 async fn incoming_mail_watch_process_internal(
     user: Weak<User>,
     creds: Credentials,
-    mut rx_inbox_id: watch::Receiver<Option<(UniqueIdent, ImapUidvalidity)>>,
+    mut rx_inbox_id: watch::Receiver<Option<UniqueIdent>>,
 ) -> Result<()> {
     let mut lock_held = k2v_lock_loop(
         creds.storage.build().await?,
@@ -106,9 +105,9 @@ async fn incoming_mail_watch_process_internal(
 
         // If INBOX no longer is same mailbox, open new mailbox
         let inbox_id = *rx_inbox_id.borrow();
-        if let Some((id, uidvalidity)) = inbox_id {
+        if let Some(id) = inbox_id {
             if Some(id) != inbox.as_ref().map(|b| b.id) {
-                match user.open_mailbox_by_id(id, uidvalidity).await {
+                match user.open_mailbox_by_id(id).await {
                     Ok(mb) => {
                         inbox = Some(mb);
                     }

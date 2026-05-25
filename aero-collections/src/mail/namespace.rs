@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use aero_bayou::timestamp::now_msec;
 
-use crate::mail::uidindex::ImapUidvalidity;
 use crate::unique_ident::{gen_ident, UniqueIdent};
 
 pub const MAILBOX_HIERARCHY_DELIMITER: char = '.';
@@ -38,13 +37,12 @@ pub(crate) const MAILBOX_LIST_SK: &str = "list";
 
 // ---- User's mailbox list (serialized in K2V) ----
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct MailboxList(BTreeMap<String, MailboxListEntry>);
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub(crate) struct MailboxListEntry {
     id_lww: (u64, Option<UniqueIdent>),
-    uidvalidity: ImapUidvalidity,
 }
 
 impl MailboxListEntry {
@@ -55,7 +53,6 @@ impl MailboxListEntry {
         {
             self.id_lww = other.id_lww;
         }
-        self.uidvalidity = std::cmp::max(self.uidvalidity, other.uidvalidity);
     }
 }
 
@@ -92,42 +89,37 @@ impl MailboxList {
         )
     }
 
-    pub(crate) fn get_mailbox(&self, name: &str) -> Option<(ImapUidvalidity, Option<UniqueIdent>)> {
+    pub(crate) fn get_mailbox(&self, name: &str) -> Option<UniqueIdent> {
         self.0.get(name).map(
-            |MailboxListEntry {
-                 id_lww: (_, mailbox_id),
-                 uidvalidity,
-             }| (*uidvalidity, *mailbox_id),
-        )
+            |MailboxListEntry { id_lww: (_, mailbox_id) }| *mailbox_id
+        ).flatten()
     }
 
     /// Ensures mailbox `name` maps to id `id`.
-    /// If it already mapped to that, returns None.
-    /// If a change had to be done, returns Some(new uidvalidity in mailbox).
+    /// If it already mapped to that, returns false.
+    /// If a change had to be done, returns true.
     pub(crate) fn set_mailbox(
         &mut self,
         name: &str,
         id: Option<UniqueIdent>,
-    ) -> Option<ImapUidvalidity> {
-        let (ts, id, uidvalidity) = match self.0.get_mut(name) {
+    ) -> bool {
+        let (ts, id) = match self.0.get_mut(name) {
             None => {
                 if id.is_none() {
-                    return None;
+                    return false;
                 } else {
-                    (now_msec(), id, ImapUidvalidity::new(1).unwrap())
+                    (now_msec(), id)
                 }
             }
             Some(MailboxListEntry {
                 id_lww,
-                uidvalidity,
             }) => {
                 if id_lww.1 == id {
-                    return None;
+                    return false;
                 } else {
                     (
                         std::cmp::max(id_lww.0 + 1, now_msec()),
                         id,
-                        ImapUidvalidity::new(uidvalidity.get() + 1).unwrap(),
                     )
                 }
             }
@@ -137,45 +129,23 @@ impl MailboxList {
             name.into(),
             MailboxListEntry {
                 id_lww: (ts, id),
-                uidvalidity,
             },
         );
-        Some(uidvalidity)
-    }
-
-    pub(crate) fn update_uidvalidity(&mut self, name: &str, new_uidvalidity: ImapUidvalidity) {
-        match self.0.get_mut(name) {
-            None => {
-                self.0.insert(
-                    name.into(),
-                    MailboxListEntry {
-                        id_lww: (now_msec(), None),
-                        uidvalidity: new_uidvalidity,
-                    },
-                );
-            }
-            Some(MailboxListEntry { uidvalidity, .. }) => {
-                *uidvalidity = std::cmp::max(*uidvalidity, new_uidvalidity);
-            }
-        }
+        true
     }
 
     pub(crate) fn create_mailbox(&mut self, name: &str) -> CreatedMailbox {
-        if let Some(MailboxListEntry {
-            id_lww: (_, Some(id)),
-            uidvalidity,
-        }) = self.0.get(name)
-        {
-            return CreatedMailbox::Existed(*id, *uidvalidity);
+        if let Some(id) = self.get_mailbox(name) {
+            return CreatedMailbox::Existed(id);
         }
 
         let id = gen_ident();
-        let uidvalidity = self.set_mailbox(name, Some(id)).unwrap();
-        CreatedMailbox::Created(id, uidvalidity)
+        self.set_mailbox(name, Some(id));
+        CreatedMailbox::Created(id)
     }
 
     pub(crate) fn rename_mailbox(&mut self, old_name: &str, new_name: &str) -> Result<()> {
-        if let Some((uidvalidity, Some(mbid))) = self.get_mailbox(old_name) {
+        if let Some(mbid) = self.get_mailbox(old_name) {
             if self.has_mailbox(new_name) {
                 bail!(
                     "Cannot rename {} into {}: {} already exists",
@@ -187,7 +157,6 @@ impl MailboxList {
 
             self.set_mailbox(old_name, None);
             self.set_mailbox(new_name, Some(mbid));
-            self.update_uidvalidity(new_name, uidvalidity);
             Ok(())
         } else {
             bail!(
@@ -201,6 +170,6 @@ impl MailboxList {
 }
 
 pub(crate) enum CreatedMailbox {
-    Created(UniqueIdent, ImapUidvalidity),
-    Existed(UniqueIdent, ImapUidvalidity),
+    Created(UniqueIdent),
+    Existed(UniqueIdent),
 }

@@ -44,7 +44,6 @@ pub enum UidIndexOp {
     FlagAdd(UniqueIdent, ModSeq, Vec<Flag>),
     FlagDel(UniqueIdent, ModSeq, Vec<Flag>),
     FlagSet(UniqueIdent, ModSeq, Vec<Flag>),
-    BumpUidvalidity(u32),
 }
 
 impl UidIndex {
@@ -71,11 +70,6 @@ impl UidIndex {
     #[must_use]
     pub fn op_flag_set(&self, ident: UniqueIdent, flags: Vec<Flag>) -> UidIndexOp {
         UidIndexOp::FlagSet(ident, self.internalmodseq, flags)
-    }
-
-    #[must_use]
-    pub fn op_bump_uidvalidity(&self, count: u32) -> UidIndexOp {
-        UidIndexOp::BumpUidvalidity(count)
     }
 
     // INTERNAL functions to keep state consistent
@@ -256,10 +250,6 @@ impl BayouState for UidIndex {
                     new.highestmodseq = new.internalmodseq;
                     new.internalmodseq = NonZeroU64::new(new.internalmodseq.get() + 1).unwrap();
                 }
-            }
-            UidIndexOp::BumpUidvalidity(count) => {
-                new.uidvalidity = ImapUidvalidity::new(new.uidvalidity.get() + *count)
-                    .unwrap_or(ImapUidvalidity::new(u32::MAX).unwrap());
             }
         }
         new
