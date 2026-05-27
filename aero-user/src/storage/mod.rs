@@ -154,7 +154,6 @@ pub enum Selector<'a> {
         shard: &'a str,
         sort_list: &'a[&'a str],
     },
-    #[allow(dead_code)]
     Prefix {
         shard: &'a str,
         sort_prefix: &'a str,

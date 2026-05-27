@@ -35,7 +35,6 @@ impl Mailbox {
         */
 
         let mbox = RwLock::new(MailboxInternal {
-            id,
             encryption_key: creds.keys.master.clone(),
             storage: creds.storage.build().await?,
             uid_index,
@@ -167,9 +166,6 @@ impl Mailbox {
 // Non standard but common flags:
 // https://www.iana.org/assignments/imap-jmap-keywords/imap-jmap-keywords.xhtml
 struct MailboxInternal {
-    // 2023-05-15 will probably be used later.
-    #[allow(dead_code)]
-    id: UniqueIdent,
     mail_path: String,
     encryption_key: Key,
     storage: Store,
