@@ -371,6 +371,48 @@ impl IStore for GarageStore {
             }
         }
     }
+    async fn row_poll_range<'a>(&self, select: &RangeSelector<'a>, seen_marker: Option<&str>) ->
+        Result<PollRangeResult, StorageError>
+    {
+        tracing::trace!(select=%select, command="row_poll_range");
+        // the k2v poll periodically timeouts when nothing happens; we automatically retry
+        loop {
+            let (shard, filter) = match select {
+                RangeSelector::Range { shard, sort_begin, sort_end } => (
+                    shard,
+                    k2v_client::PollRangeFilter {
+                        start: *sort_begin,
+                        end: *sort_end,
+                        prefix: None,
+                    }
+                ),
+                RangeSelector::Prefix { shard, sort_prefix } => (
+                    shard,
+                    k2v_client::PollRangeFilter {
+                        start: None,
+                        end: None,
+                        prefix: Some(*sort_prefix),
+                    }
+                )
+            };
+
+            match self.k2v.poll_range(shard, Some(filter), seen_marker, None).await {
+                Err(e) => {
+                    tracing::error!("Unable to poll range: {}", e);
+                    return Err(StorageError::Internal);
+                }
+                Ok(None) => continue,
+                Ok(Some(res)) => {
+                    let value = res
+                        .items
+                        .into_iter()
+                        .map(|(sort, cv)| causal_to_concurrent_row_val(shard, &sort, cv))
+                        .collect();
+                    return Ok(PollRangeResult { value, seen_marker: res.seen_marker })
+                }
+            }
+        }
+    }
 
     async fn blob_fetch(&self, blob_ref: &BlobRef) -> Result<BlobVal, StorageError> {
         tracing::trace!(entry=%blob_ref, command="blob_fetch");

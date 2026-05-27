@@ -143,7 +143,7 @@ impl BlobVal {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Selector<'a> {
     Range {
         shard: &'a str,
@@ -189,6 +189,57 @@ impl<'a> std::fmt::Display for Selector<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum RangeSelector<'a> {
+    Range {
+        shard: &'a str,
+        sort_begin: Option<&'a str>,
+        sort_end: Option<&'a str>,
+    },
+    Prefix {
+        shard: &'a str,
+        sort_prefix: &'a str,
+    },
+}
+impl<'a> std::fmt::Display for RangeSelector<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Range {
+                shard,
+                sort_begin,
+                sort_end,
+            } => {
+                write!(f, "Range({}, ", shard)?;
+                if let Some(begin) = sort_begin {
+                    write!(f, "{}", begin)?;
+                }
+                write!(f, "..")?;
+                if let Some(end) = sort_end {
+                    write!(f, "{}", end)?;
+                };
+                write!(f, ")")
+            },
+            Self::Prefix { shard, sort_prefix } => write!(f, "Prefix({}, {})", shard, sort_prefix),
+        }
+    }
+}
+impl<'a> RangeSelector<'a> {
+    fn as_selector(&self) -> Selector<'a> {
+        match self {
+            Self::Range { shard, sort_begin, sort_end } =>
+                Selector::Range { shard, sort_begin: *sort_begin, sort_end: *sort_end },
+            Self::Prefix { shard, sort_prefix } =>
+                Selector::Prefix { shard, sort_prefix },
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct PollRangeResult {
+    pub value: Vec<ConcurrentRowVal>,
+    pub seen_marker: String,
+}
+
 #[async_trait]
 pub trait IStore {
     /// Read a single value. Fails with `StorageError::NotFound` if there is no
@@ -218,6 +269,15 @@ pub trait IStore {
     /// If `row_ref` does not contain causality information, the current value is returned immediately.
     /// Otherwise `row_poll` waits until a new value is written then returns it.
     async fn row_poll(&self, row_ref: &RowRef) -> Result<ConcurrentRowVal, StorageError>;
+
+    /// Polls a range of keys, waiting for a new value.
+    /// If `seen_marker` is `None`, returns immediately with the current content of the range and a
+    /// "seen marker" that can be used in further `row_poll_range` calls.
+    /// Otherwise, the seen marker must have been returned by an earlier call to `row_poll_range` for
+    /// the same range or a larger range. In this case, waits until a new value is written in that range,
+    /// which has not been seen by the earlier call.
+    async fn row_poll_range<'a>(&self, select: &RangeSelector<'a>, seen_marker: Option<&str>) ->
+        Result<PollRangeResult, StorageError>;
 
     async fn blob_fetch(&self, blob_ref: &BlobRef) -> Result<BlobVal, StorageError>;
     async fn blob_insert(&self, blob_val: BlobVal) -> Result<String, StorageError>;

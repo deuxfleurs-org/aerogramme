@@ -5,9 +5,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Result};
 use log::error;
-use rand::prelude::*;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{watch, Notify};
+use tokio::sync::Notify;
 
 use aero_user::cryptoblob::*;
 use aero_user::login::Credentials;
@@ -33,8 +32,6 @@ const CHECKPOINT_MIN_OPS: usize = 16;
 // between processes doing .checkpoint() and those doing .sync()
 const CHECKPOINTS_TO_KEEP: usize = 3;
 
-const WATCH_SK: &str = "watch";
-
 pub trait BayouState:
     Default + Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync + 'static
 {
@@ -52,20 +49,16 @@ pub struct Bayou<S: BayouState> {
     checkpoint: (Timestamp, S),
     history: Vec<(Timestamp, S::Op, Option<S>)>,
 
-    last_sync: Option<Instant>,
     last_try_checkpoint: Option<Instant>,
 
     watch: Arc<K2vWatch>,
-    last_sync_watch_ct: storage::RowRef,
 }
 
 impl<S: BayouState> Bayou<S> {
     pub async fn new(creds: &Credentials, path: String) -> Result<Self> {
         let storage = creds.storage.build().await?;
 
-        //let target = k2v_client.row(&path, WATCH_SK);
-        let target = storage::RowRef::new(&path, WATCH_SK);
-        let watch = K2vWatch::new(creds, target.clone()).await?;
+        let watch = K2vWatch::new(creds, &path).await?;
 
         Ok(Self {
             path,
@@ -73,20 +66,15 @@ impl<S: BayouState> Bayou<S> {
             key: creds.keys.master.clone(),
             checkpoint: (Timestamp::zero(), S::default()),
             history: vec![],
-            last_sync: None,
             last_try_checkpoint: None,
             watch,
-            last_sync_watch_ct: target,
         })
     }
 
     /// Re-reads the state from persistent storage backend
     pub async fn sync(&mut self) -> Result<()> {
-        let new_last_sync = Some(Instant::now());
-        let new_last_sync_watch_ct = self.watch.rx.borrow().clone();
-
         // 1. List checkpoints
-        let checkpoints = self.list_checkpoints().await?;
+        let checkpoints = list_checkpoints(&self.storage, &self.path).await?;
         tracing::debug!("(sync) listed checkpoints: {:?}", checkpoints);
 
         // 2. Load last checkpoint if different from currently used one
@@ -136,7 +124,7 @@ impl<S: BayouState> Bayou<S> {
             .row_fetch_batch(&storage::Selector::Range {
                 shard: &self.path,
                 sort_begin: Some(&ts_ser),
-                sort_end: Some(WATCH_SK),
+                sort_end: None,
             })
             .await?;
 
@@ -220,24 +208,6 @@ impl<S: BayouState> Bayou<S> {
             self.history.last_mut().unwrap().2 = Some(state);
         }
 
-        // Save info that sync has been done
-        self.last_sync = new_last_sync;
-        self.last_sync_watch_ct = new_last_sync_watch_ct;
-        Ok(())
-    }
-
-    /// Does a sync() if either of the two conditions is met:
-    /// - last sync was more than CHECKPOINT_INTERVAL/5 ago
-    /// - a change was detected
-    pub async fn opportunistic_sync(&mut self) -> Result<()> {
-        let too_old = match self.last_sync {
-            Some(t) => Instant::now() > t + (CHECKPOINT_INTERVAL / 5),
-            _ => true,
-        };
-        let changed = self.last_sync_watch_ct != *self.watch.rx.borrow();
-        if too_old || changed {
-            self.sync().await?;
-        }
         Ok(())
     }
 
@@ -247,7 +217,7 @@ impl<S: BayouState> Bayou<S> {
 
     /// Applies a new operation on the state. Once this function returns,
     /// the operation has been safely persisted to storage backend.
-    /// Make sure to call `.opportunistic_sync()` before doing this,
+    /// Make sure to call `.sync()` before doing this,
     /// and even before calculating the `op` argument given here.
     pub async fn push(&mut self, op: S::Op) -> Result<()> {
         tracing::debug!("(push) add operation: {:?}", op);
@@ -264,7 +234,6 @@ impl<S: BayouState> Bayou<S> {
             seal_serialize(&op, &self.key)?,
         );
         self.storage.row_update(vec![row_val]).await?;
-        self.watch.propagate_local_update.notify_one();
 
         let new_state = self.state().apply(&op);
         self.history.push((ts, op, Some(new_state)));
@@ -330,7 +299,7 @@ impl<S: BayouState> Bayou<S> {
         );
 
         // Check existing checkpoints: if last one is too recent, don't checkpoint again.
-        let existing_checkpoints = self.list_checkpoints().await?;
+        let existing_checkpoints = list_checkpoints(&self.storage, &self.path).await?;
         tracing::debug!("(cp) listed checkpoints: {:?}", existing_checkpoints);
 
         if let Some(last_cp) = existing_checkpoints.last() {
@@ -403,34 +372,31 @@ impl<S: BayouState> Bayou<S> {
             &self.checkpoint.1
         }
     }
+}
 
-    // ---- INTERNAL ----
+// ---- INTERNAL ----
 
-    async fn list_checkpoints(&self) -> Result<Vec<(Timestamp, String)>> {
-        let prefix = format!("{}/checkpoint/", self.path);
+async fn list_checkpoints(storage: &storage::Store, path: &str) -> Result<Vec<(Timestamp, String)>> {
+    let prefix = format!("{}/checkpoint/", path);
 
-        let checkpoints_res = self.storage.blob_list(&prefix).await?;
+    let checkpoints_res = storage.blob_list(&prefix).await?;
 
-        let mut checkpoints = vec![];
-        for object in checkpoints_res {
-            let key = object.0;
-            if let Some(ckid) = key.strip_prefix(&prefix) {
-                if let Ok(ts) = ckid.parse::<Timestamp>() {
-                    checkpoints.push((ts, key.into()));
-                }
+    let mut checkpoints = vec![];
+    for object in checkpoints_res {
+        let key = object.0;
+        if let Some(ckid) = key.strip_prefix(&prefix) {
+            if let Ok(ts) = ckid.parse::<Timestamp>() {
+                checkpoints.push((ts, key.into()));
             }
         }
-        checkpoints.sort_by_key(|(ts, _)| *ts);
-        Ok(checkpoints)
     }
+    checkpoints.sort_by_key(|(ts, _)| *ts);
+    Ok(checkpoints)
 }
 
 // ---- Bayou watch in K2V ----
 
 struct K2vWatch {
-    target: storage::RowRef,
-    rx: watch::Receiver<storage::RowRef>,
-    propagate_local_update: Notify,
     learnt_remote_update: Arc<Notify>,
 }
 
@@ -438,41 +404,41 @@ impl K2vWatch {
     /// Creates a new watch and launches subordinate threads.
     /// These threads hold Weak pointers to the struct;
     /// they exit when the Arc is dropped.
-    async fn new(creds: &Credentials, target: storage::RowRef) -> Result<Arc<Self>> {
+    async fn new(creds: &Credentials, path: &str) -> Result<Arc<Self>> {
         let storage = creds.storage.build().await?;
 
-        let (tx, rx) = watch::channel::<storage::RowRef>(target.clone());
-        let propagate_local_update = Notify::new();
         let learnt_remote_update = Arc::new(Notify::new());
 
         let watch = Arc::new(K2vWatch {
-            target,
-            rx,
-            propagate_local_update,
             learnt_remote_update,
         });
 
-        tokio::spawn(Self::background_task(Arc::downgrade(&watch), storage, tx));
-
+        tokio::spawn(Self::background_task(Arc::downgrade(&watch), path.to_string(), storage));
+ 
         Ok(watch)
     }
 
     async fn background_task(
         self_weak: Weak<Self>,
+        path: String,
         storage: storage::Store,
-        tx: watch::Sender<storage::RowRef>,
     ) {
-        let (mut row, remote_update) = match Weak::upgrade(&self_weak) {
-            Some(this) => (this.target.clone(), this.learnt_remote_update.clone()),
+        let remote_update = match Weak::upgrade(&self_weak) {
             None => return,
+            Some(this) => this.learnt_remote_update.clone(),
         };
 
+        let mut seen_marker: Option<String> = None;
+        let mut start_poll_at: Option<String> = None;
+
         while let Some(this) = Weak::upgrade(&self_weak) {
-            tracing::debug!(
-                "bayou k2v watch bg loop iter ({}, {})",
-                this.target.uid.shard,
-                this.target.uid.sort
-            );
+            tracing::debug!("bayou k2v watch bg loop iter ({})", &path);
+
+            let range_select = storage::RangeSelector::Range {
+                shard: &path,
+                sort_begin: start_poll_at.as_deref(),
+                sort_end: None,
+            };
             tokio::select!(
                 // Needed to exit: will force a loop iteration every minutes,
                 // that will stop the loop if other Arc references have been dropped
@@ -480,45 +446,49 @@ impl K2vWatch {
                 _ = tokio::time::sleep(Duration::from_secs(60)) => continue,
 
                 // Watch if another instance has modified the log
-                update = storage.row_poll(&row) => {
+                update = storage.row_poll_range(&range_select, seen_marker.as_deref()) => {
                     match update {
-                        Err(storage::StorageError::NotFound) => {
-                            // initialize the row with a dummy value, then try again
-                            if let Err(e) = storage
-                                .row_update(vec![storage::RowVal::new(row.clone(), vec![0u8])])
-                                .await
-                            {
-                                tracing::warn!(err=?e, "(watch) can't initialize the watch ref")
-                            }
-                        },
                         Err(e) => {
                             error!("Error in bayou k2v wait value changed: {}", e);
                             tokio::time::sleep(Duration::from_secs(30)).await;
                         }
-                        Ok(new_value) => {
-                            row = new_value.row_ref;
-                            if let Err(e) = tx.send(row.clone()) {
-                                tracing::warn!(err=?e, "(watch) can't record the new log ref");
-                                break;
+                        Ok(res) => {
+                            // The two codepaths that modify the log are:
+                            // - when pushing a new log entry (`.push()`)
+                            // - when deleting old log entries during checkpointing (`.checkpoint()`)
+                            //
+                            // We want to send an update in the first case, but
+                            // not in the second case, which corresponds to
+                            // internal bookkeeping.
+                            //
+                            // We thus discard updated values that are older
+                            // than the latest checkpoint. As a small
+                            // optimization we also continue to poll only
+                            // starting from that checkpoint.
+                            seen_marker = Some(res.seen_marker);
+                            match list_checkpoints(&storage, &path).await {
+                                Err(e) => {
+                                    error!("Error in bayou k2v listing checkpoints: {}", e)
+                                },
+                                Ok(checkpoints) => {
+                                    if let Some((_, last_checkpoint)) = checkpoints.last() {
+                                        // in the future, start watching from this checkpoint
+                                        start_poll_at = Some(last_checkpoint.to_string());
+                                        if res.value.iter().all(|cv| cv.row_ref.uid.sort < *last_checkpoint) {
+                                            // do not notify if all the updated values are before the checkpoint
+                                            continue;
+                                        }
+                                    }
+                                }
                             }
-                            tracing::debug!(row=?row, "(watch) learnt remote update");
+                            tracing::debug!(values=?res.value, "(watch) learnt remote update, notifying");
                             this.learnt_remote_update.notify_waiters();
                         }
                     }
                 }
-
-                // It appears we have modified the log, informing other people
-                _ = this.propagate_local_update.notified() => {
-                    let rand = u128::to_be_bytes(thread_rng().gen()).to_vec();
-                    let row_val = storage::RowVal::new(row.clone(), rand);
-                    if let Err(e) = storage.row_update(vec![row_val]).await
-                    {
-                        tracing::error!("Error in bayou k2v watch updater loop: {}", e);
-                        tokio::time::sleep(Duration::from_secs(30)).await;
-                    }
-                }
             );
         }
+
         // unblock listeners
         remote_update.notify_waiters();
         tracing::info!("bayou k2v watch bg loop exiting");

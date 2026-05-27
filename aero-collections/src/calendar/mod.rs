@@ -40,14 +40,8 @@ impl Calendar {
     // ---- DAG sync utilities
 
     /// Sync data with backing store
-    pub async fn force_sync(&self) -> Result<()> {
-        self.internal.write().await.force_sync().await
-    }
-
-    /// Sync data with backing store only if changes are detected
-    /// or last sync is too old
-    pub async fn opportunistic_sync(&self) -> Result<()> {
-        self.internal.write().await.opportunistic_sync().await
+    pub async fn sync(&self) -> Result<()> {
+        self.internal.write().await.sync().await
     }
 
     // ---- Data API
@@ -97,13 +91,8 @@ struct CalendarInternal {
 }
 
 impl CalendarInternal {
-    async fn force_sync(&mut self) -> Result<()> {
+    async fn sync(&mut self) -> Result<()> {
         self.davdag.sync().await?;
-        Ok(())
-    }
-
-    async fn opportunistic_sync(&mut self) -> Result<()> {
-        self.davdag.opportunistic_sync().await?;
         Ok(())
     }
 

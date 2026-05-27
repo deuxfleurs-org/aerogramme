@@ -233,7 +233,7 @@ impl MailboxView {
             .ok_or(anyhow!("test"))?
             .notified()
             .await;
-        self.internal.mailbox.opportunistic_sync().await?;
+        self.internal.mailbox.sync().await?;
         self.update(UpdateParameters::default()).await
     }
 
