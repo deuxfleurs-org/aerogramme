@@ -160,8 +160,8 @@ impl BayouState for UidIndex {
         match op {
             UidIndexOp::MailAdd(ident, uid, modseq, flags) => {
                 // Change UIDValidity if there is a UID conflict or a MODSEQ conflict
-                // @FIXME Need to prove that summing work
                 // The intuition: we increase the UIDValidity by the number of possible conflicts
+                // Proof: https://aerogramme.deuxfleurs.fr/documentation/internals/imap-uid/
                 if *uid < new.internalseq || *modseq < new.internalmodseq {
                     let bump_uid = new.internalseq.get() - uid.get();
                     let bump_modseq = (new.internalmodseq.get() - modseq.get()) as u32;
