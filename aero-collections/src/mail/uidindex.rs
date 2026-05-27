@@ -33,8 +33,8 @@ pub struct UidIndex {
     pub highestmodseq: ModSeq,
 
     // "Internal" Counters
-    pub internalseq: ImapUid,
-    pub internalmodseq: ModSeq,
+    internalseq: ImapUid,
+    internalmodseq: ModSeq,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -98,6 +98,24 @@ impl UidIndex {
 
         // Remove from source of trust
         self.table.remove(ident);
+    }
+
+    // Can be useful to debug so we want this code
+    // to be available to developers
+    pub fn dump(&self) {
+        println!("---- MAILBOX STATE ----");
+        println!("UIDVALIDITY {}", self.uidvalidity);
+        println!("UIDNEXT {}", self.uidnext);
+        println!("INTERNALSEQ {}", self.internalseq);
+        for (uid, ident) in self.idx_by_uid.iter() {
+            println!(
+                "{} {} {}",
+                uid,
+                hex::encode(ident.0),
+                self.table.get(ident).cloned().unwrap().2.join(", ")
+            );
+        }
+        println!();
     }
 }
 

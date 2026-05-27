@@ -443,26 +443,6 @@ impl MailboxInternal {
     }
 }
 
-// Can be useful to debug so we want this code
-// to be available to developers
-#[allow(dead_code)]
-fn dump(uid_index: &Bayou<UidIndex>) {
-    let s = uid_index.state();
-    println!("---- MAILBOX STATE ----");
-    println!("UIDVALIDITY {}", s.uidvalidity);
-    println!("UIDNEXT {}", s.uidnext);
-    println!("INTERNALSEQ {}", s.internalseq);
-    for (uid, ident) in s.idx_by_uid.iter() {
-        println!(
-            "{} {} {}",
-            uid,
-            hex::encode(ident.0),
-            s.table.get(ident).cloned().unwrap().2.join(", ")
-        );
-    }
-    println!();
-}
-
 // ----
 
 /// The metadata of a message that is stored in K2V
