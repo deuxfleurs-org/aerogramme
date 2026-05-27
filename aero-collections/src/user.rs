@@ -16,7 +16,6 @@ use crate::mail::namespace::{
     CreatedMailbox, MailboxList, ARCHIVE, DRAFTS, INBOX, MAILBOX_HIERARCHY_DELIMITER,
     MAILBOX_LIST_PK, MAILBOX_LIST_SK, SENT, TRASH,
 };
-use crate::mail::uidindex::ImapUidvalidity;
 use crate::unique_ident::UniqueIdent;
 
 //@FIXME User should be totally rewriten
@@ -36,7 +35,7 @@ pub struct User {
 
     // Handle on worker processing received email
     // (moving emails from the mailqueue to the user's INBOX)
-    tx_inbox_id: watch::Sender<Option<(UniqueIdent, ImapUidvalidity)>>,
+    tx_inbox_id: watch::Sender<Option<UniqueIdent>>,
 }
 
 impl User {
@@ -70,7 +69,7 @@ impl User {
 
     /// Opens an existing mailbox given its IMAP name.
     pub async fn open_mailbox(&self, name: &str) -> Result<Option<Arc<Mailbox>>> {
-        let (mut list, ct) = self.load_mailbox_list().await?;
+        let (list, _ct) = self.load_mailbox_list().await?;
 
         //@FIXME it could be a trace or an opentelemtry trace thing.
         // Be careful to not leak sensible data
@@ -81,13 +80,8 @@ impl User {
         }
         */
 
-        if let Some((uidvalidity, Some(mbid))) = list.get_mailbox(name) {
-            let mb = self.open_mailbox_by_id(mbid, uidvalidity).await?;
-            let mb_uidvalidity = mb.current_uid_index().await.uidvalidity;
-            if mb_uidvalidity > uidvalidity {
-                list.update_uidvalidity(name, mb_uidvalidity);
-                self.save_mailbox_list(&list, ct).await?;
-            }
+        if let Some(mbid) = list.get_mailbox(name) {
+            let mb = self.open_mailbox_by_id(mbid).await?;
             Ok(Some(mb))
         } else {
             Ok(None)
@@ -108,11 +102,11 @@ impl User {
 
         let (mut list, ct) = self.load_mailbox_list().await?;
         match list.create_mailbox(name) {
-            CreatedMailbox::Created(_, _) => {
+            CreatedMailbox::Created(_) => {
                 self.save_mailbox_list(&list, ct).await?;
                 Ok(())
             }
-            CreatedMailbox::Existed(_, _) => Err(anyhow!("Mailbox {} already exists", name)),
+            CreatedMailbox::Existed(_) => Err(anyhow!("Mailbox {} already exists", name)),
         }
     }
 
@@ -207,7 +201,6 @@ impl User {
     pub(super) async fn open_mailbox_by_id(
         &self,
         id: UniqueIdent,
-        min_uidvalidity: ImapUidvalidity,
     ) -> Result<Arc<Mailbox>> {
         {
             let cache = self.mailboxes.lock().unwrap();
@@ -220,7 +213,7 @@ impl User {
         //  1. Opening a mailbox that is not already opened takes a significant amount of time
         //  2. We don't want to lock the whole HashMap that contain the mailboxes during this
         //     operation which is why we droppped the lock above but take it again below.
-        let mb = Arc::new(Mailbox::open(&self.creds, id, min_uidvalidity).await?);
+        let mb = Arc::new(Mailbox::open(&self.creds, id).await?);
 
         let mut cache = self.mailboxes.lock().unwrap();
         if let Some(concurrent_mb) = cache.get(&id).and_then(Weak::upgrade) {
@@ -283,18 +276,18 @@ impl User {
         // Also, ensure that the mpsc::watch that keeps track of the
         // inbox id is up-to-date.
         let saved;
-        let (inbox_id, inbox_uidvalidity) = match list.create_mailbox(INBOX) {
-            CreatedMailbox::Created(i, v) => {
+        let inbox_id = match list.create_mailbox(INBOX) {
+            CreatedMailbox::Created(i) => {
                 self.save_mailbox_list(list, ct.clone()).await?;
                 saved = true;
-                (i, v)
+                i
             }
-            CreatedMailbox::Existed(i, v) => {
+            CreatedMailbox::Existed(i) => {
                 saved = false;
-                (i, v)
+                i
             }
         };
-        let inbox_id = Some((inbox_id, inbox_uidvalidity));
+        let inbox_id = Some(inbox_id);
         if *self.tx_inbox_id.borrow() != inbox_id {
             self.tx_inbox_id.send(inbox_id).unwrap();
         }

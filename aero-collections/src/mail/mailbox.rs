@@ -21,24 +21,12 @@ impl Mailbox {
     pub(crate) async fn open(
         creds: &Credentials,
         id: UniqueIdent,
-        min_uidvalidity: ImapUidvalidity,
     ) -> Result<Self> {
         let index_path = format!("index/{}", id);
         let mail_path = format!("mail/{}", id);
 
         let mut uid_index = Bayou::<UidIndex>::new(creds, index_path).await?;
         uid_index.sync().await?;
-
-        let uidvalidity = uid_index.state().uidvalidity;
-        if uidvalidity < min_uidvalidity {
-            uid_index
-                .push(
-                    uid_index
-                        .state()
-                        .op_bump_uidvalidity(min_uidvalidity.get() - uidvalidity.get()),
-                )
-                .await?;
-        }
 
         // @FIXME reporting through opentelemetry or some logs
         // info on the "shape" of the mailbox would be welcomed
