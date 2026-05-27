@@ -33,7 +33,21 @@ pub struct UidIndex {
     pub highestmodseq: ModSeq,
 
     // "Internal" Counters
+
+    // `internalseq` counts the number of modifications to the list of mails: it
+    // is incremented at each MailAdd and MailDel command.
+    //
+    // This has two purposes:
+    // - generate mail UIDs (and thus UIDNEXT);
+    // - detect conflicts between concurrent Mail{Add,Del} commands.
     internalseq: ImapUid,
+
+    // `internalmodseq` counts the number of modifications to mail flags in the
+    // entire mailbox: it is incremented at each Flag{Add,Del,Set} command.
+    //
+    // This is used to implement RFC4551 (CONDSTORE). It also serves two purposes:
+    // - generate MODSEQ numbers for emails (and thus HIGHESTMODSEQ);
+    // - detect conflicts between concurrent Flag{Add,Del,Set} commands.
     internalmodseq: ModSeq,
 }
 
