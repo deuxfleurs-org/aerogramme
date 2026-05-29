@@ -98,10 +98,9 @@ impl Mailbox {
     pub async fn append<'a>(
         &self,
         msg: IMF<'a>,
-        ident: Option<UniqueIdent>,
         flags: &[Flag],
     ) -> Result<(ImapUidvalidity, ImapUid, ModSeq)> {
-        self.mbox.write().await.append(msg, ident, flags).await
+        self.mbox.write().await.append(msg, flags).await
     }
 
     /// Insert an email into the mailbox, copying it from an existing S3 object
@@ -252,10 +251,9 @@ impl MailboxInternal {
     async fn append(
         &mut self,
         mail: IMF<'_>,
-        ident: Option<UniqueIdent>,
         flags: &[Flag],
     ) -> Result<(ImapUidvalidity, ImapUid, ModSeq)> {
-        let ident = ident.unwrap_or_else(gen_ident);
+        let ident = gen_ident();
         let message_key = gen_key();
 
         futures::try_join!(
