@@ -29,7 +29,6 @@ pub struct UidIndex {
 
     // "Public" Counters
     pub uidvalidity: ImapUidvalidity,
-    pub uidnext: ImapUid,
     pub highestmodseq: ModSeq,
 
     // "Internal" Counters
@@ -104,6 +103,10 @@ impl UidIndex {
         UidIndexOp::FlagSet(ident, self.internalmodseq, flags)
     }
 
+    pub fn uidnext(&self) -> ImapUid {
+        self.internalseq
+    }
+
     // INTERNAL functions to keep state consistent
 
     fn reg_email(&mut self, ident: UniqueIdent, uid: ImapUid, modseq: ModSeq, flags: &[Flag]) {
@@ -137,7 +140,6 @@ impl UidIndex {
     pub fn dump(&self) {
         println!("---- MAILBOX STATE ----");
         println!("UIDVALIDITY {}", self.uidvalidity);
-        println!("UIDNEXT {}", self.uidnext);
         println!("INTERNALSEQ {}", self.internalseq);
         for (uid, ident) in self.idx_by_uid.iter() {
             println!(
@@ -161,7 +163,6 @@ impl Default for UidIndex {
             idx_by_flag: FlagIndex::new(),
 
             uidvalidity: NonZeroU32::new(1).unwrap(),
-            uidnext: NonZeroU32::new(1).unwrap(),
             highestmodseq: NonZeroU64::new(1).unwrap(),
 
             internalseq: NonZeroU32::new(1).unwrap(),
@@ -208,8 +209,6 @@ impl BayouState for UidIndex {
 
                 new.internalseq = NonZeroU32::new(new.internalseq.get() + 1).unwrap();
                 new.internalmodseq = NonZeroU64::new(new.internalmodseq.get() + 1).unwrap();
-
-                new.uidnext = new.internalseq;
             }
             UidIndexOp::MailDel(ident) => {
                 // If the email is known locally, we remove its references in all our indexes
@@ -348,7 +347,6 @@ struct UidIndexSerializedRepr {
     mails: Vec<(ImapUid, ModSeq, UniqueIdent, Vec<Flag>)>,
 
     uidvalidity: ImapUidvalidity,
-    uidnext: ImapUid,
     highestmodseq: ModSeq,
 
     internalseq: ImapUid,
@@ -370,7 +368,6 @@ impl<'de> Deserialize<'de> for UidIndex {
             idx_by_flag: FlagIndex::new(),
 
             uidvalidity: val.uidvalidity,
-            uidnext: val.uidnext,
             highestmodseq: val.highestmodseq,
 
             internalseq: val.internalseq,
@@ -398,7 +395,6 @@ impl Serialize for UidIndex {
         let val = UidIndexSerializedRepr {
             mails,
             uidvalidity: self.uidvalidity,
-            uidnext: self.uidnext,
             highestmodseq: self.highestmodseq,
             internalseq: self.internalseq,
             internalmodseq: self.internalmodseq,
@@ -436,7 +432,7 @@ mod tests {
             let recent = state.idx_by_flag.0.get("\\Recent").unwrap();
             assert_eq!(recent.len(), 1);
             assert_eq!(recent.iter().next().unwrap(), &NonZeroU32::new(1).unwrap());
-            assert_eq!(state.uidnext, NonZeroU32::new(2).unwrap());
+            assert_eq!(state.uidnext(), NonZeroU32::new(2).unwrap());
             assert_eq!(state.uidvalidity, NonZeroU32::new(1).unwrap());
         }
 

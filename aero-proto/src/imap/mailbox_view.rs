@@ -502,7 +502,7 @@ impl MailboxView {
     }
 
     pub(crate) fn uidnext(&self) -> ImapUid {
-        self.internal.snapshot.uidnext
+        self.internal.snapshot.uidnext()
     }
 
     pub(crate) fn highestmodseq_status(&self) -> Result<Body<'static>> {
