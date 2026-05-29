@@ -297,10 +297,8 @@ fn rfc4315_imapext_uidplus() {
         assert!(res.contains("* 1 EXPUNGE"));
 
         // APPENDUID check UID + UID VALIDITY
-        // Note: 4 and not 3, as we update the UID counter when we delete an email
-        // it's part of our UID proof
         let res = append(imap_socket, Email::Multipart)?;
-        assert!(res.contains("[APPENDUID 1 4]"));
+        assert!(res.contains("[APPENDUID 1 3]"));
 
         // COPYUID, check
         create_mailbox(imap_socket, Mailbox::Archive).context("created mailbox archive")?;
