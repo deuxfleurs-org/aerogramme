@@ -35,7 +35,6 @@ impl Mailbox {
         */
 
         let mbox = RwLock::new(MailboxInternal {
-            id,
             encryption_key: creds.keys.master.clone(),
             storage: creds.storage.build().await?,
             uid_index,
@@ -99,10 +98,9 @@ impl Mailbox {
     pub async fn append<'a>(
         &self,
         msg: IMF<'a>,
-        ident: Option<UniqueIdent>,
         flags: &[Flag],
     ) -> Result<(ImapUidvalidity, ImapUid, ModSeq)> {
-        self.mbox.write().await.append(msg, ident, flags).await
+        self.mbox.write().await.append(msg, flags).await
     }
 
     /// Insert an email into the mailbox, copying it from an existing S3 object
@@ -167,9 +165,6 @@ impl Mailbox {
 // Non standard but common flags:
 // https://www.iana.org/assignments/imap-jmap-keywords/imap-jmap-keywords.xhtml
 struct MailboxInternal {
-    // 2023-05-15 will probably be used later.
-    #[allow(dead_code)]
-    id: UniqueIdent,
     mail_path: String,
     encryption_key: Key,
     storage: Store,
@@ -256,10 +251,9 @@ impl MailboxInternal {
     async fn append(
         &mut self,
         mail: IMF<'_>,
-        ident: Option<UniqueIdent>,
         flags: &[Flag],
     ) -> Result<(ImapUidvalidity, ImapUid, ModSeq)> {
-        let ident = ident.unwrap_or_else(gen_ident);
+        let ident = gen_ident();
         let message_key = gen_key();
 
         futures::try_join!(
@@ -445,26 +439,6 @@ impl MailboxInternal {
 
         Ok(())
     }
-}
-
-// Can be useful to debug so we want this code
-// to be available to developers
-#[allow(dead_code)]
-fn dump(uid_index: &Bayou<UidIndex>) {
-    let s = uid_index.state();
-    println!("---- MAILBOX STATE ----");
-    println!("UIDVALIDITY {}", s.uidvalidity);
-    println!("UIDNEXT {}", s.uidnext);
-    println!("INTERNALSEQ {}", s.internalseq);
-    for (uid, ident) in s.idx_by_uid.iter() {
-        println!(
-            "{} {} {}",
-            uid,
-            hex::encode(ident.0),
-            s.table.get(ident).cloned().unwrap().2.join(", ")
-        );
-    }
-    println!();
 }
 
 // ----

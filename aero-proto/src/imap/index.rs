@@ -8,9 +8,6 @@ use aero_collections::unique_ident::UniqueIdent;
 
 pub struct Index<'a> {
     pub imap_index: Vec<MailIndex<'a>>,
-    // TODO: can this be removed?
-    #[allow(dead_code)]
-    pub internal: &'a UidIndex,
 }
 impl<'a> Index<'a> {
     pub fn new(internal: &'a UidIndex) -> Result<Self> {
@@ -38,7 +35,6 @@ impl<'a> Index<'a> {
 
         Ok(Self {
             imap_index,
-            internal,
         })
     }
 

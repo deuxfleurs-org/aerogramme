@@ -33,8 +33,22 @@ pub struct UidIndex {
     pub highestmodseq: ModSeq,
 
     // "Internal" Counters
-    pub internalseq: ImapUid,
-    pub internalmodseq: ModSeq,
+
+    // `internalseq` counts the number of modifications to the list of mails: it
+    // is incremented at each MailAdd and MailDel command.
+    //
+    // This has two purposes:
+    // - generate mail UIDs (and thus UIDNEXT);
+    // - detect conflicts between concurrent Mail{Add,Del} commands.
+    internalseq: ImapUid,
+
+    // `internalmodseq` counts the number of modifications to mail flags in the
+    // entire mailbox: it is incremented at each Flag{Add,Del,Set} command.
+    //
+    // This is used to implement RFC4551 (CONDSTORE). It also serves two purposes:
+    // - generate MODSEQ numbers for emails (and thus HIGHESTMODSEQ);
+    // - detect conflicts between concurrent Flag{Add,Del,Set} commands.
+    internalmodseq: ModSeq,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -99,6 +113,24 @@ impl UidIndex {
         // Remove from source of trust
         self.table.remove(ident);
     }
+
+    // Can be useful to debug so we want this code
+    // to be available to developers
+    pub fn dump(&self) {
+        println!("---- MAILBOX STATE ----");
+        println!("UIDVALIDITY {}", self.uidvalidity);
+        println!("UIDNEXT {}", self.uidnext);
+        println!("INTERNALSEQ {}", self.internalseq);
+        for (uid, ident) in self.idx_by_uid.iter() {
+            println!(
+                "{} {} {}",
+                uid,
+                hex::encode(ident.0),
+                self.table.get(ident).cloned().unwrap().2.join(", ")
+            );
+        }
+        println!();
+    }
 }
 
 impl Default for UidIndex {
@@ -128,8 +160,8 @@ impl BayouState for UidIndex {
         match op {
             UidIndexOp::MailAdd(ident, uid, modseq, flags) => {
                 // Change UIDValidity if there is a UID conflict or a MODSEQ conflict
-                // @FIXME Need to prove that summing work
                 // The intuition: we increase the UIDValidity by the number of possible conflicts
+                // Proof: https://aerogramme.deuxfleurs.fr/documentation/internals/imap-uid/
                 if *uid < new.internalseq || *modseq < new.internalmodseq {
                     let bump_uid = new.internalseq.get() - uid.get();
                     let bump_modseq = (new.internalmodseq.get() - modseq.get()) as u32;

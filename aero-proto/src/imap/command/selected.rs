@@ -416,7 +416,7 @@ impl<'a> SelectedContext<'a> {
             flow::MailboxPerm::ReadOnly => Some(
                 Response::build()
                     .to_req(self.req)
-                    .message("Write command are forbidden while exmining mailbox")
+                    .message("Write command are forbidden while examining mailbox")
                     .no()
                     .unwrap(),
             ),
