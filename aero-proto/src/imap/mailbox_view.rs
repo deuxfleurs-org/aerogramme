@@ -306,29 +306,31 @@ impl MailboxView {
         &mut self,
         sequence_set: &SequenceSet,
         to: Arc<Mailbox>,
-        is_uid_copy: &bool,
+        is_uid_move: &bool,
     ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>, Vec<Body<'static>>)> {
         let idx = self.index()?;
-        let mails = idx.fetch(sequence_set, *is_uid_copy)?;
+        let mails = idx.fetch(sequence_set, *is_uid_move)?;
 
+        let mut new_uuids = vec![]; 
         for mi in mails.iter() {
-            to.move_from(&self.internal.mailbox, mi.uuid).await?;
+            let new_uuid = to.move_from(&self.internal.mailbox, mi.uuid).await?; 
+            new_uuids.push((mi.uid, new_uuid));
         }
 
         let mut ret = vec![];
         let to_state = to.current_uid_index().await;
-        for mi in mails.iter() {
+        for (uid, new_uuid) in new_uuids {
             let dest_uid = to_state
                 .table
-                .get(&mi.uuid)
+                .get(&new_uuid)
                 .ok_or(anyhow!("moved mail not in destination mailbox"))?
                 .0;
-            ret.push((mi.uid, dest_uid));
+            ret.push((uid, dest_uid));
         }
 
         let update = self
             .update(UpdateParameters {
-                with_uid: *is_uid_copy,
+                with_uid: *is_uid_move,
                 ..UpdateParameters::default()
             })
             .await?;
@@ -500,7 +502,7 @@ impl MailboxView {
     }
 
     pub(crate) fn uidnext(&self) -> ImapUid {
-        self.internal.snapshot.uidnext
+        self.internal.snapshot.uidnext()
     }
 
     pub(crate) fn highestmodseq_status(&self) -> Result<Body<'static>> {

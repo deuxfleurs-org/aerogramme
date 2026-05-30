@@ -143,7 +143,7 @@ impl Mailbox {
 
     /// Move an email from an other Mailbox to this mailbox
     /// (use this when possible, as it allows for a certain number of storage optimizations)
-    pub async fn move_from(&self, from: &Mailbox, uuid: UniqueIdent) -> Result<()> {
+    pub async fn move_from(&self, from: &Mailbox, uuid: UniqueIdent) -> Result<UniqueIdent> {
         if self.id == from.id {
             bail!("Cannot copy move same mailbox");
         }
@@ -386,10 +386,13 @@ impl MailboxInternal {
         Ok(new_id)
     }
 
-    async fn move_from(&mut self, from: &mut MailboxInternal, id: UniqueIdent) -> Result<()> {
-        self.copy_internal(from, id, id).await?;
+    async fn move_from(&mut self, from: &mut MailboxInternal, id: UniqueIdent) -> Result<UniqueIdent> {
+        // NOTE: we *must* generate a fresh ID; see the comment in uidindex.rs
+        // for `internalseq` related to the MailDel optimization.
+        let new_id = gen_ident();
+        self.copy_internal(from, id, new_id).await?;
         from.delete(id).await?;
-        Ok(())
+        Ok(new_id)
     }
 
     async fn copy_internal(
