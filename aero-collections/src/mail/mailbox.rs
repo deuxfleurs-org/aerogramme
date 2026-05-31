@@ -285,7 +285,10 @@ impl MailboxInternal {
                     .await?;
                 Ok::<_, anyhow::Error>(())
             },
-            self.uid_index.sync()
+            async {
+                self.uid_index.internal_sync_hint().await;
+                Ok(())
+            },
         )?;
 
         // Add mail to Bayou mail index
@@ -334,7 +337,10 @@ impl MailboxInternal {
                     .await?;
                 Ok::<_, anyhow::Error>(())
             },
-            self.uid_index.sync()
+            async {
+                self.uid_index.internal_sync_hint().await;
+                Ok(())
+            },
         )?;
 
         // Add mail to Bayou mail index
@@ -433,7 +439,10 @@ impl MailboxInternal {
                     .await?;
                 Ok::<_, anyhow::Error>(())
             },
-            self.uid_index.sync(),
+            async {
+                self.uid_index.internal_sync_hint().await;
+                Ok(())
+            },
         )?;
 
         // Add mail to Bayou mail index
