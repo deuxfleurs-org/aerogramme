@@ -7,6 +7,7 @@ use aero_user::cryptoblob::{self, gen_key, open_deserialize, seal_serialize, Key
 use aero_user::login::Credentials;
 use aero_user::storage::{self, BlobRef, BlobVal, RowRef, RowVal, Selector, Store};
 
+use crate::mail::query::{Query, QueryScope};
 use crate::mail::uidindex::*;
 use crate::mail::IMF;
 use crate::unique_ident::*;
@@ -99,6 +100,15 @@ impl Mailbox {
     /// Fetch an entire e-mail
     pub async fn fetch_full(&self, id: UniqueIdent, message_key: &Key) -> Result<Vec<u8>> {
         self.mbox.fetch_full(id, message_key).await
+    }
+
+    /// Build a query on this mailbox.
+    pub fn query(&self, uuids: Vec<UniqueIdent>, scope: QueryScope) -> Query {
+        Query {
+            mailbox: self.clone(),
+            emails: uuids,
+            scope,
+        }
     }
 
     // ---- Functions for changing the mailbox ----

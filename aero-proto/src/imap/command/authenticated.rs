@@ -627,7 +627,7 @@ impl<'a> AuthenticatedContext<'a> {
         // TODO: filter allowed flags? ping @Quentin
 
         let (uidvalidity, uid, modseq) =
-            view.internal.mailbox.append(msg, &flags[..]).await?;
+            view.mailbox.append(msg, &flags[..]).await?;
         //let unsollicited = view.update(UpdateParameters::default()).await?;
 
         Ok((view, uidvalidity, uid, modseq))

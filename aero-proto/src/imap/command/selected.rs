@@ -207,7 +207,7 @@ impl<'a> SelectedContext<'a> {
     }
 
     pub async fn noop(self) -> Result<(Response<'static>, flow::Transition)> {
-        self.mailbox.internal.mailbox.sync().await?;
+        self.mailbox.mailbox.sync().await?;
 
         let updates = self.mailbox.update(UpdateParameters::default()).await?;
         Ok((
