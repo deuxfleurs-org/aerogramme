@@ -40,6 +40,28 @@ pub trait BayouState:
     fn apply(&self, op: &Self::Op) -> Self;
 }
 
+/// A `Bayou<S>` is the handle over a value of type `S` that is stored in remote
+/// storage and shared with other replicas of aerogramme.
+///
+/// The core operations are:
+/// - `state` to read the current state, i.e. a value of type `S`
+/// - `push` to modify the state by applying a new operation
+/// - `sync` to synchronize the state with the other replicas, importing their changes.
+///
+/// It is important to note that remote changes (calls to `push` made from other
+/// replicas) are *only* made visible after calling `sync`. If `sync` is not
+/// called, then a `Bayou<S>` behaves exactly like a local value of type `S`
+/// (read by `state` and modified by `push`).
+///
+/// Also note that calls to `push` are immediately made available to other
+/// replicas (as soon as they call `sync` themselves). In other words, `sync`
+/// imports operations pushed from other replicas and makes them visible
+/// locally.
+///
+/// It is thus *recommended* to call `sync` often, and preferably as soon as
+/// possible before applying new operations with `push`: this way, the
+/// operations apply to an up-to-date state, which minimizes the chances of
+/// conflicts between concurrent operations.
 pub struct Bayou<S: BayouState> {
     path: String,
     key: Key,
@@ -69,7 +91,17 @@ impl<S: BayouState> Bayou<S> {
         })
     }
 
-    /// Re-reads the state from persistent storage backend
+    /// Read the current state.
+    pub fn state(&self) -> &S {
+        if let Some(last) = self.history.last() {
+            last.2.as_ref().unwrap()
+        } else {
+            &self.checkpoint.1
+        }
+    }
+
+    /// Update the state by importing remote operations from the persistent
+    /// storage backend.
     pub async fn sync(&mut self) -> Result<()> {
         // 1. List checkpoints
         let checkpoints = list_checkpoints(&self.storage, &self.path).await?;
@@ -209,14 +241,18 @@ impl<S: BayouState> Bayou<S> {
         Ok(())
     }
 
+    /// Returns a `Notify` object which sends a notification each time there are
+    /// remote updates available. These updates are not visible immediately (the
+    /// current state is not modified), one must call `sync` to import them.
     pub fn notifier(&self) -> std::sync::Weak<Notify> {
         Arc::downgrade(&self.watch.learnt_remote_update)
     }
 
     /// Applies a new operation on the state. Once this function returns,
     /// the operation has been safely persisted to storage backend.
-    /// Make sure to call `.sync()` before doing this,
-    /// and even before calculating the `op` argument given here.
+    ///
+    /// It is recommended to call `.sync()` before doing this, and even before
+    /// calculating the `op` argument given here.
     pub async fn push(&mut self, op: S::Op) -> Result<()> {
         tracing::debug!("(push) add operation: {:?}", op);
 
@@ -247,8 +283,10 @@ impl<S: BayouState> Bayou<S> {
         Ok(())
     }
 
+    // -- Internal operations
+    
     /// Save a new checkpoint if previous checkpoint is too old
-    pub async fn checkpoint(&mut self) -> Result<()> {
+    async fn checkpoint(&mut self) -> Result<()> {
         match self.last_try_checkpoint {
             Some(ts) if Instant::now() - ts < CHECKPOINT_INTERVAL / 5 => Ok(()),
             _ => {
@@ -361,14 +399,6 @@ impl<S: BayouState> Bayou<S> {
         }
 
         Ok(())
-    }
-
-    pub fn state(&self) -> &S {
-        if let Some(last) = self.history.last() {
-            last.2.as_ref().unwrap()
-        } else {
-            &self.checkpoint.1
-        }
     }
 }
 
