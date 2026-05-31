@@ -11,6 +11,32 @@ use crate::mail::uidindex::*;
 use crate::mail::IMF;
 use crate::unique_ident::*;
 
+/// A mailbox stored in the backing store.
+///
+/// Remote updates are only applied to the mailbox state when calling `sync`.
+/// Between calls to `sync`, the mailbox state only changes when calling mailbox
+/// update functions (e.g. `append`).
+///
+/// Note that mailbox updates are immediately sent to the backing store, and are
+/// thus available for other replicas to read (as soon as they call `sync`).
+/// It is recommended to `sync` as often as possible to minimize the risk of
+/// conflicts between concurrent updates.
+///
+/// These guarantees allow safely operating on the "local view" of a
+/// mailbox without it being disturbed by concurrent modifications: you can just
+/// avoid calling `sync` until you are done.
+///
+/// LIMITATION: the "local view" guarantees apply to mail indexing/numbering.
+/// Furthermore, email metadata and bodies are immutable: they cannot be
+/// mutated. However, email metadata and bodies CAN be concurrently *deleted* by
+/// other replicas, and it will be visible immediately. It is thus possible that
+/// fetching an email fails even though the email is referenced in the local
+/// mailbox. This means that the local mailbox state is stale and must be
+/// updated using `sync`.
+///
+/// A `Mailbox` is cheap to clone: copies will reuse the same underlying
+/// ressources. It is thus more efficient to clone an existing `Mailbox` than to
+/// `open` one from scratch.
 #[derive(Clone)]
 pub struct Mailbox {
     pub(super) id: UniqueIdent,
@@ -44,12 +70,14 @@ impl Mailbox {
         Ok(Self { id, mbox })
     }
 
-    /// Sync data with backing store.
+    /// Sync data with backing store. This updates the mailbox state.
     pub async fn sync(&mut self) -> Result<()> {
         self.mbox.sync().await
     }
 
     /// Block until some updates are availble in the backing store.
+    /// This does not update the mailbox state, you need to call `sync` to
+    /// import the updates.
     pub fn notify(&self) -> std::sync::Weak<tokio::sync::Notify> {
         self.mbox.notifier()
     }
