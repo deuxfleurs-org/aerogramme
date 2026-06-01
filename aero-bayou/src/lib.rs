@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, bail, Result};
 use log::error;
 use serde::{Deserialize, Serialize};
-use tokio::sync::Notify;
+use tokio::sync::{Notify, RwLock};
 
 use aero_user::cryptoblob::*;
 use aero_user::login::Credentials;
@@ -40,16 +40,16 @@ pub trait BayouState:
     fn apply(&self, op: &Self::Op) -> Self;
 }
 
-/// A `Bayou<S>` is the handle over a value of type `S` that is stored in remote
-/// storage and shared with other replicas of aerogramme.
+/// A `Bayou<S>` is a handle over a value of type `S` that is stored in remote
+/// storage and synchronized with other threads and replicas of aerogramme.
 ///
 /// The core operations are:
 /// - `state` to read the current state, i.e. a value of type `S`
 /// - `push` to modify the state by applying a new operation
 /// - `sync` to synchronize the state with the other replicas, importing their changes.
 ///
-/// It is important to note that remote changes (calls to `push` made from other
-/// replicas) are *only* made visible after calling `sync`. If `sync` is not
+/// Note that remote changes (calls to `push` made from other replicas or
+/// threads) are *only* made visible after calling `sync`. If `sync` is not
 /// called, then a `Bayou<S>` behaves exactly like a local value of type `S`
 /// (read by `state` and modified by `push`).
 ///
@@ -62,54 +62,139 @@ pub trait BayouState:
 /// possible before applying new operations with `push`: this way, the
 /// operations apply to an up-to-date state, which minimizes the chances of
 /// conflicts between concurrent operations.
+///
+/// A `Bayou<S>` is cheap to clone: copies share the same underlying resources.
+/// Cloning is the recommended way of sharing access to the same underlying
+/// storage.
+#[derive(Clone)]
 pub struct Bayou<S: BayouState> {
+    engine: Arc<BayouEngine<S>>,
+    state: S,
+}
+
+impl<S: BayouState> Bayou<S> {
+    /// Initialize a new instance of Bayou.
+    ///
+    /// This operation is not cheap. If you have an existing instance of `Bayou`
+    /// for the same `creds` and `path`, you should instead `.clone()` it
+    /// instead of creating a new one.
+    pub async fn new(creds: &Credentials, path: String) -> Result<Self> {
+        let engine = Arc::new(BayouEngine::<S>::new(creds, path).await?);
+        let state = engine.history.read().await.current_state().clone();
+        Ok(Self { engine, state })
+    }
+    
+    /// Read the current state
+    pub fn state(&self) -> &S {
+        &self.state
+    }
+
+    /// Applies a new operation on the state. Once this function returns,
+    /// the operation has been safely persisted to storage backend.
+    ///
+    /// It is recommended to call `.sync()` before doing this, and even before
+    /// calculating the `op` argument given here.
+    pub async fn push(&mut self, op: S::Op) -> Result<()> {
+        tracing::debug!("(push) add operation: {:?}", op);
+        let new_state = self.state.apply(&op);
+        self.engine.push(op).await?;
+        self.state = new_state;
+        Ok(())
+    }
+
+    /// Update the state by importing remote operations from the persistent
+    /// storage backend.
+    pub async fn sync(&mut self) -> Result<()> {
+        self.state = self.engine.sync().await?;
+        Ok(())
+    }
+
+    /// Returns a `Notify` object which sends a notification each time there are
+    /// remote updates available. These updates are not visible immediately (the
+    /// current state is not modified), one must call `sync` to import them.
+    pub fn notifier(&self) -> std::sync::Weak<Notify> {
+        Arc::downgrade(&self.engine.watch.learnt_remote_update)
+    }
+
+    /// This function can be called, as an optimization, to make Bayou perform
+    /// some *internal* sync work. For instance, this can be called concurrently
+    /// with some other I/O work.
+    ///
+    /// Importantly, *this function makes no observable changes to the state*.
+    /// It only performs internal work that can speed up later `sync` calls.
+    pub async fn internal_sync_hint(&mut self) {
+        let _ = self.engine.sync().await;
+    }
+}
+
+struct BayouEngine<S: BayouState> {
     path: String,
     key: Key,
 
     storage: storage::Store,
 
-    checkpoint: (Timestamp, S),
-    history: Vec<(Timestamp, S::Op, Option<S>)>,
+    history: RwLock<History<S>>,
 
-    last_try_checkpoint: Option<Instant>,
+    last_try_checkpoint: RwLock<Option<Instant>>,
 
     watch: Arc<K2vWatch>,
 }
 
-impl<S: BayouState> Bayou<S> {
-    pub async fn new(creds: &Credentials, path: String) -> Result<Self> {
+struct History<S: BayouState> {
+    checkpoint: (Timestamp, S),
+    ops: Vec<(Timestamp, S::Op, Option<S>)>,
+}
+
+impl<S: BayouState> History<S> {
+    fn new() -> Self {
+        Self {
+            checkpoint: (Timestamp::zero(), S::default()),
+            ops: vec![],
+        }
+    }
+    
+    fn current_state(&self) -> &S {
+        self
+            .ops
+            .last()
+            .map(|(_, _, st)| st.as_ref().unwrap())
+            .unwrap_or(&self.checkpoint.1)
+    }
+
+    fn current_timestamp(&self) -> &Timestamp {
+        self
+            .ops
+            .last()
+            .map(|(ts, _, _)| ts)
+            .unwrap_or(&self.checkpoint.0)
+    }
+}
+
+impl<S: BayouState> BayouEngine<S> {
+    async fn new(creds: &Credentials, path: String) -> Result<Self> {
         let watch = K2vWatch::new(creds, &path).await?;
 
         Ok(Self {
             path,
             storage: creds.storage.clone(),
             key: creds.keys.master.clone(),
-            checkpoint: (Timestamp::zero(), S::default()),
-            history: vec![],
-            last_try_checkpoint: None,
+            history: RwLock::new(History::new()),
+            last_try_checkpoint: RwLock::new(None),
             watch,
         })
     }
 
-    /// Read the current state.
-    pub fn state(&self) -> &S {
-        if let Some(last) = self.history.last() {
-            last.2.as_ref().unwrap()
-        } else {
-            &self.checkpoint.1
-        }
-    }
+    // returns the state obtained after the sync has been done
+    async fn sync(&self) -> Result<S> {
+        let mut history = self.history.write().await;
 
-    /// Update the state by importing remote operations from the persistent
-    /// storage backend.
-    pub async fn sync(&mut self) -> Result<()> {
         // 1. List checkpoints
         let checkpoints = list_checkpoints(&self.storage, &self.path).await?;
         tracing::debug!("(sync) listed checkpoints: {:?}", checkpoints);
 
         // 2. Load last checkpoint if different from currently used one
         let checkpoint = if let Some((ts, key)) = checkpoints.last() {
-            if *ts == self.checkpoint.0 {
+            if ts == &history.checkpoint.0 {
                 (*ts, None)
             } else {
                 tracing::debug!("(sync) loading checkpoint: {}", key);
@@ -128,7 +213,7 @@ impl<S: BayouState> Bayou<S> {
             (Timestamp::zero(), None)
         };
 
-        if self.checkpoint.0 > checkpoint.0 {
+        if history.checkpoint.0 > checkpoint.0 {
             bail!("Loaded checkpoint is more recent than stored one");
         }
 
@@ -137,17 +222,17 @@ impl<S: BayouState> Bayou<S> {
                 "(sync) updating checkpoint to loaded state at {:?}",
                 checkpoint.0
             );
-            self.checkpoint = (checkpoint.0, ck);
+            history.checkpoint = (checkpoint.0, ck);
         };
 
         // remove from history events before checkpoint
-        self.history = std::mem::take(&mut self.history)
+        history.ops = std::mem::take(&mut history.ops)
             .into_iter()
-            .skip_while(|(ts, _, _)| *ts < self.checkpoint.0)
+            .skip_while(|(ts, _, _)| *ts < history.checkpoint.0)
             .collect();
 
         // 3. List all operations starting from checkpoint
-        let ts_ser = self.checkpoint.0.to_string();
+        let ts_ser = history.checkpoint.0.to_string();
         tracing::debug!("(sync) looking up operations starting at {}", ts_ser);
         let ops_map = self
             .storage
@@ -184,12 +269,12 @@ impl<S: BayouState> Bayou<S> {
         ops.sort_by_key(|(ts, _)| *ts);
         tracing::debug!("(sync) {} operations", ops.len());
 
-        if ops.len() < self.history.len() {
+        if ops.len() < history.ops.len() {
             bail!("Some operations have disappeared from storage!");
         }
 
         // 4. Check that first operation has same timestamp as checkpoint (if not zero)
-        if self.checkpoint.0 != Timestamp::zero() && ops[0].0 != self.checkpoint.0 {
+        if history.checkpoint.0 != Timestamp::zero() && ops[0].0 != history.checkpoint.0 {
             bail!(
                 "First operation in listing doesn't have timestamp that corresponds to checkpoint"
             );
@@ -198,8 +283,8 @@ impl<S: BayouState> Bayou<S> {
         // 5. Apply all operations in order
         // Hypothesis: before the loaded checkpoint, operations haven't changed
         // between what's on storage and what we used to calculate the state in RAM here.
-        let i0 = self
-            .history
+        let i0 = history
+            .ops
             .iter()
             .zip(ops.iter())
             .take_while(|((ts1, _, _), (ts2, _))| ts1 == ts2)
@@ -207,11 +292,11 @@ impl<S: BayouState> Bayou<S> {
 
         if ops.len() > i0 {
             // Remove operations from first position where histories differ
-            self.history.truncate(i0);
+            history.ops.truncate(i0);
 
             // Look up last calculated state which we have saved and start from there.
-            let mut last_state = (0, &self.checkpoint.1);
-            for (i, (_, _, state_opt)) in self.history.iter().enumerate().rev() {
+            let mut last_state = (0, &history.checkpoint.1);
+            for (i, (_, _, state_opt)) in history.ops.iter().enumerate().rev() {
                 if let Some(state) = state_opt {
                     last_state = (i + 1, state);
                     break;
@@ -220,64 +305,50 @@ impl<S: BayouState> Bayou<S> {
 
             // Calculate state at the end of this common part of the history
             let mut state = last_state.1.clone();
-            for (_, op, _) in self.history[last_state.0..].iter() {
+            for (_, op, _) in history.ops[last_state.0..].iter() {
                 state = state.apply(op);
             }
 
             // Now, apply all operations retrieved from storage after the common part
             for (ts, op) in ops.drain(i0..) {
                 state = state.apply(&op);
-                if (self.history.len() + 1) % KEEP_STATE_EVERY == 0 {
-                    self.history.push((ts, op, Some(state.clone())));
+                if (history.ops.len() + 1) % KEEP_STATE_EVERY == 0 {
+                    history.ops.push((ts, op, Some(state.clone())));
                 } else {
-                    self.history.push((ts, op, None));
+                    history.ops.push((ts, op, None));
                 }
             }
 
             // Always save final state as result of last operation
-            self.history.last_mut().unwrap().2 = Some(state);
+            history.ops.last_mut().unwrap().2 = Some(state.clone());
+            Ok(state)
+        } else {
+            Ok(history.current_state().clone())
         }
-
-        Ok(())
     }
 
-    /// Returns a `Notify` object which sends a notification each time there are
-    /// remote updates available. These updates are not visible immediately (the
-    /// current state is not modified), one must call `sync` to import them.
-    pub fn notifier(&self) -> std::sync::Weak<Notify> {
-        Arc::downgrade(&self.watch.learnt_remote_update)
-    }
+    async fn push(&self, op: S::Op) -> Result<()> {
+        {
+            let mut history = self.history.write().await;
+            
+            let ts = Timestamp::after(history.current_timestamp());
 
-    /// Applies a new operation on the state. Once this function returns,
-    /// the operation has been safely persisted to storage backend.
-    ///
-    /// It is recommended to call `.sync()` before doing this, and even before
-    /// calculating the `op` argument given here.
-    pub async fn push(&mut self, op: S::Op) -> Result<()> {
-        tracing::debug!("(push) add operation: {:?}", op);
+            let row_val = storage::RowVal::new(
+                storage::RowRef::new(&self.path, &ts.to_string()),
+                seal_serialize(&op, &self.key)?,
+            );
+            self.storage.row_update(vec![row_val]).await?;
 
-        let ts = Timestamp::after(
-            self.history
-                .last()
-                .map(|(ts, _, _)| ts)
-                .unwrap_or(&self.checkpoint.0),
-        );
+            let new_state = history.current_state().apply(&op);
+            history.ops.push((ts, op, Some(new_state)));
 
-        let row_val = storage::RowVal::new(
-            storage::RowRef::new(&self.path, &ts.to_string()),
-            seal_serialize(&op, &self.key)?,
-        );
-        self.storage.row_update(vec![row_val]).await?;
-
-        let new_state = self.state().apply(&op);
-        self.history.push((ts, op, Some(new_state)));
-
-        // Clear previously saved state in history if not required
-        let hlen = self.history.len();
-        if hlen >= 2 && (hlen - 1) % KEEP_STATE_EVERY != 0 {
-            self.history[hlen - 2].2 = None;
+            // Clear previously saved state in history if not required
+            let hlen = history.ops.len();
+            if hlen >= 2 && (hlen - 1) % KEEP_STATE_EVERY != 0 {
+                history.ops[hlen - 2].2 = None;
+            }
         }
-
+        
         self.checkpoint().await?;
 
         Ok(())
@@ -286,83 +357,93 @@ impl<S: BayouState> Bayou<S> {
     // -- Internal operations
     
     /// Save a new checkpoint if previous checkpoint is too old
-    async fn checkpoint(&mut self) -> Result<()> {
-        match self.last_try_checkpoint {
-            Some(ts) if Instant::now() - ts < CHECKPOINT_INTERVAL / 5 => Ok(()),
-            _ => {
-                let res = self.checkpoint_internal().await;
-                if res.is_ok() {
-                    self.last_try_checkpoint = Some(Instant::now());
-                }
-                res
+    async fn checkpoint(&self) -> Result<()> {
+        {
+            match *self.last_try_checkpoint.read().await {
+                Some(ts) if Instant::now() - ts < CHECKPOINT_INTERVAL / 5 => return Ok(()),
+                _ => (),
             }
         }
+
+        let mut last_try_checkpoint = self.last_try_checkpoint.write().await;
+        let res = self.checkpoint_internal().await;
+        if res.is_ok() {
+            *last_try_checkpoint = Some(Instant::now());
+        }
+        res
     }
 
-    async fn checkpoint_internal(&mut self) -> Result<()> {
+    async fn checkpoint_internal(&self) -> Result<()> {
         self.sync().await?;
 
-        // Check what would be the possible time for a checkpoint in the history we have
-        let now = now_msec() as i128;
-        let i_cp = match self
-            .history
-            .iter()
-            .enumerate()
-            .rev()
-            .skip_while(|(_, (ts, _, _))| {
-                (now - ts.msec as i128) < CHECKPOINT_INTERVAL.as_millis() as i128
-            })
-            .map(|(i, _)| i)
-            .next()
-        {
-            Some(i) => i,
-            None => {
-                tracing::debug!("(cp) Oldest operation is too recent to trigger checkpoint");
-                return Ok(());
-            }
-        };
-
-        if i_cp < CHECKPOINT_MIN_OPS {
-            tracing::debug!("(cp) Not enough old operations to trigger checkpoint");
-            return Ok(());
-        }
-
-        let ts_cp = self.history[i_cp].0;
-        tracing::debug!(
-            "(cp) we could checkpoint at time {} (index {} in history)",
-            ts_cp.to_string(),
-            i_cp
-        );
-
-        // Check existing checkpoints: if last one is too recent, don't checkpoint again.
         let existing_checkpoints = list_checkpoints(&self.storage, &self.path).await?;
         tracing::debug!("(cp) listed checkpoints: {:?}", existing_checkpoints);
 
-        if let Some(last_cp) = existing_checkpoints.last() {
-            if (ts_cp.msec as i128 - last_cp.0.msec as i128)
-                < CHECKPOINT_INTERVAL.as_millis() as i128
+        let (ts_cp, state_cp) = {
+            let history = self.history.read().await;
+
+            // Check what would be the possible time for a checkpoint in the history we have
+            let now = now_msec() as i128;
+            let i_cp = match history
+                .ops
+                .iter()
+                .enumerate()
+                .rev()
+                .skip_while(|(_, (ts, _, _))| {
+                    (now - ts.msec as i128) < CHECKPOINT_INTERVAL.as_millis() as i128
+                })
+                .map(|(i, _)| i)
+                .next()
             {
-                tracing::debug!(
-                    "(cp) last checkpoint is too recent: {}, not checkpointing",
-                    last_cp.0.to_string()
-                );
+                Some(i) => i,
+                None => {
+                    tracing::debug!("(cp) Oldest operation is too recent to trigger checkpoint");
+                    return Ok(());
+                }
+            };
+
+            if i_cp < CHECKPOINT_MIN_OPS {
+                tracing::debug!("(cp) Not enough old operations to trigger checkpoint");
                 return Ok(());
             }
-        }
 
-        tracing::debug!("(cp) saving checkpoint at {}", ts_cp.to_string());
+            let ts_cp = history.ops[i_cp].0;
+            tracing::debug!(
+                "(cp) we could checkpoint at time {} (index {} in history)",
+                ts_cp.to_string(),
+                i_cp
+            );
 
-        // Calculate state at time of checkpoint
-        let mut last_known_state = (0, &self.checkpoint.1);
-        for (i, (_, _, st)) in self.history[..i_cp].iter().enumerate() {
-            if let Some(s) = st {
-                last_known_state = (i + 1, s);
+            // Check existing checkpoints: if last one is too recent, don't checkpoint again.
+
+            if let Some(last_cp) = existing_checkpoints.last() {
+                if (ts_cp.msec as i128 - last_cp.0.msec as i128)
+                    < CHECKPOINT_INTERVAL.as_millis() as i128
+                {
+                    tracing::debug!(
+                        "(cp) last checkpoint is too recent: {}, not checkpointing",
+                        last_cp.0.to_string()
+                    );
+                    return Ok(());
+                }
             }
-        }
-        let mut state_cp = last_known_state.1.clone();
-        for (_, op, _) in self.history[last_known_state.0..i_cp].iter() {
-            state_cp = state_cp.apply(op);
-        }
+
+            tracing::debug!("(cp) saving checkpoint at {}", ts_cp.to_string());
+
+            // Calculate state at time of checkpoint
+            let mut last_known_state = (0, &history.checkpoint.1);
+            for (i, (_, _, st)) in history.ops[..i_cp].iter().enumerate() {
+                if let Some(s) = st {
+                    last_known_state = (i + 1, s);
+                }
+            }
+            let mut state_cp = last_known_state.1.clone();
+            for (_, op, _) in history.ops[last_known_state.0..i_cp].iter() {
+                state_cp = state_cp.apply(op);
+            }
+
+            (ts_cp, state_cp)
+        };
 
         // Serialize and save checkpoint
         let cryptoblob = seal_serialize(&state_cp, &self.key)?;
@@ -401,8 +482,6 @@ impl<S: BayouState> Bayou<S> {
         Ok(())
     }
 }
-
-// ---- INTERNAL ----
 
 async fn list_checkpoints(storage: &storage::Store, path: &str) -> Result<Vec<(Timestamp, String)>> {
     let prefix = format!("{}/checkpoint/", path);
