@@ -240,7 +240,7 @@ pub struct PollRangeResult {
 }
 
 #[async_trait]
-pub trait IStore {
+pub trait IStore: std::fmt::Debug {
     /// Read a single value. Fails with `StorageError::NotFound` if there is no
     /// value for this key in the store.
     async fn row_fetch(&self, shard: &str, sort: &str) -> Result<ConcurrentRowVal, StorageError>;
@@ -283,18 +283,14 @@ pub trait IStore {
     async fn blob_copy(&self, src: &BlobRef, dst: &BlobRef) -> Result<(), StorageError>;
     async fn blob_list(&self, prefix: &str) -> Result<Vec<BlobRef>, StorageError>;
     async fn blob_rm(&self, blob_ref: &BlobRef) -> Result<(), StorageError>;
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct UnicityBuffer(Vec<u8>);
-
-#[async_trait]
-pub trait IBuilder: std::fmt::Debug {
-    async fn build(&self) -> Result<Store, StorageError>;
 
     /// Returns an opaque buffer that uniquely identifies this builder
     fn unique(&self) -> UnicityBuffer;
 }
 
-pub type Builder = Arc<dyn IBuilder + Send + Sync>;
-pub type Store = Box<dyn IStore + Send + Sync>;
+/// A `Store` is a handle over the underlying storage; it can be cloned cheaply.
+pub type Store = Arc<dyn IStore + Send + Sync>;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct UnicityBuffer(Vec<u8>);
+

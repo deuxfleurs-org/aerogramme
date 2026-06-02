@@ -26,7 +26,7 @@ impl GarageRoot {
         Ok(Self { k2v_http, aws_http })
     }
 
-    pub async fn user(&self, conf: GarageConf) -> anyhow::Result<Arc<GarageUser>> {
+    pub async fn user(&self, conf: GarageConf) -> anyhow::Result<Arc<GarageStore>> {
         let mut unicity: Vec<u8> = vec![];
         unicity.extend_from_slice(file!().as_bytes());
         unicity.append(&mut rmp_serde::to_vec(&conf)?);
@@ -70,8 +70,8 @@ impl GarageRoot {
                 Ok(v) => v,
             };
 
-        Ok(Arc::new(GarageUser {
-            conf,
+        Ok(Arc::new(GarageStore {
+            bucket: conf.bucket,
             s3: s3_client,
             k2v: k2v_client,
             unicity,
@@ -90,32 +90,11 @@ pub struct GarageConf {
 }
 
 #[derive(Debug)]
-pub struct GarageUser {
-    conf: GarageConf,
-    s3: s3::Client,
-    k2v: k2v_client::K2vClient,
-    unicity: Vec<u8>,
-}
-
-#[async_trait]
-impl IBuilder for GarageUser {
-    async fn build(&self) -> Result<Store, StorageError> {
-        Ok(Box::new(GarageStore {
-            bucket: self.conf.bucket.clone(),
-            s3: self.s3.clone(),
-            k2v: self.k2v.clone(),
-        }))
-    }
-
-    fn unique(&self) -> UnicityBuffer {
-        UnicityBuffer(self.unicity.clone())
-    }
-}
-
 pub struct GarageStore {
     bucket: String,
     s3: s3::Client,
     k2v: k2v_client::K2vClient,
+    unicity: Vec<u8>,
 }
 
 fn causal_to_concurrent_row_val(shard: &str, sort: &str, causal_value: k2v_client::CausalValue) -> ConcurrentRowVal {
@@ -563,5 +542,9 @@ impl IStore for GarageStore {
                 Ok(())
             }
         }
+    }
+
+    fn unique(&self) -> UnicityBuffer {
+        UnicityBuffer(self.unicity.clone())
     }
 }

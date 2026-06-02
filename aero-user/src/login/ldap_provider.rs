@@ -99,11 +99,11 @@ impl LdapLoginProvider {
         })
     }
 
-    async fn storage_creds_from_ldap_user(&self, user: &SearchEntry) -> Result<Builder> {
-        let storage: Builder = match &self.storage_specific {
+    async fn storage_creds_from_ldap_user(&self, user: &SearchEntry) -> Result<Store> {
+        let storage: Store = match &self.storage_specific {
             StorageSpecific::InMemory => {
                 self.in_memory_store
-                    .builder(&get_attr(user, &self.username_attr)?)
+                    .user(&get_attr(user, &self.username_attr)?)
                     .await
             }
             StorageSpecific::Garage {

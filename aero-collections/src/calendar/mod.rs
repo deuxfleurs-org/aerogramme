@@ -29,7 +29,7 @@ impl Calendar {
         let internal = RwLock::new(CalendarInternal {
             id,
             encryption_key: creds.keys.master.clone(),
-            storage: creds.storage.build().await?,
+            storage: creds.storage.clone(),
             davdag,
             cal_path,
         });

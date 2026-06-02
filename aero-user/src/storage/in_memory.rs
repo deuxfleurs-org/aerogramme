@@ -14,17 +14,17 @@ use crate::storage::*;
 /// It's intended only for basic debugging, do not use it for advanced tests...
 
 #[derive(Debug, Default)]
-pub struct MemDb(tokio::sync::Mutex<HashMap<String, Arc<MemBuilder>>>);
+pub struct MemDb(tokio::sync::Mutex<HashMap<String, Arc<MemStore>>>);
 impl MemDb {
     pub fn new() -> Self {
         Self(tokio::sync::Mutex::new(HashMap::new()))
     }
 
-    pub async fn builder(&self, username: &str) -> Arc<MemBuilder> {
+    pub async fn user(&self, username: &str) -> Arc<MemStore> {
         let mut global_storage = self.0.lock().await;
         global_storage
             .entry(username.to_string())
-            .or_insert(MemBuilder::new(username))
+            .or_insert(Arc::new(MemStore::new(username)))
             .clone()
     }
 }
@@ -124,46 +124,27 @@ struct Row {
 }
 
 #[derive(Clone, Debug)]
-pub struct MemBuilder {
+pub struct MemStore {
     unicity: Vec<u8>,
     row: ArcRow,
     blob: ArcBlob,
 }
 
-impl MemBuilder {
-    pub fn new(user: &str) -> Arc<Self> {
+impl MemStore {
+    pub fn new(user: &str) -> Self {
         tracing::debug!("initialize membuilder for {}", user);
         let mut unicity: Vec<u8> = vec![];
         unicity.extend_from_slice(file!().as_bytes());
         unicity.extend_from_slice(user.as_bytes());
-        Arc::new(Self {
+        Self {
             unicity,
             row: Arc::new(RwLock::new(Row {
                 table: HashMap::new(),
                 change: Arc::new(Notify::new()),
             })),
             blob: Arc::new(RwLock::new(BTreeMap::new())),
-        })
+        }
     }
-}
-
-#[async_trait]
-impl IBuilder for MemBuilder {
-    async fn build(&self) -> Result<Store, StorageError> {
-        Ok(Box::new(MemStore {
-            row: self.row.clone(),
-            blob: self.blob.clone(),
-        }))
-    }
-
-    fn unique(&self) -> UnicityBuffer {
-        UnicityBuffer(self.unicity.clone())
-    }
-}
-
-pub struct MemStore {
-    row: ArcRow,
-    blob: ArcBlob,
 }
 
 fn prefix_last_bound(prefix: &str) -> Bound<String> {
@@ -371,6 +352,10 @@ impl IStore for MemStore {
         let mut store = self.blob.write().or(Err(StorageError::Internal))?;
         store.remove(&blob_ref.0);
         Ok(())
+    }
+
+    fn unique(&self) -> UnicityBuffer {
+        UnicityBuffer(self.unicity.clone())
     }
 }
 
