@@ -117,7 +117,7 @@ impl LoginProvider for StaticLoginProvider {
                     aws_access_key_id: grgconf.aws_access_key_id.clone(),
                     aws_secret_access_key: grgconf.aws_secret_access_key.clone(),
                     bucket: grgconf.bucket.clone(),
-                })?
+                }).await?
             }
         };
 
@@ -148,7 +148,7 @@ impl LoginProvider for StaticLoginProvider {
                     aws_access_key_id: grgconf.aws_access_key_id.clone(),
                     aws_secret_access_key: grgconf.aws_secret_access_key.clone(),
                     bucket: grgconf.bucket.clone(),
-                })?
+                }).await?
             }
         };
 

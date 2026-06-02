@@ -21,7 +21,6 @@ aws-config.workspace = true
 aws-sdk-s3.workspace = true
 aws-smithy-runtime.workspace = true
 aws-smithy-runtime-api.workspace = true
-hyper-rustls.workspace = true
 hyper-util.workspace = true
 k2v-client.workspace = true
 rmp-serde.workspace = true
