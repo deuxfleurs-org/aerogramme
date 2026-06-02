@@ -22,10 +22,10 @@ impl StdError for Error {}
 
 pub enum State {
     NotAuthenticated,
-    Authenticated(Arc<User>),
-    Selected(Arc<User>, MailboxView, MailboxPerm),
+    Authenticated(User),
+    Selected(User, MailboxView, MailboxPerm),
     Idle(
-        Arc<User>,
+        User,
         MailboxView,
         MailboxPerm,
         Tag<'static>,
@@ -62,7 +62,7 @@ pub enum MailboxPerm {
 
 pub enum Transition {
     None,
-    Authenticate(Arc<User>),
+    Authenticate(User),
     Select(MailboxView, MailboxPerm),
     Idle(Tag<'static>, Notify),
     UnIdle,

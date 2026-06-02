@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use anyhow::Result;
 
 use super::mailbox::Mailbox;
@@ -12,15 +10,15 @@ use crate::unique_ident::UniqueIdent;
 /// It's up to the user to choose when their snapshot must be updated
 /// to give useful information to their clients
 pub struct FrozenMailbox {
-    pub mailbox: Arc<Mailbox>,
+    pub mailbox: Mailbox,
     pub snapshot: UidIndex,
 }
 
 impl FrozenMailbox {
     /// Create a snapshot from a mailbox, the mailbox + the snapshot
     /// becomes the "Frozen Mailbox".
-    pub async fn new(mailbox: Arc<Mailbox>) -> Self {
-        let state = mailbox.current_uid_index().await;
+    pub fn new(mailbox: Mailbox) -> Self {
+        let state = mailbox.current_uid_index();
 
         Self {
             mailbox,
@@ -30,29 +28,29 @@ impl FrozenMailbox {
 
     /// Force the synchronization of the inner mailbox
     /// but do not update the local snapshot
-    pub async fn sync(&self) -> Result<()> {
+    pub async fn sync(&mut self) -> Result<()> {
         self.mailbox.sync().await
     }
 
     /// Peek snapshot without updating the frozen mailbox
     /// Can be useful if you want to plan some writes
     /// while sending a diff to the client later
-    pub async fn peek(&self) -> UidIndex {
-        self.mailbox.current_uid_index().await
+    pub fn peek(&self) -> UidIndex {
+        self.mailbox.current_uid_index()
     }
 
     /// Update the FrozenMailbox local snapshot.
     /// Returns the old snapshot, so you can build a diff
-    pub async fn update(&mut self) -> UidIndex {
+    pub fn update(&mut self) -> UidIndex {
         let old_snapshot = self.snapshot.clone();
-        self.snapshot = self.mailbox.current_uid_index().await;
+        self.snapshot = self.mailbox.current_uid_index();
 
         old_snapshot
     }
 
-    pub fn query<'a, 'b>(&'a self, uuids: &'b [UniqueIdent], scope: QueryScope) -> Query<'a, 'b> {
+    pub fn query(&self, uuids: Vec<UniqueIdent>, scope: QueryScope) -> Query {
         Query {
-            frozen: self,
+            mailbox: self.mailbox.clone(),
             emails: uuids,
             scope,
         }

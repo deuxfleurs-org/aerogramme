@@ -4,10 +4,9 @@ use futures::stream::{BoxStream, StreamExt};
 use hyper::body::Bytes;
 
 use aero_collections::davdag::{Etag, Token};
+use aero_collections::user::User;
 use aero_dav::realization::All;
 use aero_dav::types as dav;
-
-use super::controller::ArcUser;
 
 pub(crate) type Content<'a> = BoxStream<'a, std::result::Result<Bytes, std::io::Error>>;
 pub(crate) type PropertyStream<'a> =
@@ -24,28 +23,28 @@ pub(crate) enum PutPolicy {
 pub(crate) trait DavNode: Send {
     // recurence, filesystem hierarchy
     /// This node direct children
-    fn children<'a>(&self, user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>>;
+    fn children<'a>(&self, user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>>;
     /// Recursively fetch a child (progress inside the filesystem hierarchy)
     fn fetch<'a>(
         &self,
-        user: &'a ArcUser,
+        user: &'a User,
         path: &'a [&str],
         create: bool,
     ) -> BoxFuture<'a, Result<Box<dyn DavNode>>>;
 
     // node properties
     /// Get the path
-    fn path(&self, user: &ArcUser) -> String;
+    fn path(&self, user: &User) -> String;
     /// Get the supported WebDAV properties
-    fn supported_properties(&self, user: &ArcUser) -> dav::PropName<All>;
+    fn supported_properties(&self, user: &User) -> dav::PropName<All>;
     /// Get the values for the given properties
-    fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> PropertyStream<'static>;
+    fn properties(&self, user: &User, prop: dav::PropName<All>) -> PropertyStream<'static>;
     /// Get the value of the DAV header to return
     fn dav_header(&self) -> String;
 
     /// Put an element (create or update)
     fn put<'a>(
-        &'a self,
+        &'a mut self,
         policy: PutPolicy,
         stream: Content<'a>,
     ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>>;
@@ -67,7 +66,7 @@ pub(crate) trait DavNode: Send {
     >;
 
     /// Utility function to get a propname response from a node
-    fn response_propname(&self, user: &ArcUser) -> dav::Response<All> {
+    fn response_propname(&self, user: &User) -> dav::Response<All> {
         dav::Response {
             status_or_propstat: dav::StatusOrPropstat::PropStat(
                 dav::Href(self.path(user)),
@@ -93,7 +92,7 @@ pub(crate) trait DavNode: Send {
     /// Utility function to get a prop response from a node & a list of propname
     fn response_props(
         &self,
-        user: &ArcUser,
+        user: &User,
         props: dav::PropName<All>,
     ) -> BoxFuture<'static, dav::Response<All>> {
         //@FIXME we should make the DAV parsed object a stream...

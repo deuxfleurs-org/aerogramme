@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
 use thiserror::Error;
 
 use anyhow::{anyhow, bail, Result};
@@ -29,7 +28,7 @@ pub struct AuthenticatedContext<'a> {
     pub req: &'a Command<'static>,
     pub server_capabilities: &'a ServerCapability,
     pub client_capabilities: &'a mut ClientCapability,
-    pub user: &'a Arc<User>,
+    pub user: &'a User,
 }
 
 pub async fn dispatch<'a>(
@@ -354,12 +353,14 @@ impl<'a> AuthenticatedContext<'a> {
         attributes: &[StatusDataItemName],
     ) -> Result<Vec<StatusDataItem>> {
         let mb_opt = self.user.mailboxes.open(name).await?;
-        let mb = match mb_opt {
+        let mut mb = match mb_opt {
             Some(mb) => mb,
             None => return Err(CommandError::MailboxNotFound.into()),
         };
+        // @FIXME more principled sync
+        mb.sync().await?;
 
-        let view = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await;
+        let view = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled());
 
         let mut ret_attrs = vec![];
         for attr in attributes.iter() {
@@ -483,7 +484,7 @@ impl<'a> AuthenticatedContext<'a> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.mailboxes.open(&name).await?;
-        let mb = match mb_opt {
+        let mut mb = match mb_opt {
             Some(mb) => mb,
             None => {
                 return Ok((
@@ -495,9 +496,11 @@ impl<'a> AuthenticatedContext<'a> {
                 ))
             }
         };
+        // @FIXME more principled sync
+        mb.sync().await?;
         tracing::info!(username=%self.user.username, mailbox=%name, "mailbox.selected");
 
-        let mb = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await;
+        let mb = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled());
         let data = mb.summary()?;
 
         Ok((
@@ -535,7 +538,7 @@ impl<'a> AuthenticatedContext<'a> {
         };
         tracing::info!(username=%self.user.username, mailbox=%name, "mailbox.examined");
 
-        let mb = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await;
+        let mb = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled());
         let data = mb.summary()?;
 
         Ok((
@@ -606,11 +609,13 @@ impl<'a> AuthenticatedContext<'a> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.mailboxes.open(&name).await?;
-        let mb = match mb_opt {
+        let mut mb = match mb_opt {
             Some(mb) => mb,
             None => bail!("Mailbox does not exist"),
         };
-        let view = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await;
+        // @FIXME more principled sync
+        mb.sync().await?;
+        let mut view = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled());
 
         if date.is_some() {
             tracing::warn!("Cannot set date when appending message");

@@ -1,9 +1,8 @@
 pub mod namespace;
 
 use anyhow::{anyhow, bail, Result};
-use tokio::sync::RwLock;
 
-use aero_bayou::Bayou;
+use aero_bayou::{Bayou, BayouWeak};
 use aero_user::cryptoblob::{self, gen_key, Key};
 use aero_user::login::Credentials;
 use aero_user::storage::{self, BlobRef, BlobVal, Store};
@@ -11,11 +10,12 @@ use aero_user::storage::{self, BlobRef, BlobVal, Store};
 use crate::davdag::{BlobId, DavDag, IndexEntry, SyncChange, Token};
 use crate::unique_ident::*;
 
+#[derive(Clone)]
 pub struct Calendar {
     // TODO: can this be removed?
     #[allow(dead_code)]
     pub(super) id: UniqueIdent,
-    internal: RwLock<CalendarInternal>,
+    internal: CalendarInternal,
 }
 
 impl Calendar {
@@ -26,13 +26,13 @@ impl Calendar {
         let mut davdag = Bayou::<DavDag>::new(creds, bayou_path).await?;
         davdag.sync().await?;
 
-        let internal = RwLock::new(CalendarInternal {
+        let internal = CalendarInternal {
             id,
             encryption_key: creds.keys.master.clone(),
             storage: creds.storage.clone(),
             davdag,
             cal_path,
-        });
+        };
 
         Ok(Self { id, internal })
     }
@@ -40,8 +40,8 @@ impl Calendar {
     // ---- DAG sync utilities
 
     /// Sync data with backing store
-    pub async fn sync(&self) -> Result<()> {
-        self.internal.write().await.sync().await
+    pub async fn sync(&mut self) -> Result<()> {
+        self.internal.sync().await
     }
 
     // ---- Data API
@@ -49,38 +49,81 @@ impl Calendar {
     /// Access the DAG internal data (you can get the list of files for example)
     pub async fn dag(&self) -> DavDag {
         // Cloning is cheap
-        self.internal.read().await.davdag.state().clone()
+        self.internal.davdag.state().clone()
     }
 
     /// Access the current token
-    pub async fn token(&self) -> Result<Token> {
-        self.internal.write().await.current_token().await
+    pub async fn token(&mut self) -> Result<Token> {
+        self.internal.current_token().await
     }
 
     /// The diff API is a write API as we might need to push a merge node
     /// to get a new sync token
-    pub async fn diff(&self, sync_token: Token) -> Result<(Token, Vec<SyncChange>)> {
-        self.internal.write().await.diff(sync_token).await
+    pub async fn diff(&mut self, sync_token: Token) -> Result<(Token, Vec<SyncChange>)> {
+        self.internal.diff(sync_token).await
     }
 
     /// Get a specific event
     pub async fn get(&self, evt_id: UniqueIdent) -> Result<Vec<u8>> {
-        self.internal.read().await.get(evt_id).await
+        self.internal.get(evt_id).await
     }
 
     /// Put a specific event
-    pub async fn put<'a>(&self, name: &str, evt: &'a [u8]) -> Result<(Token, IndexEntry)> {
-        self.internal.write().await.put(name, evt).await
+    pub async fn put<'a>(&mut self, name: &str, evt: &'a [u8]) -> Result<(Token, IndexEntry)> {
+        self.internal.put(name, evt).await
     }
 
     /// Delete a specific event
-    pub async fn delete(&self, blob_id: UniqueIdent) -> Result<Token> {
-        self.internal.write().await.delete(blob_id).await
+    pub async fn delete(&mut self, blob_id: UniqueIdent) -> Result<Token> {
+        self.internal.delete(blob_id).await
+    }
+
+    pub fn downgrade(&self) -> CalendarWeak {
+        CalendarWeak {
+            id: self.id.clone(),
+            cal_path: self.internal.cal_path.clone(),
+            encryption_key: self.internal.encryption_key.clone(),
+            storage: self.internal.storage.clone(),
+            davdag: self.internal.davdag.downgrade(),
+        }
     }
 }
 
+/// A "weak reference" to a calendar.
+///
+/// `Calendar`/`CalendarWeak` work similarly to `Arc`/`Weak`.
+///
+/// This is useful to reference the calendar in a cache while allowing its
+/// resources to be destroyed if it is not used elsewhere.
+pub struct CalendarWeak {
+    id: UniqueIdent,
+    cal_path: String,
+    encryption_key: Key,
+    storage: Store,
+    davdag: BayouWeak<DavDag>,
+}
+ 
+impl CalendarWeak {
+    pub fn upgrade(&self) -> Option<Calendar> {
+        let davdag = self.davdag.upgrade()?;
+        Some(Calendar {
+            id: self.id.clone(),
+            internal: CalendarInternal {
+                id: self.id.clone(),
+                cal_path: self.cal_path.clone(),
+                encryption_key: self.encryption_key.clone(),
+                storage: self.storage.clone(),
+                davdag,
+            },
+        })
+    }
+}
+
+// --- internals
+
 use base64::Engine;
 const MESSAGE_KEY: &str = "message-key";
+#[derive(Clone)]
 struct CalendarInternal {
     #[allow(dead_code)]
     id: UniqueIdent,

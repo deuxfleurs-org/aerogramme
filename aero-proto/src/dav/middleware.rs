@@ -9,12 +9,10 @@ use aero_user::login::ArcLoginProvider;
 use super::codec::text_body;
 use super::controller::HttpResponse;
 
-type ArcUser = std::sync::Arc<User>;
-
 pub(super) async fn auth<'a>(
     login: ArcLoginProvider,
     req: Request<Incoming>,
-    next: impl Fn(ArcUser, Request<Incoming>) -> futures::future::BoxFuture<'a, Result<HttpResponse>>,
+    next: impl Fn(User, Request<Incoming>) -> futures::future::BoxFuture<'a, Result<HttpResponse>>,
 ) -> Result<HttpResponse> {
     let auth_val = match req.headers().get(hyper::header::AUTHORIZATION) {
         Some(hv) => hv.to_str()?,

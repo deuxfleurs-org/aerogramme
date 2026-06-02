@@ -58,8 +58,8 @@ async fn incoming_mail_watch_process_internal(
         storage::RowRef::new(INCOMING_PK, INCOMING_LOCK_SK),
     );
     let storage = creds.storage.clone();
-
-    let mut inbox: Option<Arc<Mailbox>> = None;
+    
+    let mut inbox: Option<Mailbox> = None;
     let mut incoming_key = storage::RowRef::new(INCOMING_PK, INCOMING_WATCH_SK);
 
     loop {
@@ -125,10 +125,10 @@ async fn incoming_mail_watch_process_internal(
                 }
             }
         }
-
+        
         // If we were able to open INBOX, and we have mail,
         // fetch new mail
-        if let (Some(inbox), Some(updated_incoming_key)) = (&inbox, maybe_updated_incoming_key) {
+        if let (Some(inbox), Some(updated_incoming_key)) = (&mut inbox, maybe_updated_incoming_key) {
             match handle_incoming_mail(&creds, inbox, &lock_held).await {
                 Ok(()) => {
                     incoming_key = updated_incoming_key;
@@ -146,7 +146,7 @@ async fn incoming_mail_watch_process_internal(
 
 async fn handle_incoming_mail(
     creds: &Credentials,
-    inbox: &Arc<Mailbox>,
+    inbox: &mut Mailbox,
     lock_held: &watch::Receiver<bool>,
 ) -> Result<()> {
     let mails_res = creds.storage.blob_list("incoming/").await?;
@@ -168,7 +168,7 @@ async fn handle_incoming_mail(
 
 async fn move_incoming_message(
     creds: &Credentials,
-    inbox: &Arc<Mailbox>,
+    inbox: &mut Mailbox,
     id: UniqueIdent,
 ) -> Result<()> {
     info!("Moving incoming message: {}", id);

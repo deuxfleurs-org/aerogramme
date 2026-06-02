@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::num::{NonZeroU32, NonZeroU64};
-use std::sync::Arc;
 
 use anyhow::{anyhow, Error, Result};
 
@@ -63,9 +62,9 @@ pub struct MailboxView {
 
 impl MailboxView {
     /// Creates a new IMAP view into a mailbox.
-    pub async fn new(mailbox: Arc<Mailbox>, is_cond: bool) -> Self {
+    pub fn new(mailbox: Mailbox, is_cond: bool) -> Self {
         Self {
-            internal: mailbox.frozen().await,
+            internal: FrozenMailbox::new(mailbox),
             is_condstore: is_cond,
         }
     }
@@ -77,7 +76,7 @@ impl MailboxView {
     /// This does NOT trigger a sync, it bases itself on what is currently
     /// loaded in RAM by Bayou.
     pub async fn update(&mut self, params: UpdateParameters) -> Result<Vec<Body<'static>>> {
-        let old_snapshot = self.internal.update().await;
+        let old_snapshot = self.internal.update();
         let new_snapshot = &self.internal.snapshot;
 
         let mut data = Vec::<Body>::new();
@@ -182,7 +181,7 @@ impl MailboxView {
         is_uid_store: &bool,
     ) -> Result<(Vec<Body<'static>>, Vec<NonZeroU32>)> {
         self.internal.sync().await?;
-        let state = self.internal.peek().await;
+        let state = self.internal.peek();
 
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
 
@@ -228,7 +227,6 @@ impl MailboxView {
         self.internal
             .mailbox
             .notify()
-            .await
             .upgrade()
             .ok_or(anyhow!("test"))?
             .notified()
@@ -243,7 +241,7 @@ impl MailboxView {
     ) -> Result<Vec<Body<'static>>> {
         // Get a recent view to apply our change
         self.internal.sync().await?;
-        let state = self.internal.peek().await;
+        let state = self.internal.peek();
 
         // Build a default sequence set for the default case
         use imap_codec::imap_types::sequence::{SeqOrUid, Sequence};
@@ -276,10 +274,10 @@ impl MailboxView {
     pub async fn copy(
         &self,
         sequence_set: &SequenceSet,
-        to: Arc<Mailbox>,
+        to: &mut Mailbox,
         is_uid_copy: &bool,
     ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>)> {
-        let state = self.internal.peek().await;
+        let state = self.internal.peek();
         let mails = state.fetch(sequence_set, *is_uid_copy);
 
         let mut new_uuids = vec![];
@@ -288,7 +286,7 @@ impl MailboxView {
         }
 
         let mut ret = vec![];
-        let to_state = to.current_uid_index().await;
+        let to_state = to.current_uid_index();
         for (mi, new_uuid) in mails.iter().zip(new_uuids.iter()) {
             let dest_uid = to_state
                 .table
@@ -304,20 +302,20 @@ impl MailboxView {
     pub async fn r#move(
         &mut self,
         sequence_set: &SequenceSet,
-        to: Arc<Mailbox>,
+        to: &mut Mailbox,
         is_uid_move: &bool,
     ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>, Vec<Body<'static>>)> {
-        let state = self.internal.peek().await;
+        let state = self.internal.peek();
         let mails = state.fetch(sequence_set, *is_uid_move);
 
         let mut new_uuids = vec![]; 
         for mi in mails.iter() {
-            let new_uuid = to.move_from(&self.internal.mailbox, mi.uuid).await?; 
+            let new_uuid = to.move_from(&mut self.internal.mailbox, mi.uuid).await?; 
             new_uuids.push((mi.uid, new_uuid));
         }
 
         let mut ret = vec![];
-        let to_state = to.current_uid_index().await;
+        let to_state = to.current_uid_index();
         for (uid, new_uuid) in new_uuids {
             let dest_uid = to_state
                 .table
@@ -340,13 +338,13 @@ impl MailboxView {
     /// Looks up state changes in the mailbox and produces a set of IMAP
     /// responses describing the new state.
     pub async fn fetch<'b>(
-        &self,
+        &mut self,
         sequence_set: &SequenceSet,
         ap: &AttributesProxy,
         changed_since: Option<NonZeroU64>,
         is_uid_fetch: &bool,
     ) -> Result<Vec<Body<'static>>> {
-        // [1/6] Pre-compute data
+        // Pre-compute data
         //  a. what are the uuids of the emails we want?
         //  b. do we need to fetch the full body?
         //let ap = AttributesProxy::new(attributes, *is_uid_fetch);
@@ -355,44 +353,45 @@ impl MailboxView {
             _ => QueryScope::Partial,
         };
         tracing::debug!("Query scope {:?}", query_scope);
-        let state = self.internal.peek().await;
+        let state = self.internal.peek();
         let mail_idx_list = state.fetch_changed_since(sequence_set, changed_since, *is_uid_fetch);
 
-        // [2/6] Fetch the emails
+        // Fetch the emails
         let uuids = mail_idx_list
             .iter()
             .map(|midx| midx.uuid)
             .collect::<Vec<_>>();
 
-        let query = self.internal.query(&uuids, query_scope);
+        let query = self.internal.query(uuids, query_scope);
         //let query_result = self.internal.query(&uuids, query_scope).fetch().await?;
-
-        let query_stream = query
+        
+        let query_res = query
             .fetch()
             .zip(futures::stream::iter(mail_idx_list))
-            // [3/6] Derive an IMAP-specific view from the results, apply the filters
+            // Derive an IMAP-specific view from the results, apply the filters
             .map(|(maybe_qr, midx)| match maybe_qr {
                 Ok(qr) => Ok((MailView::new(&qr, &midx)?.filter(&ap)?, midx)),
                 Err(e) => Err(e),
             })
-            // [4/6] Apply the IMAP transformation
-            .then(|maybe_ret| async move {
-                let ((body, seen), midx) = maybe_ret?;
+            .try_collect::<Vec<_>>()
+            .await?;
 
-                // [5/6] Register the \Seen flags
-                if matches!(seen, SeenFlag::MustAdd) {
-                    let seen_flag = Flag::Seen.to_string();
-                    self.internal
-                        .mailbox
-                        .add_flags(midx.uuid, &[seen_flag])
-                        .await?;
-                }
-
-                Ok::<_, anyhow::Error>(body)
-            });
-
-        // [6/6] Build the final result that will be sent to the client.
-        query_stream.try_collect().await
+        // Process the result of the query
+        let mut res = vec![];
+        for ((body, seen), midx) in query_res {
+            // Register the \Seen flags
+            if matches!(seen, SeenFlag::MustAdd) {
+                let seen_flag = Flag::Seen.to_string();
+                self.internal
+                    .mailbox
+                    .add_flags(midx.uuid, &[seen_flag])
+                    .await?;
+            }
+            // Add "body" to the final result that will be sent to the client 
+            res.push(body);
+        }
+        
+        Ok(res)
     }
 
     /// A naive search implementation...
@@ -406,7 +405,7 @@ impl MailboxView {
         // based on the search query
         let crit = search::Criteria(search_key);
         let (seq_set, seq_type) = crit.to_sequence_set();
-        let state = self.internal.peek().await;
+        let state = self.internal.peek();
 
         // 2. Get the selection
         let selection = state.fetch(&seq_set, seq_type.is_uid());
@@ -417,7 +416,7 @@ impl MailboxView {
         // 4.a Fetch additional info about the emails
         let query_scope = crit.query_scope();
         let uuids = to_fetch.iter().map(|midx| midx.uuid).collect::<Vec<_>>();
-        let query = self.internal.query(&uuids, query_scope);
+        let query = self.internal.query(uuids, query_scope);
 
         // 4.b We don't want to keep all data in memory, so we do the computing in a stream
         let query_stream = query
@@ -668,7 +667,7 @@ mod tests {
             uid: index_entry.0,
             modseq: index_entry.1,
             uuid: unique_ident::gen_ident(),
-            flags: &index_entry.2,
+            flags: index_entry.2,
         };
         let rfc822 = b"Subject: hello\r\nFrom: a@a.a\r\nTo: b@b.b\r\nDate: Thu, 12 Oct 2023 08:45:28 +0000\r\n\r\nhello world";
         let qr = QueryResult::FullResult {

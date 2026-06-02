@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -9,7 +9,7 @@ use aero_user::cryptoblob::{open_deserialize, seal_serialize};
 use aero_user::login::Credentials;
 use aero_user::storage;
 
-use super::Calendar;
+use super::{Calendar, CalendarWeak};
 use crate::unique_ident::{gen_ident, UniqueIdent};
 
 pub(crate) const CAL_LIST_PK: &str = "calendars";
@@ -17,9 +17,10 @@ pub(crate) const CAL_LIST_SK: &str = "list";
 pub(crate) const MAIN_CAL: &str = "Personal";
 pub(crate) const MAX_CALNAME_CHARS: usize = 32;
 
+#[derive(Clone)]
 pub struct CalendarNs {
     creds: Credentials,
-    calendars: std::sync::Mutex<HashMap<UniqueIdent, Weak<Calendar>>>,
+    calendars: Arc<std::sync::Mutex<HashMap<UniqueIdent, CalendarWeak>>>,
 }
 
 impl CalendarNs {
@@ -27,12 +28,12 @@ impl CalendarNs {
     pub fn new(creds: Credentials) -> Self {
         Self {
             creds,
-            calendars: std::sync::Mutex::new(HashMap::new()),
+            calendars: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 
     /// Open a calendar by name
-    pub async fn open(&self, name: &str) -> Result<Option<Arc<Calendar>>> {
+    pub async fn open(&self, name: &str) -> Result<Option<Calendar>> {
         let (list, _ct) = self.load_calendar_list().await?;
 
         match list.get(name) {
@@ -43,24 +44,28 @@ impl CalendarNs {
 
     /// Open a calendar by unique id
     /// Check user.rs::open_mailbox_by_id to understand this function
-    pub async fn open_by_id(&self, id: UniqueIdent) -> Result<Arc<Calendar>> {
+    pub async fn open_by_id(&self, id: UniqueIdent) -> Result<Calendar> {
         {
             let cache = self.calendars.lock().unwrap();
-            if let Some(cal) = cache.get(&id).and_then(Weak::upgrade) {
-                return Ok(cal);
+            if let Some(cal_weak) = cache.get(&id) {
+                if let Some(cal) = cal_weak.upgrade() {
+                    return Ok(cal);
+                }
             }
         }
 
-        let cal = Arc::new(Calendar::open(&self.creds, id).await?);
+        let cal = Calendar::open(&self.creds, id).await?;
 
         let mut cache = self.calendars.lock().unwrap();
-        if let Some(concurrent_cal) = cache.get(&id).and_then(Weak::upgrade) {
-            drop(cal); // we worked for nothing but at least we didn't starve someone else
-            Ok(concurrent_cal)
-        } else {
-            cache.insert(id, Arc::downgrade(&cal));
-            Ok(cal)
+        if let Some(concurrent_cal_weak) = cache.get(&id) {
+            if let Some(concurrent_cal) = concurrent_cal_weak.upgrade() {
+                drop(cal); // we worked for nothing but at least we didn't starve someone else
+                return Ok(concurrent_cal)
+            }
         }
+
+        cache.insert(id, cal.downgrade());
+        Ok(cal)
     }
 
     /// List calendars

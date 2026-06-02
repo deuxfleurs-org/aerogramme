@@ -1,9 +1,8 @@
 use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
 
 use aero_bayou::timestamp::now_msec;
-use aero_bayou::Bayou;
+use aero_bayou::{Bayou, BayouWeak};
 use aero_user::cryptoblob::{self, gen_key, open_deserialize, seal_serialize, Key};
 use aero_user::login::Credentials;
 use aero_user::storage::{self, BlobRef, BlobVal, RowRef, RowVal, Selector, Store};
@@ -12,9 +11,10 @@ use crate::mail::uidindex::*;
 use crate::mail::IMF;
 use crate::unique_ident::*;
 
+#[derive(Clone)]
 pub struct Mailbox {
     pub(super) id: UniqueIdent,
-    mbox: RwLock<MailboxInternal>,
+    mbox: MailboxInternal,
 }
 
 impl Mailbox {
@@ -34,136 +34,154 @@ impl Mailbox {
         dump(&uid_index);
         */
 
-        let mbox = RwLock::new(MailboxInternal {
+        let mbox = MailboxInternal {
             encryption_key: creds.keys.master.clone(),
             storage: creds.storage.clone(),
             uid_index,
             mail_path,
-        });
+        };
 
         Ok(Self { id, mbox })
     }
 
-    /// Sync data with backing store
-    pub async fn sync(&self) -> Result<()> {
-        self.mbox.write().await.sync().await
+    /// Sync data with backing store.
+    pub async fn sync(&mut self) -> Result<()> {
+        self.mbox.sync().await
     }
 
-    /// Block until a sync has been done (due to changes in the event log)
-    pub async fn notify(&self) -> std::sync::Weak<tokio::sync::Notify> {
-        self.mbox.read().await.notifier()
+    /// Block until some updates are availble in the backing store.
+    pub fn notify(&self) -> std::sync::Weak<tokio::sync::Notify> {
+        self.mbox.notifier()
     }
 
     // ---- Functions for reading the mailbox ----
 
     /// Get a clone of the current UID Index of this mailbox
     /// (cloning is cheap so don't hesitate to use this)
-    pub async fn current_uid_index(&self) -> UidIndex {
-        self.mbox.read().await.uid_index.state().clone()
+    pub fn current_uid_index(&self) -> UidIndex {
+        self.mbox.uid_index.state().clone()
     }
 
     /// Fetch the metadata (headers + some more info) of the specified
     /// mail IDs
     pub async fn fetch_meta(&self, ids: &[UniqueIdent]) -> Result<Vec<MailMeta>> {
-        self.mbox.read().await.fetch_meta(ids).await
+        self.mbox.fetch_meta(ids).await
     }
 
     /// Fetch an entire e-mail
     pub async fn fetch_full(&self, id: UniqueIdent, message_key: &Key) -> Result<Vec<u8>> {
-        self.mbox.read().await.fetch_full(id, message_key).await
-    }
-
-    pub async fn frozen(self: &std::sync::Arc<Self>) -> super::snapshot::FrozenMailbox {
-        super::snapshot::FrozenMailbox::new(self.clone()).await
+        self.mbox.fetch_full(id, message_key).await
     }
 
     // ---- Functions for changing the mailbox ----
 
     /// Add flags to message
-    pub async fn add_flags<'a>(&self, id: UniqueIdent, flags: &[Flag]) -> Result<()> {
-        self.mbox.write().await.add_flags(id, flags).await
+    pub async fn add_flags<'a>(&mut self, id: UniqueIdent, flags: &[Flag]) -> Result<()> {
+        self.mbox.add_flags(id, flags).await
     }
 
     /// Delete flags from message
-    pub async fn del_flags<'a>(&self, id: UniqueIdent, flags: &[Flag]) -> Result<()> {
-        self.mbox.write().await.del_flags(id, flags).await
+    pub async fn del_flags<'a>(&mut self, id: UniqueIdent, flags: &[Flag]) -> Result<()> {
+        self.mbox.del_flags(id, flags).await
     }
 
     /// Define the new flags for this message
-    pub async fn set_flags<'a>(&self, id: UniqueIdent, flags: &[Flag]) -> Result<()> {
-        self.mbox.write().await.set_flags(id, flags).await
+    pub async fn set_flags<'a>(&mut self, id: UniqueIdent, flags: &[Flag]) -> Result<()> {
+        self.mbox.set_flags(id, flags).await
     }
 
     /// Insert an email into the mailbox
     pub async fn append<'a>(
-        &self,
+        &mut self,
         msg: IMF<'a>,
         flags: &[Flag],
     ) -> Result<(ImapUidvalidity, ImapUid, ModSeq)> {
-        self.mbox.write().await.append(msg, flags).await
+        self.mbox.append(msg, flags).await
     }
 
     /// Insert an email into the mailbox, copying it from an existing S3 object
     pub async fn append_from_s3<'a>(
-        &self,
+        &mut self,
         msg: IMF<'a>,
         ident: UniqueIdent,
         blob_ref: storage::BlobRef,
         message_key: Key,
     ) -> Result<()> {
         self.mbox
-            .write()
-            .await
             .append_from_s3(msg, ident, blob_ref, message_key)
             .await
     }
 
     /// Delete a message definitively from the mailbox
-    pub async fn delete<'a>(&self, id: UniqueIdent) -> Result<()> {
-        self.mbox.write().await.delete(id).await
+    pub async fn delete<'a>(&mut self, id: UniqueIdent) -> Result<()> {
+        self.mbox.delete(id).await
     }
 
     /// Copy an email from an other Mailbox to this mailbox
     /// (use this when possible, as it allows for a certain number of storage optimizations)
-    pub async fn copy_from(&self, from: &Mailbox, uuid: UniqueIdent) -> Result<UniqueIdent> {
+    pub async fn copy_from(&mut self, from: &Mailbox, uuid: UniqueIdent) -> Result<UniqueIdent> {
         if self.id == from.id {
             bail!("Cannot copy into same mailbox");
         }
 
-        let (mut selflock, fromlock);
-        if self.id < from.id {
-            selflock = self.mbox.write().await;
-            fromlock = from.mbox.write().await;
-        } else {
-            fromlock = from.mbox.write().await;
-            selflock = self.mbox.write().await;
-        };
-        selflock.copy_from(&fromlock, uuid).await
+        self.mbox.copy_from(&from.mbox, uuid).await
     }
 
     /// Move an email from an other Mailbox to this mailbox
     /// (use this when possible, as it allows for a certain number of storage optimizations)
-    pub async fn move_from(&self, from: &Mailbox, uuid: UniqueIdent) -> Result<UniqueIdent> {
+    pub async fn move_from(&mut self, from: &mut Mailbox, uuid: UniqueIdent) -> Result<UniqueIdent> {
         if self.id == from.id {
             bail!("Cannot copy move same mailbox");
         }
 
-        let (mut selflock, mut fromlock);
-        if self.id < from.id {
-            selflock = self.mbox.write().await;
-            fromlock = from.mbox.write().await;
-        } else {
-            fromlock = from.mbox.write().await;
-            selflock = self.mbox.write().await;
-        };
-        selflock.move_from(&mut fromlock, uuid).await
+        self.mbox.move_from(&mut from.mbox, uuid).await
+    }
+
+    pub fn downgrade(&self) -> MailboxWeak {
+        MailboxWeak {
+            id: self.id.clone(),
+            mail_path: self.mbox.mail_path.clone(),
+            encryption_key: self.mbox.encryption_key.clone(),
+            storage: self.mbox.storage.clone(),
+            uid_index: self.mbox.uid_index.downgrade(),
+        }
     }
 }
 
-// ----
+/// A "weak reference" to a mailbox.
+///
+/// `Mailbox`/`MailboxWeak` work similarly to `Arc`/`Weak`.
+///
+/// This is useful to reference the mailbox in a cache while allowing its
+/// resources to be destroyed if it is not used elsewhere.
+pub struct MailboxWeak {
+    id: UniqueIdent,
+    mail_path: String,
+    encryption_key: Key,
+    storage: Store,
+    uid_index: BayouWeak<UidIndex>,
+}
+
+impl MailboxWeak {
+    pub fn upgrade(&self) -> Option<Mailbox> {
+        let uid_index = self.uid_index.upgrade()?;
+        Some(Mailbox {
+            id: self.id.clone(),
+            mbox: MailboxInternal {
+                mail_path: self.mail_path.clone(),
+                encryption_key: self.encryption_key.clone(),
+                storage: self.storage.clone(),
+                uid_index,
+            },
+        })
+    }
+}
+
+// ---- internals
 
 // Non standard but common flags:
 // https://www.iana.org/assignments/imap-jmap-keywords/imap-jmap-keywords.xhtml
+#[derive(Clone)]
 struct MailboxInternal {
     mail_path: String,
     encryption_key: Key,
