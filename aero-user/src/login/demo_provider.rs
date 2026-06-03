@@ -28,7 +28,7 @@ impl LoginProvider for DemoLoginProvider {
             bail!("wrong password");
         }
 
-        let storage = self.in_memory_store.builder("alice").await;
+        let storage = self.in_memory_store.user("alice").await;
         let keys = self.keys.clone();
 
         Ok(Credentials { storage, keys })
@@ -40,7 +40,7 @@ impl LoginProvider for DemoLoginProvider {
             bail!("invalid email address");
         }
 
-        let storage = self.in_memory_store.builder("alice").await;
+        let storage = self.in_memory_store.user("alice").await;
         let public_key = self.keys.public.clone();
 
         Ok(PublicCredentials {

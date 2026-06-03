@@ -36,7 +36,7 @@ impl Mailbox {
 
         let mbox = RwLock::new(MailboxInternal {
             encryption_key: creds.keys.master.clone(),
-            storage: creds.storage.build().await?,
+            storage: creds.storage.clone(),
             uid_index,
             mail_path,
         });

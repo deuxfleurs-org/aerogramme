@@ -49,10 +49,10 @@ async fn incoming_mail_watch_process_internal(
     mut rx_inbox_id: watch::Receiver<Option<UniqueIdent>>,
 ) -> Result<()> {
     let mut lock_held = k2v_lock_loop(
-        creds.storage.build().await?,
+        creds.storage.clone(),
         storage::RowRef::new(INCOMING_PK, INCOMING_LOCK_SK),
     );
-    let storage = creds.storage.build().await?;
+    let storage = creds.storage.clone();
 
     let mut inbox: Option<Arc<Mailbox>> = None;
     let mut incoming_key = storage::RowRef::new(INCOMING_PK, INCOMING_WATCH_SK);
@@ -431,7 +431,7 @@ impl EncryptedMessage {
     }
 
     pub async fn deliver_to(self: Arc<Self>, creds: PublicCredentials) -> Result<()> {
-        let storage = creds.storage.build().await?;
+        let storage = creds.storage.clone();
 
         // Get causality token of previous watch key
         let watch_rref = match storage.row_fetch(INCOMING_PK, INCOMING_WATCH_SK).await {

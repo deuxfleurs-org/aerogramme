@@ -56,13 +56,11 @@ pub struct Bayou<S: BayouState> {
 
 impl<S: BayouState> Bayou<S> {
     pub async fn new(creds: &Credentials, path: String) -> Result<Self> {
-        let storage = creds.storage.build().await?;
-
         let watch = K2vWatch::new(creds, &path).await?;
 
         Ok(Self {
             path,
-            storage,
+            storage: creds.storage.clone(),
             key: creds.keys.master.clone(),
             checkpoint: (Timestamp::zero(), S::default()),
             history: vec![],
@@ -405,8 +403,7 @@ impl K2vWatch {
     /// These threads hold Weak pointers to the struct;
     /// they exit when the Arc is dropped.
     async fn new(creds: &Credentials, path: &str) -> Result<Arc<Self>> {
-        let storage = creds.storage.build().await?;
-
+        let storage = creds.storage.clone();
         let learnt_remote_update = Arc::new(Notify::new());
 
         let watch = Arc::new(K2vWatch {

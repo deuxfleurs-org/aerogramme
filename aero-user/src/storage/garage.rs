@@ -1,9 +1,9 @@
 use aws_sdk_s3::{self as s3, error::SdkError, operation::get_object::GetObjectError};
 use aws_smithy_runtime::client::http::hyper_014::HyperClientBuilder;
 use aws_smithy_runtime_api::client::http::SharedHttpClient;
-use hyper_rustls::HttpsConnector;
-use hyper_util::client::legacy::{connect::HttpConnector, Client as HttpClient};
-use hyper_util::rt::TokioExecutor;
+use k2v_client::hyper_rustls::HttpsConnector;
+use k2v_client::hyper_util::client::legacy::{connect::HttpConnector, Client as HttpClient};
+use k2v_client::hyper_util::rt::TokioExecutor;
 use serde::Serialize;
 
 use super::*;
@@ -15,7 +15,7 @@ pub struct GarageRoot {
 
 impl GarageRoot {
     pub fn new() -> anyhow::Result<Self> {
-        let connector = hyper_rustls::HttpsConnectorBuilder::new()
+        let connector = k2v_client::hyper_rustls::HttpsConnectorBuilder::new()
             .with_native_roots()?
             .https_or_http()
             .enable_http1()
@@ -26,15 +26,54 @@ impl GarageRoot {
         Ok(Self { k2v_http, aws_http })
     }
 
-    pub fn user(&self, conf: GarageConf) -> anyhow::Result<Arc<GarageUser>> {
+    pub async fn user(&self, conf: GarageConf) -> anyhow::Result<Arc<GarageStore>> {
         let mut unicity: Vec<u8> = vec![];
         unicity.extend_from_slice(file!().as_bytes());
         unicity.append(&mut rmp_serde::to_vec(&conf)?);
 
-        Ok(Arc::new(GarageUser {
-            conf,
-            aws_http: self.aws_http.clone(),
-            k2v_http: self.k2v_http.clone(),
+        let s3_creds = s3::config::Credentials::new(
+            conf.aws_access_key_id.clone(),
+            conf.aws_secret_access_key.clone(),
+            None,
+            None,
+            "aerogramme",
+        );
+
+        let sdk_config = aws_config::from_env()
+            .region(aws_config::Region::new(conf.region.clone()))
+            .credentials_provider(s3_creds)
+            .http_client(self.aws_http.clone())
+            .endpoint_url(conf.s3_endpoint.clone())
+            .load()
+            .await;
+
+        let s3_config = aws_sdk_s3::config::Builder::from(&sdk_config)
+            .force_path_style(true)
+            .build();
+
+        let s3_client = aws_sdk_s3::Client::from_conf(s3_config);
+
+        let k2v_config = k2v_client::K2vClientConfig {
+            endpoint: conf.k2v_endpoint.clone(),
+            region: conf.region.clone(),
+            aws_access_key_id: conf.aws_access_key_id.clone(),
+            aws_secret_access_key: conf.aws_secret_access_key.clone(),
+            bucket: conf.bucket.clone(),
+            user_agent: None,
+        };
+
+        let k2v_client =
+            match k2v_client::K2vClient::new_with_client(k2v_config, self.k2v_http.clone()) {
+                Err(e) => {
+                    anyhow::bail!("unable to build k2v client: {}", e)
+                }
+                Ok(v) => v,
+            };
+
+        Ok(Arc::new(GarageStore {
+            bucket: conf.bucket,
+            s3: s3_client,
+            k2v: k2v_client,
             unicity,
         }))
     }
@@ -50,75 +89,12 @@ pub struct GarageConf {
     pub bucket: String,
 }
 
-//@FIXME we should get rid of this builder
-//and allocate a S3 + K2V client only once per user
-//(and using a shared HTTP client)
-#[derive(Clone, Debug)]
-pub struct GarageUser {
-    conf: GarageConf,
-    aws_http: SharedHttpClient,
-    k2v_http: HttpClient<HttpsConnector<HttpConnector>, k2v_client::Body>,
-    unicity: Vec<u8>,
-}
-
-#[async_trait]
-impl IBuilder for GarageUser {
-    async fn build(&self) -> Result<Store, StorageError> {
-        let s3_creds = s3::config::Credentials::new(
-            self.conf.aws_access_key_id.clone(),
-            self.conf.aws_secret_access_key.clone(),
-            None,
-            None,
-            "aerogramme",
-        );
-
-        let sdk_config = aws_config::from_env()
-            .region(aws_config::Region::new(self.conf.region.clone()))
-            .credentials_provider(s3_creds)
-            .http_client(self.aws_http.clone())
-            .endpoint_url(self.conf.s3_endpoint.clone())
-            .load()
-            .await;
-
-        let s3_config = aws_sdk_s3::config::Builder::from(&sdk_config)
-            .force_path_style(true)
-            .build();
-
-        let s3_client = aws_sdk_s3::Client::from_conf(s3_config);
-
-        let k2v_config = k2v_client::K2vClientConfig {
-            endpoint: self.conf.k2v_endpoint.clone(),
-            region: self.conf.region.clone(),
-            aws_access_key_id: self.conf.aws_access_key_id.clone(),
-            aws_secret_access_key: self.conf.aws_secret_access_key.clone(),
-            bucket: self.conf.bucket.clone(),
-            user_agent: None,
-        };
-
-        let k2v_client =
-            match k2v_client::K2vClient::new_with_client(k2v_config, self.k2v_http.clone()) {
-                Err(e) => {
-                    tracing::error!("unable to build k2v client: {}", e);
-                    return Err(StorageError::Internal);
-                }
-                Ok(v) => v,
-            };
-
-        Ok(Box::new(GarageStore {
-            bucket: self.conf.bucket.clone(),
-            s3: s3_client,
-            k2v: k2v_client,
-        }))
-    }
-    fn unique(&self) -> UnicityBuffer {
-        UnicityBuffer(self.unicity.clone())
-    }
-}
-
+#[derive(Debug)]
 pub struct GarageStore {
     bucket: String,
     s3: s3::Client,
     k2v: k2v_client::K2vClient,
+    unicity: Vec<u8>,
 }
 
 fn causal_to_concurrent_row_val(shard: &str, sort: &str, causal_value: k2v_client::CausalValue) -> ConcurrentRowVal {
@@ -566,5 +542,9 @@ impl IStore for GarageStore {
                 Ok(())
             }
         }
+    }
+
+    fn unique(&self) -> UnicityBuffer {
+        UnicityBuffer(self.unicity.clone())
     }
 }
