@@ -55,7 +55,7 @@ impl User {
             creds: creds.clone(),
             storage,
             mailboxes: MailboxNs::new(creds.clone()).await?,
-            calendars: CalendarNs::new(),
+            calendars: CalendarNs::new(creds.clone()),
         });
 
         Ok(user)

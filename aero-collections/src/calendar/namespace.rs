@@ -6,48 +6,54 @@ use serde::{Deserialize, Serialize};
 
 use aero_bayou::timestamp::now_msec;
 use aero_user::cryptoblob::{open_deserialize, seal_serialize};
+use aero_user::login::Credentials;
 use aero_user::storage;
 
 use super::Calendar;
 use crate::unique_ident::{gen_ident, UniqueIdent};
-use crate::user::User;
 
 pub(crate) const CAL_LIST_PK: &str = "calendars";
 pub(crate) const CAL_LIST_SK: &str = "list";
 pub(crate) const MAIN_CAL: &str = "Personal";
 pub(crate) const MAX_CALNAME_CHARS: usize = 32;
 
-pub struct CalendarNs(std::sync::Mutex<HashMap<UniqueIdent, Weak<Calendar>>>);
+pub struct CalendarNs {
+    creds: Credentials,
+    calendars: std::sync::Mutex<HashMap<UniqueIdent, Weak<Calendar>>>,
+}
 
 impl CalendarNs {
     /// Create a new calendar namespace
-    pub fn new() -> Self {
-        Self(std::sync::Mutex::new(HashMap::new()))
+    pub fn new(creds: Credentials) -> Self {
+        Self {
+            creds,
+            calendars: std::sync::Mutex::new(HashMap::new()),
+        }
     }
 
     /// Open a calendar by name
-    pub async fn open(&self, user: &Arc<User>, name: &str) -> Result<Option<Arc<Calendar>>> {
-        let (list, _ct) = CalendarList::load(user).await?;
+    pub async fn open(&self, name: &str) -> Result<Option<Arc<Calendar>>> {
+        let (list, _ct) = self.load_calendar_list().await?;
 
         match list.get(name) {
             None => Ok(None),
-            Some(ident) => Ok(Some(self.open_by_id(user, ident).await?)),
+            Some(ident) => Ok(Some(self.open_by_id(ident).await?)),
         }
     }
 
     /// Open a calendar by unique id
     /// Check user.rs::open_mailbox_by_id to understand this function
-    pub async fn open_by_id(&self, user: &Arc<User>, id: UniqueIdent) -> Result<Arc<Calendar>> {
+    pub async fn open_by_id(&self, id: UniqueIdent) -> Result<Arc<Calendar>> {
         {
-            let cache = self.0.lock().unwrap();
+            let cache = self.calendars.lock().unwrap();
             if let Some(cal) = cache.get(&id).and_then(Weak::upgrade) {
                 return Ok(cal);
             }
         }
 
-        let cal = Arc::new(Calendar::open(&user.creds, id).await?);
+        let cal = Arc::new(Calendar::open(&self.creds, id).await?);
 
-        let mut cache = self.0.lock().unwrap();
+        let mut cache = self.calendars.lock().unwrap();
         if let Some(concurrent_cal) = cache.get(&id).and_then(Weak::upgrade) {
             drop(cal); // we worked for nothing but at least we didn't starve someone else
             Ok(concurrent_cal)
@@ -58,22 +64,22 @@ impl CalendarNs {
     }
 
     /// List calendars
-    pub async fn list(&self, user: &Arc<User>) -> Result<Vec<String>> {
-        CalendarList::load(user).await.map(|(list, _)| list.names())
+    pub async fn list(&self) -> Result<Vec<String>> {
+        self.load_calendar_list().await.map(|(list, _)| list.names())
     }
 
     /// Delete a calendar from the index
-    pub async fn delete(&self, user: &Arc<User>, name: &str) -> Result<()> {
+    pub async fn delete(&self, name: &str) -> Result<()> {
         // We currently assume that main cal is a bit specific
         if name == MAIN_CAL {
             bail!("Cannot delete main calendar");
         }
 
-        let (mut list, ct) = CalendarList::load(user).await?;
+        let (mut list, ct) = self.load_calendar_list().await?;
         if list.has(name) {
             //@TODO: actually delete calendar content
             list.bind(name, None);
-            list.save(user, ct).await?;
+            self.save_calendar_list(&list, ct).await?;
             Ok(())
         } else {
             bail!("Calendar {} does not exist", name);
@@ -81,7 +87,7 @@ impl CalendarNs {
     }
 
     /// Rename a calendar in the index
-    pub async fn rename(&self, user: &Arc<User>, old: &str, new: &str) -> Result<()> {
+    pub async fn rename(&self, old: &str, new: &str) -> Result<()> {
         if old == MAIN_CAL {
             bail!("Renaming main calendar is not supported currently");
         }
@@ -92,15 +98,15 @@ impl CalendarNs {
             bail!("Calendar name can't contain more than 32 characters");
         }
 
-        let (mut list, ct) = CalendarList::load(user).await?;
+        let (mut list, ct) = self.load_calendar_list().await?;
         list.rename(old, new)?;
-        list.save(user, ct).await?;
+        self.save_calendar_list(&list, ct).await?;
 
         Ok(())
     }
 
     /// Create calendar
-    pub async fn create(&self, user: &Arc<User>, name: &str) -> Result<()> {
+    pub async fn create(&self, name: &str) -> Result<()> {
         if name == MAIN_CAL {
             bail!("Main calendar is automatically created, can't create it manually");
         }
@@ -111,56 +117,43 @@ impl CalendarNs {
             bail!("Calendar name can't contain more than 32 characters");
         }
 
-        let (mut list, ct) = CalendarList::load(user).await?;
+        let (mut list, ct) = self.load_calendar_list().await?;
         match list.create(name) {
             CalendarExists::Existed(_) => bail!("Calendar {} already exists", name),
             CalendarExists::Created(_) => (),
         }
-        list.save(user, ct).await?;
+        self.save_calendar_list(&list, ct).await?;
 
         Ok(())
     }
 
     /// Has calendar
-    pub async fn has(&self, user: &Arc<User>, name: &str) -> Result<bool> {
-        CalendarList::load(user)
+    pub async fn has(&self, name: &str) -> Result<bool> {
+        self.load_calendar_list()
             .await
             .map(|(list, _)| list.has(name))
     }
-}
 
-// ------
-// ------ From this point, implementation is hidden from the rest of the crate
-// ------
-
-#[derive(Serialize, Deserialize)]
-struct CalendarList(BTreeMap<String, CalendarListEntry>);
-
-#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
-struct CalendarListEntry {
-    id_lww: (u64, Option<UniqueIdent>),
-}
-
-impl CalendarList {
-    // ---- Index persistence related functions
-
+    // --- internal calendar list management ----
+    
     /// Load from storage
-    async fn load(user: &Arc<User>) -> Result<(Self, Option<storage::RowRef>)> {
-        let (mut list, row) = match user
+    async fn load_calendar_list(&self) -> Result<(CalendarList, Option<storage::RowRef>)> {
+        let (mut list, row) = match self
+            .creds
             .storage
             .row_fetch(CAL_LIST_PK, CAL_LIST_SK)
             .await
         {
-            Err(storage::StorageError::NotFound) => (Self::new(), None),
+            Err(storage::StorageError::NotFound) => (CalendarList::new(), None),
             Err(e) => return Err(e.into()),
             Ok(rv) => {
-                let mut list = Self::new();
+                let mut list = CalendarList::new();
                 let (row_ref, row_vals) = (rv.row_ref, rv.value);
 
                 for v in row_vals {
                     if let storage::Alternative::Value(vbytes) = v {
                         let list2 =
-                            open_deserialize::<CalendarList>(&vbytes, &user.creds.keys.master)?;
+                            open_deserialize::<CalendarList>(&vbytes, &self.creds.keys.master)?;
                         list.merge(list2);
                     }
                 }
@@ -178,23 +171,36 @@ impl CalendarList {
 
         // Save the index if we created a new calendar
         if is_default_cal_missing {
-            list.save(user, row.clone()).await?;
+            self.save_calendar_list(&list, row.clone()).await?;
         }
 
         Ok((list, row))
     }
 
     /// Save an updated index
-    async fn save(&self, user: &Arc<User>, ct: Option<storage::RowRef>) -> Result<()> {
-        let list_blob = seal_serialize(self, &user.creds.keys.master)?;
+    async fn save_calendar_list(&self, list: &CalendarList, ct: Option<storage::RowRef>) -> Result<()> {
+        let list_blob = seal_serialize(list, &self.creds.keys.master)?;
         let rref = ct.unwrap_or(storage::RowRef::new(CAL_LIST_PK, CAL_LIST_SK));
         let row_val = storage::RowVal::new(rref, list_blob);
-        user.storage.row_update(vec![row_val]).await?;
+        self.creds.storage.row_update(vec![row_val]).await?;
         Ok(())
     }
+}
 
-    // ----- Index manipulation functions
+// ---- Calendar list (serialized in K2V) ---
+// ---- These definitions are internal ----
+// ---- They are purely concerned with operating on the CalendarList datastructure, ----
+// ---- no I/O or storage handling there ----
 
+#[derive(Serialize, Deserialize)]
+struct CalendarList(BTreeMap<String, CalendarListEntry>);
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+struct CalendarListEntry {
+    id_lww: (u64, Option<UniqueIdent>),
+}
+
+impl CalendarList {
     /// Ensure that a given calendar exists
     /// (Don't forget to save if it returns CalendarExists::Created)
     fn create(&mut self, name: &str) -> CalendarExists {

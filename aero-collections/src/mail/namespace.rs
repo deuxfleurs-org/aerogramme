@@ -306,6 +306,8 @@ impl MailboxNsInner {
 
 // ---- User's mailbox list (serialized in K2V) ----
 // ---- these definitions are internal ----
+// ---- They are purely concerned with operating on the MailboxList datastructure, ----
+// ---- no I/O or storage handling there ----
 
 #[derive(Debug, Serialize, Deserialize)]
 struct MailboxList(BTreeMap<String, MailboxListEntry>);
