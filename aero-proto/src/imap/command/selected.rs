@@ -308,7 +308,7 @@ impl<'a> SelectedContext<'a> {
 
         let name: &str = MailboxName(mailbox).try_into()?;
 
-        let mb_opt = self.user.open_mailbox(&name).await?;
+        let mb_opt = self.user.mailboxes.open(&name).await?;
         let mb = match mb_opt {
             Some(mb) => mb,
             None => {
@@ -364,7 +364,7 @@ impl<'a> SelectedContext<'a> {
 
         let name: &str = MailboxName(mailbox).try_into()?;
 
-        let mb_opt = self.user.open_mailbox(&name).await?;
+        let mb_opt = self.user.mailboxes.open(&name).await?;
         let mb = match mb_opt {
             Some(mb) => mb,
             None => {

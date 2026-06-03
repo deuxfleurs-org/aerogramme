@@ -98,7 +98,7 @@ impl<'a> AuthenticatedContext<'a> {
             MailboxCodec::Other(aname) => std::str::from_utf8(aname.as_ref())?,
         };
 
-        match self.user.create_mailbox(&name).await {
+        match self.user.mailboxes.create(&name).await {
             Ok(()) => Ok((
                 Response::build()
                     .to_req(self.req)
@@ -122,7 +122,7 @@ impl<'a> AuthenticatedContext<'a> {
     ) -> Result<(Response<'static>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
-        match self.user.delete_mailbox(&name).await {
+        match self.user.mailboxes.delete(&name).await {
             Ok(()) => Ok((
                 Response::build()
                     .to_req(self.req)
@@ -148,7 +148,7 @@ impl<'a> AuthenticatedContext<'a> {
         let name: &str = MailboxName(from).try_into()?;
         let new_name: &str = MailboxName(to).try_into()?;
 
-        match self.user.rename_mailbox(&name, &new_name).await {
+        match self.user.mailboxes.rename(&name, &new_name).await {
             Ok(()) => Ok((
                 Response::build()
                     .to_req(self.req)
@@ -226,7 +226,7 @@ impl<'a> AuthenticatedContext<'a> {
             }
         }
 
-        let mailboxes = self.user.list_mailboxes().await?;
+        let mailboxes = self.user.mailboxes.list().await?;
         let mut vmailboxes = BTreeMap::new();
         for mb in mailboxes.iter() {
             for (i, _) in mb.match_indices(MBX_HIER_DELIM_RAW) {
@@ -353,7 +353,7 @@ impl<'a> AuthenticatedContext<'a> {
         name: &str,
         attributes: &[StatusDataItemName],
     ) -> Result<Vec<StatusDataItem>> {
-        let mb_opt = self.user.open_mailbox(name).await?;
+        let mb_opt = self.user.mailboxes.open(name).await?;
         let mb = match mb_opt {
             Some(mb) => mb,
             None => return Err(CommandError::MailboxNotFound.into()),
@@ -392,7 +392,7 @@ impl<'a> AuthenticatedContext<'a> {
     ) -> Result<(Response<'static>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
-        if self.user.has_mailbox(&name).await? {
+        if self.user.mailboxes.has(&name).await? {
             Ok((
                 Response::build()
                     .to_req(self.req)
@@ -417,7 +417,7 @@ impl<'a> AuthenticatedContext<'a> {
     ) -> Result<(Response<'static>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
-        if self.user.has_mailbox(&name).await? {
+        if self.user.mailboxes.has(&name).await? {
             Ok((
                 Response::build()
                     .to_req(self.req)
@@ -482,7 +482,7 @@ impl<'a> AuthenticatedContext<'a> {
 
         let name: &str = MailboxName(mailbox).try_into()?;
 
-        let mb_opt = self.user.open_mailbox(&name).await?;
+        let mb_opt = self.user.mailboxes.open(&name).await?;
         let mb = match mb_opt {
             Some(mb) => mb,
             None => {
@@ -520,7 +520,7 @@ impl<'a> AuthenticatedContext<'a> {
 
         let name: &str = MailboxName(mailbox).try_into()?;
 
-        let mb_opt = self.user.open_mailbox(&name).await?;
+        let mb_opt = self.user.mailboxes.open(&name).await?;
         let mb = match mb_opt {
             Some(mb) => mb,
             None => {
@@ -605,7 +605,7 @@ impl<'a> AuthenticatedContext<'a> {
     ) -> Result<(MailboxView, ImapUidvalidity, ImapUid, ModSeq)> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
-        let mb_opt = self.user.open_mailbox(&name).await?;
+        let mb_opt = self.user.mailboxes.open(&name).await?;
         let mb = match mb_opt {
             Some(mb) => mb,
             None => bail!("Mailbox does not exist"),
