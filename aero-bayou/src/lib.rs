@@ -65,7 +65,8 @@ pub trait BayouState:
 ///
 /// A `Bayou<S>` is cheap to clone: copies share the same underlying resources.
 /// Cloning is the recommended way of sharing access to the same underlying
-/// storage.
+/// storage. (Note: `S` should be itself cheap to clone. E.g. using immutable
+/// structures datastructures is recommended.)
 #[derive(Clone)]
 pub struct Bayou<S: BayouState> {
     engine: Arc<BayouEngine<S>>,
@@ -125,7 +126,35 @@ impl<S: BayouState> Bayou<S> {
     pub async fn internal_sync_hint(&mut self) {
         let _ = self.engine.sync().await;
     }
+
+    /// Return a weak reference to this Bayou instance.
+    pub fn downgrade(&self) -> BayouWeak<S> {
+        BayouWeak {
+            engine: Arc::downgrade(&self.engine),
+            state: self.state.clone(),   
+        }
+    }
 }
+
+/// A "weak reference" to an instance of Bayou.
+///
+/// `Bayou`/`BayouWeak` work similarly to `Arc`/`Weak`.
+///
+/// This is useful to reference the Bayou in a cache while allowing the
+/// corresponding resources to be destroyed if it is not used elsewhere.
+pub struct BayouWeak<S: BayouState> {
+    engine: Weak<BayouEngine<S>>,
+    state: S,
+}
+
+impl<S: BayouState> BayouWeak<S> {
+    pub fn upgrade(&self) -> Option<Bayou<S>> {
+        let engine = self.engine.upgrade()?;
+        Some(Bayou { engine, state: self.state.clone() })
+    }
+}
+
+// --- internals ---
 
 struct BayouEngine<S: BayouState> {
     path: String,
