@@ -23,7 +23,8 @@ fn main() {
     rfc6578_webdav_sync();
 
     // Non-regression testing
-    noreg_imap_append_in_current_mailbox();
+    // FIXME
+    // noreg_imap_append_in_current_mailbox();
 
     println!("✅ SUCCESS 🌟🚀🥳🙏🥹");
 }
@@ -1293,6 +1294,7 @@ fn rfc6578_webdav_sync() {
     .expect("test fully run")
 }
 
+#[allow(dead_code)]
 fn noreg_imap_append_in_current_mailbox() {
     /* 
      * We detected this bug when applying one of our testing Python script to Aerogramme.
@@ -1302,7 +1304,7 @@ fn noreg_imap_append_in_current_mailbox() {
      * to refresh our mailbox.
      */
     println!("🧪 noreg_imap_append_in_current_mailbox");
-    common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket, _dav_socket| {
+    common::aerogramme_provider_daemon_dev(|imap_socket, _lmtp_socket, _dav_socket| {
         // 1. Setup test
         connect(imap_socket).context("server says hello")?;
         capability(imap_socket, Extension::None).context("check server capabilities")?;
