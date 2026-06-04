@@ -276,7 +276,7 @@ pub(crate) struct CalendarListNode {
 }
 impl CalendarListNode {
     async fn new(user: &ArcUser) -> Result<Self> {
-        let list = user.calendars.list(user).await?;
+        let list = user.calendars.list().await?;
         Ok(Self { list })
     }
 }
@@ -296,7 +296,7 @@ impl DavNode for CalendarListNode {
             //@FIXME: we should create a node if the open returns a "not found".
             let cal = user
                 .calendars
-                .open(user, path[0])
+                .open(path[0])
                 .await?
                 .ok_or(anyhow!("Not found"))?;
             let child = Box::new(CalendarNode {
@@ -315,7 +315,7 @@ impl DavNode for CalendarListNode {
             futures::stream::iter(list.iter())
                 .filter_map(|name| async move {
                     user.calendars
-                        .open(user, name)
+                        .open(name)
                         .await
                         .ok()
                         .flatten()

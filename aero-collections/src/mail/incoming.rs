@@ -14,9 +14,9 @@ use aero_user::login::{Credentials, PublicCredentials};
 use aero_user::storage;
 
 use crate::mail::mailbox::Mailbox;
+use crate::mail::namespace::MailboxNsInner;
 use crate::mail::IMF;
 use crate::unique_ident::*;
-use crate::user::User;
 
 const INCOMING_PK: &str = "incoming";
 const INCOMING_LOCK_SK: &str = "lock";
@@ -33,22 +33,27 @@ const LOCK_DURATION: Duration = Duration::from_secs(300);
 // In addition to checking when notified, also check for new mail every 10 minutes
 const MAIL_CHECK_INTERVAL: Duration = Duration::from_secs(600);
 
-pub async fn incoming_mail_watch_process(
-    user: Weak<User>,
+pub(crate) async fn incoming_mail_watch_process(
+    mailboxes_weak: Weak<MailboxNsInner>,
     creds: Credentials,
     rx_inbox_id: watch::Receiver<Option<UniqueIdent>>,
 ) {
-    if let Err(e) = incoming_mail_watch_process_internal(user, creds, rx_inbox_id).await {
+    if let Err(e) = incoming_mail_watch_process_internal(mailboxes_weak, creds, rx_inbox_id).await {
         error!("Error in incoming mail watch process: {}", e);
     }
 }
 
 async fn incoming_mail_watch_process_internal(
-    user: Weak<User>,
+    mailboxes_weak: Weak<MailboxNsInner>,
     creds: Credentials,
     mut rx_inbox_id: watch::Receiver<Option<UniqueIdent>>,
 ) -> Result<()> {
+    // a handle on the k2v_lock_loop task; when the handle is dropped it signals
+    // the task to stop.
+    let k2v_lock_loop_handle = Arc::new(LockLoop());
+
     let mut lock_held = k2v_lock_loop(
+        Arc::downgrade(&k2v_lock_loop_handle),
         creds.storage.clone(),
         storage::RowRef::new(INCOMING_PK, INCOMING_LOCK_SK),
     );
@@ -94,20 +99,20 @@ async fn incoming_mail_watch_process_internal(
             }
         };
 
-        let user = match Weak::upgrade(&user) {
-            Some(user) => user,
+        let mailboxes = match Weak::upgrade(&mailboxes_weak) {
+            Some(mailboxes) => mailboxes,
             None => {
-                debug!("User no longer available, exiting incoming loop.");
+                debug!("Mailboxes no longer available, exiting incoming loop.");
                 break;
             }
         };
-        debug!("User still available");
+        debug!("Mailboxes still available");
 
         // If INBOX no longer is same mailbox, open new mailbox
         let inbox_id = *rx_inbox_id.borrow();
         if let Some(id) = inbox_id {
             if Some(id) != inbox.as_ref().map(|b| b.id) {
-                match user.open_mailbox_by_id(id).await {
+                match mailboxes.open_by_id(id).await {
                     Ok(mb) => {
                         inbox = Some(mb);
                     }
@@ -124,7 +129,7 @@ async fn incoming_mail_watch_process_internal(
         // If we were able to open INBOX, and we have mail,
         // fetch new mail
         if let (Some(inbox), Some(updated_incoming_key)) = (&inbox, maybe_updated_incoming_key) {
-            match handle_incoming_mail(&user, &storage, inbox, &lock_held).await {
+            match handle_incoming_mail(&creds, inbox, &lock_held).await {
                 Ok(()) => {
                     incoming_key = updated_incoming_key;
                 }
@@ -140,12 +145,11 @@ async fn incoming_mail_watch_process_internal(
 }
 
 async fn handle_incoming_mail(
-    user: &Arc<User>,
-    storage: &storage::Store,
+    creds: &Credentials,
     inbox: &Arc<Mailbox>,
     lock_held: &watch::Receiver<bool>,
 ) -> Result<()> {
-    let mails_res = storage.blob_list("incoming/").await?;
+    let mails_res = creds.storage.blob_list("incoming/").await?;
 
     for object in mails_res {
         if !*lock_held.borrow() {
@@ -154,7 +158,7 @@ async fn handle_incoming_mail(
         let key = object.0;
         if let Some(mail_id) = key.strip_prefix("incoming/") {
             if let Ok(mail_id) = mail_id.parse::<UniqueIdent>() {
-                move_incoming_message(user, storage, inbox, mail_id).await?;
+                move_incoming_message(&creds, inbox, mail_id).await?;
             }
         }
     }
@@ -163,8 +167,7 @@ async fn handle_incoming_mail(
 }
 
 async fn move_incoming_message(
-    user: &Arc<User>,
-    storage: &storage::Store,
+    creds: &Credentials,
     inbox: &Arc<Mailbox>,
     id: UniqueIdent,
 ) -> Result<()> {
@@ -173,7 +176,7 @@ async fn move_incoming_message(
     let object_key = format!("incoming/{}", id);
 
     // 1. Fetch message from S3
-    let object = storage.blob_fetch(&storage::BlobRef(object_key)).await?;
+    let object = creds.storage.blob_fetch(&storage::BlobRef(object_key)).await?;
 
     // 1.a decrypt message key from headers
     //info!("Object metadata: {:?}", get_result.metadata);
@@ -184,8 +187,8 @@ async fn move_incoming_message(
     let key_encrypted = base64::engine::general_purpose::STANDARD.decode(key_encrypted_b64)?;
     let message_key = sodiumoxide::crypto::sealedbox::open(
         &key_encrypted,
-        &user.creds.keys.public,
-        &user.creds.keys.secret,
+        &creds.keys.public,
+        &creds.keys.secret,
     )
     .map_err(|_| anyhow!("Cannot decrypt message key"))?;
     let message_key =
@@ -203,17 +206,20 @@ async fn move_incoming_message(
         .await?;
 
     // 3 delete from incoming
-    storage.blob_rm(&object.blob_ref).await?;
+    creds.storage.blob_rm(&object.blob_ref).await?;
 
     Ok(())
 }
 
 // ---- UTIL: K2V locking loop, use this to try to grab a lock using a K2V entry as a signal ----
 
-fn k2v_lock_loop(storage: storage::Store, row_ref: storage::RowRef) -> watch::Receiver<bool> {
+// `self_weak` is used to detect when the "owner" of this worker has been
+// destroyed in order to terminate the task. The owner of the worker holds a
+// Arc<LockLoop>, drops it when it is destroyed, which in turn stops the worker.
+fn k2v_lock_loop(self_weak: Weak<LockLoop>, storage: storage::Store, row_ref: storage::RowRef) -> watch::Receiver<bool> {
     let (held_tx, held_rx) = watch::channel(false);
 
-    tokio::spawn(k2v_lock_loop_internal(storage, row_ref, held_tx));
+    tokio::spawn(k2v_lock_loop_internal(self_weak, storage, row_ref, held_tx));
 
     held_rx
 }
@@ -225,7 +231,10 @@ enum LockState {
     Held(UniqueIdent, u64, storage::RowRef),
 }
 
+struct LockLoop();
+
 async fn k2v_lock_loop_internal(
+    self_weak: Weak<LockLoop>,
     storage: storage::Store,
     row_ref: storage::RowRef,
     held_tx: watch::Sender<bool>,
@@ -240,6 +249,11 @@ async fn k2v_lock_loop_internal(
         let mut ct = row_ref.clone();
         loop {
             debug!("k2v watch lock loop iter: ct = {:?}", ct);
+            let _self = match self_weak.upgrade() {
+                None => break Ok(()),
+                Some(_self) => _self,
+            };
+
             match storage.row_poll(&ct).await {
                 Err(storage::StorageError::NotFound) => {
                     // initialize the lock state; an empty byte sequence is
@@ -297,6 +311,11 @@ async fn k2v_lock_loop_internal(
     // Loop 2: notify user whether we are holding the lock or not
     let lock_notify_loop: BoxFuture<Result<()>> = async {
         loop {
+            let _self = match self_weak.upgrade() {
+                None => break Ok(()),
+                Some(_self) => _self,
+            };
+
             let now = now_msec();
             let held_with_expiration_time = match &*state_rx.borrow_and_update() {
                 LockState::Held(pid, ts, _ct) if *pid == our_pid => {
@@ -337,6 +356,11 @@ async fn k2v_lock_loop_internal(
     // Loop 3: acquire lock when relevant
     let take_lock_loop: BoxFuture<Result<()>> = async {
         loop {
+            let _self = match self_weak.upgrade() {
+                None => break Ok(()),
+                Some(_self) => _self,
+            };
+
             let now = now_msec();
             let state: LockState = state_rx_2.borrow_and_update().clone();
             let (acquire_at, ct) = match state {
