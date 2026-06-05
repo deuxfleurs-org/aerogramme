@@ -41,16 +41,17 @@ pub struct UidIndex {
     // - detect conflicts between concurrent MailAdd commands.
     //
     // NOTE: the fact that we do not count MailDel commands is an optimization
-    // to reduce uidvalidity changes.
+    // to reduce uidvalidity changes. It relies on the assumption that an
+    // email is never added twice to the mailbox.
     // (It would otherwise be natural to count all modifications to the list
     // of emails, i.e. all MailAdd and MailDel commands.)
     // 
-    // This stems from the following observation: if we ensure that an email is
-    // never added twice with the same `UniqueIdent` in a mailbox, then there is
-    // no need to bump `internalseq` when receiving a MailDel. Bumping the
-    // `internalseq` causes later MailAdd operations to be replayed with
-    // different `ImapUid`s. However, if we know that there is only one MailAdd
-    // possible for the same `UniqueIdent`, then either:
+    // Indeed: if we ensure that an email is never added twice with the same
+    // `UniqueIdent` in a mailbox, then there is no need to bump `internalseq`
+    // when receiving a MailDel. Bumping the `internalseq` causes later MailAdd
+    // operations to be replayed with different `ImapUid`s. However, if we know
+    // that there is only one MailAdd possible for the same `UniqueIdent`, then
+    // either:
     // - it occurs before the MailDel (and is not replayed),
     // - it occurs after the MailDel, and thus the deletion is a no-op.
     //
@@ -193,13 +194,6 @@ impl BayouState for UidIndex {
 
                 // Assign the real modseq of the email and its new flags
                 let new_modseq = new.internalmodseq;
-
-                // Delete the previous entry if any.
-                // Our proof has no assumption on `ident` uniqueness,
-                // so we must handle this case even it is very unlikely
-                // In this case, we overwrite the email.
-                // Note: assigning a new UID is mandatory.
-                new.unreg_email(ident);
 
                 // We record our email and update ou caches
                 new.reg_email(*ident, new_uid, new_modseq, flags);
