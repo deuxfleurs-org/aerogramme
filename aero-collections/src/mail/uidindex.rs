@@ -1,12 +1,13 @@
 use std::num::{NonZeroU32, NonZeroU64};
 
-use im::{HashMap, OrdMap, OrdSet};
+use im::{HashMap, OrdMap, OrdSet, Vector};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::unique_ident::UniqueIdent;
 use aero_bayou::*;
 
 pub type ModSeq = NonZeroU64;
+pub type ImapSeqid = NonZeroU32;
 pub type ImapUid = NonZeroU32;
 pub type ImapUidvalidity = NonZeroU32;
 pub type Flag = String;
@@ -26,6 +27,10 @@ pub struct UidIndex {
     pub idx_by_uid: OrdMap<ImapUid, UniqueIdent>,
     pub idx_by_modseq: OrdMap<ModSeq, UniqueIdent>,
     pub idx_by_flag: FlagIndex,
+    pub idx_by_seqid: Vector<UniqueIdent>,
+    // FIXME: can we remove this index which is somewhat expensive to maintain?
+    // it may be easier after refactoring SEARCH
+    pub idx_seqid_of_uuid: OrdMap<UniqueIdent, ImapSeqid>,
 
     // "Public" Counters
     pub uidvalidity: ImapUidvalidity,
@@ -79,6 +84,9 @@ pub enum UidIndexOp {
 }
 
 impl UidIndex {
+    /// It is recommended for performance (but not required for safety) to use
+    /// idents that increase when adding new mails (i.e. `ident` should be
+    /// higher than the ones used for earlier calls to `op_mail_add`.
     #[must_use]
     pub fn op_mail_add(&self, ident: UniqueIdent, flags: Vec<Flag>) -> UidIndexOp {
         UidIndexOp::MailAdd(ident, self.internalseq, self.internalmodseq, flags)
@@ -118,6 +126,9 @@ impl UidIndex {
         self.idx_by_uid.insert(uid, ident);
         self.idx_by_flag.insert(uid, flags);
         self.idx_by_modseq.insert(modseq, ident);
+        let next_seqid = NonZeroU32::try_from(self.idx_by_seqid.len() as u32).unwrap();
+        self.idx_by_seqid.push_back(ident);
+        self.idx_seqid_of_uuid.insert(ident, next_seqid);
     }
 
     fn unreg_email(&mut self, ident: &UniqueIdent) {
@@ -131,6 +142,13 @@ impl UidIndex {
         self.idx_by_uid.remove(uid);
         self.idx_by_flag.remove(*uid, flags);
         self.idx_by_modseq.remove(modseq);
+        let seqid = self.idx_seqid_of_uuid.remove(ident).unwrap();
+        self.idx_by_seqid.remove(seqid.get() as usize);
+        // we need to update all indexed seqids starting from this one in idx_seqid_of_uuid
+        for id in (seqid.get() as usize)..self.idx_by_seqid.len() {
+            let uuid = self.idx_by_seqid.get(id).unwrap();
+            self.idx_seqid_of_uuid.insert(*uuid, NonZeroU32::try_from(id as u32).unwrap());
+        }
 
         // Remove from source of trust
         self.table.remove(ident);
@@ -162,6 +180,9 @@ impl Default for UidIndex {
             idx_by_uid: OrdMap::new(),
             idx_by_modseq: OrdMap::new(),
             idx_by_flag: FlagIndex::new(),
+            // sequence IDs start at 1; insert a dummy ident at position 0
+            idx_by_seqid: Vector::unit(UniqueIdent::dummy()),
+            idx_seqid_of_uuid: OrdMap::new(),
 
             uidvalidity: NonZeroU32::new(1).unwrap(),
             highestmodseq: NonZeroU64::new(1).unwrap(),
@@ -195,7 +216,7 @@ impl BayouState for UidIndex {
                 // Assign the real modseq of the email and its new flags
                 let new_modseq = new.internalmodseq;
 
-                // We record our email and update ou caches
+                // We record our email and update our caches
                 new.reg_email(*ident, new_uid, new_modseq, flags);
 
                 // Update counters
@@ -353,19 +374,13 @@ impl<'de> Deserialize<'de> for UidIndex {
         D: Deserializer<'de>,
     {
         let val: UidIndexSerializedRepr = UidIndexSerializedRepr::deserialize(d)?;
-
         let mut uidindex = UidIndex {
-            table: OrdMap::new(),
-
-            idx_by_uid: OrdMap::new(),
-            idx_by_modseq: OrdMap::new(),
-            idx_by_flag: FlagIndex::new(),
-
             uidvalidity: val.uidvalidity,
             highestmodseq: val.highestmodseq,
 
             internalseq: val.internalseq,
             internalmodseq: val.internalmodseq,
+            ..UidIndex::default()
         };
 
         val.mails
