@@ -7,7 +7,7 @@ use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anonymous, authenticated, selected};
 use crate::imap::flow;
 use crate::imap::request::Request;
-use crate::imap::response::{Response, ResponseOrIdle};
+use crate::imap::response::{Response, ResponseOrIdle, SyncError};
 
 //-----
 pub struct Instance {
@@ -140,15 +140,20 @@ impl Instance {
                 .map(|r| (r, flow::Transition::None)),
         }
         .unwrap_or_else(|err| {
-            tracing::error!("Command error {:?} occured while processing {:?}", err, cmd);
-            (
-                Response::build()
-                    .to_req(&cmd)
-                    .message("Internal error while processing command")
-                    .bad()
-                    .unwrap(),
-                flow::Transition::None,
-            )
+            if let Some(e) = err.downcast_ref::<SyncError>() {
+                tracing::debug!("command raised SyncError {e}, disconnecting client");
+                (Response::bye().unwrap(), flow::Transition::Logout)
+            } else {
+                tracing::error!("Command error {:?} occured while processing {:?}", err, cmd);
+                (
+                    Response::build()
+                        .to_req(&cmd)
+                        .message("Internal error while processing command")
+                        .bad()
+                        .unwrap(),
+                    flow::Transition::None,
+                )
+            }
         });
 
         if let Err(e) = self.state.apply(tr) {
