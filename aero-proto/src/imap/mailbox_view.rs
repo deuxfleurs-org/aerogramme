@@ -12,6 +12,7 @@ use imap_codec::imap_types::response::{Code, CodeOther, Data, Status};
 use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::SequenceSet;
 
+use aero_collections::mail::IMF;
 use aero_collections::mail::mailbox::Mailbox;
 use aero_collections::mail::query::QueryScope;
 use aero_collections::mail::uidindex::{ImapUid, ImapUidvalidity, ModSeq, UidIndex};
@@ -47,17 +48,17 @@ impl Default for UpdateParameters {
     }
 }
 
-/// A MailboxView is responsible for giving the client the information
-/// it needs about a mailbox, such as an initial summary of the mailbox's
-/// content and continuous updates indicating when the content
-/// of the mailbox has been changed.
-/// To do this, it keeps a variable `known_state` that corresponds to
-/// what the client knows, and produces IMAP messages to be sent to the
-/// client that go along updates to `known_state`.
+/// A MailboxView is responsible for giving the client the information it needs
+/// about a mailbox, such as an initial summary of the mailbox's content and
+/// continuous updates indicating when the content of the mailbox has been
+/// changed. To do this, it keeps a variable `known_state` that corresponds to
+/// what the client knows, and produces IMAP messages to be sent to the client
+/// that go along updates to `known_state`. More generally, a MailboxView is
+/// responsible for all IMAP-specific sync decisions.
 pub struct MailboxView {
-    pub mailbox: Mailbox,
-    pub known_state: UidIndex,
-    pub is_condstore: bool,
+    mailbox: Mailbox,
+    known_state: UidIndex,
+    is_condstore: bool,
 }
 
 impl MailboxView {
@@ -77,7 +78,10 @@ impl MailboxView {
     /// what the client knows and what is actually in the mailbox.
     /// This does NOT trigger a sync, it bases itself on what is currently
     /// loaded in RAM by Bayou.
-    pub async fn update(&mut self, params: UpdateParameters) -> Result<Vec<Body<'static>>> {
+    ///
+    /// This is an internal helper. It should be called at the end of each IMAP
+    /// operation.
+    async fn update(&mut self, params: UpdateParameters) -> Result<Vec<Body<'static>>> {
         let new_snapshot = self.mailbox.current_uid_index();
         let old_snapshot = std::mem::replace(&mut self.known_state, new_snapshot.clone());
 
@@ -173,6 +177,18 @@ impl MailboxView {
         Ok(data)
     }
 
+    // ---- implementation of IMAP operations
+    
+    pub async fn noop(&mut self) -> Result<Vec<Body<'static>>> {
+        self.mailbox.sync().await?;
+        self.update(UpdateParameters::default()).await
+    }
+
+    pub async fn append(&mut self, msg: IMF<'_>, flags: &[String]) -> Result<(ImapUidvalidity, ImapUid, ModSeq)> {
+        // TODO merge with authenticated::append_internal, do proper sync
+        self.mailbox.append(msg, flags).await
+    }
+    
     pub async fn store<'a>(
         &mut self,
         sequence_set: &SequenceSet,

@@ -15,7 +15,7 @@ use crate::imap::attributes::AttributesProxy;
 use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anystate, authenticated, MailboxName};
 use crate::imap::flow;
-use crate::imap::mailbox_view::{MailboxView, UpdateParameters};
+use crate::imap::mailbox_view::MailboxView;
 use crate::imap::response::Response;
 
 pub struct SelectedContext<'a> {
@@ -207,9 +207,7 @@ impl<'a> SelectedContext<'a> {
     }
 
     pub async fn noop(self) -> Result<(Response<'static>, flow::Transition)> {
-        self.mailbox.mailbox.sync().await?;
-
-        let updates = self.mailbox.update(UpdateParameters::default()).await?;
+        let updates = self.mailbox.noop().await?;
         Ok((
             Response::build()
                 .to_req(self.req)
