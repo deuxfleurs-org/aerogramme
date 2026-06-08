@@ -19,6 +19,12 @@ use aero_bayou::timestamp::now_msec;
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct UniqueIdent(pub [u8; 24]);
 
+impl UniqueIdent {
+    pub const fn dummy() -> UniqueIdent {
+        UniqueIdent([0; 24])
+    }
+}
+
 struct IdentGenerator {
     pid: u128,
     sn: AtomicU64,

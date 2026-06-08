@@ -131,13 +131,13 @@ impl<'a> Criteria<'a> {
     /// fetching some remote data
     pub fn filter_on_idx<'b>(
         &self,
-        midx_list: &[&'b MailIndex<'b>],
-    ) -> (Vec<&'b MailIndex<'b>>, Vec<&'b MailIndex<'b>>) {
+        midx_list: &'b [MailIndex<'b>],
+    ) -> (Vec<&MailIndex<'b>>, Vec<&MailIndex<'b>>) {
         let (p1, p2): (Vec<_>, Vec<_>) = midx_list
             .iter()
             .map(|x| (x, self.is_keep_on_idx(x)))
             .filter(|(_midx, decision)| decision.is_keep())
-            .map(|(midx, decision)| (*midx, decision))
+            .map(|(midx, decision)| (midx, decision))
             .partition(|(_midx, decision)| matches!(decision, PartialDecision::Keep));
 
         let to_keep = p1.into_iter().map(|(v, _)| v).collect();
@@ -456,7 +456,7 @@ fn is_keep_seq(sk: &SearchKey, midx: &MailIndex) -> bool {
             .0
             .as_ref()
             .iter()
-            .any(|seq| midx.is_in_sequence_i(seq)),
+            .any(|seq| midx.is_in_sequence_seqid(seq)),
         Uid(seq_set) => seq_set
             .0
             .as_ref()

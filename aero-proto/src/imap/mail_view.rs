@@ -96,7 +96,7 @@ impl<'a> MailView<'a> {
 
         Ok((
             Body::Data(Data::Fetch {
-                seq: self.in_idx.i,
+                seq: self.in_idx.seqid,
                 items: res_attrs.try_into()?,
             }),
             seen,
