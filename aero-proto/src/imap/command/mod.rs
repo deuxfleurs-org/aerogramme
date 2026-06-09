@@ -1,5 +1,6 @@
 pub mod anonymous;
 pub mod anystate;
+pub mod append;
 pub mod authenticated;
 pub mod selected;
 

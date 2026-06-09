@@ -23,8 +23,7 @@ fn main() {
     rfc6578_webdav_sync();
 
     // Non-regression testing
-    // FIXME
-    // noreg_imap_append_in_current_mailbox();
+    noreg_imap_append_in_current_mailbox();
 
     println!("✅ SUCCESS 🌟🚀🥳🙏🥹");
 }
@@ -59,8 +58,8 @@ fn rfc3501_imap4rev1_base() {
 
         copy(imap_socket, Selection::FirstId, Mailbox::Archive)
             .context("copy message to the archive mailbox")?;
-        append(imap_socket, Email::Basic).context("insert email in INBOX")?;
-        noop_exists(imap_socket, 2).context("noop loop must detect a new email")?;
+        let append_res = append(imap_socket, Email::Basic).context("insert email in INBOX")?;
+        assert!(append_res.contains("* 2 EXISTS"));
         search(imap_socket, SearchKind::Text("OoOoO")).expect("search should return something");
         store(
             imap_socket,

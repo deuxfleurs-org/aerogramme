@@ -177,6 +177,10 @@ impl MailboxView {
         Ok(data)
     }
 
+    pub fn id(&self) -> UniqueIdent {
+        self.mailbox.id
+    }
+    
     // ---- implementation of IMAP operations
     
     pub async fn noop(&mut self) -> Result<Vec<Body<'static>>> {
@@ -184,11 +188,16 @@ impl MailboxView {
         self.update(UpdateParameters::default()).await
     }
 
-    pub async fn append(&mut self, msg: IMF<'_>, flags: &[String]) -> Result<(ImapUidvalidity, ImapUid, ModSeq)> {
-        // TODO merge with authenticated::append_internal, do proper sync
-        self.mailbox.append(msg, flags).await
+    pub async fn append(&mut self, msg: IMF<'_>, flags: &[String]) -> Result<(ImapUid, ImapUidvalidity, Vec<Body<'static>>)> {
+        self.mailbox.sync().await?;
+        let (uid, _modseq) = self.mailbox.append(msg, flags).await?;
+        let uidvalidity = self.mailbox.current_uid_index().uidvalidity;
+        // NOTE: this also emits a FETCH unsolicited message for the new email,
+        // which is not specified by the RFC. This is probably fine?
+        let update = self.update(UpdateParameters::default()).await?;
+        Ok((uid, uidvalidity, update))
     }
-    
+
     pub async fn store<'a>(
         &mut self,
         sequence_set: &SequenceSet,
