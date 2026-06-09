@@ -1,4 +1,4 @@
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU64;
 
 use imap_codec::imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
 
@@ -55,8 +55,8 @@ pub trait UidIndexForImap {
 
 impl UidIndexForImap for UidIndex {
     fn fetch_by_uid<'a>(&'a self, sequence_seq: &SequenceSet) -> Vec<MailIndex<'a>> {
-        let uuid_largest = match self.idx_by_seqid.last() {
-            Some(uuid) => uuid,
+        let uuid_largest = match self.idx_by_seqid.largest() {
+            Some((_, uuid)) => uuid,
             None => return vec![],
         };
         let (uid_largest, _, _) = self.table.get(uuid_largest).unwrap();
@@ -72,14 +72,14 @@ impl UidIndexForImap for UidIndex {
     }
 
     fn fetch_by_seqid<'a>(&'a self, sequence_seq: &SequenceSet) -> Vec<MailIndex<'a>> {
-        let seqid_largest = self.idx_by_seqid.len() - 1;
-        if seqid_largest == 0 {
-            return vec![]
-        }
+        let seqid_largest = match self.idx_by_seqid.largest() {
+            Some((seqid, _)) => seqid,
+            None => return vec![],
+        };
         sequence_seq
-            .iter(NonZeroU32::try_from(seqid_largest as u32).unwrap())
+            .iter(seqid_largest)
             .filter_map(|seqid| {
-                let &uuid = self.idx_by_seqid.get(seqid.get() as usize)?;
+                let &uuid = self.idx_by_seqid.get(seqid)?;
                 let &(uid, modseq, ref flags) = self.table.get(&uuid)?;
                 Some(MailIndex { seqid, uid, uuid, modseq, flags })
             })

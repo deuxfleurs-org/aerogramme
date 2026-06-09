@@ -27,7 +27,7 @@ pub struct UidIndex {
     pub idx_by_uid: OrdMap<ImapUid, UniqueIdent>,
     pub idx_by_modseq: OrdMap<ModSeq, UniqueIdent>,
     pub idx_by_flag: FlagIndex,
-    pub idx_by_seqid: Vector<UniqueIdent>,
+    pub idx_by_seqid: SeqidMap<UniqueIdent>,
     // FIXME: can we remove this index which is somewhat expensive to maintain?
     // it may be easier after refactoring SEARCH
     pub idx_seqid_of_uuid: OrdMap<UniqueIdent, ImapSeqid>,
@@ -72,6 +72,40 @@ pub struct UidIndex {
     // - generate MODSEQ numbers for emails (and thus HIGHESTMODSEQ);
     // - detect conflicts between concurrent Flag{Add,Del,Set} commands.
     internalmodseq: ModSeq,
+}
+
+/// A map where keys are sequence IDs. Sequence IDs are non-zero integers.
+// Internally, we store the value of sequence ID `i` at offset `i-1` in the vector.
+#[derive(Clone)]
+pub struct SeqidMap<T>(Vector<T>);
+
+impl<T: Clone> SeqidMap<T> {
+    pub fn new() -> Self {
+        Self(Vector::new())
+    }
+    
+    pub fn get(&self, seqid: NonZeroU32) -> Option<&T> {
+        self.0.get(seqid.get() as usize - 1)
+    }
+
+    pub fn push(&mut self, x: T) {
+        self.0.push_back(x)
+    }
+
+    pub fn remove(&mut self, seqid: NonZeroU32) {
+        self.0.remove(seqid.get() as usize - 1);
+    }
+
+    pub fn next_seqid(&self) -> NonZeroU32 {
+        NonZeroU32::try_from(self.0.len() as u32 + 1).unwrap()
+    }
+
+    pub fn largest(&self) -> Option<(NonZeroU32, &T)> {
+        self.0.last().map(|x| {
+            let id = NonZeroU32::try_from(self.0.len() as u32).unwrap();
+            (id, x)
+        })
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -126,8 +160,8 @@ impl UidIndex {
         self.idx_by_uid.insert(uid, ident);
         self.idx_by_flag.insert(uid, flags);
         self.idx_by_modseq.insert(modseq, ident);
-        let next_seqid = NonZeroU32::try_from(self.idx_by_seqid.len() as u32).unwrap();
-        self.idx_by_seqid.push_back(ident);
+        let next_seqid = self.idx_by_seqid.next_seqid();
+        self.idx_by_seqid.push(ident);
         self.idx_seqid_of_uuid.insert(ident, next_seqid);
     }
 
@@ -143,11 +177,12 @@ impl UidIndex {
         self.idx_by_flag.remove(*uid, flags);
         self.idx_by_modseq.remove(modseq);
         let seqid = self.idx_seqid_of_uuid.remove(ident).unwrap();
-        self.idx_by_seqid.remove(seqid.get() as usize);
+        self.idx_by_seqid.remove(seqid);
         // we need to update all indexed seqids starting from this one in idx_seqid_of_uuid
-        for id in (seqid.get() as usize)..self.idx_by_seqid.len() {
+        for id in seqid.get()..self.idx_by_seqid.next_seqid().get() {
+            let id = NonZeroU32::try_from(id).unwrap();
             let uuid = self.idx_by_seqid.get(id).unwrap();
-            self.idx_seqid_of_uuid.insert(*uuid, NonZeroU32::try_from(id as u32).unwrap());
+            self.idx_seqid_of_uuid.insert(*uuid, id);
         }
 
         // Remove from source of trust
@@ -180,8 +215,7 @@ impl Default for UidIndex {
             idx_by_uid: OrdMap::new(),
             idx_by_modseq: OrdMap::new(),
             idx_by_flag: FlagIndex::new(),
-            // sequence IDs start at 1; insert a dummy ident at position 0
-            idx_by_seqid: Vector::unit(UniqueIdent::dummy()),
+            idx_by_seqid: SeqidMap::new(),
             idx_seqid_of_uuid: OrdMap::new(),
 
             uidvalidity: NonZeroU32::new(1).unwrap(),
