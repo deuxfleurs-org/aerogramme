@@ -351,14 +351,11 @@ impl<'a> AuthenticatedContext<'a> {
         attributes: &[StatusDataItemName],
     ) -> Result<Vec<StatusDataItem>> {
         let mb_opt = self.user.mailboxes.open(name).await?;
-        let mut mb = match mb_opt {
+        let mb = match mb_opt {
             Some(mb) => mb,
             None => return Err(CommandError::MailboxNotFound.into()),
         };
-        // @FIXME more principled sync
-        mb.sync().await?;
-
-        let view = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled());
+        let view = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await?;
 
         let mut ret_attrs = vec![];
         for attr in attributes.iter() {
@@ -482,7 +479,7 @@ impl<'a> AuthenticatedContext<'a> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.mailboxes.open(&name).await?;
-        let mut mb = match mb_opt {
+        let mb = match mb_opt {
             Some(mb) => mb,
             None => {
                 return Ok((
@@ -494,11 +491,9 @@ impl<'a> AuthenticatedContext<'a> {
                 ))
             }
         };
-        // @FIXME more principled sync
-        mb.sync().await?;
         tracing::info!(username=%self.user.username, mailbox=%name, "mailbox.selected");
 
-        let mb = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled());
+        let mb = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await?;
         let data = mb.summary()?;
 
         Ok((
@@ -536,7 +531,7 @@ impl<'a> AuthenticatedContext<'a> {
         };
         tracing::info!(username=%self.user.username, mailbox=%name, "mailbox.examined");
 
-        let mb = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled());
+        let mb = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await?;
         let data = mb.summary()?;
 
         Ok((

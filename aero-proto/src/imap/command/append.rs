@@ -74,7 +74,7 @@ impl<'a> AppendContext<'a> {
                     .no()?,
                 flow::Transition::None,
             )),
-            Some(mb) => MailboxView::new(mb, self.client_capabilities.condstore.is_enabled())
+            Some(mb) => MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await?
         };
         // use the selected mailbox instead if it matches
         let (mbox, on_selected) = match self.mailbox_selected {

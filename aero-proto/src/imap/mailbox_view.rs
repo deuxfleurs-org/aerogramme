@@ -63,13 +63,14 @@ pub struct MailboxView {
 
 impl MailboxView {
     /// Creates a new IMAP view into a mailbox.
-    pub fn new(mailbox: Mailbox, is_condstore: bool) -> Self {
+    pub async fn new(mut mailbox: Mailbox, is_condstore: bool) -> Result<Self> {
+        mailbox.sync().await?;
         let known_state = mailbox.current_uid_index(); 
-        Self {
+        Ok(Self {
             mailbox,
             known_state,
             is_condstore,
-        }
+        })
     }
 
     /// Sync the internal mailbox, importing remote changes. Additionally, if
