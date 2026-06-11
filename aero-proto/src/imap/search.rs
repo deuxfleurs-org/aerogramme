@@ -131,8 +131,8 @@ impl<'a> Criteria<'a> {
     /// fetching some remote data
     pub fn filter_on_idx<'b>(
         &self,
-        midx_list: &'b [MailIndex<'b>],
-    ) -> (Vec<&MailIndex<'b>>, Vec<&MailIndex<'b>>) {
+        midx_list: &'b [MailIndex],
+    ) -> (Vec<&'b MailIndex>, Vec<&'b MailIndex>) {
         let (p1, p2): (Vec<_>, Vec<_>) = midx_list
             .iter()
             .map(|x| (x, self.is_keep_on_idx(x)))

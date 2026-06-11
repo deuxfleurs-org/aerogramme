@@ -1,6 +1,3 @@
-use std::sync::Arc;
-type ArcUser = std::sync::Arc<User>;
-
 use anyhow::{anyhow, Result};
 use futures::io::AsyncReadExt;
 use futures::stream::{StreamExt, TryStreamExt};
@@ -38,7 +35,7 @@ pub(crate) struct RootNode {}
 impl DavNode for RootNode {
     fn fetch<'a>(
         &self,
-        user: &'a ArcUser,
+        user: &'a User,
         path: &'a [&str],
         create: bool,
     ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
@@ -56,15 +53,15 @@ impl DavNode for RootNode {
         async { Err(anyhow!("Not found")) }.boxed()
     }
 
-    fn children<'a>(&self, _user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
         async { vec![Box::new(HomeNode {}) as Box<dyn DavNode>] }.boxed()
     }
 
-    fn path(&self, _user: &ArcUser) -> String {
+    fn path(&self, _user: &User) -> String {
         "/".into()
     }
 
-    fn supported_properties(&self, _user: &ArcUser) -> dav::PropName<All> {
+    fn supported_properties(&self, _user: &User) -> dav::PropName<All> {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
@@ -75,7 +72,7 @@ impl DavNode for RootNode {
         ])
     }
 
-    fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> PropertyStream<'static> {
+    fn properties(&self, user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
         let user = user.clone();
         futures::stream::iter(prop.0)
             .map(move |n| {
@@ -104,7 +101,7 @@ impl DavNode for RootNode {
     }
 
     fn put<'a>(
-        &'a self,
+        &'a mut self,
         _policy: PutPolicy,
         _stream: Content<'a>,
     ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
@@ -150,7 +147,7 @@ pub(crate) struct HomeNode {}
 impl DavNode for HomeNode {
     fn fetch<'a>(
         &self,
-        user: &'a ArcUser,
+        user: &'a User,
         path: &'a [&str],
         create: bool,
     ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
@@ -171,7 +168,7 @@ impl DavNode for HomeNode {
         async { Err(anyhow!("Not found")) }.boxed()
     }
 
-    fn children<'a>(&self, user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+    fn children<'a>(&self, user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
         async {
             CalendarListNode::new(user)
                 .await
@@ -181,11 +178,11 @@ impl DavNode for HomeNode {
         .boxed()
     }
 
-    fn path(&self, user: &ArcUser) -> String {
+    fn path(&self, user: &User) -> String {
         format!("/{}/", user.username)
     }
 
-    fn supported_properties(&self, _user: &ArcUser) -> dav::PropName<All> {
+    fn supported_properties(&self, _user: &User) -> dav::PropName<All> {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
@@ -195,7 +192,7 @@ impl DavNode for HomeNode {
             )),
         ])
     }
-    fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> PropertyStream<'static> {
+    fn properties(&self, user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
         let user = user.clone();
 
         futures::stream::iter(prop.0)
@@ -230,7 +227,7 @@ impl DavNode for HomeNode {
     }
 
     fn put<'a>(
-        &'a self,
+        &'a mut self,
         _policy: PutPolicy,
         _stream: Content<'a>,
     ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
@@ -275,7 +272,7 @@ pub(crate) struct CalendarListNode {
     list: Vec<String>,
 }
 impl CalendarListNode {
-    async fn new(user: &ArcUser) -> Result<Self> {
+    async fn new(user: &User) -> Result<Self> {
         let list = user.calendars.list().await?;
         Ok(Self { list })
     }
@@ -283,7 +280,7 @@ impl CalendarListNode {
 impl DavNode for CalendarListNode {
     fn fetch<'a>(
         &self,
-        user: &'a ArcUser,
+        user: &'a User,
         path: &'a [&str],
         create: bool,
     ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
@@ -308,7 +305,7 @@ impl DavNode for CalendarListNode {
         .boxed()
     }
 
-    fn children<'a>(&self, user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+    fn children<'a>(&self, user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
         let list = self.list.clone();
         async move {
             //@FIXME maybe we want to be lazy here?!
@@ -333,18 +330,18 @@ impl DavNode for CalendarListNode {
         .boxed()
     }
 
-    fn path(&self, user: &ArcUser) -> String {
+    fn path(&self, user: &User) -> String {
         format!("/{}/calendar/", user.username)
     }
 
-    fn supported_properties(&self, _user: &ArcUser) -> dav::PropName<All> {
+    fn supported_properties(&self, _user: &User) -> dav::PropName<All> {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
             dav::PropertyRequest::GetContentType,
         ])
     }
-    fn properties(&self, user: &ArcUser, prop: dav::PropName<All>) -> PropertyStream<'static> {
+    fn properties(&self, user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
         let user = user.clone();
 
         futures::stream::iter(prop.0)
@@ -367,7 +364,7 @@ impl DavNode for CalendarListNode {
     }
 
     fn put<'a>(
-        &'a self,
+        &'a mut self,
         _policy: PutPolicy,
         _stream: Content<'a>,
     ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
@@ -409,13 +406,13 @@ impl DavNode for CalendarListNode {
 
 #[derive(Clone)]
 pub(crate) struct CalendarNode {
-    col: Arc<Calendar>,
+    col: Calendar,
     calname: String,
 }
 impl DavNode for CalendarNode {
     fn fetch<'a>(
         &self,
-        user: &'a ArcUser,
+        user: &'a User,
         path: &'a [&str],
         create: bool,
     ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
@@ -451,7 +448,7 @@ impl DavNode for CalendarNode {
         .boxed()
     }
 
-    fn children<'a>(&self, _user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
         let col = self.col.clone();
         let calname = self.calname.clone();
 
@@ -473,11 +470,11 @@ impl DavNode for CalendarNode {
         .boxed()
     }
 
-    fn path(&self, user: &ArcUser) -> String {
+    fn path(&self, user: &User) -> String {
         format!("/{}/calendar/{}/", user.username, self.calname)
     }
 
-    fn supported_properties(&self, _user: &ArcUser) -> dav::PropName<All> {
+    fn supported_properties(&self, _user: &User) -> dav::PropName<All> {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
@@ -493,14 +490,14 @@ impl DavNode for CalendarNode {
             )),
         ])
     }
-    fn properties(&self, _user: &ArcUser, prop: dav::PropName<All>) -> PropertyStream<'static> {
+    fn properties(&self, _user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
         let calname = self.calname.to_string();
         let col = self.col.clone();
 
         futures::stream::iter(prop.0)
             .then(move |n| {
                 let calname = calname.clone();
-                let col = col.clone();
+                let mut col = col.clone();
 
                 async move {
                     let prop = match n {
@@ -562,7 +559,7 @@ impl DavNode for CalendarNode {
     }
 
     fn put<'a>(
-        &'a self,
+        &'a mut self,
         _policy: PutPolicy,
         _stream: Content<'a>,
     ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
@@ -594,7 +591,7 @@ impl DavNode for CalendarNode {
         'a,
         std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
     > {
-        let col = self.col.clone();
+        let mut col = self.col.clone();
         let calname = self.calname.clone();
         async move {
             let sync_token = match sync_token {
@@ -660,7 +657,7 @@ impl DavNode for CalendarNode {
 
 #[derive(Clone)]
 pub(crate) struct EventNode {
-    col: Arc<Calendar>,
+    col: Calendar,
     calname: String,
     filename: String,
     blob_id: BlobId,
@@ -669,7 +666,7 @@ pub(crate) struct EventNode {
 impl DavNode for EventNode {
     fn fetch<'a>(
         &self,
-        _user: &'a ArcUser,
+        _user: &'a User,
         path: &'a [&str],
         _create: bool,
     ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
@@ -686,18 +683,18 @@ impl DavNode for EventNode {
         .boxed()
     }
 
-    fn children<'a>(&self, _user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
         async { vec![] }.boxed()
     }
 
-    fn path(&self, user: &ArcUser) -> String {
+    fn path(&self, user: &User) -> String {
         format!(
             "/{}/calendar/{}/{}",
             user.username, self.calname, self.filename
         )
     }
 
-    fn supported_properties(&self, _user: &ArcUser) -> dav::PropName<All> {
+    fn supported_properties(&self, _user: &User) -> dav::PropName<All> {
         dav::PropName(vec![
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
@@ -707,7 +704,7 @@ impl DavNode for EventNode {
             )),
         ])
     }
-    fn properties(&self, _user: &ArcUser, prop: dav::PropName<All>) -> PropertyStream<'static> {
+    fn properties(&self, _user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
         let this = self.clone();
 
         futures::stream::iter(prop.0)
@@ -783,7 +780,7 @@ impl DavNode for EventNode {
     }
 
     fn put<'a>(
-        &'a self,
+        &'a mut self,
         policy: PutPolicy,
         stream: Content<'a>,
     ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
@@ -860,7 +857,7 @@ impl DavNode for EventNode {
     }
 
     fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
-        let calendar = self.col.clone();
+        let mut calendar = self.col.clone();
         let blob_id = self.blob_id.clone();
 
         async move {
@@ -896,14 +893,14 @@ impl DavNode for EventNode {
 
 #[derive(Clone)]
 pub(crate) struct CreateEventNode {
-    col: Arc<Calendar>,
+    col: Calendar,
     calname: String,
     filename: String,
 }
 impl DavNode for CreateEventNode {
     fn fetch<'a>(
         &self,
-        _user: &'a ArcUser,
+        _user: &'a User,
         path: &'a [&str],
         _create: bool,
     ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
@@ -920,27 +917,27 @@ impl DavNode for CreateEventNode {
         .boxed()
     }
 
-    fn children<'a>(&self, _user: &'a ArcUser) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
         async { vec![] }.boxed()
     }
 
-    fn path(&self, user: &ArcUser) -> String {
+    fn path(&self, user: &User) -> String {
         format!(
             "/{}/calendar/{}/{}",
             user.username, self.calname, self.filename
         )
     }
 
-    fn supported_properties(&self, _user: &ArcUser) -> dav::PropName<All> {
+    fn supported_properties(&self, _user: &User) -> dav::PropName<All> {
         dav::PropName(vec![])
     }
 
-    fn properties(&self, _user: &ArcUser, _prop: dav::PropName<All>) -> PropertyStream<'static> {
+    fn properties(&self, _user: &User, _prop: dav::PropName<All>) -> PropertyStream<'static> {
         futures::stream::iter(vec![]).boxed()
     }
 
     fn put<'a>(
-        &'a self,
+        &'a mut self,
         _policy: PutPolicy,
         stream: Content<'a>,
     ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {

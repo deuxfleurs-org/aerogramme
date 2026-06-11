@@ -1,6 +1,4 @@
 use std::num::NonZeroU64;
-use std::sync::Arc;
-
 use anyhow::Result;
 use imap_codec::imap_types::command::{Command, CommandBody, FetchModifier, StoreModifier};
 use imap_codec::imap_types::core::Charset;
@@ -22,7 +20,7 @@ use crate::imap::response::Response;
 
 pub struct SelectedContext<'a> {
     pub req: &'a Command<'static>,
-    pub user: &'a Arc<User>,
+    pub user: &'a User,
     pub mailbox: &'a mut MailboxView,
     pub server_capabilities: &'a ServerCapability,
     pub client_capabilities: &'a mut ClientCapability,
@@ -209,7 +207,7 @@ impl<'a> SelectedContext<'a> {
     }
 
     pub async fn noop(self) -> Result<(Response<'static>, flow::Transition)> {
-        self.mailbox.internal.mailbox.sync().await?;
+        self.mailbox.mailbox.sync().await?;
 
         let updates = self.mailbox.update(UpdateParameters::default()).await?;
         Ok((
@@ -309,7 +307,7 @@ impl<'a> SelectedContext<'a> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.mailboxes.open(&name).await?;
-        let mb = match mb_opt {
+        let mut mb = match mb_opt {
             Some(mb) => mb,
             None => {
                 return Ok((
@@ -323,7 +321,7 @@ impl<'a> SelectedContext<'a> {
             }
         };
 
-        let (uidval, uid_map) = self.mailbox.copy(sequence_set, mb, uid).await?;
+        let (uidval, uid_map) = self.mailbox.copy(sequence_set, &mut mb, uid).await?;
 
         let copyuid_str = format!(
             "{} {} {}",
@@ -365,7 +363,7 @@ impl<'a> SelectedContext<'a> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mb_opt = self.user.mailboxes.open(&name).await?;
-        let mb = match mb_opt {
+        let mut mb = match mb_opt {
             Some(mb) => mb,
             None => {
                 return Ok((
@@ -379,7 +377,7 @@ impl<'a> SelectedContext<'a> {
             }
         };
 
-        let (uidval, uid_map, data) = self.mailbox.r#move(sequence_set, mb, uid).await?;
+        let (uidval, uid_map, data) = self.mailbox.r#move(sequence_set, &mut mb, uid).await?;
 
         // compute code
         let copyuid_str = format!(

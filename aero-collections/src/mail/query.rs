@@ -1,5 +1,4 @@
-use super::mailbox::MailMeta;
-use super::snapshot::FrozenMailbox;
+use super::mailbox::{Mailbox, MailMeta};
 use crate::unique_ident::UniqueIdent;
 use anyhow::Result;
 use futures::future::FutureExt;
@@ -7,9 +6,9 @@ use futures::stream::{BoxStream, Stream, StreamExt};
 
 /// Query is in charge of fetching efficiently
 /// requested data for a list of emails
-pub struct Query<'a, 'b> {
-    pub frozen: &'a FrozenMailbox,
-    pub emails: &'b [UniqueIdent],
+pub struct Query {
+    pub mailbox: Mailbox,
+    pub emails: Vec<UniqueIdent>,
     pub scope: QueryScope,
 }
 
@@ -31,11 +30,11 @@ impl QueryScope {
 
 //type QueryResultStream = Box<dyn Stream<Item = Result<QueryResult>>>;
 
-impl<'a, 'b> Query<'a, 'b> {
+impl Query {
     pub fn fetch(&self) -> BoxStream<'_, Result<QueryResult>> {
         match self.scope {
             QueryScope::Index => Box::pin(
-                futures::stream::iter(self.emails)
+                futures::stream::iter(&self.emails)
                     .map(|&uuid| Ok(QueryResult::IndexResult { uuid })),
             ),
             QueryScope::Partial => Box::pin(self.partial()),
@@ -47,12 +46,12 @@ impl<'a, 'b> Query<'a, 'b> {
     fn partial<'d>(&'d self) -> impl Stream<Item = Result<QueryResult>> + 'd + Send {
         async move {
             let maybe_meta_list: Result<Vec<MailMeta>> =
-                self.frozen.mailbox.fetch_meta(self.emails).await;
+                self.mailbox.fetch_meta(&self.emails).await;
             let list_res = maybe_meta_list
                 .map(|meta_list| {
                     meta_list
                         .into_iter()
-                        .zip(self.emails)
+                        .zip(&self.emails)
                         .map(|(metadata, &uuid)| Ok(QueryResult::PartialResult { uuid, metadata }))
                         .collect()
                 })
@@ -68,7 +67,6 @@ impl<'a, 'b> Query<'a, 'b> {
             let meta = maybe_meta?;
 
             let content = self
-                .frozen
                 .mailbox
                 .fetch_full(
                     *meta.uuid(),

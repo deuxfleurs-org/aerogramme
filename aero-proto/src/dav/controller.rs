@@ -20,7 +20,6 @@ use crate::dav::codec::{depth, deserialize, serialize, text_body};
 use crate::dav::node::DavNode;
 use crate::dav::resource::{RootNode, BASE_TOKEN_URI};
 
-pub(super) type ArcUser = std::sync::Arc<User>;
 pub(super) type HttpResponse = Response<UnsyncBoxBody<Bytes, std::io::Error>>;
 
 const ALLPROP: [dav::PropertyRequest<All>; 10] = [
@@ -38,12 +37,12 @@ const ALLPROP: [dav::PropertyRequest<All>; 10] = [
 
 pub(crate) struct Controller {
     node: Box<dyn DavNode>,
-    user: std::sync::Arc<User>,
+    user: User,
     req: Request<Incoming>,
 }
 impl Controller {
     pub(crate) async fn route(
-        user: std::sync::Arc<User>,
+        user: User,
         req: Request<Incoming>,
     ) -> Result<HttpResponse> {
         let path = req.uri().path().to_string();
@@ -254,7 +253,7 @@ impl Controller {
         )
     }
 
-    async fn put(self) -> Result<HttpResponse> {
+    async fn put(mut self) -> Result<HttpResponse> {
         let put_policy = codec::put_policy(&self.req)?;
 
         let stream_of_frames = BodyStream::new(self.req.into_body());
@@ -315,7 +314,7 @@ impl Controller {
     // --- Common utility functions ---
     /// Build a multistatus response from a list of DavNodes
     async fn multistatus(
-        user: &ArcUser,
+        user: &User,
         nodes: Vec<Box<dyn DavNode>>,
         not_found: Vec<dav::Href>,
         props: Option<dav::PropName<All>>,

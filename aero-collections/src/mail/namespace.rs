@@ -1,5 +1,5 @@
 use std::collections::{HashMap, BTreeMap};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use tokio::sync::watch;
 
 use anyhow::{anyhow, bail, Result};
@@ -11,7 +11,7 @@ use aero_user::login::Credentials;
 use aero_user::storage;
 
 use crate::mail::incoming::incoming_mail_watch_process;
-use crate::mail::mailbox::Mailbox;
+use crate::mail::mailbox::{Mailbox, MailboxWeak};
 use crate::unique_ident::{gen_ident, UniqueIdent};
 
 pub const MAILBOX_HIERARCHY_DELIMITER: char = '.';
@@ -42,18 +42,21 @@ pub const TRASH: &str = "Trash";
 pub(crate) const MAILBOX_LIST_PK: &str = "mailboxes";
 pub(crate) const MAILBOX_LIST_SK: &str = "list";
 
+#[derive(Clone)]
 pub struct MailboxNs {
-    // `inner` is shared with the worker that processes incoming emails, (moving
-    // emails from the mailqueue to the user's INBOX). See incoming.rs for the
-    // implementation of the worker.
+    // `inner` is shared between clones of this struct, and with the worker that
+    // processes incoming emails, (moving emails from the mailqueue to the
+    // user's INBOX). See incoming.rs for the implementation of the worker.
     inner: Arc<MailboxNsInner>,
     // Channel to communicate with the worker and send it the INBOX id.
     tx_inbox_id: watch::Sender<Option<UniqueIdent>>,
 }
 
 pub(crate) struct MailboxNsInner {
-    creds: Credentials, 
-    mailboxes: std::sync::Mutex<HashMap<UniqueIdent, Weak<Mailbox>>>,
+    creds: Credentials,
+    // A cache of already opened mailboxes. Opening a mailbox from scratch is
+    // expensive, so it is better to clone it from the cache if possible.
+    mailboxes: std::sync::Mutex<HashMap<UniqueIdent, MailboxWeak>>,
 }
 
 impl MailboxNs {
@@ -82,7 +85,7 @@ impl MailboxNs {
     }
 
     /// Opens an existing mailbox given its IMAP name.
-    pub async fn open(&self, name: &str) -> Result<Option<Arc<Mailbox>>> {
+    pub async fn open(&self, name: &str) -> Result<Option<Mailbox>> {
         let (list, _ct) = self.load_mailbox_list().await?;
 
         //@FIXME it could be a trace or an opentelemtry trace thing.
@@ -279,11 +282,13 @@ impl MailboxNsInner {
     pub(crate) async fn open_by_id(
         &self,
         id: UniqueIdent,
-    ) -> Result<Arc<Mailbox>> {
+    ) -> Result<Mailbox> {
         {
             let cache = self.mailboxes.lock().unwrap();
-            if let Some(mb) = cache.get(&id).and_then(Weak::upgrade) {
-                return Ok(mb.clone());
+            if let Some(mbox_weak) = cache.get(&id) {
+                if let Some(mb) = mbox_weak.upgrade() {
+                    return Ok(mb)
+                }
             }
         }
 
@@ -291,16 +296,17 @@ impl MailboxNsInner {
         //  1. Opening a mailbox that is not already opened takes a significant amount of time
         //  2. We don't want to lock the whole HashMap that contain the mailboxes during this
         //     operation which is why we droppped the lock above but take it again below.
-        let mb = Arc::new(Mailbox::open(&self.creds, id).await?);
+        let mb = Mailbox::open(&self.creds, id).await?;
 
         let mut cache = self.mailboxes.lock().unwrap();
-        if let Some(concurrent_mb) = cache.get(&id).and_then(Weak::upgrade) {
-            drop(mb); // we worked for nothing but at least we didn't starve someone else
-            Ok(concurrent_mb)
-        } else {
-            cache.insert(id, Arc::downgrade(&mb));
-            Ok(mb)
+        if let Some(concurrent_mb_weak) = cache.get(&id) {
+            if let Some(concurrent_mb) = concurrent_mb_weak.upgrade() {
+                drop(mb); // we worked for nothing but at least we didn't starve someone else
+                return Ok(concurrent_mb)
+            }
         }
+        cache.insert(id, mb.downgrade());
+        Ok(mb)
     }
 }
 

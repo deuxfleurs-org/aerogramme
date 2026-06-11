@@ -12,26 +12,26 @@ use aero_collections::unique_ident::UniqueIdent;
 
 // Extension trait that adds extra methods to UidIndex.
 pub trait UidIndexForImap {
-    fn fetch_by_uid<'a>(&'a self, sequence_set: &SequenceSet) -> Vec<MailIndex<'a>>;
-    fn fetch_by_seqid<'a>(&'a self, sequence_set: &SequenceSet) -> Vec<MailIndex<'a>>;
+    fn fetch_by_uid(&self, sequence_set: &SequenceSet) -> Vec<MailIndex>;
+    fn fetch_by_seqid(&self, sequence_set: &SequenceSet) -> Vec<MailIndex>;
     
-    fn fetch<'a>(
-        &'a self,
+    fn fetch(
+        &self,
         sequence_set: &SequenceSet,
         by_uid: bool,
-    ) -> Vec<MailIndex<'a>> {
+    ) -> Vec<MailIndex> {
         match by_uid {
             true => self.fetch_by_uid(sequence_set),
             false => self.fetch_by_seqid(sequence_set),
         }
     }
 
-    fn fetch_changed_since<'a>(
-        &'a self,
+    fn fetch_changed_since(
+        &self,
         sequence_set: &SequenceSet,
         maybe_modseq: Option<NonZeroU64>,
         by_uid: bool,
-    ) -> Vec<MailIndex<'a>> {
+    ) -> Vec<MailIndex> {
         let raw = self.fetch(sequence_set, by_uid);
         match maybe_modseq {
             Some(pit) => raw.into_iter().filter(|midx| midx.modseq > pit).collect(),
@@ -39,12 +39,12 @@ pub trait UidIndexForImap {
         }
     }
 
-    fn fetch_unchanged_since<'a>(
-        &'a self,
+    fn fetch_unchanged_since(
+        &self,
         sequence_set: &SequenceSet,
         maybe_modseq: Option<NonZeroU64>,
         by_uid: bool,
-    ) -> (Vec<MailIndex<'a>>, Vec<MailIndex<'a>>) {
+    ) -> (Vec<MailIndex>, Vec<MailIndex>) {
         let raw = self.fetch(sequence_set, by_uid);
         match maybe_modseq {
             Some(pit) => raw.into_iter().partition(|midx| midx.modseq <= pit),
@@ -54,7 +54,7 @@ pub trait UidIndexForImap {
 }
 
 impl UidIndexForImap for UidIndex {
-    fn fetch_by_uid<'a>(&'a self, sequence_seq: &SequenceSet) -> Vec<MailIndex<'a>> {
+    fn fetch_by_uid(&self, sequence_seq: &SequenceSet) -> Vec<MailIndex> {
         let uuid_largest = match self.idx_by_seqid.largest() {
             Some((_, uuid)) => uuid,
             None => return vec![],
@@ -66,12 +66,12 @@ impl UidIndexForImap for UidIndex {
                 let &uuid = self.idx_by_uid.get(&uid)?;
                 let &(uid, modseq, ref flags) = self.table.get(&uuid)?;
                 let &seqid = self.idx_seqid_of_uuid.get(&uuid)?;
-                Some(MailIndex { seqid, uid, uuid, modseq, flags })
+                Some(MailIndex { seqid, uid, uuid, modseq, flags: flags.clone() })
             })
             .collect()
     }
 
-    fn fetch_by_seqid<'a>(&'a self, sequence_seq: &SequenceSet) -> Vec<MailIndex<'a>> {
+    fn fetch_by_seqid(&self, sequence_seq: &SequenceSet) -> Vec<MailIndex> {
         let seqid_largest = match self.idx_by_seqid.largest() {
             Some((seqid, _)) => seqid,
             None => return vec![],
@@ -81,22 +81,23 @@ impl UidIndexForImap for UidIndex {
             .filter_map(|seqid| {
                 let &uuid = self.idx_by_seqid.get(seqid)?;
                 let &(uid, modseq, ref flags) = self.table.get(&uuid)?;
-                Some(MailIndex { seqid, uid, uuid, modseq, flags })
+                Some(MailIndex { seqid, uid, uuid, modseq, flags: flags.clone() })
             })
             .collect()
     }
 }
 
+// @FIXME this could be a MailIndex<'a> with flags: &'a Vec<String>
 #[derive(Clone, Debug)]
-pub struct MailIndex<'a> {
+pub struct MailIndex {
     pub seqid: ImapSeqid,
     pub uid: ImapUid,
     pub uuid: UniqueIdent,
     pub modseq: ModSeq,
-    pub flags: &'a Vec<String>,
+    pub flags: Vec<String>,
 }
 
-impl<'a> MailIndex<'a> {
+impl MailIndex {
     // The following functions are used to implement the SEARCH command
     pub fn is_in_sequence_seqid(&self, seq: &Sequence) -> bool {
         match seq {
