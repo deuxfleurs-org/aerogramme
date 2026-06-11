@@ -221,15 +221,18 @@ impl NetLoop {
             };
 
             tracing::debug!(cmd=?cmd, sock=%ctx.addr, "command");
-            let maybe_response = session.request(cmd).await;
-            tracing::debug!(cmd=?maybe_response, sock=%ctx.addr, "response");
+            let response = session.request(cmd).await;
+            tracing::debug!(cmd=?response, sock=%ctx.addr, "response");
 
-            match resp_tx.send(maybe_response) {
+            match resp_tx.send(response) {
                 Err(_) => break,
                 Ok(_) => (),
             };
         }
         tracing::info!("runner is quitting");
+        // we drop our channel handles when quitting, which closes the other end
+        // of the channel and signals the netloop to terminate the client
+        // connection.
     }
 
     async fn core(&mut self) -> Result<()> {
@@ -320,6 +323,7 @@ impl NetLoop {
                             .or(Err(anyhow!("wrong reject command")))?;
                     },
                     None => {
+                        // the channel has been closed
                         self.server.enqueue_status(Status::bye(None, "Internal session exited").unwrap());
                         tracing::error!("session task exited for {:?}, quitting", self.ctx.addr);
                     },

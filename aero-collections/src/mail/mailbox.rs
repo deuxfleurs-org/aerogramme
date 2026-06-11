@@ -40,7 +40,7 @@ use crate::unique_ident::*;
 /// `open` one from scratch.
 #[derive(Clone)]
 pub struct Mailbox {
-    pub(super) id: UniqueIdent,
+    pub id: UniqueIdent,
     mbox: MailboxInternal,
 }
 
@@ -133,7 +133,7 @@ impl Mailbox {
         &mut self,
         msg: IMF<'a>,
         flags: &[Flag],
-    ) -> Result<(ImapUidvalidity, ImapUid, ModSeq)> {
+    ) -> Result<(ImapUid, ModSeq)> {
         self.mbox.append(msg, flags).await
     }
 
@@ -308,7 +308,7 @@ impl MailboxInternal {
         &mut self,
         mail: IMF<'_>,
         flags: &[Flag],
-    ) -> Result<(ImapUidvalidity, ImapUid, ModSeq)> {
+    ) -> Result<(ImapUid, ModSeq)> {
         let ident = gen_ident();
         let message_key = gen_key();
 
@@ -351,7 +351,6 @@ impl MailboxInternal {
         let uid_state = self.uid_index.state();
         let add_mail_op = uid_state.op_mail_add(ident, flags.to_vec());
 
-        let uidvalidity = uid_state.uidvalidity;
         let (uid, modseq) = match add_mail_op {
             UidIndexOp::MailAdd(_, uid, modseq, _) => (uid, modseq),
             _ => unreachable!(),
@@ -359,7 +358,7 @@ impl MailboxInternal {
 
         self.uid_index.push(add_mail_op).await?;
 
-        Ok((uidvalidity, uid, modseq))
+        Ok((uid, modseq))
     }
 
     async fn append_from_s3<'a>(

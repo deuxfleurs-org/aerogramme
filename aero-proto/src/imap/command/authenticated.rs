@@ -10,16 +10,14 @@ use imap_codec::imap_types::datetime::DateTime;
 use imap_codec::imap_types::extensions::enable::CapabilityEnable;
 use imap_codec::imap_types::flag::{Flag, FlagNameAttribute};
 use imap_codec::imap_types::mailbox::{ListMailbox, Mailbox as MailboxCodec};
-use imap_codec::imap_types::response::{Code, CodeOther, Data};
+use imap_codec::imap_types::response::{Code, Data};
 use imap_codec::imap_types::status::{StatusDataItem, StatusDataItemName};
 
 use aero_collections::mail::namespace::MAILBOX_HIERARCHY_DELIMITER as MBX_HIER_DELIM_RAW;
-use aero_collections::mail::uidindex::*;
-use aero_collections::mail::IMF;
 use aero_collections::user::User;
 
 use crate::imap::capability::{ClientCapability, ServerCapability};
-use crate::imap::command::{anystate, MailboxName};
+use crate::imap::command::{anystate, append, MailboxName};
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
 use crate::imap::response::Response;
@@ -552,8 +550,6 @@ impl<'a> AuthenticatedContext<'a> {
         ))
     }
 
-    //@FIXME we should write a specific version for the "selected" state
-    //that returns some unsollicited responses
     async fn append(
         self,
         mailbox: &MailboxCodec<'a>,
@@ -561,26 +557,7 @@ impl<'a> AuthenticatedContext<'a> {
         date: &Option<DateTime>,
         message: &Literal<'a>,
     ) -> Result<(Response<'static>, flow::Transition)> {
-        let append_tag = self.req.tag.clone();
-        match self.append_internal(mailbox, flags, date, message).await {
-            Ok((_mb_view, uidvalidity, uid, _modseq)) => Ok((
-                Response::build()
-                    .tag(append_tag)
-                    .message("APPEND completed")
-                    .code(Code::Other(CodeOther::unvalidated(
-                        format!("APPENDUID {} {}", uidvalidity, uid).into_bytes(),
-                    )))
-                    .ok()?,
-                flow::Transition::None,
-            )),
-            Err(e) => Ok((
-                Response::build()
-                    .tag(append_tag)
-                    .message(e.to_string())
-                    .no()?,
-                flow::Transition::None,
-            )),
-        }
+        append::AppendContext::from(self).append(mailbox, flags, date, message).await
     }
 
     fn enable(
@@ -596,41 +573,6 @@ impl<'a> AuthenticatedContext<'a> {
             response_builder.message("ENABLE completed").ok()?,
             flow::Transition::None,
         ))
-    }
-
-    //@FIXME should be refactored and integrated to the mailbox view
-    pub(crate) async fn append_internal(
-        self,
-        mailbox: &MailboxCodec<'a>,
-        flags: &[Flag<'a>],
-        date: &Option<DateTime>,
-        message: &Literal<'a>,
-    ) -> Result<(MailboxView, ImapUidvalidity, ImapUid, ModSeq)> {
-        let name: &str = MailboxName(mailbox).try_into()?;
-
-        let mb_opt = self.user.mailboxes.open(&name).await?;
-        let mut mb = match mb_opt {
-            Some(mb) => mb,
-            None => bail!("Mailbox does not exist"),
-        };
-        // @FIXME more principled sync
-        mb.sync().await?;
-        let mut view = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled());
-
-        if date.is_some() {
-            tracing::warn!("Cannot set date when appending message");
-        }
-
-        let msg =
-            IMF::try_from(message.data()).map_err(|_| anyhow!("Could not parse e-mail message"))?;
-        let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        // TODO: filter allowed flags? ping @Quentin
-
-        let (uidvalidity, uid, modseq) =
-            view.mailbox.append(msg, &flags[..]).await?;
-        //let unsollicited = view.update(UpdateParameters::default()).await?;
-
-        Ok((view, uidvalidity, uid, modseq))
     }
 }
 

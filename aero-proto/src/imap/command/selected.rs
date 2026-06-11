@@ -1,7 +1,8 @@
 use std::num::NonZeroU64;
 use anyhow::Result;
 use imap_codec::imap_types::command::{Command, CommandBody, FetchModifier, StoreModifier};
-use imap_codec::imap_types::core::Charset;
+use imap_codec::imap_types::core::{Literal, Charset};
+use imap_codec::imap_types::datetime::DateTime;
 use imap_codec::imap_types::fetch::MacroOrMessageDataItemNames;
 use imap_codec::imap_types::flag::{Flag, StoreResponse, StoreType};
 use imap_codec::imap_types::mailbox::Mailbox as MailboxCodec;
@@ -13,9 +14,9 @@ use aero_collections::user::User;
 
 use crate::imap::attributes::AttributesProxy;
 use crate::imap::capability::{ClientCapability, ServerCapability};
-use crate::imap::command::{anystate, authenticated, MailboxName};
+use crate::imap::command::{anystate, append, authenticated, MailboxName};
 use crate::imap::flow;
-use crate::imap::mailbox_view::{MailboxView, UpdateParameters};
+use crate::imap::mailbox_view::MailboxView;
 use crate::imap::response::Response;
 
 pub struct SelectedContext<'a> {
@@ -87,6 +88,12 @@ pub async fn dispatch<'a>(
             mailbox,
             uid,
         } => ctx.r#move(sequence_set, mailbox, uid).await,
+        CommandBody::Append {
+            mailbox,
+            flags,
+            date,
+            message,
+        } => ctx.append(mailbox, flags, date, message).await,
 
         // UNSELECT extension (rfc3691)
         CommandBody::Unselect => ctx.unselect().await,
@@ -207,9 +214,7 @@ impl<'a> SelectedContext<'a> {
     }
 
     pub async fn noop(self) -> Result<(Response<'static>, flow::Transition)> {
-        self.mailbox.mailbox.sync().await?;
-
-        let updates = self.mailbox.update(UpdateParameters::default()).await?;
+        let updates = self.mailbox.noop().await?;
         Ok((
             Response::build()
                 .to_req(self.req)
@@ -406,6 +411,16 @@ impl<'a> SelectedContext<'a> {
                 .ok()?,
             flow::Transition::None,
         ))
+    }
+
+    async fn append(
+        self,
+        mailbox: &MailboxCodec<'a>,
+        flags: &[Flag<'a>],
+        date: &Option<DateTime>,
+        message: &Literal<'a>,
+    ) -> Result<(Response<'static>, flow::Transition)> {
+        append::AppendContext::from(self).append(mailbox, flags, date, message).await
     }
 
     fn fail_read_only(&self) -> Option<Response<'static>> {
