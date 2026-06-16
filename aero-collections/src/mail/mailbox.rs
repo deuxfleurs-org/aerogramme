@@ -44,10 +44,7 @@ pub struct Mailbox {
 }
 
 impl Mailbox {
-    pub(crate) async fn open(
-        creds: &Credentials,
-        id: UniqueIdent,
-    ) -> Result<Self> {
+    pub(crate) async fn open(creds: &Credentials, id: UniqueIdent) -> Result<Self> {
         let index_path = format!("index/{}", id);
         let mail_path = format!("mail/{}", id);
 
@@ -166,7 +163,11 @@ impl Mailbox {
 
     /// Move an email from an other Mailbox to this mailbox
     /// (use this when possible, as it allows for a certain number of storage optimizations)
-    pub async fn move_from(&mut self, from: &mut Mailbox, uuid: UniqueIdent) -> Result<UniqueIdent> {
+    pub async fn move_from(
+        &mut self,
+        from: &mut Mailbox,
+        uuid: UniqueIdent,
+    ) -> Result<UniqueIdent> {
         if self.id == from.id {
             bail!("Cannot copy move same mailbox");
         }
@@ -241,10 +242,13 @@ impl MailboxInternal {
     async fn fetch_meta(&self, ids: &[UniqueIdent]) -> Result<Vec<MailMeta>> {
         let ids = ids.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         let sort_list = ids.iter().map(|x| x.as_str()).collect::<Vec<_>>();
-        let res_vec = self.storage.row_fetch_batch(&Selector::List {
-            shard: self.mail_path.as_str(),
-            sort_list: &sort_list,
-        }).await?;
+        let res_vec = self
+            .storage
+            .row_fetch_batch(&Selector::List {
+                shard: self.mail_path.as_str(),
+                sort_list: &sort_list,
+            })
+            .await?;
 
         let mut meta_vec = vec![];
         for res in res_vec.into_iter() {
@@ -303,11 +307,7 @@ impl MailboxInternal {
         self.uid_index.push(set_flag_op).await
     }
 
-    async fn append(
-        &mut self,
-        raw_mail: &[u8],
-        flags: &[Flag],
-    ) -> Result<(ImapUid, ModSeq)> {
+    async fn append(&mut self, raw_mail: &[u8], flags: &[Flag]) -> Result<(ImapUid, ModSeq)> {
         let ident = gen_ident();
         let message_key = gen_key();
 
@@ -423,10 +423,7 @@ impl MailboxInternal {
             async {
                 // Delete mail meta from K2V
                 let sk = ident.to_string();
-                let rv = self
-                    .storage
-                    .row_fetch(&self.mail_path, &sk)
-                    .await?;
+                let rv = self.storage.row_fetch(&self.mail_path, &sk).await?;
                 self.storage
                     .row_update(vec![storage::RowVal::deleted(rv.row_ref)])
                     .await?;
@@ -446,7 +443,11 @@ impl MailboxInternal {
         Ok(new_id)
     }
 
-    async fn move_from(&mut self, from: &mut MailboxInternal, id: UniqueIdent) -> Result<UniqueIdent> {
+    async fn move_from(
+        &mut self,
+        from: &mut MailboxInternal,
+        id: UniqueIdent,
+    ) -> Result<UniqueIdent> {
         // NOTE: we *must* generate a fresh ID; see the comment in uidindex.rs
         // for `internalseq` related to the MailDel optimization.
         let new_id = gen_ident();
@@ -526,8 +527,7 @@ pub struct MailMeta {
 impl MailMeta {
     fn try_merge(&mut self, other: Self) -> Result<()> {
         if self.headers != other.headers
-            ||
-            self.message_key != other.message_key
+            || self.message_key != other.message_key
             || self.rfc822_size != other.rfc822_size
         {
             bail!("Conflicting MailMeta values.");

@@ -11,10 +11,7 @@ use imap_codec::imap_types::fetch::{
 use imap_codec::imap_types::flag::Flag;
 use imap_codec::imap_types::response::Data;
 
-use eml_codec::{
-    imf,
-    message::Message,
-};
+use eml_codec::{imf, message::Message};
 
 use aero_collections::mail::query::QueryResult;
 
@@ -110,13 +107,11 @@ impl<'a> MailView<'a> {
     pub fn is_header_contains_pattern(&self, hdr: &[u8], pattern: &[u8]) -> bool {
         let msg = match self.content.as_partial() {
             Ok(msg) => msg,
-            Err(_) => return false // XXX hack?
+            Err(_) => return false, // XXX hack?
         };
-        mime_view::raw_kv_headers(&msg)
-            .iter()
-            .any(|(k, v)|
-                 k.eq_ignore_ascii_case(hdr) &&
-                 v.windows(pattern.len()).any(|win| win == pattern))
+        mime_view::raw_kv_headers(&msg).iter().any(|(k, v)| {
+            k.eq_ignore_ascii_case(hdr) && v.windows(pattern.len()).any(|win| win == pattern)
+        })
     }
 
     // Private functions, mainly for filter!
@@ -212,11 +207,10 @@ impl<'a> MailView<'a> {
         }
 
         // Process message
-        let (text, origin) =
-            match mime_view::body_ext(self.content.as_msg()?, section, partial)? {
-                mime_view::BodySection::Full(body) => (body, None),
-                mime_view::BodySection::Slice { body, origin_octet } => (body, Some(origin_octet)),
-            };
+        let (text, origin) = match mime_view::body_ext(self.content.as_msg()?, section, partial)? {
+            mime_view::BodySection::Full(body) => (body, None),
+            mime_view::BodySection::Slice { body, origin_octet } => (body, Some(origin_octet)),
+        };
 
         let data: NString = text.to_vec().try_into()?;
 
@@ -278,7 +272,7 @@ impl<'a> FetchedMail<'a> {
         match self {
             FetchedMail::Full(msg) => Ok(&msg),
             FetchedMail::Partial(msg) => Ok(&msg),
-            _ => bail!("The message or itst headers must be fetched"), 
+            _ => bail!("The message or itst headers must be fetched"),
         }
     }
 

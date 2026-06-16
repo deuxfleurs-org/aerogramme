@@ -102,7 +102,7 @@ pub struct CalendarWeak {
     storage: Store,
     davdag: BayouWeak<DavDag>,
 }
- 
+
 impl CalendarWeak {
     pub fn upgrade(&self) -> Option<Calendar> {
         let davdag = self.davdag.upgrade()?;

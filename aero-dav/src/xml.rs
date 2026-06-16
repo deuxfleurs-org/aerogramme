@@ -172,7 +172,9 @@ impl<T: IRead> Reader<T> {
                 Event::GeneralRef(maybe_char) => {
                     if let Some(special_char) = maybe_char.resolve_char_ref()? {
                         acc.push(special_char);
-                    } else if let Some(xml_ent_char) = resolve_predefined_entity(maybe_char.xml_content()?.as_ref()) {
+                    } else if let Some(xml_ent_char) =
+                        resolve_predefined_entity(maybe_char.xml_content()?.as_ref())
+                    {
                         acc.push_str(xml_ent_char);
                     }
                     self.next().await?

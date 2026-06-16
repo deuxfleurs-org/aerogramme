@@ -1295,7 +1295,7 @@ fn rfc6578_webdav_sync() {
 
 #[allow(dead_code)]
 fn noreg_imap_append_in_current_mailbox() {
-    /* 
+    /*
      * We detected this bug when applying one of our testing Python script to Aerogramme.
      * The script is basically "SELECT INBOX", "APPEND" then "FETCH BODYSTRUCTURE".
      * Other IMAP servers are correctly refreshing the mailbox view after APPEND but not

@@ -97,7 +97,11 @@ pub struct GarageStore {
     unicity: Vec<u8>,
 }
 
-fn causal_to_concurrent_row_val(shard: &str, sort: &str, causal_value: k2v_client::CausalValue) -> ConcurrentRowVal {
+fn causal_to_concurrent_row_val(
+    shard: &str,
+    sort: &str,
+    causal_value: k2v_client::CausalValue,
+) -> ConcurrentRowVal {
     let new_row_ref = RowRef::new(shard, sort).with_causality(causal_value.causality.into());
     let row_values = causal_value
         .value
@@ -118,11 +122,7 @@ fn causal_to_concurrent_row_val(shard: &str, sort: &str, causal_value: k2v_clien
 impl IStore for GarageStore {
     async fn row_fetch(&self, shard: &str, sort: &str) -> Result<ConcurrentRowVal, StorageError> {
         tracing::trace!(shard=%shard, sort=%sort, command="row_fetch");
-        let causal_value = match self
-            .k2v
-            .read_item(shard, sort)
-            .await
-        {
+        let causal_value = match self.k2v.read_item(shard, sort).await {
             Err(k2v_client::Error::NotFound) => {
                 tracing::debug!(
                     "K2V item not found  shard={}, sort={}, bucket={}",
@@ -147,8 +147,11 @@ impl IStore for GarageStore {
 
         Ok(causal_to_concurrent_row_val(shard, sort, causal_value))
     }
-    
-    async fn row_fetch_batch<'a>(&self, select: &Selector<'a>) -> Result<Vec<ConcurrentRowVal>, StorageError> {
+
+    async fn row_fetch_batch<'a>(
+        &self,
+        select: &Selector<'a>,
+    ) -> Result<Vec<ConcurrentRowVal>, StorageError> {
         tracing::trace!(select=%select, command="row_fetch_batch");
         let (shard, batch_op) = match select {
             Selector::Range {
@@ -203,8 +206,8 @@ impl IStore for GarageStore {
                     },
                     single_item: true,
                     ..k2v_client::BatchReadOp::default()
-                }]
-            )
+                }],
+            ),
         };
 
         let all_raw_res = match self.k2v.read_batch(&batch_op).await {
@@ -221,17 +224,14 @@ impl IStore for GarageStore {
         };
         //println!("fetch res -> {:?}", all_raw_res);
 
-        let row_vals =
-            all_raw_res
+        let row_vals = all_raw_res.into_iter().fold(vec![], |mut acc, page| {
+            page.items
                 .into_iter()
-                .fold(vec![], |mut acc, page| {
-                    page.items
-                        .into_iter()
-                        .map(|(sk, cv)| causal_to_concurrent_row_val(shard, &sk, cv))
-                        .for_each(|rr| acc.push(rr));
+                .map(|(sk, cv)| causal_to_concurrent_row_val(shard, &sk, cv))
+                .for_each(|rr| acc.push(rr));
 
-                    acc
-                });
+            acc
+        });
         tracing::debug!(fetch_count = row_vals.len(), command = "row_fetch");
 
         Ok(row_vals)
@@ -250,17 +250,16 @@ impl IStore for GarageStore {
                 end: *sort_end,
                 single_item: false,
             }],
-            Selector::List { shard, sort_list } =>
-                sort_list
-                    .iter()
-                    .map(|sort| k2v_client::BatchDeleteOp {
-                        partition_key: shard,
-                        prefix: None,
-                        start: Some(sort),
-                        end: None,
-                        single_item: true,
-                    })
-                    .collect::<Vec<_>>(),
+            Selector::List { shard, sort_list } => sort_list
+                .iter()
+                .map(|sort| k2v_client::BatchDeleteOp {
+                    partition_key: shard,
+                    prefix: None,
+                    start: Some(sort),
+                    end: None,
+                    single_item: true,
+                })
+                .collect::<Vec<_>>(),
             Selector::Prefix { shard, sort_prefix } => vec![k2v_client::BatchDeleteOp {
                 partition_key: shard,
                 prefix: Some(sort_prefix),
@@ -335,9 +334,7 @@ impl IStore for GarageStore {
                 // causality token. If we don't have one, we do a read instead
                 // and return immediately.
                 match self.k2v.read_item(shard, sort).await {
-                    Err(k2v_client::Error::NotFound) => {
-                        return Err(StorageError::NotFound)
-                    }
+                    Err(k2v_client::Error::NotFound) => return Err(StorageError::NotFound),
                     Err(e) => {
                         tracing::error!("Unable to read item in polling logic: {}", e);
                         return Err(StorageError::Internal);
@@ -347,20 +344,26 @@ impl IStore for GarageStore {
             }
         }
     }
-    async fn row_poll_range<'a>(&self, select: &RangeSelector<'a>, seen_marker: Option<&str>) ->
-        Result<PollRangeResult, StorageError>
-    {
+    async fn row_poll_range<'a>(
+        &self,
+        select: &RangeSelector<'a>,
+        seen_marker: Option<&str>,
+    ) -> Result<PollRangeResult, StorageError> {
         tracing::trace!(select=%select, command="row_poll_range");
         // the k2v poll periodically timeouts when nothing happens; we automatically retry
         loop {
             let (shard, filter) = match select {
-                RangeSelector::Range { shard, sort_begin, sort_end } => (
+                RangeSelector::Range {
+                    shard,
+                    sort_begin,
+                    sort_end,
+                } => (
                     shard,
                     k2v_client::PollRangeFilter {
                         start: *sort_begin,
                         end: *sort_end,
                         prefix: None,
-                    }
+                    },
                 ),
                 RangeSelector::Prefix { shard, sort_prefix } => (
                     shard,
@@ -368,11 +371,15 @@ impl IStore for GarageStore {
                         start: None,
                         end: None,
                         prefix: Some(*sort_prefix),
-                    }
-                )
+                    },
+                ),
             };
 
-            match self.k2v.poll_range(shard, Some(filter), seen_marker, None).await {
+            match self
+                .k2v
+                .poll_range(shard, Some(filter), seen_marker, None)
+                .await
+            {
                 Err(e) => {
                     tracing::error!("Unable to poll range: {}", e);
                     return Err(StorageError::Internal);
@@ -384,7 +391,10 @@ impl IStore for GarageStore {
                         .into_iter()
                         .map(|(sort, cv)| causal_to_concurrent_row_val(shard, &sort, cv))
                         .collect();
-                    return Ok(PollRangeResult { value, seen_marker: res.seen_marker })
+                    return Ok(PollRangeResult {
+                        value,
+                        seen_marker: res.seen_marker,
+                    });
                 }
             }
         }

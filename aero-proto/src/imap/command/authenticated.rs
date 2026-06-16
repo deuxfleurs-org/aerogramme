@@ -552,7 +552,9 @@ impl<'a> AuthenticatedContext<'a> {
         date: &Option<DateTime>,
         message: &Literal<'a>,
     ) -> Result<(Response<'static>, flow::Transition)> {
-        append::AppendContext::from(self).append(mailbox, flags, date, message).await
+        append::AppendContext::from(self)
+            .append(mailbox, flags, date, message)
+            .await
     }
 
     fn enable(

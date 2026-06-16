@@ -296,10 +296,10 @@ impl<'a> Criteria<'a> {
                 .as_msg()
                 .map(|msg| {
                     msg.mime_body
-                       .raw_body()
-                       .unwrap()
-                       .windows(txt.as_ref().len())
-                       .any(|win| win == txt.as_ref())
+                        .raw_body()
+                        .unwrap()
+                        .windows(txt.as_ref().len())
+                        .any(|win| win == txt.as_ref())
                 })
                 .unwrap_or(false),
 

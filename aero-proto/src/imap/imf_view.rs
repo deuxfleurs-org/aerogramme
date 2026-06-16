@@ -54,19 +54,16 @@ impl<'a> ImfView<'a> {
     //@FIXME some fields must be defaulted if there are not set.
     pub fn message_envelope(&self) -> Envelope<'static> {
         let msg = self.0;
-        let from = msg.from().map(|mboxl: imf::mailbox::MailboxList| {
-            mboxl.0.iter().map(convert_mbx).collect()
-        }).unwrap_or(vec![]);
+        let from = msg
+            .from()
+            .map(|mboxl: imf::mailbox::MailboxList| mboxl.0.iter().map(convert_mbx).collect())
+            .unwrap_or(vec![]);
 
         Envelope {
-            date: NString(
-                match &msg.date {
-                    imf::DateTimeOpt::Some(dt) =>
-                        Some(IString::try_from(dt.0.to_rfc3339()).unwrap()),
-                    imf::DateTimeOpt::InvalidMissing =>
-                        None
-                }
-            ),
+            date: NString(match &msg.date {
+                imf::DateTimeOpt::Some(dt) => Some(IString::try_from(dt.0.to_rfc3339()).unwrap()),
+                imf::DateTimeOpt::InvalidMissing => None,
+            }),
             subject: NString(
                 msg.subject
                     .as_ref()
@@ -110,7 +107,7 @@ pub fn convert_addresses(addrlist: &Vec<imf::address::AddressRef>) -> Vec<Addres
                 if let Some(mboxl) = &l.participants {
                     acc.extend(mboxl.0.iter().map(convert_mbx))
                 }
-            },
+            }
         }
     }
     return acc;

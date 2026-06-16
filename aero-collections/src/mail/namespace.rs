@@ -1,4 +1,4 @@
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use tokio::sync::watch;
 
@@ -73,11 +73,8 @@ impl MailboxNs {
             rx_inbox_id,
         ));
 
-        let ns = Self {
-            inner,
-            tx_inbox_id,
-        };
- 
+        let ns = Self { inner, tx_inbox_id };
+
         // Ensure INBOX exists (done inside load_mailbox_list)
         ns.load_mailbox_list().await?;
 
@@ -211,8 +208,10 @@ impl MailboxNs {
 
                 for v in row_vals {
                     if let storage::Alternative::Value(vbytes) = v {
-                        let list2 =
-                            open_deserialize::<MailboxList>(&vbytes, &self.inner.creds.keys.master)?;
+                        let list2 = open_deserialize::<MailboxList>(
+                            &vbytes,
+                            &self.inner.creds.keys.master,
+                        )?;
                         list.merge(list2);
                     }
                 }
@@ -279,15 +278,12 @@ impl MailboxNs {
 }
 
 impl MailboxNsInner {
-    pub(crate) async fn open_by_id(
-        &self,
-        id: UniqueIdent,
-    ) -> Result<Mailbox> {
+    pub(crate) async fn open_by_id(&self, id: UniqueIdent) -> Result<Mailbox> {
         {
             let cache = self.mailboxes.lock().unwrap();
             if let Some(mbox_weak) = cache.get(&id) {
                 if let Some(mb) = mbox_weak.upgrade() {
-                    return Ok(mb)
+                    return Ok(mb);
                 }
             }
         }
@@ -302,7 +298,7 @@ impl MailboxNsInner {
         if let Some(concurrent_mb_weak) = cache.get(&id) {
             if let Some(concurrent_mb) = concurrent_mb_weak.upgrade() {
                 drop(mb); // we worked for nothing but at least we didn't starve someone else
-                return Ok(concurrent_mb)
+                return Ok(concurrent_mb);
             }
         }
         cache.insert(id, mb.downgrade());
@@ -368,19 +364,20 @@ impl MailboxList {
     }
 
     fn get_mailbox(&self, name: &str) -> Option<UniqueIdent> {
-        self.0.get(name).map(
-            |MailboxListEntry { id_lww: (_, mailbox_id) }| *mailbox_id
-        ).flatten()
+        self.0
+            .get(name)
+            .map(
+                |MailboxListEntry {
+                     id_lww: (_, mailbox_id),
+                 }| *mailbox_id,
+            )
+            .flatten()
     }
 
     /// Ensures mailbox `name` maps to id `id`.
     /// If it already mapped to that, returns false.
     /// If a change had to be done, returns true.
-    fn set_mailbox(
-        &mut self,
-        name: &str,
-        id: Option<UniqueIdent>,
-    ) -> bool {
+    fn set_mailbox(&mut self, name: &str, id: Option<UniqueIdent>) -> bool {
         let (ts, id) = match self.0.get_mut(name) {
             None => {
                 if id.is_none() {
@@ -389,26 +386,17 @@ impl MailboxList {
                     (now_msec(), id)
                 }
             }
-            Some(MailboxListEntry {
-                id_lww,
-            }) => {
+            Some(MailboxListEntry { id_lww }) => {
                 if id_lww.1 == id {
                     return false;
                 } else {
-                    (
-                        std::cmp::max(id_lww.0 + 1, now_msec()),
-                        id,
-                    )
+                    (std::cmp::max(id_lww.0 + 1, now_msec()), id)
                 }
             }
         };
 
-        self.0.insert(
-            name.into(),
-            MailboxListEntry {
-                id_lww: (ts, id),
-            },
-        );
+        self.0
+            .insert(name.into(), MailboxListEntry { id_lww: (ts, id) });
         true
     }
 

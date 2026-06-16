@@ -58,8 +58,7 @@ pub fn open_deserialize<T: for<'de> Deserialize<'de>>(cryptoblob: &[u8], key: &K
 
 pub fn seal_serialize<T: Serialize>(obj: T, key: &Key) -> Result<Vec<u8>> {
     let mut wr = Vec::with_capacity(128);
-    let mut se = rmp_serde::Serializer::new(&mut wr)
-        .with_struct_map();
+    let mut se = rmp_serde::Serializer::new(&mut wr).with_struct_map();
     obj.serialize(&mut se)?;
 
     seal(&wr, key)

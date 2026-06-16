@@ -8,17 +8,18 @@ use imap_codec::imap_types::body::{
     BasicFields, Body as FetchBody, BodyStructure, MultiPartExtensionData, SinglePartExtensionData,
     SpecificFields,
 };
+use imap_codec::imap_types::bounded_static::IntoBoundedStatic;
 use imap_codec::imap_types::core::{AString, IString, NString, Vec1};
 use imap_codec::imap_types::fetch::{Part as FetchPart, Section as FetchSection};
-use imap_codec::imap_types::bounded_static::IntoBoundedStatic;
 
 use eml_codec::{
-    header, mime,
-    message::{Message, field::MessageField},
-    part::{composite, discrete, AnyPart, MimeBody, field::EntityField},
+    header,
+    message::{field::MessageField, Message},
+    mime,
+    part::{composite, discrete, field::EntityField, AnyPart, MimeBody},
     raw_input::RawInput,
-    text::words::MIMEAtom,
     text::misc_token::MIMEWord,
+    text::words::MIMEAtom,
 };
 
 use crate::imap::imf_view::ImfView;
@@ -186,7 +187,7 @@ impl<'a> NodeMime<'a> {
         let res = raw_kv_to_bytes(
             self.mime_headers()
                 .into_iter()
-                .map(|(f, body)| (f.raw_name(), body))
+                .map(|(f, body)| (f.raw_name(), body)),
         );
         Ok(ExtractedFull(res.into()))
     }
@@ -195,7 +196,7 @@ impl<'a> NodeMime<'a> {
         // TODO: check
         Ok(ExtractedFull(self.mime_body().raw_body().unwrap().into()))
     }
-    
+
     /// The [...] HEADER.FIELDS, and HEADER.FIELDS.NOT part
     /// specifiers refer to the [RFC-2822] header of the message or of
     /// an encapsulated [MIME-IMT] MESSAGE/RFC822 message.
@@ -223,7 +224,7 @@ impl<'a> NodeMime<'a> {
         let res = raw_kv_to_bytes(
             self.raw_kv_headers()
                 .into_iter()
-                .filter(|(k, _)| index.contains(&k.bytes().to_ascii_lowercase()) ^ invert)
+                .filter(|(k, _)| index.contains(&k.bytes().to_ascii_lowercase()) ^ invert),
         );
 
         Ok(ExtractedFull(res.into()))
@@ -237,7 +238,12 @@ impl<'a> NodeMime<'a> {
             .ctype()
             .params()
             .iter()
-            .map(|p| (mime_atom_to_istring(&p.name), mime_word_to_istring(&p.value)))
+            .map(|p| {
+                (
+                    mime_atom_to_istring(&p.name),
+                    mime_word_to_istring(&p.value),
+                )
+            })
             .collect();
         let common = m.common();
 
@@ -285,43 +291,43 @@ impl<'a> NodeMime<'a> {
 
     fn raw_kv_headers(&self) -> Vec<(header::FieldName<'a>, RawInput<'a>)> {
         match self {
-            NodeMime::Message(m) =>
-                m.field_list()
-                 .into_iter()
-                 .map(|f| (f.raw_name(), f.raw_body()))
-                 .collect(),
-            NodeMime::AnyPart(p) =>
-                p.field_list()
-                 .into_iter()
-                 .map(|f| (f.raw_name(), f.raw_body()))
-                 .collect(),
+            NodeMime::Message(m) => m
+                .field_list()
+                .into_iter()
+                .map(|f| (f.raw_name(), f.raw_body()))
+                .collect(),
+            NodeMime::AnyPart(p) => p
+                .field_list()
+                .into_iter()
+                .map(|f| (f.raw_name(), f.raw_body()))
+                .collect(),
         }
     }
 
     fn mime_headers(&self) -> Vec<(mime::field::Field<'a>, RawInput<'a>)> {
         match self {
-            NodeMime::Message(m) =>
-                m.field_list()
-                 .into_iter()
-                 .filter_map(|f| {
-                     if let MessageField::MIME { f, raw_body } = f {
-                         Some((f, raw_body))
-                     } else {
-                         None
-                     }
-                 })
-                 .collect(),
-            NodeMime::AnyPart(p) =>
-                p.field_list()
-                 .into_iter()
-                 .filter_map(|f| {
-                     if let EntityField::MIME { f, raw_body } = f {
-                         Some((f, raw_body))
-                     } else {
-                         None
-                     }
-                 })
-                 .collect(),
+            NodeMime::Message(m) => m
+                .field_list()
+                .into_iter()
+                .filter_map(|f| {
+                    if let MessageField::MIME { f, raw_body } = f {
+                        Some((f, raw_body))
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            NodeMime::AnyPart(p) => p
+                .field_list()
+                .into_iter()
+                .filter_map(|f| {
+                    if let EntityField::MIME { f, raw_body } = f {
+                        Some((f, raw_body))
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
         }
     }
 }
@@ -390,14 +396,21 @@ struct NodeMult<'a>(&'a NodeMime<'a>, &'a composite::Multipart<'a>);
 impl<'a> NodeMult<'a> {
     fn structure(&self, is_ext: bool) -> Result<BodyStructure<'static>> {
         let ctype = &self.1.mime.ctype;
-        let params: Vec<_> = ctype.params().into_iter().map(|p| {
-            (mime_atom_to_istring(&p.name), mime_word_to_istring(&p.value))
-        }).collect();
+        let params: Vec<_> = ctype
+            .params()
+            .into_iter()
+            .map(|p| {
+                (
+                    mime_atom_to_istring(&p.name),
+                    mime_word_to_istring(&p.value),
+                )
+            })
+            .collect();
         // SAFETY: MultipartSubtype is a parsed MIMEAtom, which is safe to convert to IString
         let subtype = IString::try_from(ctype.subtype.as_bytes())
             .unwrap()
             .into_static();
-        
+
         let inner_bodies: Vec<_> = self
             .1
             .children
@@ -424,11 +437,10 @@ impl<'a> NodeTxt<'a> {
     fn structure(&self, is_ext: bool) -> Result<BodyStructure<'static>> {
         let basic = self.0.basic_fields()?;
         // TextSubtype is a parsed MIMEAtom, which is safe to convert to IString
-        let subtype =
-            IString::try_from(self.1.mime.ctype.subtype.as_bytes())
+        let subtype = IString::try_from(self.1.mime.ctype.subtype.as_bytes())
             .unwrap()
             .into_static();
-            
+
         Ok(BodyStructure::Single {
             body: FetchBody {
                 basic,
@@ -455,7 +467,7 @@ impl<'a> NodeBin<'a> {
         let ctype = &self.1.mime.ctype.ctype;
         let r#type = mime_atom_to_istring(&ctype.main);
         let subtype = mime_atom_to_istring(&ctype.sub);
-        
+
         Ok(BodyStructure::Single {
             body: FetchBody {
                 basic,
@@ -563,15 +575,15 @@ fn nol(input: &[u8]) -> u32 {
 
 fn raw_kv_to_bytes<'a, I>(kv: I) -> Vec<u8>
 where
-    I: Iterator<Item = (header::FieldName<'a>, RawInput<'a>)>
+    I: Iterator<Item = (header::FieldName<'a>, RawInput<'a>)>,
 {
     kv.fold(vec![], |mut acc, (k, v)| {
-          acc.extend(k.bytes());
-          acc.extend(b":");
-          acc.extend(v.unwrap());
-          acc.extend(b"\r\n");
-          acc
-      })
+        acc.extend(k.bytes());
+        acc.extend(b":");
+        acc.extend(v.unwrap());
+        acc.extend(b"\r\n");
+        acc
+    })
 }
 
 fn mime_atom_to_istring<'a>(a: &MIMEAtom<'a>) -> IString<'static> {

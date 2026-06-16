@@ -60,7 +60,7 @@ impl CalendarNs {
         if let Some(concurrent_cal_weak) = cache.get(&id) {
             if let Some(concurrent_cal) = concurrent_cal_weak.upgrade() {
                 drop(cal); // we worked for nothing but at least we didn't starve someone else
-                return Ok(concurrent_cal)
+                return Ok(concurrent_cal);
             }
         }
 
@@ -70,7 +70,9 @@ impl CalendarNs {
 
     /// List calendars
     pub async fn list(&self) -> Result<Vec<String>> {
-        self.load_calendar_list().await.map(|(list, _)| list.names())
+        self.load_calendar_list()
+            .await
+            .map(|(list, _)| list.names())
     }
 
     /// Delete a calendar from the index
@@ -140,15 +142,10 @@ impl CalendarNs {
     }
 
     // --- internal calendar list management ----
-    
+
     /// Load from storage
     async fn load_calendar_list(&self) -> Result<(CalendarList, Option<storage::RowRef>)> {
-        let (mut list, row) = match self
-            .creds
-            .storage
-            .row_fetch(CAL_LIST_PK, CAL_LIST_SK)
-            .await
-        {
+        let (mut list, row) = match self.creds.storage.row_fetch(CAL_LIST_PK, CAL_LIST_SK).await {
             Err(storage::StorageError::NotFound) => (CalendarList::new(), None),
             Err(e) => return Err(e.into()),
             Ok(rv) => {
@@ -183,7 +180,11 @@ impl CalendarNs {
     }
 
     /// Save an updated index
-    async fn save_calendar_list(&self, list: &CalendarList, ct: Option<storage::RowRef>) -> Result<()> {
+    async fn save_calendar_list(
+        &self,
+        list: &CalendarList,
+        ct: Option<storage::RowRef>,
+    ) -> Result<()> {
         let list_blob = seal_serialize(list, &self.creds.keys.master)?;
         let rref = ct.unwrap_or(storage::RowRef::new(CAL_LIST_PK, CAL_LIST_SK));
         let row_val = storage::RowVal::new(rref, list_blob);
