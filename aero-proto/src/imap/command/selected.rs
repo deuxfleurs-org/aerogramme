@@ -162,35 +162,25 @@ impl<'a> SelectedContext<'a> {
             }
         });
 
-        match self
+        let resp = self
             .mailbox
             .fetch(sequence_set, &ap, changed_since, uid)
-            .await
-        {
-            Ok(resp) => {
-                // Capabilities enabling logic only on successful command
-                // (according to my understanding of the spec)
-                self.client_capabilities.attributes_enable(&ap);
-                self.client_capabilities.fetch_modifiers_enable(modifiers);
+            .await?;
 
-                // Response to the client
-                Ok((
-                    Response::build()
-                        .to_req(self.req)
-                        .message("FETCH completed")
-                        .set_body(resp)
-                        .ok()?,
-                    flow::Transition::None,
-                ))
-            }
-            Err(e) => Ok((
-                Response::build()
-                    .to_req(self.req)
-                    .message(e.to_string())
-                    .no()?,
-                flow::Transition::None,
-            )),
-        }
+        // Capabilities enabling logic only on successful command
+        // (according to my understanding of the spec)
+        self.client_capabilities.attributes_enable(&ap);
+        self.client_capabilities.fetch_modifiers_enable(modifiers);
+
+        // Response to the client
+        Ok((
+            Response::build()
+                .to_req(self.req)
+                .message("FETCH completed")
+                .set_body(resp)
+                .ok()?,
+            flow::Transition::None,
+        ))
     }
 
     pub async fn search(

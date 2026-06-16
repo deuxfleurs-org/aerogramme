@@ -74,7 +74,7 @@ impl<'a> AppendContext<'a> {
                     .no()?,
                 flow::Transition::None,
             )),
-            Some(mb) => MailboxView::new(mb, self.client_capabilities.condstore.is_enabled())
+            Some(mb) => MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await?
         };
         // use the selected mailbox instead if it matches
         let (mbox, on_selected) = match self.mailbox_selected {
@@ -91,26 +91,16 @@ impl<'a> AppendContext<'a> {
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         // TODO: filter allowed flags? ping @Quentin
         
-        match mbox.append(msg, &flags).await {
-            Ok((uid, uidvalidity, updates)) => {
-                let mut resp = Response::build()
-                    .to_req(self.req)
-                    .message("APPEND completed")
-                    .code(Code::Other(CodeOther::unvalidated(
-                        format!("APPENDUID {} {}", uidvalidity, uid).into_bytes(),
-                    )));
-                if on_selected {
-                    resp = resp.set_body(updates);
-                }
-                Ok((resp.ok()?, flow::Transition::None))
-            },
-            Err(e) => Ok((
-                Response::build()
-                    .to_req(self.req)
-                    .message(e.to_string())
-                    .no()?,
-                flow::Transition::None,
-            )),
+        let (uid, uidvalidity, updates) = mbox.append(msg, &flags).await?;
+        let mut resp = Response::build()
+            .to_req(self.req)
+            .message("APPEND completed")
+            .code(Code::Other(CodeOther::unvalidated(
+                format!("APPENDUID {} {}", uidvalidity, uid).into_bytes(),
+            )));
+        if on_selected {
+            resp = resp.set_body(updates);
         }
+        Ok((resp.ok()?, flow::Transition::None))
     }
 }

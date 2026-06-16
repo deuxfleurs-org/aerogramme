@@ -22,7 +22,7 @@ use crate::imap::attributes::AttributesProxy;
 use crate::imap::flags;
 use crate::imap::index::UidIndexForImap;
 use crate::imap::mail_view::{MailView, SeenFlag};
-use crate::imap::response::Body;
+use crate::imap::response::{Body, SyncError};
 use crate::imap::search;
 
 const DEFAULT_FLAGS: [Flag; 5] = [
@@ -63,15 +63,60 @@ pub struct MailboxView {
 
 impl MailboxView {
     /// Creates a new IMAP view into a mailbox.
-    pub fn new(mailbox: Mailbox, is_condstore: bool) -> Self {
+    pub async fn new(mut mailbox: Mailbox, is_condstore: bool) -> Result<Self> {
+        mailbox.sync().await?;
         let known_state = mailbox.current_uid_index(); 
-        Self {
+        Ok(Self {
             mailbox,
             known_state,
             is_condstore,
-        }
+        })
     }
 
+    /// Sync the internal mailbox, importing remote changes. Additionally, if
+    /// UIDVALIDITY changed since the last known state, this raises an error
+    /// that disconnects the client.
+    ///
+    /// This matches a recommendation of RFC2683 §3.4.3 ("IMAP4 Implementation
+    /// Recommendations") on what to do if UIDVALIDITY changes while client
+    /// sessions are alive. We implement the most conservative recommendation
+    /// (disconnecting the client), which works for clients that do not expect
+    /// to receive unsolicited UIDVALIDITY updates (these are not explicitly
+    /// allowed by the IMAP4 RFC, even if RFC2683 suggests them...).
+    ///
+    /// This is an internal helper. It (or `checked_sync_no_update`) must be
+    /// called at the beginning of each IMAP operation.
+    async fn checked_sync(&mut self) -> Result<()> {
+        self.mailbox.sync().await?;
+        if self.mailbox.current_uid_index().uidvalidity !=
+            self.known_state.uidvalidity
+        {
+            return Err(SyncError::UidvalidityChanged.into())
+        }
+        Ok(())
+    }
+
+    /// Like `checked_sync`, import remote changes to the mailbox and raise an
+    /// error if UIDVALIDITY changed. Unlike `checked_sync`, does not update the
+    /// internal mailbox.
+    ///
+    /// This is required for commands that take sequence IDs as input and must
+    /// not see remote changes that could invalidate these sequence IDs (such as
+    /// EXPUNGE). Such commands include SEARCH, STORE and FETCH. In these
+    /// commands we thus avoid updating our local view of the mailbox, but still
+    /// check and abort if UIDVALIDITY changed to avoid operating on a divergent
+    /// state.
+    async fn checked_sync_no_update(&self) -> Result<()> {
+        let mut mbox = self.mailbox.clone();
+        mbox.sync().await?;
+        if mbox.current_uid_index().uidvalidity !=
+            self.known_state.uidvalidity
+        {
+            return Err(SyncError::UidvalidityChanged.into())
+        }
+        Ok(())
+    }
+    
     /// Create an updated view, useful to make a diff
     /// between what the client knows and new stuff
     /// Produces a set of IMAP responses describing the change between
@@ -184,12 +229,12 @@ impl MailboxView {
     // ---- implementation of IMAP operations
     
     pub async fn noop(&mut self) -> Result<Vec<Body<'static>>> {
-        self.mailbox.sync().await?;
+        self.checked_sync().await?;
         self.update(UpdateParameters::default()).await
     }
 
     pub async fn append(&mut self, msg: IMF<'_>, flags: &[String]) -> Result<(ImapUid, ImapUidvalidity, Vec<Body<'static>>)> {
-        self.mailbox.sync().await?;
+        self.checked_sync().await?;
         let (uid, _modseq) = self.mailbox.append(msg, flags).await?;
         let uidvalidity = self.mailbox.current_uid_index().uidvalidity;
         // NOTE: this also emits a FETCH unsolicited message for the new email,
@@ -207,7 +252,11 @@ impl MailboxView {
         unchanged_since: Option<NonZeroU64>,
         is_uid_store: &bool,
     ) -> Result<(Vec<Body<'static>>, Vec<NonZeroU32>)> {
-        self.mailbox.sync().await?;
+        if *is_uid_store {
+            self.checked_sync().await?;
+        } else {
+            self.checked_sync_no_update().await?;
+        }
         let state = self.mailbox.current_uid_index();
 
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
@@ -257,7 +306,7 @@ impl MailboxView {
             .ok_or(anyhow!("test"))?
             .notified()
             .await;
-        self.mailbox.sync().await?;
+        self.checked_sync().await?;
         self.update(UpdateParameters::default()).await
     }
 
@@ -265,8 +314,7 @@ impl MailboxView {
         &mut self,
         maybe_seq_set: &Option<SequenceSet>,
     ) -> Result<Vec<Body<'static>>> {
-        // Get a recent view to apply our change
-        self.mailbox.sync().await?;
+        self.checked_sync().await?;
         let state = self.mailbox.current_uid_index();
 
         // Build a default sequence set for the default case
@@ -298,11 +346,17 @@ impl MailboxView {
     }
 
     pub async fn copy(
-        &self,
+        &mut self,
         sequence_set: &SequenceSet,
         to: &mut Mailbox,
         is_uid_copy: &bool,
     ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>)> {
+        if *is_uid_copy {
+            self.checked_sync().await?
+        } else {
+            // TODO: is this correct? cf RFC2180?
+            self.checked_sync_no_update().await?
+        }
         let state = self.mailbox.current_uid_index();
         let mails = state.fetch(sequence_set, *is_uid_copy);
 
@@ -331,6 +385,12 @@ impl MailboxView {
         to: &mut Mailbox,
         is_uid_move: &bool,
     ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>, Vec<Body<'static>>)> {
+        if *is_uid_move {
+            self.checked_sync().await?
+        } else {
+            // TODO: is this correct? cf RFC2180?
+            self.checked_sync_no_update().await?
+        };
         let state = self.mailbox.current_uid_index();
         let mails = state.fetch(sequence_set, *is_uid_move);
 
@@ -370,6 +430,12 @@ impl MailboxView {
         changed_since: Option<NonZeroU64>,
         is_uid_fetch: &bool,
     ) -> Result<Vec<Body<'static>>> {
+        if *is_uid_fetch {
+            self.checked_sync().await?;
+        } else {
+            self.checked_sync_no_update().await?;
+        }
+
         // Pre-compute data
         //  a. what are the uuids of the emails we want?
         //  b. do we need to fetch the full body?
@@ -420,11 +486,17 @@ impl MailboxView {
 
     /// A naive search implementation...
     pub async fn search<'a>(
-        &self,
+        &mut self,
         _charset: &Option<Charset<'a>>,
         search_key: &SearchKey<'a>,
         uid: bool,
     ) -> Result<(Vec<Body<'static>>, bool)> {
+        if uid {
+            self.checked_sync().await?;
+        } else {
+            self.checked_sync_no_update().await?;
+        }
+        
         // 1. Compute the subset of sequence identifiers we need to fetch
         // based on the search query
         let crit = search::Criteria(search_key);
