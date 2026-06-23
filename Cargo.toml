@@ -50,7 +50,7 @@ nix = { version = "0.30", features = ["signal"] }
 clap = { version = "3", features = ["derive", "env"] }
 
 # email protocols
-eml-codec = { git = "https://git.deuxfleurs.fr/Deuxfleurs/eml-codec", branch = "aerogramme" }
+eml-codec = "0.4.0"
 smtp-message = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 imap-codec = { version = "2.0.0", features = ["bounded-static", "ext_condstore_qresync"] }
