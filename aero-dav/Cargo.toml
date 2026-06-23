@@ -1,7 +1,11 @@
 [package]
 name = "aero-dav"
-version = "0.3.2"
-authors = ["Alex Auvolat <alex@adnab.me>", "Quentin Dufour <quentin@dufour.io>"]
+version = "0.4.0"
+authors = [
+  "Alex Auvolat <alex@adnab.me>", 
+  "Quentin Dufour <quentin@dufour.io>",
+  "Armaël Guéneau <armael@deuxfleurs.fr>",
+]
 edition = "2021"
 license = "EUPL-1.2"
 description = "A partial and standalone implementation of the WebDAV protocol and its extensions (eg. CalDAV or CardDAV)"
