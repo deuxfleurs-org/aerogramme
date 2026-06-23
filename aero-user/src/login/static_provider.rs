@@ -110,14 +110,16 @@ impl LoginProvider for StaticLoginProvider {
         let storage: storage::Store = match &user.config.storage {
             StaticStorage::InMemory => self.in_memory_store.user(username).await,
             StaticStorage::Garage(grgconf) => {
-                self.garage_store.user(storage::garage::GarageConf {
-                    region: grgconf.aws_region.clone(),
-                    k2v_endpoint: grgconf.k2v_endpoint.clone(),
-                    s3_endpoint: grgconf.s3_endpoint.clone(),
-                    aws_access_key_id: grgconf.aws_access_key_id.clone(),
-                    aws_secret_access_key: grgconf.aws_secret_access_key.clone(),
-                    bucket: grgconf.bucket.clone(),
-                }).await?
+                self.garage_store
+                    .user(storage::garage::GarageConf {
+                        region: grgconf.aws_region.clone(),
+                        k2v_endpoint: grgconf.k2v_endpoint.clone(),
+                        s3_endpoint: grgconf.s3_endpoint.clone(),
+                        aws_access_key_id: grgconf.aws_access_key_id.clone(),
+                        aws_secret_access_key: grgconf.aws_secret_access_key.clone(),
+                        bucket: grgconf.bucket.clone(),
+                    })
+                    .await?
             }
         };
 
@@ -141,14 +143,16 @@ impl LoginProvider for StaticLoginProvider {
         let storage: storage::Store = match &user.config.storage {
             StaticStorage::InMemory => self.in_memory_store.user(&user.username).await,
             StaticStorage::Garage(grgconf) => {
-                self.garage_store.user(storage::garage::GarageConf {
-                    region: grgconf.aws_region.clone(),
-                    k2v_endpoint: grgconf.k2v_endpoint.clone(),
-                    s3_endpoint: grgconf.s3_endpoint.clone(),
-                    aws_access_key_id: grgconf.aws_access_key_id.clone(),
-                    aws_secret_access_key: grgconf.aws_secret_access_key.clone(),
-                    bucket: grgconf.bucket.clone(),
-                }).await?
+                self.garage_store
+                    .user(storage::garage::GarageConf {
+                        region: grgconf.aws_region.clone(),
+                        k2v_endpoint: grgconf.k2v_endpoint.clone(),
+                        s3_endpoint: grgconf.s3_endpoint.clone(),
+                        aws_access_key_id: grgconf.aws_access_key_id.clone(),
+                        aws_secret_access_key: grgconf.aws_secret_access_key.clone(),
+                        bucket: grgconf.bucket.clone(),
+                    })
+                    .await?
             }
         };
 

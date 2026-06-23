@@ -9,7 +9,6 @@ use aero_user::storage::{self, BlobRef, BlobVal, RowRef, RowVal, Selector, Store
 
 use crate::mail::query::{Query, QueryScope};
 use crate::mail::uidindex::*;
-use crate::mail::IMF;
 use crate::unique_ident::*;
 
 /// A mailbox stored in the backing store.
@@ -45,10 +44,7 @@ pub struct Mailbox {
 }
 
 impl Mailbox {
-    pub(crate) async fn open(
-        creds: &Credentials,
-        id: UniqueIdent,
-    ) -> Result<Self> {
+    pub(crate) async fn open(creds: &Credentials, id: UniqueIdent) -> Result<Self> {
         let index_path = format!("index/{}", id);
         let mail_path = format!("mail/{}", id);
 
@@ -131,22 +127,22 @@ impl Mailbox {
     /// Insert an email into the mailbox
     pub async fn append<'a>(
         &mut self,
-        msg: IMF<'a>,
+        raw_mail: &[u8],
         flags: &[Flag],
     ) -> Result<(ImapUid, ModSeq)> {
-        self.mbox.append(msg, flags).await
+        self.mbox.append(raw_mail, flags).await
     }
 
     /// Insert an email into the mailbox, copying it from an existing S3 object
     pub async fn append_from_s3<'a>(
         &mut self,
-        msg: IMF<'a>,
+        raw_mail: &[u8],
         ident: UniqueIdent,
         blob_ref: storage::BlobRef,
         message_key: Key,
     ) -> Result<()> {
         self.mbox
-            .append_from_s3(msg, ident, blob_ref, message_key)
+            .append_from_s3(raw_mail, ident, blob_ref, message_key)
             .await
     }
 
@@ -167,7 +163,11 @@ impl Mailbox {
 
     /// Move an email from an other Mailbox to this mailbox
     /// (use this when possible, as it allows for a certain number of storage optimizations)
-    pub async fn move_from(&mut self, from: &mut Mailbox, uuid: UniqueIdent) -> Result<UniqueIdent> {
+    pub async fn move_from(
+        &mut self,
+        from: &mut Mailbox,
+        uuid: UniqueIdent,
+    ) -> Result<UniqueIdent> {
         if self.id == from.id {
             bail!("Cannot copy move same mailbox");
         }
@@ -242,10 +242,13 @@ impl MailboxInternal {
     async fn fetch_meta(&self, ids: &[UniqueIdent]) -> Result<Vec<MailMeta>> {
         let ids = ids.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         let sort_list = ids.iter().map(|x| x.as_str()).collect::<Vec<_>>();
-        let res_vec = self.storage.row_fetch_batch(&Selector::List {
-            shard: self.mail_path.as_str(),
-            sort_list: &sort_list,
-        }).await?;
+        let res_vec = self
+            .storage
+            .row_fetch_batch(&Selector::List {
+                shard: self.mail_path.as_str(),
+                sort_list: &sort_list,
+            })
+            .await?;
 
         let mut meta_vec = vec![];
         for res in res_vec.into_iter() {
@@ -304,18 +307,14 @@ impl MailboxInternal {
         self.uid_index.push(set_flag_op).await
     }
 
-    async fn append(
-        &mut self,
-        mail: IMF<'_>,
-        flags: &[Flag],
-    ) -> Result<(ImapUid, ModSeq)> {
+    async fn append(&mut self, raw_mail: &[u8], flags: &[Flag]) -> Result<(ImapUid, ModSeq)> {
         let ident = gen_ident();
         let message_key = gen_key();
 
         futures::try_join!(
             async {
                 // Encrypt and save mail body
-                let message_blob = cryptoblob::seal(mail.raw, &message_key)?;
+                let message_blob = cryptoblob::seal(raw_mail, &message_key)?;
                 self.storage
                     .blob_insert(BlobVal::new(
                         BlobRef(format!("{}/{}", self.mail_path, ident)),
@@ -328,9 +327,9 @@ impl MailboxInternal {
                 // Save mail meta
                 let meta = MailMeta {
                     internaldate: now_msec(),
-                    headers: mail.parsed.raw_headers.to_vec(),
+                    headers: eml_codec::raw_headers(raw_mail).to_vec(),
                     message_key: message_key.clone(),
-                    rfc822_size: mail.raw.len(),
+                    rfc822_size: raw_mail.len(),
                 };
                 let meta_blob = seal_serialize(&meta, &self.encryption_key)?;
                 self.storage
@@ -363,7 +362,7 @@ impl MailboxInternal {
 
     async fn append_from_s3<'a>(
         &mut self,
-        mail: IMF<'a>,
+        raw_mail: &'a [u8],
         ident: UniqueIdent,
         blob_src: storage::BlobRef,
         message_key: Key,
@@ -379,9 +378,9 @@ impl MailboxInternal {
                 // Save mail meta
                 let meta = MailMeta {
                     internaldate: now_msec(),
-                    headers: mail.parsed.raw_headers.to_vec(),
+                    headers: eml_codec::raw_headers(raw_mail).to_vec(),
                     message_key: message_key.clone(),
-                    rfc822_size: mail.raw.len(),
+                    rfc822_size: raw_mail.len(),
                 };
                 let meta_blob = seal_serialize(&meta, &self.encryption_key)?;
                 self.storage
@@ -424,10 +423,7 @@ impl MailboxInternal {
             async {
                 // Delete mail meta from K2V
                 let sk = ident.to_string();
-                let rv = self
-                    .storage
-                    .row_fetch(&self.mail_path, &sk)
-                    .await?;
+                let rv = self.storage.row_fetch(&self.mail_path, &sk).await?;
                 self.storage
                     .row_update(vec![storage::RowVal::deleted(rv.row_ref)])
                     .await?;
@@ -447,7 +443,11 @@ impl MailboxInternal {
         Ok(new_id)
     }
 
-    async fn move_from(&mut self, from: &mut MailboxInternal, id: UniqueIdent) -> Result<UniqueIdent> {
+    async fn move_from(
+        &mut self,
+        from: &mut MailboxInternal,
+        id: UniqueIdent,
+    ) -> Result<UniqueIdent> {
         // NOTE: we *must* generate a fresh ID; see the comment in uidindex.rs
         // for `internalseq` related to the MailDel optimization.
         let new_id = gen_ident();
@@ -516,7 +516,7 @@ impl MailboxInternal {
 pub struct MailMeta {
     /// INTERNALDATE field (milliseconds since epoch)
     pub internaldate: u64,
-    /// Headers of the message
+    /// Headers of the message. Used for search queries.
     pub headers: Vec<u8>,
     /// Secret key for decrypting entire message
     pub message_key: Key,

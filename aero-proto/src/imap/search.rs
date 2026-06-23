@@ -285,7 +285,8 @@ impl<'a> Criteria<'a> {
                 .content
                 .as_msg()
                 .map(|msg| {
-                    msg.raw_part
+                    msg.raw
+                        .unwrap()
                         .windows(txt.as_ref().len())
                         .any(|win| win == txt.as_ref())
                 })
@@ -294,7 +295,9 @@ impl<'a> Criteria<'a> {
                 .content
                 .as_msg()
                 .map(|msg| {
-                    msg.raw_body
+                    msg.mime_body
+                        .raw_body()
+                        .unwrap()
                         .windows(txt.as_ref().len())
                         .any(|win| win == txt.as_ref())
                 })

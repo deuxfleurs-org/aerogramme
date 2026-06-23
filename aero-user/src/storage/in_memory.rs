@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::ops::Bound::{self, Excluded, Included, Unbounded};
 use std::sync::RwLock;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use sodiumoxide::{crypto::hash, hex};
 use tokio::sync::Notify;
 
@@ -88,8 +88,7 @@ impl SeenMarker {
     fn decode(s: &str) -> Self {
         use base64::prelude::*;
         let bytes = BASE64_STANDARD.decode(s).expect("valid seen_marker");
-        rmp_serde::from_slice::<SeenMarker>(&bytes)
-            .expect("valid seen_marker")
+        rmp_serde::from_slice::<SeenMarker>(&bytes).expect("valid seen_marker")
     }
 }
 
@@ -172,20 +171,18 @@ impl IStore for MemStore {
             .ok_or(StorageError::NotFound)?;
         Ok(v.to_concurrent_row_val(shard, sort))
     }
-    
-    async fn row_fetch_batch<'a>(&self, select: &Selector<'a>) -> Result<Vec<ConcurrentRowVal>, StorageError> {
+
+    async fn row_fetch_batch<'a>(
+        &self,
+        select: &Selector<'a>,
+    ) -> Result<Vec<ConcurrentRowVal>, StorageError> {
         tracing::trace!(select=%select, command="row_fetch_batch");
         let store = self.row.read().or(Err(StorageError::Internal))?;
         let (shard, sorts) = select_keys(&store.table, select);
         Ok(sorts
             .into_iter()
             .map(|sort| {
-                let v = store
-                    .table
-                    .get(&shard)
-                    .unwrap()
-                    .get(&sort)
-                    .unwrap();
+                let v = store.table.get(&shard).unwrap().get(&sort).unwrap();
                 v.to_concurrent_row_val(&shard, &sort)
             })
             .collect::<Vec<_>>())
@@ -264,9 +261,11 @@ impl IStore for MemStore {
         self.row_fetch(shard, sort).await
     }
 
-    async fn row_poll_range<'a>(&self, select: &RangeSelector<'a>, seen_marker: Option<&str>) ->
-        Result<PollRangeResult, StorageError>
-    {
+    async fn row_poll_range<'a>(
+        &self,
+        select: &RangeSelector<'a>,
+        seen_marker: Option<&str>,
+    ) -> Result<PollRangeResult, StorageError> {
         tracing::trace!(select=%select, command="row_poll_range");
         let prev_seen = seen_marker.map(SeenMarker::decode);
         loop {
@@ -276,12 +275,7 @@ impl IStore for MemStore {
                 let vals = sorts
                     .into_iter()
                     .map(|sort| {
-                        let intv = store
-                            .table
-                            .get(&shard)
-                            .unwrap()
-                            .get(&sort)
-                            .unwrap();
+                        let intv = store.table.get(&shard).unwrap().get(&sort).unwrap();
                         (sort, intv)
                     })
                     .collect::<Vec<_>>();
@@ -292,7 +286,7 @@ impl IStore for MemStore {
                     seen.insert(sort.clone(), intv.max_version());
                     let is_new = match &prev_seen {
                         None => true,
-                        Some(prev) => intv.max_version() > *prev.seen.get(&sort).unwrap_or(&0)
+                        Some(prev) => intv.max_version() > *prev.seen.get(&sort).unwrap_or(&0),
                     };
                     if is_new {
                         new_vals.push(intv.to_concurrent_row_val(&shard, &sort));
@@ -303,12 +297,12 @@ impl IStore for MemStore {
                     return Ok(PollRangeResult {
                         value: new_vals,
                         seen_marker: SeenMarker { seen }.encode(),
-                    })
+                    });
                 }
 
                 store.change.clone()
             };
-            
+
             change.notified().await;
         }
     }
@@ -361,9 +355,10 @@ impl IStore for MemStore {
 
 /// Returns keys of `store` that are selected by `select`, as pairs of (shard, sort).
 /// These are guaranteed to be valid keys of `store`, associated with a value.
-fn select_keys<'a, V>(store: &HashMap<String, BTreeMap<String, V>>, select: &Selector<'a>) ->
-    (String, Vec<String>)
-{
+fn select_keys<'a, V>(
+    store: &HashMap<String, BTreeMap<String, V>>,
+    select: &Selector<'a>,
+) -> (String, Vec<String>) {
     match select {
         Selector::Range {
             shard,
@@ -373,15 +368,19 @@ fn select_keys<'a, V>(store: &HashMap<String, BTreeMap<String, V>>, select: &Sel
             shard.to_string(),
             store
                 .get(*shard)
-                .map(|bt|
-                     bt
-                     .range((
-                         sort_begin.map(|b| Included(b.to_string())).unwrap_or(Unbounded),
-                         sort_end.map(|e| Excluded(e.to_string())).unwrap_or(Unbounded),
-                     ))
-                     .map(|(sort, _)| sort.clone())
-                     .collect())
-                .unwrap_or(vec![])
+                .map(|bt| {
+                    bt.range((
+                        sort_begin
+                            .map(|b| Included(b.to_string()))
+                            .unwrap_or(Unbounded),
+                        sort_end
+                            .map(|e| Excluded(e.to_string()))
+                            .unwrap_or(Unbounded),
+                    ))
+                    .map(|(sort, _)| sort.clone())
+                    .collect()
+                })
+                .unwrap_or(vec![]),
         ),
         Selector::List { shard, sort_list } => (
             shard.to_string(),
@@ -392,17 +391,17 @@ fn select_keys<'a, V>(store: &HashMap<String, BTreeMap<String, V>>, select: &Sel
                     let _ = bt.get(*sort)?;
                     Some(sort.to_string())
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>(),
         ),
         Selector::Prefix { shard, sort_prefix } => {
             let last_bound = prefix_last_bound(sort_prefix);
             let sorts = store
                 .get(*shard)
-                .map(|bt|
-                     bt
-                     .range((Included(sort_prefix.to_string()), last_bound))
-                     .map(|(sort, _)| sort.clone())
-                     .collect())
+                .map(|bt| {
+                    bt.range((Included(sort_prefix.to_string()), last_bound))
+                        .map(|(sort, _)| sort.clone())
+                        .collect()
+                })
                 .unwrap_or(vec![]);
             (shard.to_string(), sorts)
         }
@@ -412,7 +411,7 @@ fn select_keys<'a, V>(store: &HashMap<String, BTreeMap<String, V>>, select: &Sel
                 .get(*shard)
                 .and_then(|bt| bt.get(*sort))
                 .map(|_| vec![sort.to_string()])
-                .unwrap_or(vec![])
+                .unwrap_or(vec![]),
         ),
     }
 }

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use imap_codec::imap_types::command::Command;
 use imap_codec::imap_types::core::Literal;
 use imap_codec::imap_types::datetime::DateTime;
@@ -7,13 +7,10 @@ use imap_codec::imap_types::mailbox::Mailbox as MailboxCodec;
 use imap_codec::imap_types::response::{Code, CodeOther};
 
 use aero_collections::user::User;
-use aero_collections::mail::IMF;
 
 use crate::imap::capability::ClientCapability;
 use crate::imap::command::{
-    authenticated::AuthenticatedContext,
-    selected::SelectedContext,
-    MailboxName,
+    authenticated::AuthenticatedContext, selected::SelectedContext, MailboxName,
 };
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
@@ -66,32 +63,34 @@ impl<'a> AppendContext<'a> {
         let name: &str = MailboxName(mailbox).try_into()?;
 
         let mut mbox = match self.user.mailboxes.open(name).await? {
-            None => return Ok((
-                Response::build()
-                    .to_req(self.req)
-                    .message("Mailbox does not exist")
-                    .code(Code::TryCreate)
-                    .no()?,
-                flow::Transition::None,
-            )),
-            Some(mb) => MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await?
+            None => {
+                return Ok((
+                    Response::build()
+                        .to_req(self.req)
+                        .message("Mailbox does not exist")
+                        .code(Code::TryCreate)
+                        .no()?,
+                    flow::Transition::None,
+                ))
+            }
+            Some(mb) => {
+                MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await?
+            }
         };
         // use the selected mailbox instead if it matches
         let (mbox, on_selected) = match self.mailbox_selected {
             Some(selected) if selected.id() == mbox.id() => (selected, true),
             _ => (&mut mbox, false),
         };
-                
+
         // FIXME?
         if date.is_some() {
             tracing::warn!("Cannot set date when appending message");
         }
-        let msg = 
-            IMF::try_from(message.data()).map_err(|_| anyhow!("Could not parse e-mail message"))?;
         let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         // TODO: filter allowed flags? ping @Quentin
-        
-        let (uid, uidvalidity, updates) = mbox.append(msg, &flags).await?;
+
+        let (uid, uidvalidity, updates) = mbox.append(message.data(), &flags).await?;
         let mut resp = Response::build()
             .to_req(self.req)
             .message("APPEND completed")

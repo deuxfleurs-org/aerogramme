@@ -152,7 +152,7 @@ pub enum Selector<'a> {
     },
     List {
         shard: &'a str,
-        sort_list: &'a[&'a str],
+        sort_list: &'a [&'a str],
     },
     Prefix {
         shard: &'a str,
@@ -180,7 +180,7 @@ impl<'a> std::fmt::Display for Selector<'a> {
                     write!(f, "{}", end)?;
                 };
                 write!(f, ")")
-            },
+            }
             Self::List { shard, sort_list } => write!(f, "List({}, {:?})", shard, sort_list),
             Self::Prefix { shard, sort_prefix } => write!(f, "Prefix({}, {})", shard, sort_prefix),
             Self::Single { shard, sort } => write!(f, "Single({}, {})", shard, sort),
@@ -217,7 +217,7 @@ impl<'a> std::fmt::Display for RangeSelector<'a> {
                     write!(f, "{}", end)?;
                 };
                 write!(f, ")")
-            },
+            }
             Self::Prefix { shard, sort_prefix } => write!(f, "Prefix({}, {})", shard, sort_prefix),
         }
     }
@@ -225,10 +225,16 @@ impl<'a> std::fmt::Display for RangeSelector<'a> {
 impl<'a> RangeSelector<'a> {
     fn as_selector(&self) -> Selector<'a> {
         match self {
-            Self::Range { shard, sort_begin, sort_end } =>
-                Selector::Range { shard, sort_begin: *sort_begin, sort_end: *sort_end },
-            Self::Prefix { shard, sort_prefix } =>
-                Selector::Prefix { shard, sort_prefix },
+            Self::Range {
+                shard,
+                sort_begin,
+                sort_end,
+            } => Selector::Range {
+                shard,
+                sort_begin: *sort_begin,
+                sort_end: *sort_end,
+            },
+            Self::Prefix { shard, sort_prefix } => Selector::Prefix { shard, sort_prefix },
         }
     }
 }
@@ -249,7 +255,10 @@ pub trait IStore: std::fmt::Debug {
     /// `StorageError::NotFound`. Instead, keys that are not in the store
     /// (especially for `Selector::Single` and `Selector::List`) are simply
     /// ignored.
-    async fn row_fetch_batch<'a>(&self, select: &Selector<'a>) -> Result<Vec<ConcurrentRowVal>, StorageError>;
+    async fn row_fetch_batch<'a>(
+        &self,
+        select: &Selector<'a>,
+    ) -> Result<Vec<ConcurrentRowVal>, StorageError>;
 
     /// Delete a batch of values. This function does not takes causality
     /// information as input. Instead, it internally inserts deletion markers
@@ -275,8 +284,11 @@ pub trait IStore: std::fmt::Debug {
     /// Otherwise, the seen marker must have been returned by an earlier call to `row_poll_range` for
     /// the same range or a larger range. In this case, waits until a new value is written in that range,
     /// which has not been seen by the earlier call.
-    async fn row_poll_range<'a>(&self, select: &RangeSelector<'a>, seen_marker: Option<&str>) ->
-        Result<PollRangeResult, StorageError>;
+    async fn row_poll_range<'a>(
+        &self,
+        select: &RangeSelector<'a>,
+        seen_marker: Option<&str>,
+    ) -> Result<PollRangeResult, StorageError>;
 
     async fn blob_fetch(&self, blob_ref: &BlobRef) -> Result<BlobVal, StorageError>;
     async fn blob_insert(&self, blob_val: BlobVal) -> Result<String, StorageError>;
@@ -293,4 +305,3 @@ pub type Store = Arc<dyn IStore + Send + Sync>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct UnicityBuffer(Vec<u8>);
-

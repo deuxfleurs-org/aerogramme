@@ -118,14 +118,16 @@ impl LdapLoginProvider {
                     BucketSource::Attr(a) => get_attr(user, &a)?,
                 };
 
-                self.garage_store.user(storage::garage::GarageConf {
-                    region: from_config.aws_region.clone(),
-                    s3_endpoint: from_config.s3_endpoint.clone(),
-                    k2v_endpoint: from_config.k2v_endpoint.clone(),
-                    aws_access_key_id,
-                    aws_secret_access_key,
-                    bucket,
-                }).await?
+                self.garage_store
+                    .user(storage::garage::GarageConf {
+                        region: from_config.aws_region.clone(),
+                        s3_endpoint: from_config.s3_endpoint.clone(),
+                        k2v_endpoint: from_config.k2v_endpoint.clone(),
+                        aws_access_key_id,
+                        aws_secret_access_key,
+                        bucket,
+                    })
+                    .await?
             }
         };
 

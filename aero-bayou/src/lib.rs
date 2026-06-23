@@ -84,7 +84,7 @@ impl<S: BayouState> Bayou<S> {
         let state = engine.history.read().await.current_state().clone();
         Ok(Self { engine, state })
     }
-    
+
     /// Read the current state
     pub fn state(&self) -> &S {
         &self.state
@@ -131,7 +131,7 @@ impl<S: BayouState> Bayou<S> {
     pub fn downgrade(&self) -> BayouWeak<S> {
         BayouWeak {
             engine: Arc::downgrade(&self.engine),
-            state: self.state.clone(),   
+            state: self.state.clone(),
         }
     }
 }
@@ -150,7 +150,10 @@ pub struct BayouWeak<S: BayouState> {
 impl<S: BayouState> BayouWeak<S> {
     pub fn upgrade(&self) -> Option<Bayou<S>> {
         let engine = self.engine.upgrade()?;
-        Some(Bayou { engine, state: self.state.clone() })
+        Some(Bayou {
+            engine,
+            state: self.state.clone(),
+        })
     }
 }
 
@@ -181,18 +184,16 @@ impl<S: BayouState> History<S> {
             ops: vec![],
         }
     }
-    
+
     fn current_state(&self) -> &S {
-        self
-            .ops
+        self.ops
             .last()
             .map(|(_, _, st)| st.as_ref().unwrap())
             .unwrap_or(&self.checkpoint.1)
     }
 
     fn current_timestamp(&self) -> &Timestamp {
-        self
-            .ops
+        self.ops
             .last()
             .map(|(ts, _, _)| ts)
             .unwrap_or(&self.checkpoint.0)
@@ -359,7 +360,7 @@ impl<S: BayouState> BayouEngine<S> {
     async fn push(&self, op: S::Op) -> Result<()> {
         {
             let mut history = self.history.write().await;
-            
+
             let ts = Timestamp::after(history.current_timestamp());
 
             let row_val = storage::RowVal::new(
@@ -377,14 +378,14 @@ impl<S: BayouState> BayouEngine<S> {
                 history.ops[hlen - 2].2 = None;
             }
         }
-        
+
         self.checkpoint().await?;
 
         Ok(())
     }
 
     // -- Internal operations
-    
+
     /// Save a new checkpoint if previous checkpoint is too old
     async fn checkpoint(&self) -> Result<()> {
         {
@@ -512,7 +513,10 @@ impl<S: BayouState> BayouEngine<S> {
     }
 }
 
-async fn list_checkpoints(storage: &storage::Store, path: &str) -> Result<Vec<(Timestamp, String)>> {
+async fn list_checkpoints(
+    storage: &storage::Store,
+    path: &str,
+) -> Result<Vec<(Timestamp, String)>> {
     let prefix = format!("{}/checkpoint/", path);
 
     let checkpoints_res = storage.blob_list(&prefix).await?;
@@ -548,16 +552,16 @@ impl K2vWatch {
             learnt_remote_update,
         });
 
-        tokio::spawn(Self::background_task(Arc::downgrade(&watch), path.to_string(), storage));
- 
+        tokio::spawn(Self::background_task(
+            Arc::downgrade(&watch),
+            path.to_string(),
+            storage,
+        ));
+
         Ok(watch)
     }
 
-    async fn background_task(
-        self_weak: Weak<Self>,
-        path: String,
-        storage: storage::Store,
-    ) {
+    async fn background_task(self_weak: Weak<Self>, path: String, storage: storage::Store) {
         let remote_update = match Weak::upgrade(&self_weak) {
             None => return,
             Some(this) => this.learnt_remote_update.clone(),

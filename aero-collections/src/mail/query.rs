@@ -1,4 +1,4 @@
-use super::mailbox::{Mailbox, MailMeta};
+use super::mailbox::{MailMeta, Mailbox};
 use crate::unique_ident::UniqueIdent;
 use anyhow::Result;
 use futures::future::FutureExt;

@@ -50,7 +50,7 @@ pub struct UidIndex {
     // email is never added twice to the mailbox.
     // (It would otherwise be natural to count all modifications to the list
     // of emails, i.e. all MailAdd and MailDel commands.)
-    // 
+    //
     // Indeed: if we ensure that an email is never added twice with the same
     // `UniqueIdent` in a mailbox, then there is no need to bump `internalseq`
     // when receiving a MailDel. Bumping the `internalseq` causes later MailAdd
@@ -83,7 +83,7 @@ impl<T: Clone> SeqidMap<T> {
     pub fn new() -> Self {
         Self(Vector::new())
     }
-    
+
     pub fn get(&self, seqid: NonZeroU32) -> Option<&T> {
         self.0.get(seqid.get() as usize - 1)
     }

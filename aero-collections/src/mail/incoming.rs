@@ -15,7 +15,6 @@ use aero_user::storage;
 
 use crate::mail::mailbox::Mailbox;
 use crate::mail::namespace::MailboxNsInner;
-use crate::mail::IMF;
 use crate::unique_ident::*;
 
 const INCOMING_PK: &str = "incoming";
@@ -58,7 +57,7 @@ async fn incoming_mail_watch_process_internal(
         storage::RowRef::new(INCOMING_PK, INCOMING_LOCK_SK),
     );
     let storage = creds.storage.clone();
-    
+
     let mut inbox: Option<Mailbox> = None;
     let mut incoming_key = storage::RowRef::new(INCOMING_PK, INCOMING_WATCH_SK);
 
@@ -72,11 +71,12 @@ async fn incoming_mail_watch_process_internal(
                         Ok(row_val) => break row_val.row_ref,
                         Err(storage::StorageError::NotFound) => {
                             // initialize the watch ref, then try again
-                            let watch_val = storage::RowVal::new(incoming_key.clone(), gen_ident().0.to_vec());
+                            let watch_val =
+                                storage::RowVal::new(incoming_key.clone(), gen_ident().0.to_vec());
                             if let Err(e) = storage.row_update(vec![watch_val]).await {
                                 tracing::warn!(err=?e, "can't initialize incoming watch ref")
                             }
-                        },
+                        }
                         Err(e) => {
                             error!("Error in wait_new_mail: {}", e);
                             tokio::time::sleep(Duration::from_secs(30)).await;
@@ -125,10 +125,11 @@ async fn incoming_mail_watch_process_internal(
                 }
             }
         }
-        
+
         // If we were able to open INBOX, and we have mail,
         // fetch new mail
-        if let (Some(inbox), Some(updated_incoming_key)) = (&mut inbox, maybe_updated_incoming_key) {
+        if let (Some(inbox), Some(updated_incoming_key)) = (&mut inbox, maybe_updated_incoming_key)
+        {
             match handle_incoming_mail(&creds, inbox, &lock_held).await {
                 Ok(()) => {
                     incoming_key = updated_incoming_key;
@@ -176,7 +177,10 @@ async fn move_incoming_message(
     let object_key = format!("incoming/{}", id);
 
     // 1. Fetch message from S3
-    let object = creds.storage.blob_fetch(&storage::BlobRef(object_key)).await?;
+    let object = creds
+        .storage
+        .blob_fetch(&storage::BlobRef(object_key))
+        .await?;
 
     // 1.a decrypt message key from headers
     //info!("Object metadata: {:?}", get_result.metadata);
@@ -200,9 +204,8 @@ async fn move_incoming_message(
         .map_err(|_| anyhow!("Cannot decrypt email content"))?;
 
     // 2 parse mail and add to inbox
-    let msg = IMF::try_from(&plain_mail[..]).map_err(|_| anyhow!("Invalid email body"))?;
     inbox
-        .append_from_s3(msg, id, object.blob_ref.clone(), message_key)
+        .append_from_s3(&plain_mail, id, object.blob_ref.clone(), message_key)
         .await?;
 
     // 3 delete from incoming
@@ -216,7 +219,11 @@ async fn move_incoming_message(
 // `self_weak` is used to detect when the "owner" of this worker has been
 // destroyed in order to terminate the task. The owner of the worker holds a
 // Arc<LockLoop>, drops it when it is destroyed, which in turn stops the worker.
-fn k2v_lock_loop(self_weak: Weak<LockLoop>, storage: storage::Store, row_ref: storage::RowRef) -> watch::Receiver<bool> {
+fn k2v_lock_loop(
+    self_weak: Weak<LockLoop>,
+    storage: storage::Store,
+    row_ref: storage::RowRef,
+) -> watch::Receiver<bool> {
     let (held_tx, held_rx) = watch::channel(false);
 
     tokio::spawn(k2v_lock_loop_internal(self_weak, storage, row_ref, held_tx));
@@ -265,7 +272,7 @@ async fn k2v_lock_loop_internal(
                         error!("Could not initialize lock ref: {}", e);
                         tokio::time::sleep(Duration::from_secs(30)).await;
                     }
-                },
+                }
                 Err(e) => {
                     error!(
                         "Error in k2v wait value changed: {} ; assuming we no longer hold lock.",
@@ -430,7 +437,10 @@ async fn k2v_lock_loop_internal(
         _ => None,
     };
     if let Some(rref) = release {
-        match storage.row_update(vec![storage::RowVal::deleted(rref.clone())]).await {
+        match storage
+            .row_update(vec![storage::RowVal::deleted(rref.clone())])
+            .await
+        {
             Err(e) => warn!("Unable to release lock {:?}: {}", rref, e),
             Ok(_) => (),
         };

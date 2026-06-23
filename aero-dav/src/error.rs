@@ -1,5 +1,5 @@
-use quick_xml::events::attributes::AttrError;
 use quick_xml::encoding::EncodingError;
+use quick_xml::events::attributes::AttrError;
 
 #[derive(Debug)]
 pub enum ParsingError {

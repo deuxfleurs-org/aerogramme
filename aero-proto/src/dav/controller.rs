@@ -41,10 +41,7 @@ pub(crate) struct Controller {
     req: Request<Incoming>,
 }
 impl Controller {
-    pub(crate) async fn route(
-        user: User,
-        req: Request<Incoming>,
-    ) -> Result<HttpResponse> {
+    pub(crate) async fn route(user: User, req: Request<Incoming>) -> Result<HttpResponse> {
         let path = req.uri().path().to_string();
         let path_segments: Vec<_> = path.split("/").filter(|s| *s != "").collect();
         let method = req.method().as_str().to_uppercase();

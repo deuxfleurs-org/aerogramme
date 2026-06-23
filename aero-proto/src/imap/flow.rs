@@ -24,13 +24,7 @@ pub enum State {
     NotAuthenticated,
     Authenticated(User),
     Selected(User, MailboxView, MailboxPerm),
-    Idle(
-        User,
-        MailboxView,
-        MailboxPerm,
-        Tag<'static>,
-        Arc<Notify>,
-    ),
+    Idle(User, MailboxView, MailboxPerm, Tag<'static>, Arc<Notify>),
     Logout,
 }
 impl State {

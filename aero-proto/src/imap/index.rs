@@ -2,7 +2,7 @@ use std::num::NonZeroU64;
 
 use imap_codec::imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
 
-use aero_collections::mail::uidindex::{ImapUid, ImapSeqid, ModSeq, UidIndex};
+use aero_collections::mail::uidindex::{ImapSeqid, ImapUid, ModSeq, UidIndex};
 use aero_collections::unique_ident::UniqueIdent;
 
 // Helper functions to query email indexes of UidIndex.
@@ -14,12 +14,8 @@ use aero_collections::unique_ident::UniqueIdent;
 pub trait UidIndexForImap {
     fn fetch_by_uid(&self, sequence_set: &SequenceSet) -> Vec<MailIndex>;
     fn fetch_by_seqid(&self, sequence_set: &SequenceSet) -> Vec<MailIndex>;
-    
-    fn fetch(
-        &self,
-        sequence_set: &SequenceSet,
-        by_uid: bool,
-    ) -> Vec<MailIndex> {
+
+    fn fetch(&self, sequence_set: &SequenceSet, by_uid: bool) -> Vec<MailIndex> {
         match by_uid {
             true => self.fetch_by_uid(sequence_set),
             false => self.fetch_by_seqid(sequence_set),
@@ -66,7 +62,13 @@ impl UidIndexForImap for UidIndex {
                 let &uuid = self.idx_by_uid.get(&uid)?;
                 let &(uid, modseq, ref flags) = self.table.get(&uuid)?;
                 let &seqid = self.idx_seqid_of_uuid.get(&uuid)?;
-                Some(MailIndex { seqid, uid, uuid, modseq, flags: flags.clone() })
+                Some(MailIndex {
+                    seqid,
+                    uid,
+                    uuid,
+                    modseq,
+                    flags: flags.clone(),
+                })
             })
             .collect()
     }
@@ -81,7 +83,13 @@ impl UidIndexForImap for UidIndex {
             .filter_map(|seqid| {
                 let &uuid = self.idx_by_seqid.get(seqid)?;
                 let &(uid, modseq, ref flags) = self.table.get(&uuid)?;
-                Some(MailIndex { seqid, uid, uuid, modseq, flags: flags.clone() })
+                Some(MailIndex {
+                    seqid,
+                    uid,
+                    uuid,
+                    modseq,
+                    flags: flags.clone(),
+                })
             })
             .collect()
     }

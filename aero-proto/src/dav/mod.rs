@@ -108,19 +108,20 @@ impl Server {
                             tracing::info!("{:?} {:?}", req.method(), req.uri());
                             tracing::debug!(req=?req, "full request");
                             async {
-                                let response = match middleware::auth(login, req, |user, request| {
-                                    async { Controller::route(user, request).await }.boxed()
-                                })
-                                .await
-                                {
-                                    Ok(v) => Ok(v),
-                                    Err(e) => {
-                                        tracing::error!(err=?e, "internal error");
-                                        Response::builder()
-                                            .status(500)
-                                            .body(codec::text_body("Internal error"))
-                                    }
-                                };
+                                let response =
+                                    match middleware::auth(login, req, |user, request| {
+                                        async { Controller::route(user, request).await }.boxed()
+                                    })
+                                    .await
+                                    {
+                                        Ok(v) => Ok(v),
+                                        Err(e) => {
+                                            tracing::error!(err=?e, "internal error");
+                                            Response::builder()
+                                                .status(500)
+                                                .body(codec::text_body("Internal error"))
+                                        }
+                                    };
                                 tracing::debug!(resp=?response, "full response");
                                 response
                             }
