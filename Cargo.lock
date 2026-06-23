@@ -1642,8 +1642,9 @@ dependencies = [
 
 [[package]]
 name = "eml-codec"
-version = "0.3.1"
-source = "git+https://git.deuxfleurs.fr/Deuxfleurs/eml-codec?branch=aerogramme#5b796f799a3b38e402095790612e0b44451ff72b"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5453c35e5b5de2e4522d2cb128b2fad35deada2ae8728b97b7585b1839b47b9c"
 dependencies = [
  "base64 0.21.7",
  "bounded-static 0.8.0",
@@ -1660,8 +1661,9 @@ dependencies = [
 
 [[package]]
 name = "eml_codec_derives"
-version = "0.1.0"
-source = "git+https://git.deuxfleurs.fr/Deuxfleurs/eml-codec?branch=aerogramme#5b796f799a3b38e402095790612e0b44451ff72b"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30359e0f5605e2ba4ba966169321dd64422bb1d5ad903c29bb0f3c63b8e7ca1b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4691,7 +4693,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
