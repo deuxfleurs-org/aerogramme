@@ -73,6 +73,16 @@ cat > Cargo.toml <<EOF
 [workspace]
 resolver = "2"
 members = ["src/k2v-client/"]
+
+
+[workspace.lints.clippy]
+# pedantic lints configuration
+doc_markdown = "warn"
+format_collect = "warn"
+manual_midpoint = "warn"
+semicolon_if_nothing_returned = "warn"
+unnecessary_semicolon = "warn"
+unnecessary_wraps = "warn"
 EOF
 '';
 
