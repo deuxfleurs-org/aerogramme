@@ -1,0 +1,18 @@
+{% import "./macros.html" as macros %}
+
+{%- if doc.params %}
+  <div class="api-param-section">
+    <h2>
+      {% if doc.paramType %}
+        {$ doc.paramType $}
+      {% elif doc.docType == 'directive' %}
+        Attributes
+      {% else %}
+        Arguments
+      {% endif %}
+    </h2>
+    <div class="api-param-table">
+      {$ macros.paramTable(doc.params) $}
+    </div>
+  </div>
+{%- endif -%}

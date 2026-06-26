@@ -1,0 +1,945 @@
+/// SchedulerUI.scss -*- Mode: scss; indent-tabs-mode: nil; basic-offset: 2 -*-
+$hours_margin: 50px;
+$block_margin: 2%; // See sgCalendarDayBlock.directive.js
+$block_radius: 3px;
+$quarter_height: 10px;
+
+/**
+ * Affected templates:
+ * - SchedulerUI/UIxCalDayView.wox
+ * - SchedulerUI/UIxCalWeekView.wox
+ * - SchedulerUI/UIxCalDayTable.wox
+ * - SchedulerUI/UIxCalMonthView.wox
+ * - SchedulerUI/UIxCalMulticolumnDayView.wox
+ */
+
+[ui-view=calendars] {
+
+  // Decrease width of middle column (list of events and tasks)
+  //$listView-width: grid-step(4) !global;
+  $listView-width: grid-step(4);
+  //$detailView-width: grid-step(10) !global;
+
+  .view-list {
+    min-width: ($listView-width - ($pitch * 2));
+
+    @include to(xs) {
+      min-width: 100%;
+      @include flex-col($breakpoint: xs, $nb: 1, $grow: 1, $shrink: 1);
+    }
+    @include from(md) {
+      @include flex-col($breakpoint: md, $nb: 5, $grow: 1, $shrink: 1);
+    }
+
+    // The color chip is smaller; adjust the "selected" icon accordingly
+    .sg-list-selectable .sg-avatar-selectable:before,
+    .sg-avatar-selectable:hover:before {
+      margin: 0 (($sg-color-chip-width + 2*$bl) - $icon-size)*0.5;
+    }
+  }
+
+  .view-list--close {
+    @include from(md) {
+      $colWidth: col-width($breakpoint: md, $nb: 5);
+      margin-right: $colWidth * -1;
+    }
+  }
+
+  /**
+   * Redefine fab button since center column width is different.
+   * See button.scss
+   */
+  md-fab-speed-dial.sg-fab-bottom-center {
+    @include at(md) {
+      // sidenav is hidden, center list can be closed
+      right: col-width($breakpoint: md, $nb: 15) + 2vw;
+      &.sg-center-close {
+        left: ($button-fab-width - $button-fab-padding)*0.5;
+        right: auto;
+      }
+    }
+    @include from(lg) {
+      // both sidenav and center list can be closed
+      right: col-width($breakpoint: lg, $nb: 11) + 2vw;
+      &.sg-sidenav-close {
+        right: col-width($breakpoint: lg, $nb: 15) + 2vw;
+      }
+      &.sg-center-close {
+        right: col-width($breakpoint: lg, $nb: 14) + 2vw;
+      }
+      &.sg-sidenav-close.sg-center-close {
+        left: ($button-fab-width - $button-fab-padding)*0.5;
+        right: auto;
+      }
+    }
+  }
+
+  // The calendar view container
+  .calendarView {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    left: 0;
+  }
+
+  // The days labels appear in the toolbar
+  md-toolbar {
+    flex-shrink: 0;
+    &.daysView, &.monthView {
+      background-color: #fff;
+      flex-shrink: 1;
+      z-index: $z-index-toolbar - 1;
+      .days {
+        &:not([sg-calendar-scroll-view$="allday"]) {
+          overflow-y: scroll;
+        }
+        &.dayLabels {
+          flex-shrink: 0;
+          min-height: 0;
+          .day {
+            padding-left: 1%;
+          }
+        }
+      }
+    }
+    &.monthView {
+      // Toolbar of month view
+      min-height: 0;
+      > div {
+        overflow-y: scroll;
+      }
+    }
+    &[sg-view$=dayview] {
+      // Toolbar of day view only
+      .dayLabels {
+        .day {
+          display: flex;
+          align-items: center;
+        }
+      }
+    }
+  }
+
+  // The all-day events appear in the shrinkable toolbar, bellow the days labels
+  .allDaysView--container {
+    overflow: hidden;
+  }
+  .allDaysView {
+    border-bottom: 1px solid sg-color($sogoPaper, 300);
+    max-height: $sg-font-size-4 * 6;
+    min-height: 0;
+    overflow: hidden;
+    overflow-y: scroll;
+
+    .day {
+      position: relative;
+    }
+
+    .sg-event {
+      margin: 3px $block_margin;
+      line-height: initial;
+      position: relative;
+
+      &--ghost {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        margin-left: 0;
+        margin-right: 0;
+        border-radius: 0;
+        padding-left: $block_margin;
+        padding-right: $block_margin;
+        &--first {
+          margin-left: $block_margin;
+          padding-left: 0;
+          border-top-left-radius: $block_radius;
+          border-bottom-left-radius: $block_radius;
+        }
+        &--last {
+          margin-right: $block_margin;
+          padding-right: 0;
+          border-top-right-radius: $block_radius;
+          border-bottom-right-radius: $block_radius;
+        }
+      }
+
+      .eventInside .text {
+        position: static;
+        padding: 3px 1%;
+      }
+    }
+
+  }
+
+  // Toolbar of all-day events when expanded to display all events
+  .allDaysView__expanded {
+    max-height: none;
+    min-height: 0;
+  }
+
+  // Side column on the left of the days labels and all-day events;
+  // Contains the toggle button to collapse/expand the toolbar
+  .allDaysView--sidenav {
+    border-bottom: 1px solid sg-color($sogoPaper, 300);
+    min-width: $hours_margin;
+    width: $hours_margin;
+    .md-icon-button {
+      position: absolute;
+      bottom: 0;
+    }
+  }
+
+  md-card {
+    // All views wrap a md-card
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    md-card-actions {
+      min-height: 0;
+    }
+  }
+
+  md-content[sg-calendar-scroll-view] {
+    background-color: #fff;
+    overflow-y: scroll;
+    overflow-x: hidden;
+  }
+
+  // Days row
+  .days {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    .day {
+      border-left: 1px solid sg-color($sogoPaper, 300);
+      flex-grow: 1;
+      flex-basis: 0;
+      overflow: hidden;
+      .clickableHourCell {
+        height: $quarter_height * 4;
+        border-bottom: 1px solid sg-color($sogoPaper, 300);
+        user-select: none;
+        &.outOfDay {
+          background-color: $colorGrey50;
+        }
+      }
+    }
+  }
+
+  // Header of month tiles
+  .sg-calendar-tile-header {
+    font-size: $sg-font-size-2;
+    min-height: $sg-font-size-2 + 8px;
+    overflow: hidden;
+    padding: 4px;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    //font-weight: $sg-font-light;
+  }
+
+  // Header of month week
+  .sg-calendar-tile-week {
+    font-size: $sg-font-size-2;
+    min-height: $sg-font-size-2 + 10px;
+    overflow: hidden;
+    padding: 4px;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    //font-weight: $sg-font-light;
+    position: absolute;
+    width: 100%;
+  }
+  .sg-calendar-tile-week span {
+    padding: 1%;
+    border-radius: 30%;
+    color: $colorGrey50;
+  }
+
+  
+
+  // The left column of hours
+  .hours {
+    display: inline-block;
+    float: left;
+    clear: left;
+    font-weight: $sg-font-light;
+    height: auto;
+    left: 0;
+    position: relative;
+    top: 0;
+    width: $hours_margin;
+    .hour {
+      border-bottom: 1px solid sg-color($sogoPaper, 300);
+      text-align: right;
+      height: $quarter_height * 4;
+      left: 0;
+      padding: 2px;
+      position: relative;
+      right: 0;
+      top: 0;
+    }
+  }
+
+  // A container for a day-long (column) of hour cells
+  .hourCells {
+    position: relative;
+  }
+
+  // The "now" line that overlaps the current day in day/week/multicolumn views
+  sg-now-line {
+    display: block;
+    position: absolute;
+    width: 100%;
+    height: 2px;
+    background: red;
+    z-index: $z-index-view + 1;
+  }
+
+  // Events from editable calendars are draggable
+  .sg-draggable-calendar-block,
+  .sg-event--ghost {
+    cursor: move;
+  }
+
+  // The outer event container
+  .sg-event {
+    font-size: $sg-font-size-1;
+    font-weight: $sg-font-medium;
+    border-radius: $block_radius;
+    //overflow: hidden;
+    position: absolute;
+    left: 0;
+    right: 0;
+    margin-left: 1px;
+    opacity: 0.9; // When events from a same calendar overlap, it creates a border to help distinguish the events
+    outline: none;
+    user-select: none;
+    //transition: $swift-linear;
+    $i: 0;
+    @while $i <= 96 { // number of 15-minutes blocks in a day
+      &.starts#{$i} { top: $quarter_height * $i; }
+      &.lasts#{$i} { height: $quarter_height * $i - 1; }
+      $i: $i + 1;
+    }
+
+    &--ghost {
+      opacity: 1;
+      left: $block_margin;
+      right: $block_margin;
+    }
+
+    &--dragging {
+      background-image: repeating-linear-gradient(-45deg,
+                                                  rgba(255,255,255,0.2),
+                                                  rgba(255,255,255,0.2) 2px,
+                                                  transparent 2px,
+                                                  transparent 4px );
+      opacity: 0.5;
+    }
+
+    &.lasts1 {
+      .text {
+        top: 0px;
+        bottom: 0px;
+      }
+    }
+
+    // User participation status is "needs action"
+    &--needs-action {
+      border-width: 1px;
+      border-style: dashed;
+      opacity: 0.7;
+    }
+
+    // User participation status is "tentative"
+    &--tentative {
+      opacity: 0.7;
+    }
+
+    // User has declined the invitation
+    &--declined {
+      opacity: 0.4;
+    }
+
+    // Event is transparent (not opaque)
+    &--transparent {
+      &:before {
+        content: "";
+        display: block;
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-bottom: 0;
+        background-origin: border-box;
+        background-image: linear-gradient(
+            to right bottom,
+            rgba(255, 255, 255, 0),
+            rgba(255, 255, 255, .25) 50%,
+            rgba(255, 255, 255, 0) 50%,
+            rgba(255, 255, 255, 0)
+        );
+        pointer-events: none;
+      }
+    }
+
+    // Event is cancelled
+    &--cancelled .text {
+      text-decoration: line-through;
+    }
+
+    .eventInside {
+      overflow: hidden;
+      .text {
+        position: absolute;
+        top: 3px;
+        left: 1%;
+        right: 1%;
+        bottom: 3px;
+        margin: 0 2px;
+        overflow: hidden;
+        line-height: $sg-font-size-2;
+      }
+    }
+
+    .material-icons {
+      font-size: $sg-font-size-2;
+      min-height: $sg-font-size-2;
+      min-width: $sg-font-size-2;
+    }
+
+    .sg-icons md-icon {
+      float: right;
+    }
+
+    .secondary { // location in days view, hours in month view
+      font-weight: $sg-font-light;
+      span {
+        word-break: break-all;
+      }
+    }
+
+    .sg-category {
+      z-index: -1;
+      &:first-child {
+        border-top-right-radius: $block_radius;
+        border-bottom-right-radius: $block_radius;
+      }
+    }
+
+    // Event DnD drag grips
+
+    &:hover {
+      .dragGrip {
+        &-top, &-bottom {
+          opacity: 1;
+          cursor: ns-resize;
+        }
+        &-left, &-right {
+          opacity: 1;
+          cursor: ew-resize;
+        }
+      }
+    }
+
+    .dragGrip {
+      &-top, &-bottom, &-left, &-right {
+        opacity: 0;
+        position: absolute;
+      }
+
+      &-top, &-bottom {
+        left: 1px;
+        right: 1px;
+        height: 8px;
+        line-height: 8px;
+      }
+
+      &-top {
+        top: 0;
+        .dragGrip {
+          right: 0;
+          top: -3px;
+        }
+      }
+
+      &-bottom {
+        bottom: 0;
+        .dragGrip {
+          bottom: -3px;
+        }
+      }
+
+      &-left, &-right {
+        top: 1px;
+        bottom: 1px;
+        width: 8px;
+        line-height: 8px;
+      }
+
+      &-left {
+        left: -2px;
+        .dragGrip {
+          bottom: 0;
+          left: -1px;
+        }
+      }
+
+      &-right {
+        right: -2px;
+        .dragGrip {
+          right: -1px;
+        }
+      }
+    }
+
+    .dragGrip {
+      background-color: white;
+      border-radius: 50%;
+      border-style: solid;
+      border-width: 1px;
+      display: inline-block;
+      height: 8px;
+      position: absolute;
+      width: 8px;
+    }
+
+    // Event DnD ghost start/end hours
+
+    .ghostStartHour,
+    .ghostEndHour {
+      color: $colorGrey900;
+      font-weight: $sg-font-light;
+      height: 14px;
+      left: 0px;
+      position: absolute;
+      text-align: center;
+      vertical-align: baseline;
+      width: 100%;
+    }
+
+    .ghostStartHour {
+      top: -14px;
+    }
+
+    .ghostEndHour {
+      bottom: -14px;
+    }
+
+  }
+
+  // Middle list view of events
+
+  .view-list {
+    .sg-calendar-date {
+      white-space: nowrap;
+      width: 72px;
+      min-width: 72px;
+      > * {
+        display: inline-block;
+      }
+    }
+    .sg-calendar-day {
+      font-weight: 200;
+      padding-right: 3px;
+    }
+    .sg-calendar-list {
+      padding-bottom: 16px;
+      md-divider {
+        margin-bottom: 8px;
+      }
+    }
+    .sg-event {
+      margin: 0 0 4px 0;
+      padding: $bl;
+      cursor: pointer;
+      position: relative;
+      .eventInside {
+        overflow: auto;
+      }
+    }
+  }
+
+  // Multicolumn day cell that contains the calendar name
+  .multicolumnDay {
+    color: $colorGrey900;
+    font-size: $subhead-font-size-base;
+    font-weight: $sg-font-light;
+    overflow: hidden;
+    max-height: $subhead-font-size-base * 3;
+    padding-left: 2px;
+    margin-right: 2px;
+  }
+
+  // Styles specific to the month view
+  .monthView {
+    .dayLabels {
+      // Cells of week days of all the same width
+      border-bottom: 1px solid $colorGrey100;
+      flex: 1 1 0;
+      text-align: center;
+    }
+    md-grid-list {
+      height: 100%;
+    }
+    md-grid-tile {
+      // Border of month day cell
+      border-right: 1px solid $colorGrey100;
+      border-bottom: 1px solid $colorGrey100;
+      overflow: auto;
+      user-select: none;
+      // Cells of another month
+      &.dayOfAnotherMonth {
+        background-color: $colorGrey50;
+        .sg-calendar-tile-header,
+        .sg-calendar-tile-header > span {
+          color: $colorGrey300 !important;
+        }
+      }
+      &.dayOfToday {
+        .sg-calendar-tile-header {
+          > span {
+            // Circle today's date
+            border-radius: 50%;
+            color: #fff;
+            display: inline-block;
+            font-weight: 600;
+            margin-right: auto;
+            margin-left: 1px;
+            min-width: $sg-font-size-2 + 4px;
+            min-height: $sg-font-size-2 + 4px;
+            line-height: $sg-font-size-2 + 4px;
+            text-align: center;
+          }
+        }
+      }
+    }
+    md-content {
+      background-color: transparent; // See the grid tile background color
+      height: 100%; // Fix a scrolling issue when dragging blocks
+      overflow: hidden;
+      overflow-y: auto;
+    }
+    .sg-event {
+      position: relative;
+      padding: 3px 1%;
+      margin: $block_margin;
+      overflow: hidden;
+      &--ghost {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        margin-left: 0;
+        margin-right: 0;
+        border-radius: 0;
+        padding-left: $block_margin;
+        padding-right: $block_margin;
+        &--first {
+          margin-left: $block_margin;
+          padding-left: 0;
+          border-top-left-radius: $block_radius;
+          border-bottom-left-radius: $block_radius;
+        }
+        &--last {
+          margin-right: $block_margin;
+          padding-right: 0;
+          border-top-right-radius: $block_radius;
+          border-bottom-right-radius: $block_radius;
+        }
+      }
+    }
+  }
+
+  .sg-priority {
+    background-color: $colorGrey200;
+    border-radius: 50%;
+    color: $colorGrey700;
+    display: inline-block;
+    font-size: 11px;
+    font-weight: bold;
+    line-height: 1;
+    padding: 2px 5px;
+  }
+
+  .minutes15, .minutes30, .minutes45 {
+    display: block;
+    height: 25%;
+  }
+
+  .minutes30 {
+    border-bottom: 1px dotted sg-color($sogoPaper, 300);
+  }
+
+  .text {
+    position: relative;
+    z-index: $z-index-view + 1;
+  }
+
+  .gradient > IMG {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 100%;
+    min-height: 15px; /* for 15-minute events */
+    width: 100%;
+  }
+}
+
+.attendees-chips {
+  md-chips-wrap {
+    max-height: ($chip-height * 10); // show a maximum of 10 rows
+    opacity: 1;
+    overflow: auto;
+    transition: $swift-ease-in-out;
+    transition-delay: $swift-ease-in-out-duration;
+  }
+  &.ng-hide {
+    transition-duration: $swift-ease-in-out-duration;
+    md-chips-wrap {
+      max-height: 0;
+      opacity: 0;
+      overflow: hidden;
+      transition: $swift-ease-in-out;
+      transition-delay: 0s;
+    }
+  }
+}
+
+/* Tasks list */
+
+.cancelled .sg-md-subhead {
+  text-decoration: line-through;
+}
+
+/* Attendees dialog Editor */
+.attendees {
+  max-height: ($list-item-height * 20); // show a maximum of 20 attendees
+  opacity: 1;
+  overflow: auto;
+  transition: $swift-ease-in-out;
+  transition-delay: $swift-ease-in-out-duration;
+  &.ng-hide {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition-delay: 0s;
+  }
+
+  md-content {
+    background-color: transparent;
+    display: table-row;
+    position: unset;
+    scroll-behavior: smooth;
+  }
+  md-list {
+    display: table-cell;
+    vertical-align: top;
+    padding-top: 0;
+    &.day {
+      max-width: (16px * 24);
+      width: (16px * 24);
+      md-list-item {
+        //padding: 0;
+        align-items: stretch;
+      }
+    }
+  }
+  md-list-item {
+    padding-left: 0;
+    padding-right: 0;
+    &:hover {
+      background-color: initial;
+    }
+    //      img {
+    //        margin-right: $mg/4;
+    //      }
+    > .md-avatar {
+      // Overwrite default margin to gain some space and match 48px
+      margin-top: $baseline-grid*0.5;
+      margin-bottom: $baseline-grid*0.5;
+    }
+  }
+  .md-tile-left {
+    // Use in the top-left empty cell, which is in the first item of the attendees list
+    height: initial;
+    min-height: 48px;
+    width: initial;
+    padding: 4px;
+  }
+  .hours {
+    font-size: 9px;
+  }
+  .hour {
+    display: flex;
+    border-left: 1px solid sg-color($sogoPaper, 100);
+    min-width: 16px;
+    min-height: 16px;
+    flex-wrap: nowrap;
+    flex-grow: 0;
+    flex-basis: 16px; // hour's width
+    align-items: stretch;
+  }
+  .sg-no-freebusy {
+    background-color: sg-color($sogoPaper, 200);
+    background-image: repeating-linear-gradient(-45deg,
+                                                rgb(255,255,255),
+                                                rgb(255,255,255) 2px,
+                                                transparent 2px,
+                                                transparent 4px);
+    opacity: 0.5;
+  }
+  .quarter {
+    min-width: 4px;
+    display: flex;
+    align-items: stretch;
+  }
+  .busy {
+    margin: 8px 0;
+    min-width: 4px;
+  }
+
+  .sg-color-sample {
+    border-radius: 2px;
+    border-width: 0;
+    width: $baseline-grid*2;
+    height: $baseline-grid*2;
+    margin: 0 $baseline-grid 0 $baseline-grid*2;
+    padding: 0;
+  }
+}
+
+/**
+ * Print page preview
+ */
+$preview-size: 200px;
+$preview-letter-ratio: math.div(8.5, 11);
+$preview-legal-ratio: math.div(8.5, 14);
+$preview-a4-ratio: math.div(210, 297);
+
+.sg-print-preview {
+  .letter.portrait & {
+    height: $preview-size;
+    width: $preview-letter-ratio * $preview-size;
+  }
+  .letter.landscape & {
+    height: $preview-letter-ratio * $preview-size;
+    width: $preview-size;
+  }
+  .legal.portrait & {
+    height: $preview-size;
+    width: $preview-legal-ratio * $preview-size;
+  }
+  .legal.landscape & {
+    height: $preview-legal-ratio * $preview-size;
+    width: $preview-size;
+  }
+  .a4.portrait & {
+    height: $preview-size;
+    width: $preview-a4-ratio * $preview-size;
+  }
+  .a4.landscape & {
+    height: $preview-a4-ratio * $preview-size;
+    width: $preview-size;
+  }
+}
+
+/**
+ * Print media
+ */
+@media print {
+  [ui-view=calendars] {
+
+    .allDaysView,
+    md-toolbar.daysView .days:not([sg-calendar-scroll-view$="allday"]),
+    md-toolbar.monthView > div {
+      overflow-y: hidden; // hide scrollbar
+    }
+  }
+
+
+  [ui-view=calendars] {
+
+    /**
+     * Events/tasks center list
+     */
+    md-tab-data,
+    md-tab-item:not(.md-active),
+    md-ink-bar,
+    // md-divider,
+    // .md-subheader,
+    md-list-item .md-secondary-container {
+      display: none;
+    }
+
+    [ui-view=listView]:not(.view-list--close) {
+      // border-right: 1px solid $colorGrayLighter;
+      padding-right: 2 * $layout-gutter-width;
+
+      .sg-tile-content .sg-md-subhead {
+        font-size: $caption-font-size-base;
+      }
+
+      md-list-item,
+      md-list-item::before,
+      md-list-item .md-list-item-inner::before {
+        min-height: 6 * $baseline-grid;
+      }
+    }
+
+    .md-tab {
+      font-size: $title-font-size-base;
+      padding: $layout-gutter-width;
+      color: $colorGrayDark;
+    }
+
+    .sg-tile-icons {
+      height: auto;
+    }
+
+    /**
+     * Calendar view
+     */
+    .view-detail md-card {
+      margin: 0;
+    }
+
+    .days .day {
+      border-left-color: $colorGrayLight;
+    }
+
+    .allDaysView,
+    .allDaysView--sidenav,
+    .hours .hour,
+    .days .day .clickableHourCell {
+      border-bottom-color: $colorGrayLight;
+    }
+
+    .sg-event {
+      &.sg-event--transparent:before {
+        content: none;
+      }
+      &[class*=bg-folder],
+      &[class*=bg-folder] md-icon {
+        background: white !important;
+        color: black !important;
+      }
+      &[class*=contrast-bdr-folder] {
+        border-color: black !important;
+        border-width: 1px !important;
+        border-style: solid !important;
+      }
+    }
+
+  }
+}

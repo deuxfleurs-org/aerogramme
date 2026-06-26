@@ -1,0 +1,123 @@
+/// chips.scss -*- Mode: scss; indent-tabs-mode: nil; basic-offset: 2 -*-
+$contact-chip-suggestion-margin: rem(0.4);
+
+@import 'extends';
+
+$chip-dense-font-size: rem(1.2) !default;
+$chip-dense-height: rem(2.4) !default;
+$chip-dense-padding: 0 rem(0.8) 0 rem(0.8) !default;
+$chip-dense-margin: rem(0.6) rem(0.6) 0 0 !default;
+
+md-chips {
+  // Remove the line under the tags of the message viewer
+  &.sg-readonly {
+    .md-chips {
+      box-shadow: none;
+      &.md-focused {
+        box-shadow: none;
+      }
+      md-chip-template:focus {
+        outline: 0;
+      }
+      .md-chip-content {
+        //max-width: initial; // fix bug in ng-material
+      }
+      // Custom 'chip remove' button used with chips in readonly mode
+      .sg-chip-remove {
+        &:hover {
+          cursor: pointer;
+        }
+        position: absolute;
+        right: 0;
+        margin: (($chip-height - 24) * 0.5);
+        height: $chip-delete-icon-size;
+        width: $chip-delete-icon-size;
+      }
+    }
+  }
+
+  // Small, compact chip
+  &.sg-dense md-chip {
+    height: $chip-dense-height;
+    padding: $chip-dense-padding;
+    @include rtl(margin, $chip-dense-margin, rtl-value($chip-dense-margin));
+    font-size: $chip-dense-font-size;
+    line-height: $chip-dense-height;
+  }
+  .sg-chip-progress {
+    border-radius: $chip-height * 0.5;
+    bottom: 0;
+    left: 0;
+    overflow: hidden;
+    position: absolute;
+    right: 0;
+    top: 0;
+    transition: $swift-ease-in-out;
+    &.ng-hide {
+      background-color: #fff;
+    }
+    span {
+      bottom: 0;
+      left: 0;
+      opacity: 0.5;
+      position: absolute;
+      top: 0;
+      transition: $swift-ease-in-out;
+      width: 0;
+    }
+  }
+  .sg-chip-color {
+    @extend .sg-chip-progress;
+    span {
+      width: 100%;
+    }
+  }
+  .sg-tile-btn {
+    margin-right: 3px !important; // assume the button is right before the close button
+  }
+}
+
+// Adapting avatars in contact chips to the new material guidelines
+// See https://material.io/design/components/chips.html
+.md-contact-chips .md-chips md-chip .md-contact-avatar img,
+.md-contact-chips .sg-icon-badge-container md-icon {
+  height: $chip-height - 6px;
+  margin: 3px;
+}
+
+// Adjust space around secondary element in contact chip.
+// Used for attendees participation status icon (UIxAppointmentViewTemplate.wox)
+.md-contact-chips.sg-with-secondary .md-chips md-chip {
+  padding-right: 0;
+  .sg-secondary {
+    margin-right: $baseline-grid;
+  }
+}
+
+// Enlarge the default autocompletion menu
+.sg-chips-autocomplete,
+.sg-chips-autocomplete input {
+  width: (3 * $contact-chip-name-width);
+  @media (max-width: $layout-breakpoint-xs) {
+    // Enlarge the autocompletion menu on small devices to fit the entire screen
+    left: 0;
+    right: 0;
+    width: auto;
+  }
+}
+
+// In the autocompletion menu,
+//  - fix image alignement;
+//  - don't limit the contact name to a fixed width;
+//  - show the email address right after it.
+.md-contact-suggestion {
+  img {
+    vertical-align: top;
+  }
+  .md-contact-name {
+    width: auto;
+  }
+  .md-contact-email {
+    margin-left: $contact-chip-suggestion-margin;
+  }
+}

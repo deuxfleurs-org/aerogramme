@@ -1,0 +1,18 @@
+@import "extends";
+
+$sg-grid-border-width-focused: 2px;
+
+// sgToggleGrid directive
+[sg-toggle-grid] {
+  md-grid-tile {
+    &.sg-icon-button {
+      @extend .md-button;
+      // Overwrite some styles of .md-button
+      border: 1px solid $colorGrey600;
+      border-radius: 2px;
+      color: $colorGrey700;
+      min-height: auto;
+      position: absolute;
+    }
+  }
+}

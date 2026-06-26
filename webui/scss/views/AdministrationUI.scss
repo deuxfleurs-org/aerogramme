@@ -1,0 +1,18 @@
+/// AdministrationUI.scss -*- Mode: scss; indent-tabs-mode: nil; basic-offset: 2 -*-
+
+[ui-view="administration"] {
+  md-list-item .md-list-item-inner > md-icon:first-child {
+    margin-left: $bl * 2;
+    margin-right: $bl * 2;
+  }
+
+  // CKEditor
+  .ck-editor__editable {
+    min-height: 200px;
+  }
+
+  .ck-widget.raw-html-embed .raw-html-embed__preview-content>* {
+    margin-left: unset !important;
+    margin-right: unset !important;
+  }
+}

@@ -1,0 +1,87 @@
+/// pseudo-input.scss -*- Mode: scss; indent-tabs-mode: nil; basic-offset: 2 -*-
+
+/// Component: pseudo-input
+/// This component mimics the presentation of form fields according to Google's
+/// Material Design specs (www.google.com/design/spec/components/text-fields.html)
+/// It's used in message headers but could --and should-- be reused
+/// The pseudo-input-container element serves as a... container for it's two children:
+/// -label and -input-field
+///
+/// Typical use:
+/// <div class="pseudo-input-container">
+///   <label class="pseudo-input-label">Some text</label>
+///   <p class="pseudo-input-field">Other input-like text</p>
+/// </div>
+///
+/// ----------------------------------------------------------------------------
+
+.pseudo-input-container {
+  display: block; // Should be (reset to ?) a plain block element
+  padding: 0 2px;
+  vertical-align: middle;
+}
+.sg-search-field-container {
+  margin-bottom: 12px;
+  color: white;
+  label {
+    color: inherit;
+  }
+  input {
+    color: inherit;
+    border: none;
+  }
+}
+
+.pseudo-input-label,
+.button-label {
+  display: inline-block;
+  color: $colorGray;
+  font-weight: $sg-font-regular;
+  line-height: $sg-line-height-1;
+  transform: scale($input-label-float-scale);
+}
+
+.pseudo-input-label {
+  margin-top: $mg;
+}
+
+.pseudo-input-label {
+  @include rtl(transform-origin, left top, right top);
+}
+
+.button-label {
+  @include rtl(transform-origin, left center, right center);
+}
+
+.button-label--right {
+  @include rtl(transform-origin, right center, left center);
+}
+
+.pseudo-input-field {
+  display: block;
+  margin: 0;
+  padding-top: $input-padding-top + 2;
+  padding-bottom: $input-border-width-focused - $input-border-width-default;
+  padding-left: 2px;
+  padding-right: 2px;
+  border-width: 0;
+}
+
+md-select.pseudo-input-field,
+md-checkbox.pseudo-input-field {
+  margin-bottom: $mg;
+  padding: 0;
+}
+
+// The specs dimensions are too large to fit with angular-material
+// Here's a modifier
+.pseudo-input-container--compact {
+  .pseudo-input-label {
+    margin-top: 0;
+    line-height: $bl;
+  }
+  md-select.pseudo-input-field,
+  md-checkbox.pseudo-input-field {
+    margin-bottom: $bl;
+  }
+}

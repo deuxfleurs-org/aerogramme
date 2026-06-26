@@ -1,0 +1,214 @@
+# Configuration file for https://circleci.com/gh/angular/material
+
+# Note: YAML anchors allow an object to be re-used, reducing duplication.
+# The ampersand declares an alias for an object, then later the `<<: *name`
+# syntax dereferences it.
+# See http://blog.daemonl.com/2016/02/yaml.html
+# To validate changes, use an online parser, eg. http://yaml-online-parser.appspot.com/
+
+# Find the latest version and SHA here: https://hub.docker.com/r/circleci/node/tags
+var_1: &docker_image circleci/node:14.16.1-browsers
+var_2: &cache_key angularjs-material-{{ checksum "package-lock.json" }}
+
+# Settings common to each job
+var_3: &job_defaults
+  working_directory: ~/ng
+  docker:
+    - image: *docker_image
+
+# Restores the cache that could be available for the current lock file. The cache
+# includes the node modules.
+var_4: &restore_cache
+  restore_cache:
+    key: *cache_key
+
+# Saves the cache for the current lock file. We store the node modules cache in order to make
+#  subsequent builds faster.
+var_5: &save_cache
+  save_cache:
+    key: *cache_key
+    paths:
+      - "node_modules"
+      - "$HOME/.npm"
+      - "tmp/angular.js"
+
+# Job step that ensures that the node module dependencies are installed and up-to-date. We use
+# NPM with the frozen lockfile option in order to make sure that lock file and package.json are
+# in sync. Unlike in Travis, we don't need to manually purge the node modules if stale because
+# CircleCI automatically discards the cache if the checksum of the lock file has changed.
+var_6: &npm_install
+  run: npm ci
+
+var_7: &store_junit_test_results
+  store_test_results:
+    path: ./artifacts/junit
+
+# Branch filter that we can specify for jobs that should only run on publish branches. This filter
+# is used to ensure that not all upstream branches will be published as GitHub builds
+# (e.g. revert branches, feature branches)
+var_8: &publish_branches_filter
+  branches:
+    only:
+      - master
+
+# -----------------------------
+# Container version of CircleCI
+# -----------------------------
+version: 2.1
+
+orbs:
+  build-tools: circleci/build-tools@2.9.0
+
+commands:
+  # Command for checking out the source code from GitHub. This also ensures that the source code
+  # can be merged to the master branch without conflicts.
+  checkout_and_rebase:
+    description: Checkout and verify clean merge with master
+    steps:
+      - checkout
+      - run:
+          name: Set git user.name and user.email for rebase.
+          # User is required for rebase.
+          command: |
+            git config user.name "angular-ci"
+            git config user.email "angular-ci"
+      - build-tools/merge-with-parent:
+          parent: master
+
+# -----------------------------------------------------------------------------------------
+# Job definitions. Jobs which are defined just here, will not run automatically. Each job
+# must be part of a workflow definition in order to run for PRs and push builds.
+# -----------------------------------------------------------------------------------------
+jobs:
+
+  # ----------------------------------
+  # Lint job. Runs the lint task.
+  # ----------------------------------
+  lint:
+    <<: *job_defaults
+    steps:
+      - checkout_and_rebase
+      - *restore_cache
+      - *npm_install
+      - run: npm run lint
+
+  # -----------------------------------
+  # Build and test job.
+  # -----------------------------------
+  build:
+    <<: *job_defaults
+    steps:
+      - checkout_and_rebase
+      - *restore_cache
+      - *npm_install
+      - run: npm run build
+      - *save_cache
+
+  build_js_modules:
+    <<: *job_defaults
+    steps:
+      - checkout_and_rebase
+      - *restore_cache
+      - *npm_install
+      - run: npm run build:modules
+      - *save_cache
+
+  build_closure_modules:
+    <<: *job_defaults
+    steps:
+      - checkout_and_rebase
+      - *restore_cache
+      - *npm_install
+      - run: npm run build:closure
+      - *save_cache
+
+  # ------------------------------------------------------------------------------------------
+  # Jobs that run the unit tests on locally installed browsers (Chrome and Firefox headless).
+  # The available browsers are included in the Docker image.
+  # ------------------------------------------------------------------------------------------
+  test_angularjs_1_7:
+    <<: *job_defaults
+    environment:
+      NG_VERSION: "1.7"
+    steps:
+      - checkout_and_rebase
+      - *restore_cache
+      - *npm_install
+      - run: ./scripts/circleci/run-tests.sh
+      - *store_junit_test_results
+
+  test_angularjs_1_8:
+    <<: *job_defaults
+    environment:
+      NG_VERSION: "1.8"
+    steps:
+      - checkout_and_rebase
+      - *restore_cache
+      - *npm_install
+      - run: ./scripts/circleci/run-tests.sh
+      - *store_junit_test_results
+
+  test_angularjs_snapshot:
+    <<: *job_defaults
+    environment:
+      NG_VERSION: "snapshot"
+    steps:
+      - checkout_and_rebase
+      - *restore_cache
+      - *npm_install
+      - run: ./scripts/circleci/run-tests.sh
+      - *store_junit_test_results
+
+  # ------------------------------------------------------------------------------------------
+  # Jobs that snapshot the `master` branch and update the docs on commits to master
+  # ------------------------------------------------------------------------------------------
+  update_and_snapshot_docs:
+    <<: *job_defaults
+    steps:
+      - checkout_and_rebase
+      - *restore_cache
+      - *npm_install
+      - run: sudo npm i -g gulp@3.9
+      - run: git config --global --unset url.ssh://git@github.com.insteadof
+      - run: ./scripts/circleci/update-snapshot-and-docs.sh --sha=${CIRCLE_SHA1}
+
+# ----------------------------------------------------------------------------------------
+# Workflow definitions. A workflow usually groups multiple jobs together. This is useful if
+# one job depends on another.
+# ----------------------------------------------------------------------------------------
+workflows:
+  version: 2
+
+  # Lint workflow. As we want to lint in one job, this is a workflow with just one job.
+  lint:
+    jobs:
+      - lint
+
+  # Build and test workflow. A workflow includes multiple jobs that run in parallel. All jobs
+  # that build and test source code should be part of this workflow.
+  build_and_test:
+    jobs:
+      - build
+      - test_angularjs_1_7:
+          requires:
+            - build
+      - test_angularjs_1_8:
+          requires:
+            - build
+      - test_angularjs_snapshot:
+          requires:
+            - build
+      - build_js_modules:
+          requires:
+            - build
+      - build_closure_modules:
+          requires:
+            - build
+      - update_and_snapshot_docs:
+            filters: *publish_branches_filter
+            requires:
+              - test_angularjs_1_7
+              - test_angularjs_1_8
+              - test_angularjs_snapshot
+              - build_js_modules
+              - build_closure_modules

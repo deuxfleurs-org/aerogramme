@@ -1,0 +1,96 @@
+/// card.scss -*- Mode: scss; indent-tabs-mode: nil; basic-offset: 2 -*-
+@import 'extends';
+
+md-card {
+
+  md-card-content {
+    overflow-y: auto;
+    transition: $swift-ease-in-out;
+  }
+
+  md-card-actions:not(.layout-column) {
+    .md-button {
+      // "last-of-type" doesn't work well when we have multiple types so we overwrite md's directive
+      &.md-icon-button,
+      &.md-icon-button:last-of-type,
+      &.sg-icon-button,
+      &.sg-icon-button:last-of-type {
+        margin: 0 $baseline-grid * .5;
+      }
+      &:hover {
+        // When using ui-sref from ui-router, buttons become links and the background becomes grey
+        // when the cursor is over the button. We force the normal behaviour of buttons.
+        background-color: transparent;
+      }
+    }
+  }
+
+  .md-secondary {
+    @extend .md-secondary;
+  }
+
+  // Collapsed/expanded states for cards in ACL editor and user folders (subscriptions)
+  &.sg-collapsed, &.sg-expanded {
+    background-color: transparent;
+    transition: $swift-ease-in-out;
+    transition-delay: 0s;
+    > .md-button {
+      margin: 0;
+      flex-direction: row;
+    }
+    .md-icon-button {
+      transition: $swift-linear;
+      transition-duration: 0.2s;
+      transition-delay: 0.2s;
+      opacity: 1;
+      &.ng-hide {
+        transition: $swift-linear;
+        opacity: 0;
+      }
+    }
+    md-card-content {
+      order: 1;
+      transition: $swift-ease-in-out;
+      transition-delay: 0.1s;
+      max-height: 500px;
+      &.ng-hide {
+        max-height: 0;
+        padding-bottom: 0;
+        padding-top: 0;
+      }
+    }
+    // Animate item removal
+    &.ng-leave {
+      transform: translateX(0%);
+      transition-duration: 500ms;
+      &.ng-leave-active {
+        .md-button:not([disabled]):hover {
+          background-color: transparent;
+        }
+        transform: translateX(-70%);
+      }
+    }
+  }
+
+  &.sg-collapsed {
+    border-radius: 0;
+    box-shadow: none;
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+
+  &.sg-expanded {
+    @extend .md-whiteframe-z2;
+    margin: 0 0 1px 0;
+    &-remove { // ngAnimate with ngClass
+      transition-delay: 0.5s;
+    }
+  }
+
+  .md-button {
+    .sg-tile-content {
+      text-align: left;
+      text-transform: none;
+    }
+  }
+}

@@ -1,0 +1,31 @@
+@import 'extends';
+
+md-bottom-sheet.md-default-theme {
+  border: none;
+  background-color: inherit;
+  background-image: url("../img/cardboard-transp.png");
+  background-blend-mode: multiply;
+}
+
+md-bottom-sheet {
+  md-list-item {
+    md-icon {
+      margin-right: $bottom-sheet-icon-after-margin;
+      vertical-align: text-bottom;
+    }
+  }
+}
+
+md-bottom-sheet.md-default-theme .md-button.md-default-theme {
+  &:hover:not([disabled]),
+  &:hover:not([disabled]) md-icon {
+    background-color: inherit;
+    background-image: url("../img/cardboard-transp.png");
+    background-blend-mode: multiply;
+    color: sg-color($sogoBlue, 800);
+  }
+  &[disabled] {
+    padding: 6px; // The server remove the 'a' tag when disabling
+    text-transform: uppercase;
+  }
+}

@@ -1,0 +1,93 @@
+@import "extends";
+
+//
+// Format suggestions on three lines, in dense mode
+//
+// From angular-material/src/components/list/list.scss
+//
+
+$dense-baseline-grid: $baseline-grid * 0.5 !default;
+
+$list-h3-margin: 0 0 0 0 !default;
+$list-h4-margin: 3px 0 1px 0 !default;
+$list-h4-font-weight: 400 !default;
+$list-header-line-height: 1.2em !default;
+$list-p-margin: 0 0 0 0 !default;
+$list-p-line-height: 1.6em !default;
+
+$list-item-dense-three-line-height: 19 * $dense-baseline-grid !default;
+$list-item-dense-header-font-size: round($subhead-font-size-base * .8) !default;
+$list-item-dense-font-size: round($body-font-size-base * .85) !default;
+$list-item-dense-line-height: 1.05 !default;
+
+.md-autocomplete-suggestions.md-3-line {
+  li {
+    @include ie11-min-height-flexbug($list-item-dense-three-line-height);
+    height: $list-item-dense-three-line-height;
+    line-height: $list-item-dense-line-height;
+    min-height: $list-item-dense-three-line-height;
+  }
+}
+
+.md-autocomplete-suggestions.md-2-line,
+.md-autocomplete-suggestions.md-3-line {
+  li {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+
+    .md-list-item-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    h3,
+    h4,
+    p {
+      line-height: $list-item-dense-line-height;
+      font-size: $list-item-dense-font-size;
+    }
+
+    h3 {
+      font-size: $list-item-dense-header-font-size;
+    }
+
+    h3 {
+      font-weight: 400;
+      letter-spacing: .010em;
+      line-height: $list-header-line-height;
+      margin: $list-h3-margin;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    h4 {
+      font-weight: $list-h4-font-weight;
+      letter-spacing: .010em;
+      line-height: $list-header-line-height;
+      margin: $list-h4-margin;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    p {
+      font-weight: 500;
+      letter-spacing: .010em;
+      line-height: $list-p-line-height;
+      margin: $list-p-margin;
+    }
+  }
+}
+
+md-autocomplete .ng-invalid:not(.ng-empty) {
+  text-decoration: underline;
+  color: $colorRedA700 !important;
+}
+
+@media (max-width: $layout-breakpoint-xs) {
+  // Enlarge the autocompletion menu on small devices to fit the entire screen
+  .md-autocomplete-suggestions-container {
+    right: $baseline-grid*2;
+  }
+}

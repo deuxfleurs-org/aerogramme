@@ -1,0 +1,265 @@
+/// button.scss -*- Mode: scss; indent-tabs-mode: nil; basic-offset: 2 -*-
+@import 'extends';
+
+md-button {
+  font-weight: 600;
+}
+
+md-sidenav md-list .md-button {
+  font-weight: normal;
+}
+
+/**
+ * Applying a background color (using ng-class or ui-sref-active) to a clickable (ng-click)
+ * md-list-item would hide the content of the item content.
+ *
+ * See https://github.com/angular/material/commit/9a8eab0cbb0a934f4ba2ffe616359ba6ce38ae75
+ * => HAS BEEN REVERTED
+ */
+a.md-button-wrap-executor.md-no-style {
+  //background-color: transparent;
+}
+
+/**
+ * Overlap fab button by half its height downward
+ */
+.md-button.md-fab-overlap-bottom {
+  &.md-fab-bottom-right,
+  &.md-fab-bottom-left {
+    bottom: -(($button-fab-width + $button-fab-padding)*0.5);
+  }
+}
+
+/**
+ * Keep main fab button visible and either at the bottom right of the list
+ * view or at the bottom left of the detail view
+ *
+ *     Three-pane view (full view):
+ *
+ *     +------+-------+--------------+
+ *     |    x |       | x            |
+ *     |      |       |              |
+ *     |      |       |              |
+ *     |      |       |              |
+ *     |      |    (*)|              |
+ *     +------+-------+--------------+
+ *
+ *     Sidenav closed:
+ *
+ *     +-------+--------------+
+ *     |=      | x            |
+ *     |       |              |
+ *     |       |              |
+ *     |       |              |
+ *     |    (*)|              |
+ *     +-------+--------------+
+ *
+ *     Detail view expanded (list view closed):
+ *
+ *     +------+--------------+
+ *     |    x | +            |
+ *     |      |              |
+ *     |      |              |
+ *     |      |              |
+ *     |      |(*)           |
+ *     +------+--------------+
+ *
+ *     Sidenav closed and detail view expanded:
+ *
+ *     +--------------+
+ *     | +            |
+ *     |              |
+ *     |              |
+ *     |              |
+ *     |(*)           |
+ *     +--------------+
+ *
+ */
+.sg-fab-bottom-center {
+  position: absolute;
+  bottom: ($button-fab-height - $button-fab-padding)*0.5;
+  left: auto;
+  right: ($button-fab-width - $button-fab-padding)*0.5;
+  top: auto;
+  transition: $swift-ease-out;
+  @include at(sm) {
+    right: col-width($breakpoint: sm, $nb: 10) + 2vw;
+    &.sg-center-close {
+      left: ($button-fab-width - $button-fab-padding)*0.5;
+      right: auto;
+    }
+  }
+  @include at(md) {
+    // sidenav is hidden, center list can be closed
+    right: col-width($breakpoint: md, $nb: 14) + 2vw;
+    &.sg-center-close {
+      left: ($button-fab-width - $button-fab-padding)*0.5;
+      right: auto;
+    }
+  }
+  @include from(lg) {
+    // both sidenav and center list can be closed
+    right: col-width($breakpoint: lg, $nb: 10) + 2vw;
+    &.sg-sidenav-close, &.sg-center-close {
+      right: col-width($breakpoint: lg, $nb: 14) + 2vw;
+    }
+    &.sg-sidenav-close.sg-center-close {
+      left: ($button-fab-width - $button-fab-padding)*0.5;
+      right: auto;
+    }
+  }
+}
+
+// Expandable button for a collapsable list
+.sg-expandable {
+    width: 100%;
+}
+
+// Remove left margin when in first menu button of dialogs
+.md-toolbar-tools {
+  md-menu:first-child {
+    .md-icon-button:first-child {
+      margin-left: 0
+    }
+  }
+}
+
+///
+/// sg-icon-button
+/// according to Material design specs:
+/// @link www.google.com/design/spec/style/icons.html#icons-system-icons
+/// @link www.google.com/design/spec/layout/metrics-keylines.html#metrics-keylines-touch-target-size
+/// @link www.google.com/design/spec/layout/structure.html#structure-app-bar
+/// @require angular-material/components/button
+///
+/// Buttons here defined are project-wide, so we don't use mixin but variables
+/// ----------------------------------------------------------------------------
+
+// Variables
+$iconButton-size: $touch-zone-width;
+$iconButton-icon-size: sg-size(title);
+$iconButton-menu-size: sg-size(headline);
+$iconButton-icon-padding: 2px;
+$iconButton-size-cursor-coarse: $iconButton-size;
+// Could be use to scale-down buttons if desktop layout suffers too much from touch-size
+$iconButton-size-cursor-fine: $iconButton-size;
+// convenient wrapper for padding calculation todo: write a mixin or a function for a more generic use
+$iconButton-padding: ($iconButton-size - ($iconButton-icon-size + ($iconButton-icon-padding * 2))) * 0.5;
+$iconButton-hover-scale: 1.25;
+$iconButton-transition: all $swift-ease-in-duration $swift-ease-in-timing-function;
+
+$button-fab-width: 56px;
+$button-fab-height: 56px;
+
+a.md-button.sg-icon-button,
+.md-button.sg-icon-button,
+md-list md-list-item button.md-button.sg-icon-button {
+  @extend .md-button, .md-icon-button;
+  //transition: $iconButton-transition;
+  min-width: $iconButton-size;
+  &:hover:not([disabled]),
+  &:active {
+    //background-color: transparent;
+    //transform: scale($iconButton-hover-scale);
+  }
+}
+
+// Center icon button inside md-avatar
+.md-avatar {
+  .sg-icon-button {
+    margin-top: 1px;
+    margin-left: 2px;
+  }
+}
+
+.md-subheader-content {
+  .md-icon-button:first-child {
+    // Delegation button of mail accounts
+    padding-left: 0;
+    margin-left: 0;
+    margin-right: 0;
+  }
+}
+md-tab-content {
+  .md-subheader-content {
+    .md-icon-button:first-child {
+      margin-right: $icon-button-margin*0.5;
+    }
+  }
+}
+
+// md-toolbar .md-toolbar-tools:first-of-type .iconButton,
+// md-toolbar .md-toolbar-tools:first-child .iconButton,
+// md-toolbar .md-toolbar-tools.md-toolbar-tools-top .iconButton,
+// md-toolbar .md-toolbar-tools:not(.md-toolbar-tools-bottom) .iconButton {
+//   margin-top: ($mg * -1);
+// }
+// First button must have it's icon align to margin/padding
+// md-toolbar .md-toolbar-tools .iconButton:first-child,
+// .sg-toolbar-group-last .iconButton:first-child {
+//   margin-left: ($mg * -1);
+// }
+// md-content.md-padding,
+// md-card-content {
+//   &> .iconButton:first-child {
+//     margin-top: ($mg * -1);
+//     margin-left: ($mg * -1);
+//   }
+// }
+// Last button must have it's icon align to margin/padding
+// md-toolbar .md-toolbar-tools .iconButton:last-child,
+// .sg-toolbar-group-last .iconButton:last-child {
+//   margin-right: ($mg * -1);
+// }
+
+// Icon-bars are for iconButtons, by default they're vertical and at the right
+// the modifier class is to reflect those values and leave place to other versions
+.sg-icon-bar--vertical {
+  display: flex;
+  flex-direction: column;
+  //margin: 0 ($mg * -1) 0 $mg;
+  font-size: $sg-font-size-3;
+  align-items: center;
+  // Containers have padding, we compensate to align according to specs
+  justify-content: space-between;
+
+  // for transitions
+  @include at(sm) {
+    margin-left: $iconButton-padding;
+  }
+}
+
+// NiceToHave: some horizontal or left hand side variant
+
+.sg-icon-bar *.button {
+  display: block;
+}
+
+.sg-button-navicon {
+  //top: ($mg * -1);
+  //margin-left: ($mg * -1);
+  width: $touch-zone;
+  height: $touch-zone;
+  line-height: $touch-zone;
+}
+
+// angular-material is overspecifying so we are and so we have to continue
+.sg-button-navicon.sg-icon-button md-icon,
+.sg-button-navicon.sg-icon-button {
+  padding: 0;
+  font-size: $iconButton-menu-size;
+}
+
+.sg-outline-button {
+  border-width: 1px;
+  border-style: solid;
+  border-radius: $button-border-radius;
+  margin: 0 0 0 rem(0.500);
+  padding: 0 rem(0.500);
+  min-width: initial;
+  min-height: initial;
+  font-size: $sg-font-size-1;
+  font-weight: $sg-font-medium;
+  line-height: $sg-font-size-1 * 2;
+  text-transform: uppercase;
+}

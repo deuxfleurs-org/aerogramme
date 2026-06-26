@@ -1,0 +1,544 @@
+/// MailerUI.scss -*- Mode: scss; indent-tabs-mode: nil; basic-offset: 2 -*-
+@use "sass:color";
+
+.sg-mailbox-list-item:not(.sg-selected) .md-menu {
+  display: none;
+}
+
+.view-list {
+  // Overwrite style from list.scss to make some place for .sg-tile-icons
+  md-list-item._md-button-wrap > div.md-button:first-child {
+    padding-right: 0;
+  }
+
+  .sg-tile-subject {
+    flex-grow: 1;
+  }
+
+  .sg-message-thread > .md-button:before {
+    content: '';
+    width: $mg;
+  }
+
+  .sg-category-dot {
+    border-color: rgba(255, 255, 255, .9);
+  }
+}
+
+// Container for the linear progress bar of the quota
+.sg-quota {
+  padding-bottom: $baseline-grid;
+  padding: 0 $baseline-grid*2 $baseline-grid $baseline-grid*2;
+  text-align: center;
+  md-progress-linear > .md-container {
+    height: 2px;
+  }
+}
+
+.sg-icon-star {
+  color: $colorYellow700;
+}
+
+.sg-star-bg {
+  background-color: color.scale($colorYellow700, $lightness: 60%);
+}
+
+// Message view header
+// Could be made into a more generic component
+// ----------------------------------------------------------------------------
+.msg-header {
+//  padding-bottom: $mg; We should add a padding class to preserve genericity
+}
+
+[id="messagesList"] .sg-md-subheader {
+  transform: translateY(-100%); // Compensate the container top-margin
+}
+
+.unread {
+  .#{$md}-subhead,
+  .#{$md}-body,
+  .sg-tile-date {
+    font-weight: $sg-font-medium;
+  }
+}
+
+.sg-skeleton {
+  background-color: inherit;
+  sg-avatar-image, .sg-category-dot-container, md-icon, .sg-tile-btn {
+    display: none;
+  }
+  .md-icon-button, .sg-md-subhead, .sg-md-body {
+    color: $colorGrey300;
+    background-color: $colorGrey300;
+    font-size: 0;
+  }
+  .sg-md-subhead, .sg-md-body {
+    margin-bottom: 3px;
+    border-radius: 3px;
+  }
+  .sg-md-subhead {
+    height: 1.2rem;
+    width: 45%;
+  }
+  .sg-md-body {
+    height: 1rem;
+    width: 70%;
+  }
+}
+
+.msg-header-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  align-items: stretch;
+  justify-content: flex-start;
+  overflow: hidden;
+  [class|="sg-md-display"] {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.msg-recipients {
+  margin-bottom: $mg;
+  @include to(xs) {
+    padding-left: $mg;
+    padding-right: $mg;
+  }
+  md-chip {
+    cursor: pointer;
+  }
+}
+
+// Vertical buttons in header area of mail composer dialog
+.msg-header-buttons {
+  margin-right: -$baseline-grid;
+}
+
+.msg-body {
+  padding-top: $mg;
+  position: relative;
+  transform: translateX(0);
+}
+
+.msg-date {
+  font-size: $sg-font-size-2;
+//  text-align: right;
+//  margin-bottom: 10px;
+//  margin-bottom: ($mg/2);
+}
+
+md-sidenav {
+  md-list-item.sg-mailbox-list-item {
+    // Lower by half the left padding of list items to accomodate the expand/collapse button
+    padding-left: $bl;
+    .sg-item-name {
+      transform: translateX(-$bl);
+      margin-right: 0;
+      md-icon {
+        margin-right: $bl;
+      }
+      &:focus {
+        outline: none;
+      }
+    }
+  }
+  md-checkbox {
+    &.sg-folder {
+      // Show checkbox as a collapsed/right arrow when unchecked and expanded/down arrow when checked
+      .md-container:after {
+        color: rgba(0,0,0,0.54);
+        font-family: 'Material Icons';
+        font-size: 24px;
+        content: "\e5df"; // arrow_right (collapsed folder)
+        top: 0;
+        left: 0;
+        width: 1em;
+        height: 1em;
+      }
+      .md-icon {
+        border-width: 0;
+      }
+      &.md-checked {
+        .md-container:after {
+          content: "\e5c5"; // arrow_drop_down (expanded folder)
+        }
+        .md-icon {
+          background-color: initial !important;
+          &:after {
+            border-style: none;
+          }
+        }
+      }
+      // Hide the checkbox when disabled (no children)
+      &[disabled] {
+        .md-container {
+          width: 0;
+          &:after {
+            content: '';
+          }
+        }
+      }
+    }
+  }
+}
+.msg-attachment-image,
+.msg-attachment-link {
+  flex: 0 0 100%;
+  min-width: 0;
+  @include from(sm) {
+    flex: 0 0 50%;
+  }
+  @include from(md) {
+    flex: 0 0 33%;
+  }
+  [sg-zoomable-image] {
+    width: 100%;
+  }
+  .md-card-image {
+    // Make sure the image stays proportional
+    max-width: 100%;
+    min-height: 100%;
+    height: auto;
+  }
+}
+.popup {
+  .msg-attachment-image,
+  .msg-attachment-link {
+    @include from(sm) {
+      flex: 0 0 50%;
+    }
+    @include from(md) {
+      flex: 0 0 33%;
+    }
+  }
+}
+
+// Limit height of attachments card, format content-type labels
+.msg-attachment-link,
+.msg-attachment-image {
+  md-card-content {
+    padding: $baseline-grid;
+    p {
+      @extend .md-caption;
+      line-height: $sg-line-height-2;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      .sg-label-outline {
+        border-color: $colorGrey400;
+        color: $colorGrey600;
+      }
+    }
+  }
+}
+
+// The drop zone zone is only visibile when the user is dragging a file to the browser window
+.sg-dropzone {
+  display: none;
+}
+.sg-over-dropzone {
+  .sg-dropzone {
+    background-color: white;
+    border: 4px dashed black;
+    bottom: 0px;
+    display: block;
+    flex: 1 1 auto;
+    left: 0px;
+    opacity: 0.6;
+    position: absolute;
+    right: 0px;
+    top: 0px;
+    z-index: $z-index-toolbar + 1;
+    &:hover {
+      opacity: 0.6;
+    }
+    md-icon {
+      color: black;
+      font-size: $sg-font-size-9;
+    }
+  }
+}
+
+// sgZoomableImage directive
+.msg-attachment-image {
+  transition: flex-basis $swift-ease-out-duration $swift-ease-out-timing-function;
+  &.sg-zoom {
+    flex-basis: 100%;
+    order: -1;
+  }
+  &:not(.sg-zoom):hover md-card {
+    @extend .md-whiteframe-3dp;
+  }
+  [sg-zoomable-image] img {
+    cursor: pointer;
+  }
+}
+
+// Text or html message body
+.msg-attachment-other {
+  flex: 0 0 100%;
+  max-width: 100%;
+  word-break: break-word;
+  md-card-content md-content {
+    background-color: inherit;
+  }
+}
+
+.sg-attachment-name {
+  word-break: break-word;
+}
+
+.sg-attachment-size {
+  @extend .md-caption;
+  padding-left: $baseline-grid;
+  color: $colorGrey800;
+}
+
+// sg-md title doesn't fit in message headers
+.sg-md-title-msg {
+  @extend .sg-md-title;
+  margin: 0;
+  margin-bottom: $line;
+  white-space: normal;
+  font-weight: $sg-font-regular;
+}
+
+.mailer_plaincontent {
+  white-space: pre-wrap;
+}
+
+.mailer_htmlcontent {
+  // Constrain absolute-positioned child elements to this element
+  position: relative;
+
+  // Force wrapping of pre elements in HTML content
+  pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    tab-size: 4;
+  }
+}
+
+// For CKEditor
+.image_resized {
+  height: auto!important;
+}
+
+.sg-mail-editor {
+  .pseudo-input-container {
+    max-height: $baseline-grid * 4 * 6; // about 6 lines
+    overflow: hidden;
+    overflow-y: auto;
+    padding-bottom: 2px; // leave some space for the border
+    transition: $swift-ease-in;
+    &.ng-hide {
+      max-height: 0;
+      overflow: hidden;
+    }
+  }
+  md-chip-template {
+    md-icon[ng-click] {
+      cursor: pointer;
+    }
+  }
+}
+
+// Message body container of mail composer dialog
+.sg-mail-editor-content {
+  margin-top: 0;
+  margin-bottom: 0;
+  .cke_chrome {
+    border-color: transparent;
+  }
+  .cke_top {
+    top: 0;
+    position: sticky;
+  }
+  // Fix margin of toolbar collapser button
+  a.cke_toolbox_collapser {
+    margin: 4px 2px;
+  }
+}
+
+// Attachments list in bottom actions section of mail composer dialog
+md-dialog md-dialog-actions.sg-mail-editor-attachments {
+  border-top: 1px solid $colorGrayLighter;
+  overflow: auto;
+  max-height: 2 * $pitch; // = 128px (3 rows of chips)
+  md-chip {
+    max-width: 4 * $pitch; // = 256px
+  }
+  a {
+    float: left;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-right: 18px; // leave some space for the delete (x) button
+  }
+  .md-chips md-chip .md-chip-remove {
+    position: absolute;
+    right: 0;
+  }
+  .msg-header-buttons .md-icon-button {
+    // Attachment button (file upload label)
+    // Lower margins to fit the md-actions max height (52px)
+    margin-bottom: $baseline-grid*0.5;
+    margin-top: $baseline-grid*0.5;
+  }
+}
+
+// Default styles for HTML parts
+.SOGoHTMLMail-CSS-Delimiter p {
+  margin: 0 0 1em;
+}
+
+[ui-view="maileditor"] {
+  // CKEditor
+  .ck.ck-editor__main>.ck-editor__editable {
+    border-left: 0px !important;
+    border-right: 0px !important;
+    border-bottom: 0px !important;
+    box-shadow: none!important;
+    border-color: var(--ck-color-widget-blurred-border) !important;
+    margin-bottom: 10px;
+  }
+
+  .ck.ck-toolbar {
+    border: 0px !important;
+    box-shadow: none!important;
+  }
+
+  .ck-editor__editable {
+    min-height: 300px!important;
+  }
+
+  .ck.ck-focused {
+    border-color: var(--ck-color-widget-blurred-border)!important;
+  }
+
+  .ck-dropdown__panel {
+    top: 100%!important;
+    bottom: auto!important;
+    right: 0!important;
+    left: auto!important;
+  }
+
+  .ck-widget.raw-html-embed .raw-html-embed__preview-content>* {
+    margin-left: unset!important;
+    margin-right: unset!important;
+  }
+
+  .ck-widget.sogo-raw-html-embed:before {
+    display: none!important;
+  }
+
+  .sogo-raw-html-embed .raw-html-embed__buttons-wrapper {
+    display: none !important;
+  }
+
+  .ck-widget.sogo-raw-html-embed:not(.ck-widget_selected):not(:hover) {
+    outline: none!important;
+  }
+
+  .ck-widget.sogo-raw-html-embed {
+    background-color: unset;
+  }
+  
+  .ck-widget.sogo-raw-html-embed .raw-html-embed__preview-content {
+    background-color: unset;
+  }
+
+  .sogo-raw-html-embed .raw-html-embed__preview-placeholder {
+    display: none !important;
+  }
+
+  .ck-content p {
+    margin: revert;
+  }
+
+  .ck-sticky-panel__content {
+    border: 0 !important;
+  }
+}
+
+// Search highlight
+mark {
+  background: yellow;
+  color: black;
+}
+
+// Advanced search
+.advanced-search {
+  flex-direction: column;
+  align-items: baseline;
+}
+
+.advanced-search-full {
+  width: 100%;
+}
+
+.advanced-search md-input-container,
+.advanced-search md-select,
+.advanced-search md-datepicker,
+.advanced-search .search-and,
+.advanced-search a {
+  margin: 10px 0;
+  padding: 2px;
+}
+
+.advanced-search-in {
+  margin-top: 10px;
+}
+
+.search-inline md-menu,
+.search-inline button {
+  height: auto !important;
+  margin: auto !important;
+  padding: 0 !important;
+}
+
+.advanced-search-more {
+  display: flex;
+}
+
+.advanced-search-more-no-bottom {
+  margin-bottom: 0!important;
+  margin-top: 20px !important;
+}
+
+.advanced-search-more > :first-child {
+  width: 100%;
+}
+
+.advanced-search-clickable-toolbar {
+  cursor: pointer;
+}
+
+.advanced-search-clickable-toolbar form {
+  padding-left: 0!important;
+}
+
+.advanced-search-clickable-toolbar form >div:first-child {
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding-left: 16px;
+}
+
+.advanced-search-more button {
+  margin-right: 0!important;
+}
+
+.show-advanced-search {
+  cursor: pointer;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+/* Clean mailbox */
+
+.clean-mailbox-warn {
+  color: #f44336;
+}

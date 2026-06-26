@@ -1,0 +1,19 @@
+.checkboxDemo1 div {
+  clear: both;
+}
+legend {
+  color: #3F51B5;
+}
+p {
+  padding-left: 8px;
+}
+.info {
+  padding-left: 13px;
+}
+div.standard {
+  padding: 8px 8px 8px 15px;
+}
+fieldset.standard {
+  border-style: solid;
+  border-width: 1px;
+}

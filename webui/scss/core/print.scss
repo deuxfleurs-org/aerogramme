@@ -1,0 +1,108 @@
+/// print.scss -*- Mode: scss; indent-tabs-mode: nil; basic-offset: 2 -*-
+
+// Common print media stylesheet
+// See https://github.com/angular/material/issues/1747
+
+@media print {
+
+  html, body {
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+
+    &.letter {
+      width: 8.5in;
+      height: 11in !important;
+      &.landscape {
+        width: 11in;
+        height: 8.5in !important;
+      }
+      [ui-view=listView] {
+        max-width: 3in;
+      }
+    }
+    &.legal {
+      width: 8.5in;
+      height: 14in !important;
+      &.landscape {
+        width: 14in;
+        height: 8.5in !important;
+      }
+    }
+    &.a4 {
+      width: 210mm;
+      height: 297mm;
+      &.landscape {
+        width: 297mm;
+        height: 210mm;
+      }
+      [ui-view=listView] {
+        max-width: 80mm;
+      }
+    }
+  }
+
+  // Don't print some components
+  md-autocomplete,
+  md-sidenav,
+  md-card-actions,
+  md-backdrop,
+  md-toast,
+  .md-fab,
+  .md-scroll-mask,
+  .md-dialog-container,
+  .md-open-menu-container,
+  .md-chip-remove-container,
+  .toolbar-main,
+  .view-list--close,
+  .view-detail .sg-reversible.sg-flip .sg-face,
+  .view-detail .sg-reversible:not(.sg-flip) .sg-back {
+    display: none !important;
+  }
+
+  // Horizontal flex layout must be ignored for element that could spawn multiple pages
+  .msg-body > [layout="row"],
+  .mailer_mailcontent[layout="row"] {
+    display: block !important;
+    max-height: none !important;
+    position: relative !important;
+  }
+
+  // Ignore layout-fill style
+  [layout-fill] {
+    height: auto !important;
+  }
+
+  // Content must be visible to be printed on multiple pages
+  main,
+  body.popup .view-detail,
+  section,
+  md-content,
+  md-card,
+  md-card-content,
+  md-card-content pre,
+  .view,
+  .view-detail .sg-reversible,
+  .view-detail .sg-reversible:not(.sg-flip) .sg-face,
+  .view-detail .sg-reversible.sg-flip .sg-back,
+  .sg-block-print {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    position: relative !important;
+    flex: none;
+    transform: none !important;
+  }
+
+  // Remove shadow from Cards
+  md-card {
+    box-shadow: none !important;
+  }
+
+  .sg-block-print div.SOGoHTMLMail-CSS-Delimiter.mailer_htmlcontent div[class^="WordSection"] {
+    page: auto !important;
+  }
+}

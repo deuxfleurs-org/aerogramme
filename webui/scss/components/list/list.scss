@@ -1,0 +1,380 @@
+/// list.scss -*- Mode: scss; indent-tabs-mode: nil; basic-offset: 2 -*-
+
+// Increase header line height
+$list-header-line-height: 1em;
+
+// Decrease the margin of H3 to counter the larger line height
+$list-h3-margin: 0;
+
+// Decrease default list item height
+$list-item-height: 6 * $baseline-grid; // 48px
+
+@import 'extends';
+
+// Circle diameter of avatars
+$sg-avatar-width: 40px;
+
+// Circle diamter of color chips
+$sg-color-chip-width: 2 * $baseline-grid;
+
+
+/*------------------------------------*\
+    MD-LIST-ITEM
+\*------------------------------------*/
+
+md-list-item {
+
+  // Gain some space with secondary action button;
+  // Impact: list with checkbox in sidevav of Calendar module
+  &.md-with-secondary .md-list-item-inner {
+    padding-right: $bl;
+  }
+
+  // Fix for md-menu visibility when set as a secondary action in a list item
+//  &._md-button-wrap > div.md-button:first-child > .md-button:first-child {
+//    z-index: $z-index-sidenav - 2;
+//  }
+  .md-secondary-container {
+    z-index: $z-index-sidenav - 1;
+  }
+
+  .md-list-item-inner {
+    overflow: hidden;
+
+    // Gain some space since we want small list items
+    & > md-checkbox {
+      margin-top: 0px;
+    }
+  }
+  md-icon,
+  .md-button md-icon {
+    margin-left: 0;
+  }
+
+  .sg-item-name {
+    align-items: flex-start;
+    font-size: sg-size(button);
+    max-width: 75%; // leave some place for a secondary button
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-transform: initial;
+    white-space: nowrap;
+  }
+  .sg-inline-list-icon-label {
+    text-transform: uppercase;
+  }
+}
+
+
+/*------------------------------------*\
+    MD-SIDENAV
+\*------------------------------------*/
+
+.md-sidenav-left {
+  md-list {
+    padding: 0;
+  }
+
+  // Remove padding of input fields in the sidenav for better transitions between read and edit mode of a folder
+  md-input-container:not(.md-icon-left) {
+    margin: 0;
+    padding: 0;
+    .md-input {
+      padding-left: 0;
+    }
+  }
+
+  md-list-item {
+    // Gain some space on the right side of the folder icon
+    .md-list-item-inner > md-icon:first-child,
+    .md-list-item-inner > md-checkbox:first-child {
+      margin-top: auto;
+      margin-right: $bl * 2;
+    }
+
+    .md-button,
+    &.md-clickable {
+      margin: 0;
+      transition: background-color $swift-ease-in-duration $swift-ease-in-timing-function,
+      color $swift-linear-duration $swift-linear-timing-function;
+    }
+
+    &.md-clickable:not([disabled]):hover {
+      background-color: rgba($colorGrey500, 0.2); // See button-theme.scss
+    }
+
+    &[disabled] {
+      color: rgba(0,0,0,0.38) !important; // = {{foreground-3}}; See button-theme.scss
+      md-icon {
+        color: rgba(0,0,0,0.38);
+      }
+    }
+  }
+}
+
+// Add some padding to the first icon in a list item
+//.md-list-item-inner {
+//  > i:first-child {
+//    margin-left: $mg;
+//  }
+//}
+
+// The right tile for a list item.
+// ----------------------------------------------------------------------------
+.md-tile-right {
+  padding-right: $item-padding-right;
+}
+
+// The right tile for a list item (avatar container)
+// ----------------------------------------------------------------------------
+
+.md-tile-left,
+.md-tile-right {
+  display: block;
+  border-radius: 50%;
+  padding: $layout-gutter-width;
+  padding: $baseline-grid * 1.5;
+  padding: ($sg-md-grid-pitch - $sg-avatar-width) * 0.5;
+  width: $sg-md-grid-pitch;
+  height: $sg-md-grid-pitch;
+  //line-height: $sg-md-grid-pitch + $baseline-grid;
+  background-clip: content-box;
+  md-icon {
+    font-size: $sg-md-grid-pitch + $baseline-grid - 2 * $layout-gutter-width;
+  }
+}
+.md-tile-right {
+  margin-right: -$layout-gutter-width;
+}
+// Overqualifying to override a rule in source
+div.md-tile-left {
+  min-width: $sg-md-grid-pitch + $baseline-grid;
+}
+
+.sg-section-list md-list-item._md-button-wrap > .md-button:first-child .md-list-item-inner {
+  // Expect the container to include a sg-tile-icons (Mailer module)
+  padding-right: 0px;
+}
+
+.sg {
+  &-color-chip {
+    border-color: white;
+    border-radius: 50%;
+    border-style: solid;
+    border-width: 2px;
+    display: block;
+    height: $sg-color-chip-width;
+    margin: 0 $bl;
+    width: $sg-color-chip-width;
+    &:first-child {
+      margin-left: 0;
+    }
+  }
+
+  &-tile-content {
+    flex: 1;
+    overflow: hidden; // required in Firefox
+    .sg-tile-date, .sg-tile-size, .sg-tile-btn {
+      flex-shrink: 0;
+      font-size: sg-size(body);
+      font-weight: $sg-font-light;
+      line-height: $sg-line-height-2;
+      margin-left: 3px !important;
+    }
+    .sg-tile-size {
+      font-size: sg-size(caption);
+    }
+    .sg-tile-btn {
+      min-height: auto;
+      min-width: auto;
+      padding: 0 3px !important;
+      margin: 0;
+      font-weight: $sg-font-medium;
+      md-icon {
+        font-size: sg-size(body);
+      }
+    }
+    .#{$md}-subhead {
+      @extend .#{$md}-body-1;
+      white-space: pre;
+      &.md-block {
+        display: block;
+      }
+    }
+    .#{$md}-body {
+      @extend .#{$md}-caption;
+    }
+    .#{$md}-subhead,
+    .#{$md}-body {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      > * {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    }
+  }
+
+  // Small tile of vertically-aligned icons
+  &-tile-icons {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: (3 * $bl);
+    height: (2 + $sg-font-size-1) * 4; // (vertical padding + icon size) * max number of icons
+  }
+
+  &-counter-badge {
+    border-left: 1px solid $colorGrey500;
+    margin: 0;
+    padding: 0 rem(0.500);
+    font-size: $sg-font-size-1;
+    font-weight: $sg-font-medium;
+    text-transform: uppercase;
+  }
+
+  &-tile-content,
+  &-tile-icons {
+    md-icon {
+      font-size: $sg-font-size-1;
+      //color: $colorGray;
+      margin: 1px 2px;
+      min-height: $sg-font-size-1;
+      min-width: $sg-font-size-1;
+    }
+  }
+}
+
+/**
+ * Sortable list items are provided by the ng-sortable library. CSS classes are
+ * from ng-sortable are prefixed by as-. Basic rules come from the CSS file
+ * bundled with the library.
+ *
+ * 1. We hide sortable handles when not inside a .sg-list-sortable;
+ * 2. Elements wih the class .sg-list-sortable-hide are hidden when the list is
+ *    currently sortable;
+ * 3. Dragged element is highligh with a whiteframe. We constraint the movement
+ *    vertically; it also eliminates a flicker when dragging starts.
+ *
+ * See https://github.com/a5hik/ng-sortable
+ */
+
+.as-sortable-item {
+  .as-sortable-hidden {
+    display: none !important;
+  }
+
+  .as-sortable-un-selectable {
+    user-select: none;
+  }
+
+  .as-sortable-item-handle {
+    display: none; /* [1] */
+    cursor: move;
+    cursor: -webkit-grab;
+    cursor: -moz-grab;
+  }
+}
+
+.sg-list-sortable {
+  position: relative;
+
+  .as-sortable-item {
+    -ms-touch-action: none;
+    touch-action: none;
+    -webkit-touch-callout: none; /* to disable context menu on iOS devices */
+  }
+  .as-sortable-item-handle {
+    cursor: move;
+    display: block; /* [1] */
+  }
+  .sg-list-sortable-hide {
+    display: none; /* [2] */
+  }
+}
+
+.as-sortable-drag { /* [3] */
+  @extend .md-whiteframe-1dp;
+  left: 0 !important;
+  background-color: rgba(255,255,255,0.4);
+  position: absolute;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/**
+ * A md-avatar can either include a md-icon or an img.
+ */
+
+.card-picture {
+  .md-avatar {
+    display: block;
+
+    // From md-list-item .md-list-item-inner .md-avatar
+    width: $list-item-primary-avatar-width;
+    height: $list-item-primary-avatar-width;
+    margin-top: $baseline-grid;
+    margin-bottom: $baseline-grid;
+    margin-right: $list-item-primary-width - $list-item-primary-avatar-width;
+    border-radius: 50%;
+    box-sizing: content-box;
+
+    img {
+      width: initial !important;
+    }
+  }
+}
+
+.md-avatar::before,
+.md-avatar md-icon,
+sg-avatar-image md-icon,
+sg-avatar-image .material-icons {
+  color: rgba(0, 0, 0, 0.26);
+  font-family: 'Material Icons';
+  font-size: $sg-avatar-width;
+}
+.sg-avatar-list {
+  &::before {
+    content: "\e7ef"; // group
+  }
+}
+.sg-avatar-public {
+  &::before {
+    content: "\e80b"; // public
+  }
+}
+
+sg-avatar-image img {
+  border-radius: 50%;
+}
+
+/**
+ * In the middle list of the main view, we allow items selection through a
+ * checkbox that replaces the avatar when
+ *
+ * 1. the mouse cursor is over the selectable avatar;
+ * 2. the list is marked as selectable.
+ */
+
+.sg-avatar-selectable:hover, /* [1] */
+.sg-list-selectable .sg-avatar-selectable { /* [2] */
+  font-family: 'Material Icons';
+  font-size: $sg-avatar-width;
+  height: 100%;
+  &::before {
+    color: inherit;
+    content: "\e835"; // check box outline
+    font-size: $icon-size;
+    margin: 0 ($sg-avatar-width - $icon-size)*0.5;
+  }
+  &.sg-avatar-selected::before {
+    content: "\e834"; // check box
+  }
+
+  > * {
+    display: none;
+  }
+}

@@ -1,0 +1,82 @@
+/// structure.scss -*- Mode: scss; indent-tabs-mode: nil; basic-offset: 2 -*-
+
+// ngMaterial source for overrides
+// ----------------------------------------------------------------------------
+@import '../../angular-material/src/core/style/structure.scss';
+
+// re-inforce a reset
+html * {
+  box-sizing: border-box;
+}
+
+// Utility class to add padding on containers
+// Because of the border-box sizing model, padding can affect width specialy
+// in nested containers
+.sg-padded {
+  padding-left: $mg;
+  padding-right: $mg;
+  &--left {
+    padding-left: $mg;
+  }
+  &--right {
+    padding-right: $mg;
+  }
+  &--top {
+    padding-top: $mg;
+  }
+  &--bottom {
+    padding-bottom: $mg;
+  }
+}
+
+.sg-opacity-70 {
+  opacity: .7;
+}
+
+.sg-category {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 10%;
+}
+.sg-category-dot {
+  display: inline-block;
+  height: .9em;
+  width: .9em;
+  margin-bottom: -1px; // border width
+  margin-right: -.3em; // 1 third overlap
+  border-radius: 50%;
+  border-width: 1px;
+  border-style: solid;
+  &:last-child {
+    margin-right: .3em;
+  }
+}
+.sg-category-dot-container {
+  display: inline-block;
+  overflow: inherit !important;
+}
+
+// Group fields of a form
+// See https://www.google.com/design/spec/patterns/settings.html#settings-grouping-settings
+.sg-has-form-sections {
+  background-color: $colorGrey300;
+}
+.sg-form-section {
+  @extend .md-whiteframe-2dp;
+  @extend .md-padding;
+  background-color: white;
+  margin-bottom: $mg*0.5;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+// Remove "leave" transition
+// Convenient with a ng-switch statement or when using multiple ng-if statements that are mutually exclusive
+.sg-no-transition {
+  .ng-leave {
+    display: none;
+  }
+}

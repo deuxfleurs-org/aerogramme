@@ -1,0 +1,173 @@
+/// toolbar.scss -*- Mode: scss; indent-tabs-mode: nil; basic-offset: 2 -*-
+//$toolbar-tools-height: 100%;
+$toolbar-height: $pitch;
+//$toolbar-medium-tall-height: 88px !default;
+$toolbar-tall-height: ($toolbar-height * 2);
+$toolbar-indent-margin: $pitch;
+$toolbar-padding: $mg;
+@import 'extends';
+
+// According to specs, there's no case where toolbars have no padding
+// We overule angular-material way of implenting this by defining padding toolbars
+// instead of toolbar-tools to prevent padding addition
+// INFO: because we make intensive use of border-box box sizing model, horizontal paddings
+// must be declare in containers with sg-padded
+md-toolbar {
+  z-index: $z-index-toolbar;
+  // No transition when switching toolbars
+  transition-duration: 0s;
+}
+
+.md-toolbar-tools, .md-toolbar-tools .md-datepicker-input, .md-chips {
+  font-size: $subhead-font-size-base;
+}
+
+.md-toolbar-tools md-select:not([disabled]):focus .md-select-value {
+  border-bottom-color: unset;
+  color: unset;
+  border-bottom-width: 1px;
+}
+
+.search-right-space {
+  margin-right: 10px!important;
+  padding-right: 0px;
+}
+
+.search-and {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding-bottom: 12px;
+}
+
+.search-inline {
+  display: flex;
+  justify-content: center;
+}
+
+.md-toolbar-tools .md-datepicker-input {
+  margin-top: 5px;
+}
+
+md-toolbar,
+.md-toolbar-tools {
+  // Animate the first icon button of a "secondary" toolbar
+  &.sg-toolbar-secondary {
+    > .md-toolbar-tools > .sg-icon-button:first-child,
+    > .md-toolbar-tools > .md-icon-button:first-child,
+    > .sg-icon-button:first-child,
+    > .md-icon-button:first-child {
+      transition: $swift-ease-in;
+      transform: translateX(0px);
+    }
+    &.ng-hide > .md-toolbar-tools > .sg-icon-button:first-child,
+    &.ng-hide > .md-toolbar-tools > .md-icon-button:first-child,
+    &.ng-hide > .sg-icon-button:first-child,
+    &.ng-hide > .md-icon-button:first-child {
+      transform: translateX(-$touch-zone-width);
+    }
+  }
+  &.md-accent.md-hue-1 {
+    md-icon {
+      // Hack until this bug is fixed: https://github.com/angular/material/issues/5989
+      color: rgba(0,0,0,0.54);
+    }
+  }
+}
+
+// Colors transition when changing folder color in dialogs
+md-dialog {
+  md-toolbar,
+  md-toolbar .md-input,
+  md-toolbar md-input-container.md-input-has-value label,
+  md-toolbar md-input-container.md-input-has-value label:not(.md-no-float),
+  md-toolbar md-icon {
+    transition: background-color $swift-ease-out-duration $swift-ease-out-timing-function,
+    color $swift-ease-out-duration $swift-ease-out-timing-function;
+  }
+}
+
+// Light colors for md-input inside md-toolbar
+md-toolbar:not(.md-accent):not(.md-hue-1) md-input-container:not(.md-input-invalid),
+md-toolbar:not(.md-accent):not(.md-hue-1) md-chips,
+md-toolbar:not(.md-accent):not(.md-hue-1) .pseudo-input-container md-select:focus {
+  &.md-input-focused label,
+  .md-input,
+  .md-select-value {
+    color: rgba(255,255,255,0.87); // {{primary-contrast}}
+  }
+  &.md-input-focused .md-input,
+  &.md-input-focused .md-select-value,
+  > .md-select-value {
+    padding-bottom: $input-border-width-focused - $input-border-width-default;
+    border-bottom-width: $input-border-width-default;
+    border-color: rgba(255,255,255,0.87); // {{primary-contrast}}
+  }
+  .md-chips.md-focused {
+    box-shadow: 0 1px rgba(255,255,255,0.87); // {{primary-contrast}}
+  }
+}
+
+header {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  justify-content: space-between;
+  display: flex;
+}
+
+hgroup {
+  align-items: center;
+  &h3 {
+    margin-bottom: 0;
+  }
+}
+
+.sg-toolbar-auto {
+  height: auto;
+  max-height: inherit;
+}
+
+.sg-toolbar-group {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  &-1 {
+    order: 1;
+    flex: 1 1 0;
+    max-width: $listView-width;
+  }
+  &-2 {
+    order: 2;
+  }
+  &-3,
+  &-last {
+    order: 3;
+  }
+}
+
+.sg-folder-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+
+// Animate transitions from one toolbar to the other
+.sg-toolbar-multiple {
+  overflow: hidden;
+  .md-toolbar-tools {
+    &.ng-hide {
+      transform: translateY(100%);
+      transition: transform 0ms;
+    }
+    transform: translateY(0%);
+    transition: transform 240ms;
+  }
+}
+
+.sg-toolbar-tools--dense {
+  min-height: $bl * 6;
+  height: $bl * 6;
+}

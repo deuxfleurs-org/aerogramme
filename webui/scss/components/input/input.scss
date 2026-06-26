@@ -1,0 +1,44 @@
+/// input.scss -*- Mode: scss; indent-tabs-mode: nil; basic-offset: 2 -*-
+@import 'extends';
+
+md-input-container {
+  &.md-input-number {
+    flex-grow: 0;
+    width: 4em;
+    input {
+      text-align: center;
+    }
+  }
+  &.md-no-flex {
+    flex: none !important;
+  }
+  &.md-input-clipboard {
+    display: flex;
+    flex-direction: row-reverse;
+  }
+  .md-errors-spacer {
+    // Temporary fix for https://github.com/angular/material/issues/6214
+    min-height: 0 !important;
+  }
+  .sg-hint {
+    @extend .md-char-counter;
+    @include rtl(text-align, left, right);
+  }
+}
+
+.sg-hint {
+  @include rtl(text-align, left, right);
+
+  // See .md-char-counter in input.scss
+  font-size: $input-error-font-size;
+  line-height: $input-error-line-height;
+  overflow: hidden;
+  padding-top: $error-padding-top;
+}
+
+md-autocomplete .sg-input-no-message [md-floating-label] {
+  md-input-container {
+    // See .md-input-has-messages
+    padding-bottom: $input-container-padding;
+  }
+}

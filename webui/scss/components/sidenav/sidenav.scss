@@ -1,0 +1,49 @@
+/// sidenav.scss -*- Mode: scss; indent-tabs-mode: nil; basic-offset: 2 -*-
+
+$sidenav-desktop-width: (4 * $pitch);
+$sidenav-min-space: $pitch;
+//$sidenav-right-width: (8 * $pitch);
+
+@import "extends";
+
+md-sidenav {
+  overflow: inherit;
+
+  &.md-locked-open {
+    @include from(md) {
+      @include flex-col($breakpoint: md, $nb: 4, $grow: 1, $shrink: 0);
+      // Custom representation of a closed sidenav where the sidenav is pushed to the left;
+      // Used in in "locked open" mode.
+      &.md-sidenav-left {
+        transition: $swift-ease-out;
+        &.sg-close {
+          margin-right: -20vw; // See views/_views.scss
+          transform: translateX(-100%);
+        }
+      }
+    }
+  }
+}
+
+// Mailboxes tree
+$i: 0;
+@while $i < 12 {
+  .sg-child-level-#{$i} {
+    max-height: 24px;
+    padding-left: $mg * $i;
+  }
+  $i: $i + 1;
+}
+
+md-select-value [class*="sg-child-level"] {
+  // No padding for selected value
+  padding-left: inherit;
+}
+
+[class^=sg-child-level] {
+  md-icon,
+  md-checkbox {
+    margin-right: $bl;
+    line-height: $checkbox-height;
+  }
+}

@@ -1,0 +1,40 @@
+/// mixins.scss -*- Mode: scss; indent-tabs-mode: nil; basic-offset: 2 -*-
+@import '../../angular-material/src/core/style/mixins.scss';
+
+// Utility to compensate for the the xml mandatory attribute values
+// Creates classes extending layout attributes with no values
+// ----------------------------------------------------------------
+@mixin attributesToClasses($selectors, $prefix: 'md') {
+  @each $selector in $selectors {
+    .#{$prefix}-#{$selector} {
+// no syntax error here
+      @extend #{'['$selector']'} !optional
+    }
+  }
+}
+
+// Migration functions to mimic the
+// Compass extension "Breakpoint Slicer" (https://github.com/lolmaus/breakpoint-slicer)
+// using "Breakpoint" (https://github.com/at-import/breakpoint)
+@mixin at($breakpoint) {
+  $min_idx: index($slicer-breakpoint-names, $breakpoint);
+  $min: nth($slicer-breakpoints, $min_idx);
+  $max: nth($slicer-breakpoints, $min_idx + 1) - 1;
+  @include breakpoint($min $max) {
+    @content;
+  }
+}
+@mixin from($breakpoint) {
+  $min_idx: index($slicer-breakpoint-names, $breakpoint);
+  $min: nth($slicer-breakpoints, $min_idx);
+  @include breakpoint($min) {
+    @content;
+  }
+}
+@mixin to($breakpoint) {
+  $max_idx: index($slicer-breakpoint-names, $breakpoint);
+  $max: nth($slicer-breakpoints, $max_idx + 1) - 1;
+  @include breakpoint('max-width' $max) {
+    @content;
+  }
+}

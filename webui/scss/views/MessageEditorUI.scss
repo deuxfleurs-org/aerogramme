@@ -1,0 +1,8 @@
+/// MessageEditorUI.scss -*- Mode: scss; indent-tabs-mode: nil; basic-offset: 2 -*-
+
+// Plain text editor
+md-input-container .md-input.plain-text {
+  height: auto;
+  padding-left: $mg;
+  padding-right: $mg;
+}

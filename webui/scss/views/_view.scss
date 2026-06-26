@@ -1,0 +1,245 @@
+/// _view.scss -*- Mode: scss; indent-tabs-mode: nil; basic-offset: 2 -*-
+
+@import 'LoginUI.scss';
+@import 'MailerUI.scss';
+@import 'ContactsUI.scss';
+@import 'MessageEditorUI';
+@import 'SchedulerUI';
+@import 'PreferencesUI';
+@import 'AdministrationUI';
+
+.view[layout=row],
+.view.layout-row {
+  max-height: 100%;
+}
+
+.view-main {
+  width: 100%;
+}
+
+body {
+  &.popup {
+    .viewer {
+      width: 100%;
+    }
+    .view-detail {
+      max-width: 100%;
+      @include from(sm) {
+        height: 100%;
+        position: absolute;
+        width: 100%;
+        .sg-face, .sg-back {
+          > md-card {
+            height: 100%;
+            md-card-content {
+              height: 100%;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+// We make intensive use of the list/detail view pattern, here are some base
+// definitions for this
+// ----------------------------------------------------------------------------
+
+// Variables
+//$listView-width: grid-step(6) !global;
+//$detailView-width: grid-step(8) !global;
+
+[class|="view"] {
+  position: relative;
+
+}
+
+.view-list {
+  min-width: ($listView-width - ($pitch * 2));
+  transition: $swift-ease-out;
+  z-index: ($z-index-view - 1);
+
+  // With Material, when a button inside a md-list uses the class md-secondary, it is moved inside a container
+  // on the right side of the list item. Since we define the avatar as the secondary button, we must move it to
+  // the left side of the list item.
+  .md-with-secondary {
+    .md-list-item-inner {
+      order: 2;
+      padding-left: $baseline-grid;
+    }
+    .md-secondary-container {
+      order: 1; // move secondary container to the left
+    }
+    .md-secondary {
+      margin: 0;
+      padding: 0;
+      text-align: left;
+    }
+  }
+
+  @include to(xs) {
+    width: 100%;
+    min-width: 100%;
+  }
+  @include at(sm) {
+    @include flex-col($breakpoint: sm, $nb: 6, $grow: 1, $shrink: 1);
+    min-width: ($pitch * 3);
+  }
+  @include from(md) {
+    @include flex-col($breakpoint: md, $nb: 6, $grow: 1, $shrink: 0);
+  }
+}
+
+.view-list--close {
+  transform: translateX(-100%);
+
+  @include at(sm) {
+    $colWidth: col-width($breakpoint: sm, $nb: 6);
+    margin-right: $colWidth * -1;
+  }
+  @include from(md) {
+    $colWidth: col-width($breakpoint: md, $nb: 6);
+    margin-right: $colWidth * -1;
+  }
+}
+
+.view-detail {
+  flex: 1 1 auto;
+  margin: 0;
+  overflow: hidden;
+  z-index: $z-index-view;
+
+  .sg-face, .sg-back {
+    > md-card {
+      // Make sure the card is visible and its content scrollable
+      overflow: hidden;
+      //min-width: 100%;
+      min-height: 0;
+    }
+  }
+  md-card {
+    background-color: white;
+  }
+
+  // On small screens, the view slides from the right and takes all screen place.
+  // Expected Display Steps:
+  //  1. The class sg-close is used when there's no selection
+  //  2. A list item is selected (ui-router state changes):
+  //   a. sg-close is removed from view-detail
+  //   b. view-detail (transparent) slides over view-list
+  //   c. viewer is inserted into the DOM and slides inside view-detail
+  //  3. An list item is closed (ui-router state changes):
+  //   a. viewer slides out of view-detail and is removed from the DOM
+  //   b. view-detail (transparent) slides outside view-list
+  //   c. sg-close is added to view-detail
+  @include to(xs) {
+    background-color: transparent !important;
+    position: absolute;
+    //top: $toolbar-tall-height;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: ($z-index-toolbar + 1);
+    transform: translateX(0);
+    transition: $swift-ease-in-out;
+    //transition: transform $swift-ease-in-out-duration $swift-ease-in-out-timing-function;
+    &.sg-close {
+      display: none;
+      transform: translateX(100%);
+    }
+    &.ng-leave {
+      display: block;
+      transform: translateX(0);
+      &.ng-leave-active {
+        transform: translateX(100%);
+      }
+    }
+    &.ng-enter {
+      display: block;
+      transform: translateX(100%);
+      &.ng-enter-active {
+        transform: translateX(0);
+      }
+    }
+    .viewer {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      overflow-x: hidden;
+    }
+    md-card {
+      height: 100%;
+      margin: 0;
+    }
+  }
+
+  // No animation on medium to large screens
+  @include from(sm) {
+    .md-static {
+      position: static;
+    }
+    .viewer {
+      position: absolute;
+      top: $toolbar-height;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      max-width: 100%;
+      overflow-y: auto;
+//      transform: translate3d(0, 0, 0);
+//      transition: all 0.5s $swift-ease-in-out-timing-function;
+//      &.ng-enter {
+//        transform: translate(-105%, 0);
+//        &.ng-enter-active {
+//          transform: translate(0, 0);
+//          transition-delay: 0.5s;
+//        }
+//      }
+//      &.ng-leave {
+//        transition-delay: 0;
+//        transition-duration: 0.1s;
+//        transform: translate(0, 0);
+//        &.ng-leave-active {
+//          transition-delay: 0.1s;
+//          transition-duration: 0.4s;
+//          transform: translate(-105%, 100%);
+//        }
+//      }
+    }
+  }
+
+  // Flippable view card, used to show raw source of cards and messages
+  perspective: 1000px;
+  .sg-reversible {
+    transform-style: preserve-3d;
+    transition: transform 0.5s;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    &.sg-flip {
+      transform: rotateY( 180deg );
+      .sg-face {
+        pointer-events: none;
+      }
+      .sg-back {
+        pointer-events: auto;
+      }
+    }
+    .sg-face, .sg-back {
+      backface-visibility: hidden;
+      position: absolute;
+      width: 100%;
+      height: 100%;
+    }
+    .sg-face {
+      transform: rotateY( 0deg );
+    }
+    .sg-back {
+      transform: rotateY( 180deg );
+      pointer-events: none;
+    }
+  }
+}
