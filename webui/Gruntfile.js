@@ -285,6 +285,8 @@ module.exports = function(grunt) {
     }
     grunt.log.subhead('Copying CSS files');
     var css = [
+	"css/icons.css",
+	"css/theme-default.css",
     ];
     for (var j = 0; j < css.length; j++) {
       var files = grunt.file.expand(grunt.template.process(css[j], {data: options}));
