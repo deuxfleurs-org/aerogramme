@@ -22,19 +22,20 @@ pub struct DavDag {
     /// Source of trust
     pub table: OrdMap<BlobId, IndexEntry>,
 
-    /// Indexes optimized for queries
-    pub idx_by_filename: OrdMap<FileName, BlobId>,
+    /// Head nodes of the synchronization graph
+    heads: OrdSet<Token>,
 
     // ------------ Below this line, data is ephemeral, ie. not checkpointed
-    /// Partial synchronization graph
-    pub ancestors: OrdMap<Token, OrdSet<Token>>,
+    
+    /// Index for queries on `table` by filename
+    pub idx_by_filename: OrdMap<FileName, BlobId>,
 
-    /// All nodes
-    pub all_nodes: OrdSet<Token>,
-    /// Head nodes
-    pub heads: OrdSet<Token>,
-    /// Origin nodes
-    pub origins: OrdSet<Token>,
+    /// Partial synchronization graph: ancestor edges
+    ancestors: OrdMap<Token, OrdSet<Token>>,
+    /// Partial synchronization graph: nodes
+    all_nodes: OrdSet<Token>,
+    /// Partial Synchronization graph: origin nodes
+    origins: OrdSet<Token>,
 
     /// File change token by token
     pub change: OrdMap<Token, SyncChange>,
