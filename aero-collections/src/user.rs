@@ -13,7 +13,6 @@ use crate::mail::namespace::MailboxNs;
 pub struct User {
     pub username: String,
     pub creds: Credentials,
-    pub storage: storage::Store,
     pub mailboxes: MailboxNs,
     pub calendars: CalendarNs,
 }
@@ -42,11 +41,9 @@ impl User {
     }
 
     async fn open(username: String, creds: Credentials) -> Result<Self> {
-        let storage = creds.storage.clone();
         let user = Self {
             username,
             creds: creds.clone(),
-            storage,
             mailboxes: MailboxNs::new(creds.clone()).await?,
             calendars: CalendarNs::new(creds.clone()),
         };
