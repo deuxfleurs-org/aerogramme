@@ -292,7 +292,7 @@ impl MailboxNsInner {
         //  1. Opening a mailbox that is not already opened takes a significant amount of time
         //  2. We don't want to lock the whole HashMap that contain the mailboxes during this
         //     operation which is why we droppped the lock above but take it again below.
-        let mb = Mailbox::open(&self.creds, id).await?;
+        let mb = Mailbox::open(&self.creds, "mail", id).await?;
 
         let mut cache = self.mailboxes.lock().unwrap();
         if let Some(concurrent_mb_weak) = cache.get(&id) {

@@ -28,8 +28,8 @@ const MESSAGE_KEY: &str = "message-key";
 
 impl Collection {
     pub(crate) async fn open(creds: &Credentials, prefix: &str, id: UniqueIdent) -> Result<Self> {
-        let bayou_path = format!("{}/dag/{}", prefix, id);
-        let blobs_path = format!("{}/events/{}", prefix, id);
+        let bayou_path = format!("{}/index/{}", prefix, id);
+        let blobs_path = format!("{}/blob/{}", prefix, id);
 
         let mut davindex = Bayou::<DavIndex>::new(creds, bayou_path).await?;
         davindex.sync().await?;
