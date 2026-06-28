@@ -15,7 +15,7 @@ pub type SyncDesc = (Parents, Token);
 pub type BlobId = UniqueIdent;
 pub type Etag = String;
 pub type FileName = String;
-pub type IndexEntry = (BlobId, FileName, Etag);
+pub type IndexEntry = (FileName, Etag);
 
 #[derive(Clone, Default)]
 pub struct DavDag {
@@ -52,7 +52,7 @@ pub enum DavDagOp {
     Merge(SyncDesc),
 
     /// Add an item to the collection
-    Put(SyncDesc, IndexEntry),
+    Put(SyncDesc, BlobId, IndexEntry),
 
     /// Delete an item from the collection
     Delete(SyncDesc, BlobId),
@@ -61,7 +61,7 @@ impl DavDagOp {
     pub fn token(&self) -> Token {
         match self {
             Self::Merge((_, t)) => *t,
-            Self::Put((_, t), _) => *t,
+            Self::Put((_, t), _, _) => *t,
             Self::Delete((_, t), _) => *t,
         }
     }
@@ -72,8 +72,8 @@ impl DavDag {
         DavDagOp::Merge(self.sync_desc())
     }
 
-    pub fn op_put(&self, entry: IndexEntry) -> DavDagOp {
-        DavDagOp::Put(self.sync_desc(), entry)
+    pub fn op_put(&self, blob_id: BlobId, entry: IndexEntry) -> DavDagOp {
+        DavDagOp::Put(self.sync_desc(), blob_id, entry)
     }
 
     pub fn op_delete(&self, blob_id: BlobId) -> DavDagOp {
@@ -139,19 +139,19 @@ impl DavDag {
     // INTERNAL functions
 
     /// Register a WebDAV item (put, copy, move)
-    fn register(&mut self, sync_token: Option<Token>, entry: IndexEntry) {
-        let (blob_id, filename, _etag) = entry.clone();
+    fn register(&mut self, sync_token: Option<Token>, blob_id: &BlobId, entry: IndexEntry) {
+        let (filename, _etag) = entry.clone();
 
         // Insert item in the source of trust
-        self.table.insert(blob_id, entry);
+        self.table.insert(*blob_id, entry);
 
         // Update the cache
-        self.idx_by_filename.insert(filename.to_string(), blob_id);
+        self.idx_by_filename.insert(filename.to_string(), *blob_id);
 
         // Record the change in the ephemeral synchronization map
         if let Some(sync_token) = sync_token {
             self.change
-                .insert(sync_token, SyncChange::Ok((filename, blob_id)));
+                .insert(sync_token, SyncChange::Ok((filename, *blob_id)));
         }
     }
 
@@ -159,7 +159,7 @@ impl DavDag {
     fn unregister(&mut self, sync_token: Token, blob_id: &BlobId) {
         // Query the source of truth to get the information we
         // need to clean the indexes
-        let (_blob_id, filename, _etag) = match self.table.get(blob_id) {
+        let (filename, _etag) = match self.table.get(blob_id) {
             Some(v) => v,
             // Element does not exist, return early
             None => return,
@@ -225,9 +225,9 @@ impl BayouState for DavDag {
         let mut new = self.clone();
 
         match op {
-            DavDagOp::Put(sync_desc, entry) => {
+            DavDagOp::Put(sync_desc, blob_id, entry) => {
                 new.sync_dag(sync_desc);
-                new.register(Some(sync_desc.1), entry.clone());
+                new.register(Some(sync_desc.1), blob_id, entry.clone());
             }
             DavDagOp::Delete(sync_desc, blob_id) => {
                 new.sync_dag(sync_desc);
@@ -245,7 +245,7 @@ impl BayouState for DavDag {
 // CUSTOM SERIALIZATION & DESERIALIZATION
 #[derive(Serialize, Deserialize)]
 struct DavDagSerializedRepr {
-    items: Vec<IndexEntry>,
+    items: Vec<(BlobId, IndexEntry)>,
     heads: Vec<UniqueIdent>,
 }
 
@@ -260,7 +260,7 @@ impl<'de> Deserialize<'de> for DavDag {
         // Build the table + index
         val.items
             .into_iter()
-            .for_each(|entry| davdag.register(None, entry));
+            .for_each(|(blob_id, entry)| davdag.register(None, &blob_id, entry));
 
         // Initialize the synchronization DAG with its roots
         val.heads.into_iter().for_each(|ident| {
@@ -279,7 +279,7 @@ impl Serialize for DavDag {
         S: Serializer,
     {
         // Indexes are rebuilt on the fly, we serialize only the core database
-        let items = self.table.iter().map(|(_, entry)| entry.clone()).collect();
+        let items = self.table.iter().map(|(blob_id, entry)| (blob_id.clone(), entry.clone())).collect();
 
         // We keep only the head entries from the sync graph,
         // these entries will be used to initialize it back when deserializing
@@ -304,7 +304,7 @@ mod tests {
         // Add item 1
         {
             let m = UniqueIdent([0x01; 24]);
-            let ev = state.op_put((m, "cal.ics".into(), "321-321".into()));
+            let ev = state.op_put(m, ("cal.ics".into(), "321-321".into()));
             state = state.apply(&ev);
 
             assert_eq!(state.table.len(), 1);
@@ -314,7 +314,7 @@ mod tests {
         // Add 2 concurrent items
         let (t1, t2) = {
             let blob1 = UniqueIdent([0x02; 24]);
-            let ev1 = state.op_put((blob1, "cal2.ics".into(), "321-321".into()));
+            let ev1 = state.op_put(blob1, ("cal2.ics".into(), "321-321".into()));
 
             let blob2 = UniqueIdent([0x01; 24]);
             let ev2 = state.op_delete(blob2);
@@ -331,7 +331,7 @@ mod tests {
         // Add later a new item
         {
             let blob3 = UniqueIdent([0x03; 24]);
-            let ev = state.op_put((blob3, "cal3.ics".into(), "321-321".into()));
+            let ev = state.op_put(blob3, ("cal3.ics".into(), "321-321".into()));
 
             state = state.apply(&ev);
             assert_eq!(state.table.len(), 2);

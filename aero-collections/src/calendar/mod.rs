@@ -177,9 +177,9 @@ impl CalendarInternal {
         let etag = self.storage.blob_insert(blob_val).await?;
 
         // Add entry to Bayou
-        let entry: IndexEntry = (blob_id, name.to_string(), etag);
+        let entry: IndexEntry = (name.to_string(), etag);
         let davstate = self.davdag.state();
-        let put_op = davstate.op_put(entry.clone());
+        let put_op = davstate.op_put(blob_id, entry.clone());
         let token = put_op.token();
         self.davdag.push(put_op).await?;
 

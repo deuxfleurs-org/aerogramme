@@ -808,7 +808,7 @@ impl DavNode for EventNode {
                 .read_to_end(&mut evt)
                 .await
                 .or(Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe)))?;
-            let (_token, (_, _, etag)) = self
+            let (_token, (_, etag)) = self
                 .col
                 .put(self.filename.as_str(), evt.as_ref())
                 .await
@@ -851,7 +851,7 @@ impl DavNode for EventNode {
                 .await
                 .table
                 .get(&self.blob_id)
-                .map(|(_, _, etag)| etag.to_string())
+                .map(|(_, etag)| etag.to_string())
         }
         .boxed()
     }
@@ -948,7 +948,7 @@ impl DavNode for CreateEventNode {
             let mut evt = Vec::new();
             let mut reader = stream.into_async_read();
             reader.read_to_end(&mut evt).await.unwrap();
-            let (_token, (_, _, etag)) = self
+            let (_token, (_, etag)) = self
                 .col
                 .put(self.filename.as_str(), evt.as_ref())
                 .await
