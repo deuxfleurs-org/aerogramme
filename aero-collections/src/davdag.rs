@@ -30,12 +30,16 @@ pub struct DavDag {
     /// Index for queries on `table` by filename
     pub idx_by_filename: OrdMap<FileName, BlobId>,
 
-    /// Partial synchronization graph: ancestor edges
+    /// Partial synchronization graph. The nodes of the graph are
+    /// `ancestors.keys()`, and each key-value pair in `ancestors` represents
+    /// directed edges from the key node to the set of its ancestor nodes.
     ancestors: OrdMap<Token, OrdSet<Token>>,
-    /// Partial synchronization graph: nodes
-    all_nodes: OrdSet<Token>,
-    /// Partial Synchronization graph: origin nodes
-    origins: OrdSet<Token>,
+    /// All nodes of the synchronization graph, as a set. Equal to
+    /// `ancestors.keys()`.
+    idx_all_nodes: OrdSet<Token>,
+    /// Nodes of the synchronization graph that have no ancestors. Equal to
+    /// `ancestors.iter().filter_map(|(k, v)| v.is_empty().then_some(k))`.
+    idx_origins: OrdSet<Token>,
 
     /// File change token by token
     pub change: OrdMap<Token, SyncChange>,
@@ -101,14 +105,14 @@ impl DavDag {
         // ie. if we don't already know all the sinks,
         // ie. if we are missing so much history that
         // the event log has been transformed into a checkpoint
-        if !self.origins.is_subset(already_known.clone()) {
+        if !self.idx_origins.is_subset(already_known.clone()) {
             bail!("Not enough history to produce a correct diff, a full resync is needed");
         }
 
         // Missing items are *all existing graph items* from which
         // we removed *all items known by the given node*.
-        // In other words, all values in `all_nodes` that are not in `already_known`.
-        Ok(self.all_nodes.clone().relative_complement(already_known))
+        // In other words, all nodes that are not in `already_known`.
+        Ok(self.idx_all_nodes.clone().relative_complement(already_known))
     }
 
     /// Find all ancestors of a given node
@@ -189,7 +193,7 @@ impl DavDag {
         // --- Update ORIGINS
         // If this event has no parents, it's an origin
         if parents.is_empty() {
-            self.origins.insert(*child);
+            self.idx_origins.insert(*child);
         }
 
         // --- Update HEADS
@@ -202,7 +206,7 @@ impl DavDag {
         self.heads.insert(*child);
 
         // --- Update ALL NODES
-        self.all_nodes.insert(*child);
+        self.idx_all_nodes.insert(*child);
     }
 }
 
@@ -262,9 +266,10 @@ impl<'de> Deserialize<'de> for DavDag {
 
         // Initialize the synchronization DAG with its roots
         val.heads.into_iter().for_each(|ident| {
+            davdag.ancestors.insert(ident, OrdSet::new());
             davdag.heads.insert(ident);
-            davdag.origins.insert(ident);
-            davdag.all_nodes.insert(ident);
+            davdag.idx_origins.insert(ident);
+            davdag.idx_all_nodes.insert(ident);
         });
 
         Ok(davdag)
