@@ -273,7 +273,7 @@ pub(crate) struct CalendarListNode {
 }
 impl CalendarListNode {
     async fn new(user: &User) -> Result<Self> {
-        let list = user.calendars.list().await?;
+        let list = user.calendars.dav.list().await?;
         Ok(Self { list })
     }
 }
@@ -293,6 +293,7 @@ impl DavNode for CalendarListNode {
             //@FIXME: we should create a node if the open returns a "not found".
             let cal = user
                 .calendars
+                .dav
                 .open(path[0])
                 .await?
                 .ok_or(anyhow!("Not found"))?;
@@ -312,6 +313,7 @@ impl DavNode for CalendarListNode {
             futures::stream::iter(list.iter())
                 .filter_map(|name| async move {
                     user.calendars
+                        .dav
                         .open(name)
                         .await
                         .ok()
