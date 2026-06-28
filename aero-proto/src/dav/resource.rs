@@ -5,7 +5,7 @@ use futures::{future::BoxFuture, future::FutureExt};
 
 use aero_collections::{
     calendar::Calendar,
-    davdag::{BlobId, Etag, SyncChange, Token},
+    dav::davindex::{BlobId, Etag, SyncChange, Token},
     user::User,
 };
 use aero_dav::acltypes as acl;
@@ -424,7 +424,7 @@ impl DavNode for CalendarNode {
         let col = self.col.clone();
         let calname = self.calname.clone();
         async move {
-            match (col.dag().await.idx_by_filename.get(path[0]), create) {
+            match (col.index().await.idx_by_filename.get(path[0]), create) {
                 (Some(blob_id), _) => {
                     let child = Box::new(EventNode {
                         col: col.clone(),
@@ -453,7 +453,7 @@ impl DavNode for CalendarNode {
         let calname = self.calname.clone();
 
         async move {
-            col.dag()
+            col.index()
                 .await
                 .idx_by_filename
                 .iter()
@@ -602,7 +602,7 @@ impl DavNode for CalendarNode {
                         .await
                         .or(Err(std::io::Error::from(std::io::ErrorKind::Interrupted)))?;
                     let ok_nodes = col
-                        .dag()
+                        .index()
                         .await
                         .idx_by_filename
                         .iter()
@@ -847,7 +847,7 @@ impl DavNode for EventNode {
 
         async move {
             calendar
-                .dag()
+                .index()
                 .await
                 .table
                 .get(&self.blob_id)

@@ -18,7 +18,7 @@ pub type FileName = String;
 pub type IndexEntry = (FileName, Etag);
 
 #[derive(Clone, Default)]
-pub struct DavDag {
+pub struct DavIndex {
     /// Source of trust
     pub table: OrdMap<BlobId, IndexEntry>,
 
@@ -52,7 +52,7 @@ pub enum SyncChange {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub enum DavDagOp {
+pub enum DavIndexOp {
     /// Merge is a virtual operation run when multiple heads are discovered
     Merge(SyncDesc),
 
@@ -62,7 +62,7 @@ pub enum DavDagOp {
     /// Delete an item from the collection
     Delete(SyncDesc, BlobId),
 }
-impl DavDagOp {
+impl DavIndexOp {
     pub fn token(&self) -> Token {
         match self {
             Self::Merge((_, t)) => *t,
@@ -72,17 +72,17 @@ impl DavDagOp {
     }
 }
 
-impl DavDag {
-    pub fn op_merge(&self) -> DavDagOp {
-        DavDagOp::Merge(self.sync_desc())
+impl DavIndex {
+    pub fn op_merge(&self) -> DavIndexOp {
+        DavIndexOp::Merge(self.sync_desc())
     }
 
-    pub fn op_put(&self, blob_id: BlobId, entry: IndexEntry) -> DavDagOp {
-        DavDagOp::Put(self.sync_desc(), blob_id, entry)
+    pub fn op_put(&self, blob_id: BlobId, entry: IndexEntry) -> DavIndexOp {
+        DavIndexOp::Put(self.sync_desc(), blob_id, entry)
     }
 
-    pub fn op_delete(&self, blob_id: BlobId) -> DavDagOp {
-        DavDagOp::Delete(self.sync_desc(), blob_id)
+    pub fn op_delete(&self, blob_id: BlobId) -> DavIndexOp {
+        DavIndexOp::Delete(self.sync_desc(), blob_id)
     }
 
     // HELPER functions
@@ -210,9 +210,9 @@ impl DavDag {
     }
 }
 
-impl std::fmt::Debug for DavDag {
+impl std::fmt::Debug for DavIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("DavDag\n")?;
+        f.write_str("DavIndex\n")?;
         for elem in self.table.iter() {
             f.write_fmt(format_args!("\t{:?} => {:?}", elem.0, elem.1))?;
         }
@@ -220,22 +220,22 @@ impl std::fmt::Debug for DavDag {
     }
 }
 
-impl BayouState for DavDag {
-    type Op = DavDagOp;
+impl BayouState for DavIndex {
+    type Op = DavIndexOp;
 
     fn apply(&self, op: &Self::Op) -> Self {
         let mut new = self.clone();
 
         match op {
-            DavDagOp::Put(sync_desc, blob_id, entry) => {
+            DavIndexOp::Put(sync_desc, blob_id, entry) => {
                 new.sync_dag(sync_desc);
                 new.register(Some(sync_desc.1), blob_id, entry.clone());
             }
-            DavDagOp::Delete(sync_desc, blob_id) => {
+            DavIndexOp::Delete(sync_desc, blob_id) => {
                 new.sync_dag(sync_desc);
                 new.unregister(sync_desc.1, blob_id);
             }
-            DavDagOp::Merge(sync_desc) => {
+            DavIndexOp::Merge(sync_desc) => {
                 new.sync_dag(sync_desc);
             }
         }
@@ -246,18 +246,18 @@ impl BayouState for DavDag {
 
 // CUSTOM SERIALIZATION & DESERIALIZATION
 #[derive(Serialize, Deserialize)]
-struct DavDagSerializedRepr {
+struct DavIndexSerializedRepr {
     items: Vec<(BlobId, IndexEntry)>,
     heads: Vec<UniqueIdent>,
 }
 
-impl<'de> Deserialize<'de> for DavDag {
+impl<'de> Deserialize<'de> for DavIndex {
     fn deserialize<D>(d: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let val: DavDagSerializedRepr = DavDagSerializedRepr::deserialize(d)?;
-        let mut davdag = DavDag::default();
+        let val: DavIndexSerializedRepr = DavIndexSerializedRepr::deserialize(d)?;
+        let mut davdag = DavIndex::default();
 
         // Build the table + index
         val.items
@@ -276,7 +276,7 @@ impl<'de> Deserialize<'de> for DavDag {
     }
 }
 
-impl Serialize for DavDag {
+impl Serialize for DavIndex {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -289,7 +289,7 @@ impl Serialize for DavDag {
         let heads = self.heads_vec();
 
         // Finale serialization object
-        let val = DavDagSerializedRepr { items, heads };
+        let val = DavIndexSerializedRepr { items, heads };
         val.serialize(serializer)
     }
 }
@@ -303,7 +303,7 @@ mod tests {
 
     #[test]
     fn base() {
-        let mut state = DavDag::default();
+        let mut state = DavIndex::default();
 
         // Add item 1
         {

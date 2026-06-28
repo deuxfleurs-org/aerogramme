@@ -7,7 +7,7 @@ use aero_user::cryptoblob::{self, gen_key, Key};
 use aero_user::login::Credentials;
 use aero_user::storage::{self, BlobRef, BlobVal, Store};
 
-use crate::davdag::{BlobId, DavDag, IndexEntry, SyncChange, Token};
+use crate::dav::davindex::{BlobId, DavIndex, IndexEntry, SyncChange, Token};
 use crate::unique_ident::*;
 
 #[derive(Clone)]
@@ -23,14 +23,14 @@ impl Calendar {
         let bayou_path = format!("calendar/dag/{}", id);
         let cal_path = format!("calendar/events/{}", id);
 
-        let mut davdag = Bayou::<DavDag>::new(creds, bayou_path).await?;
-        davdag.sync().await?;
+        let mut davindex = Bayou::<DavIndex>::new(creds, bayou_path).await?;
+        davindex.sync().await?;
 
         let internal = CalendarInternal {
             id,
             encryption_key: creds.keys.master.clone(),
             storage: creds.storage.clone(),
-            davdag,
+            davindex,
             cal_path,
         };
 
@@ -46,10 +46,10 @@ impl Calendar {
 
     // ---- Data API
 
-    /// Access the DAG internal data (you can get the list of files for example)
-    pub async fn dag(&self) -> DavDag {
+    /// Access the index (you can get the list of files for example)
+    pub async fn index(&self) -> DavIndex {
         // Cloning is cheap
-        self.internal.davdag.state().clone()
+        self.internal.davindex.state().clone()
     }
 
     /// Access the current token
@@ -84,7 +84,7 @@ impl Calendar {
             cal_path: self.internal.cal_path.clone(),
             encryption_key: self.internal.encryption_key.clone(),
             storage: self.internal.storage.clone(),
-            davdag: self.internal.davdag.downgrade(),
+            davindex: self.internal.davindex.downgrade(),
         }
     }
 }
@@ -100,12 +100,12 @@ pub struct CalendarWeak {
     cal_path: String,
     encryption_key: Key,
     storage: Store,
-    davdag: BayouWeak<DavDag>,
+    davindex: BayouWeak<DavIndex>,
 }
 
 impl CalendarWeak {
     pub fn upgrade(&self) -> Option<Calendar> {
-        let davdag = self.davdag.upgrade()?;
+        let davindex = self.davindex.upgrade()?;
         Some(Calendar {
             id: self.id.clone(),
             internal: CalendarInternal {
@@ -113,7 +113,7 @@ impl CalendarWeak {
                 cal_path: self.cal_path.clone(),
                 encryption_key: self.encryption_key.clone(),
                 storage: self.storage.clone(),
-                davdag,
+                davindex,
             },
         })
     }
@@ -130,12 +130,12 @@ struct CalendarInternal {
     cal_path: String,
     encryption_key: Key,
     storage: Store,
-    davdag: Bayou<DavDag>,
+    davindex: Bayou<DavIndex>,
 }
 
 impl CalendarInternal {
     async fn sync(&mut self) -> Result<()> {
-        self.davdag.sync().await?;
+        self.davindex.sync().await?;
         Ok(())
     }
 
@@ -178,16 +178,16 @@ impl CalendarInternal {
 
         // Add entry to Bayou
         let entry: IndexEntry = (name.to_string(), etag);
-        let davstate = self.davdag.state();
+        let davstate = self.davindex.state();
         let put_op = davstate.op_put(blob_id, entry.clone());
         let token = put_op.token();
-        self.davdag.push(put_op).await?;
+        self.davindex.push(put_op).await?;
 
         Ok((token, entry))
     }
 
     async fn delete(&mut self, blob_id: BlobId) -> Result<Token> {
-        let davstate = self.davdag.state();
+        let davstate = self.davindex.state();
 
         if !davstate.table.contains_key(&blob_id) {
             bail!("Cannot delete event that doesn't exist");
@@ -195,7 +195,7 @@ impl CalendarInternal {
 
         let del_op = davstate.op_delete(blob_id);
         let token = del_op.token();
-        self.davdag.push(del_op).await?;
+        self.davindex.push(del_op).await?;
 
         let blob_ref = BlobRef(format!("{}/{}", self.cal_path, blob_id));
         self.storage.blob_rm(&blob_ref).await?;
@@ -204,7 +204,7 @@ impl CalendarInternal {
     }
 
     async fn diff(&mut self, sync_token: Token) -> Result<(Token, Vec<SyncChange>)> {
-        let davstate = self.davdag.state();
+        let davstate = self.davindex.state();
 
         let token_changed = davstate.resolve(sync_token)?;
         let changes = token_changed
@@ -222,14 +222,14 @@ impl CalendarInternal {
     }
 
     async fn current_token(&mut self) -> Result<Token> {
-        let davstate = self.davdag.state();
+        let davstate = self.davindex.state();
         let heads = davstate.heads_vec();
         let token = match heads.as_slice() {
             [token] => *token,
             _ => {
                 let op_mg = davstate.op_merge();
                 let token = op_mg.token();
-                self.davdag.push(op_mg).await?;
+                self.davindex.push(op_mg).await?;
                 token
             }
         };

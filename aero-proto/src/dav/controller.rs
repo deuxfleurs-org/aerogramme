@@ -7,7 +7,7 @@ use hyper::body::Frame;
 use hyper::body::Incoming;
 use hyper::{body::Bytes, Request, Response};
 
-use aero_collections::{davdag::Token, user::User};
+use aero_collections::{dav::davindex::Token, user::User};
 use aero_dav::caltypes as cal;
 use aero_dav::realization::{self, All};
 use aero_dav::synctypes as sync;
