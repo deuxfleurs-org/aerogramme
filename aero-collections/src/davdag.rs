@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use im::{ordset, OrdMap, OrdSet};
+use im::{OrdMap, OrdSet};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use aero_bayou::*;
@@ -88,7 +88,7 @@ impl DavDag {
     }
 
     /// A sync descriptor
-    pub fn sync_desc(&self) -> SyncDesc {
+    fn sync_desc(&self) -> SyncDesc {
         (self.heads_vec(), gen_ident())
     }
 
@@ -183,10 +183,7 @@ impl DavDag {
         // We register ancestors as it is required for the sync algorithm
         self.ancestors.insert(
             *child,
-            parents.iter().fold(ordset![], |mut acc, p| {
-                acc.insert(*p);
-                acc
-            }),
+            OrdSet::from_iter(parents.iter().cloned()),
         );
 
         // --- Update ORIGINS
@@ -297,6 +294,7 @@ impl Serialize for DavDag {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use im::ordset;
 
     #[test]
     fn base() {
