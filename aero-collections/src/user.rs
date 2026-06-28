@@ -6,7 +6,7 @@ use lazy_static::lazy_static;
 use aero_user::login::Credentials;
 use aero_user::storage;
 
-use crate::calendar::namespace::CalendarNs;
+use crate::calendar::CalendarNs;
 use crate::mail::namespace::MailboxNs;
 
 #[derive(Clone)]
