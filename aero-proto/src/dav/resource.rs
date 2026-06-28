@@ -4,7 +4,7 @@ use futures::stream::{StreamExt, TryStreamExt};
 use futures::{future::BoxFuture, future::FutureExt};
 
 use aero_collections::{
-    calendar::Calendar,
+    dav::collection::Collection,
     dav::davindex::{BlobId, Etag, SyncChange, Token},
     user::User,
 };
@@ -406,7 +406,7 @@ impl DavNode for CalendarListNode {
 
 #[derive(Clone)]
 pub(crate) struct CalendarNode {
-    col: Calendar,
+    col: Collection,
     calname: String,
 }
 impl DavNode for CalendarNode {
@@ -657,7 +657,7 @@ impl DavNode for CalendarNode {
 
 #[derive(Clone)]
 pub(crate) struct EventNode {
-    col: Calendar,
+    col: Collection,
     calname: String,
     filename: String,
     blob_id: BlobId,
@@ -893,7 +893,7 @@ impl DavNode for EventNode {
 
 #[derive(Clone)]
 pub(crate) struct CreateEventNode {
-    col: Calendar,
+    col: Collection,
     calname: String,
     filename: String,
 }

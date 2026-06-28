@@ -9,7 +9,7 @@ use aero_user::cryptoblob::{open_deserialize, seal_serialize};
 use aero_user::login::Credentials;
 use aero_user::storage;
 
-use super::{Calendar, CalendarWeak};
+use crate::dav::collection::{Collection, CollectionWeak};
 use crate::unique_ident::{gen_ident, UniqueIdent};
 
 pub(crate) const CAL_LIST_PK: &str = "calendars";
@@ -20,7 +20,7 @@ pub(crate) const MAX_CALNAME_CHARS: usize = 32;
 #[derive(Clone)]
 pub struct CalendarNs {
     creds: Credentials,
-    calendars: Arc<std::sync::Mutex<HashMap<UniqueIdent, CalendarWeak>>>,
+    calendars: Arc<std::sync::Mutex<HashMap<UniqueIdent, CollectionWeak>>>,
 }
 
 impl CalendarNs {
@@ -33,7 +33,7 @@ impl CalendarNs {
     }
 
     /// Open a calendar by name
-    pub async fn open(&self, name: &str) -> Result<Option<Calendar>> {
+    pub async fn open(&self, name: &str) -> Result<Option<Collection>> {
         let (list, _ct) = self.load_calendar_list().await?;
 
         match list.get(name) {
@@ -44,7 +44,7 @@ impl CalendarNs {
 
     /// Open a calendar by unique id
     /// Check user.rs::open_mailbox_by_id to understand this function
-    pub async fn open_by_id(&self, id: UniqueIdent) -> Result<Calendar> {
+    pub async fn open_by_id(&self, id: UniqueIdent) -> Result<Collection> {
         {
             let cache = self.calendars.lock().unwrap();
             if let Some(cal_weak) = cache.get(&id) {
@@ -54,7 +54,7 @@ impl CalendarNs {
             }
         }
 
-        let cal = Calendar::open(&self.creds, id).await?;
+        let cal = Collection::open(&self.creds, "calendar", id).await?;
 
         let mut cache = self.calendars.lock().unwrap();
         if let Some(concurrent_cal_weak) = cache.get(&id) {
