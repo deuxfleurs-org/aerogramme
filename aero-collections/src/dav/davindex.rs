@@ -6,8 +6,6 @@ use aero_bayou::*;
 
 use crate::unique_ident::{gen_ident, UniqueIdent};
 
-/// Parents are only persisted in the event log,
-/// not in the checkpoints.
 pub type Token = UniqueIdent;
 pub type Parents = Vec<Token>;
 pub type SyncDesc = (Parents, Token);
@@ -17,6 +15,12 @@ pub type Etag = String;
 pub type FileName = String;
 pub type IndexEntry = (FileName, Etag);
 
+/// A `DavIndex` is the mutable part of a (flat) DAV collection.
+///
+/// It stores the mapping from resource path to its blob ID, and tracks
+/// modifications to these resources in a graph of changes, whre each node of
+/// the graph is labeled by a synchronization `Token`. This synchronization
+/// graph allows implementing the WebDAV synchronization primitives of RFC6578.
 #[derive(Clone, Default)]
 pub struct DavIndex {
     /// Source of trust
@@ -33,6 +37,12 @@ pub struct DavIndex {
     /// Partial synchronization graph. The nodes of the graph are
     /// `ancestors.keys()`, and each key-value pair in `ancestors` represents
     /// directed edges from the key node to the set of its ancestor nodes.
+    ///
+    /// Note: ancestors are only persisted in the event log, not in the
+    /// checkpoints. Hence this is a *partial* graph: it only stores changes
+    /// after the last checkpoint. If a caller tries to use a token that relies
+    /// on a part of the graph that has been lost, the token is rejected and the
+    /// user needs to do obtain a newer token.
     ancestors: OrdMap<Token, OrdSet<Token>>,
     /// All nodes of the synchronization graph, as a set. Equal to
     /// `ancestors.keys()`.
