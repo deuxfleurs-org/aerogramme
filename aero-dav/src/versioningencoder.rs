@@ -1,7 +1,7 @@
 use quick_xml::events::{BytesText, Event};
 use quick_xml::Error as QError;
 
-use super::types::Extension;
+use super::extension::Extension;
 use super::versioningtypes::*;
 use super::xml::{IWrite, QWrite, Writer};
 

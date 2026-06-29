@@ -2,7 +2,8 @@ use chrono::DateTime;
 use quick_xml::events::Event;
 
 use super::error::ParsingError;
-use super::types::*;
+use super::extension::Extension;
+use super::coretypes::*;
 use super::xml::{IRead, QRead, Reader, DAV_URN};
 
 //@TODO (1) Rewrite all objects as Href,

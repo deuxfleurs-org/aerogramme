@@ -2,7 +2,7 @@ use quick_xml::events::{BytesText, Event};
 use quick_xml::Error as QError;
 
 use super::caltypes::*;
-use super::types::Extension;
+use super::extension::Extension;
 use super::xml::{IWrite, Node, QWrite, Writer};
 
 // ==================== Calendar Types Serialization =========================
@@ -777,7 +777,7 @@ impl QWrite for TimeRange {
 mod tests {
     use super::*;
     use crate::realization::Calendar;
-    use crate::types as dav;
+    use crate::coretypes as dav;
     use chrono::{TimeZone, Utc};
     use tokio::io::AsyncWriteExt;
 

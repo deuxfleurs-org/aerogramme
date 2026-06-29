@@ -1,4 +1,4 @@
-use super::types as dav;
+use super::extension::Extension;
 
 /**
  * # RFC 3253 - WebDAV versioning
@@ -32,22 +32,22 @@ pub enum PropertyRequest {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Property<E: dav::Extension> {
+pub enum Property<E: Extension> {
     SupportedReportSet(Vec<SupportedReport<E>>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct SupportedReport<E: dav::Extension>(pub ReportName<E>);
+pub struct SupportedReport<E: Extension>(pub ReportName<E>);
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum ReportName<E: dav::Extension> {
+pub enum ReportName<E: Extension> {
     VersionTree,
     ExpandProperty,
     Extension(E::ReportTypeName),
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Report<E: dav::Extension> {
+pub enum Report<E: Extension> {
     VersionTree,    // Not yet implemented
     ExpandProperty, // Not yet implemented
     Extension(E::ReportType),

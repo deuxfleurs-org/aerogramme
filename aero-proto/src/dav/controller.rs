@@ -11,7 +11,7 @@ use aero_collections::{dav::davindex::Token, user::User};
 use aero_dav::caltypes as cal;
 use aero_dav::realization::{self, All};
 use aero_dav::synctypes as sync;
-use aero_dav::types as dav;
+use aero_dav::coretypes as dav;
 use aero_dav::versioningtypes as vers;
 use aero_ical::query::is_component_match;
 

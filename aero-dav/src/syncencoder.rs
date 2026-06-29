@@ -1,8 +1,8 @@
 use quick_xml::events::{BytesText, Event};
 use quick_xml::Error as QError;
 
+use super::extension::Extension;
 use super::synctypes::*;
-use super::types::Extension;
 use super::xml::{IWrite, QWrite, Writer};
 
 impl QWrite for Property {
@@ -109,7 +109,7 @@ impl QWrite for SyncLevel {
 mod tests {
     use super::*;
     use crate::realization::{self, All};
-    use crate::types as dav;
+    use crate::coretypes as dav;
     use crate::versioningtypes as vers;
     use crate::xml::Node;
     use crate::xml::Reader;

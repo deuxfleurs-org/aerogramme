@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
-use super::types as dav;
+use super::extension::Extension;
+use super::coretypes as dav;
 use chrono::{DateTime, Utc};
 
 pub const FLOATING_DATETIME_FMT: &str = "%Y%m%dT%H%M%S";
@@ -42,7 +43,7 @@ pub const UTC_DATETIME_FMT: &str = "%Y%m%dT%H%M%SZ";
 /// <!ELEMENT mkcalendar (DAV:set)>
 /// ```
 #[derive(Debug, PartialEq, Clone)]
-pub struct MkCalendar<E: dav::Extension>(pub dav::Set<E>);
+pub struct MkCalendar<E: Extension>(pub dav::Set<E>);
 
 /// If a response body for a successful request is included, it MUST
 /// be a CALDAV:mkcalendar-response XML element.
@@ -58,7 +59,7 @@ pub struct MkCalendar<E: dav::Extension>(pub dav::Set<E>);
 ///
 /// <!ELEMENT mkcol-response (propstat+)>
 #[derive(Debug, PartialEq, Clone)]
-pub struct MkCalendarResponse<E: dav::Extension>(pub Vec<dav::PropStat<E>>);
+pub struct MkCalendarResponse<E: Extension>(pub Vec<dav::PropStat<E>>);
 
 // --- (REPORT PART) ---
 #[derive(Debug, PartialEq, Clone)]
@@ -69,7 +70,7 @@ pub enum ReportTypeName {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum ReportType<E: dav::Extension> {
+pub enum ReportType<E: Extension> {
     Query(CalendarQuery<E>),
     Multiget(CalendarMultiget<E>),
     FreeBusy(FreeBusyQuery),
@@ -89,7 +90,7 @@ pub enum ReportType<E: dav::Extension> {
 ///                            DAV:propname |
 ///                            DAV:prop)?, filter, timezone?)>
 #[derive(Debug, PartialEq, Clone)]
-pub struct CalendarQuery<E: dav::Extension> {
+pub struct CalendarQuery<E: Extension> {
     pub selector: Option<CalendarSelector<E>>,
     pub filter: Filter,
     pub timezone: Option<TimeZone>,
@@ -110,7 +111,7 @@ pub struct CalendarQuery<E: dav::Extension> {
 ///                               DAV:propname |
 ///                               DAV:prop)?, DAV:href+)>
 #[derive(Debug, PartialEq, Clone)]
-pub struct CalendarMultiget<E: dav::Extension> {
+pub struct CalendarMultiget<E: Extension> {
     pub selector: Option<CalendarSelector<E>>,
     pub href: Vec<dav::Href>,
 }
@@ -1123,7 +1124,7 @@ pub struct LimitFreebusySet(pub DateTime<Utc>, pub DateTime<Utc>);
 
 /// Used by CalendarQuery & CalendarMultiget
 #[derive(Debug, PartialEq, Clone)]
-pub enum CalendarSelector<E: dav::Extension> {
+pub enum CalendarSelector<E: Extension> {
     AllProp,
     PropName,
     Prop(dav::PropName<E>),

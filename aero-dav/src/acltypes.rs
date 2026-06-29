@@ -1,4 +1,4 @@
-use super::types as dav;
+use super::coretypes as dav;
 
 /** 
  * # WebDAV ACL & ACL Current Principal Extension

@@ -3,11 +3,12 @@
 // utils
 pub mod error;
 pub mod xml;
+pub mod extension;
 
-// webdav
-pub mod decoder;
-pub mod encoder;
-pub mod types;
+// webdav core
+pub mod coredecoder;
+pub mod coreencoder;
+pub mod coretypes;
 
 // calendar
 pub mod caldecoder;

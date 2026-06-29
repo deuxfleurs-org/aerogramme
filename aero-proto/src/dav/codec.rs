@@ -16,7 +16,7 @@ use tokio_util::sync::PollSender;
 
 use super::controller::HttpResponse;
 use super::node::PutPolicy;
-use aero_dav::types as dav;
+use aero_dav::coretypes as dav;
 use aero_dav::xml as dxml;
 
 pub(crate) fn depth(req: &Request<impl hyper::body::Body>) -> dav::Depth {

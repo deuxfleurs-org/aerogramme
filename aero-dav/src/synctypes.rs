@@ -1,4 +1,5 @@
-use super::types as dav;
+use super::extension::Extension;
+use super::coretypes as dav;
 use super::versioningtypes as vers;
 
 /** 
@@ -48,7 +49,7 @@ pub struct Multistatus {
 /// <!-- DAV:prop defined in RFC 4918, Section 14.18 -->
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct SyncCollection<E: dav::Extension> {
+pub struct SyncCollection<E: Extension> {
     pub sync_token: SyncTokenRequest,
     pub sync_level: SyncLevel,
     pub limit: Option<vers::Limit>,

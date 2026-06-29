@@ -3,11 +3,12 @@ use quick_xml::events::Event;
 
 use super::caltypes::*;
 use super::error::ParsingError;
-use super::types as dav;
+use super::extension::Extension;
+use super::coretypes as dav;
 use super::xml::{IRead, QRead, Reader, CAL_URN, DAV_URN};
 
 // ---- ROOT ELEMENTS ---
-impl<E: dav::Extension> QRead<MkCalendar<E>> for MkCalendar<E> {
+impl<E: Extension> QRead<MkCalendar<E>> for MkCalendar<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CAL_URN, "mkcalendar").await?;
         let set = xml.find().await?;
@@ -16,7 +17,7 @@ impl<E: dav::Extension> QRead<MkCalendar<E>> for MkCalendar<E> {
     }
 }
 
-impl<E: dav::Extension> QRead<MkCalendarResponse<E>> for MkCalendarResponse<E> {
+impl<E: Extension> QRead<MkCalendarResponse<E>> for MkCalendarResponse<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CAL_URN, "mkcalendar-response").await?;
         let propstats = xml.collect().await?;
@@ -25,7 +26,7 @@ impl<E: dav::Extension> QRead<MkCalendarResponse<E>> for MkCalendarResponse<E> {
     }
 }
 
-impl<E: dav::Extension> QRead<ReportType<E>> for ReportType<E> {
+impl<E: Extension> QRead<ReportType<E>> for ReportType<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         match CalendarQuery::<E>::qread(xml).await {
             Err(ParsingError::Recoverable) => (),
@@ -41,7 +42,7 @@ impl<E: dav::Extension> QRead<ReportType<E>> for ReportType<E> {
     }
 }
 
-impl<E: dav::Extension> QRead<CalendarQuery<E>> for CalendarQuery<E> {
+impl<E: Extension> QRead<CalendarQuery<E>> for CalendarQuery<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CAL_URN, "calendar-query").await?;
         let (mut selector, mut filter, mut timezone) = (None, None, None);
@@ -71,7 +72,7 @@ impl<E: dav::Extension> QRead<CalendarQuery<E>> for CalendarQuery<E> {
     }
 }
 
-impl<E: dav::Extension> QRead<CalendarMultiget<E>> for CalendarMultiget<E> {
+impl<E: Extension> QRead<CalendarMultiget<E>> for CalendarMultiget<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CAL_URN, "calendar-multiget").await?;
         let mut selector = None;
@@ -724,7 +725,7 @@ impl QRead<LimitFreebusySet> for LimitFreebusySet {
     }
 }
 
-impl<E: dav::Extension> QRead<CalendarSelector<E>> for CalendarSelector<E> {
+impl<E: Extension> QRead<CalendarSelector<E>> for CalendarSelector<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         // allprop
         if let Some(_) = xml.maybe_open(DAV_URN, "allprop").await? {
