@@ -1,3 +1,4 @@
+use super::extension::Extension;
 use super::coretypes as dav;
 
 /**
@@ -266,6 +267,7 @@ pub enum Property {
     SupportedCollationSet(Vec<SupportedCollation>),
 }
 
+// TODO: add missing preconditions
 #[derive(Debug, PartialEq, Clone)]
 pub enum Violation {
     /// (CARDDAV:supported-address-data-conversion): The resource targeted
@@ -314,6 +316,151 @@ pub enum Violation {
     SupportedCollation,
 }
 
+/// Name:  addressbook-query
+///
+/// Namespace:  urn:ietf:params:xml:ns:carddav
+///
+/// Purpose:  Defines a report for querying address book data
+///
+/// Description:  See Section 8.6.
+///
+/// Definition:
+///
+/// <!ELEMENT addressbook-query ((DAV:allprop |
+///                               DAV:propname |
+///                               DAV:prop)?, filter, limit?)>
+#[derive(Debug, PartialEq, Clone)]
+pub struct AddressbookQuery<E: Extension> {
+    pub selector: Option<AddressbookSelector<E>>,
+    pub filter: Filter,
+    pub limit: Option<Limit>,
+}
+
+/// Name:  address-data
+///
+/// Namespace:  urn:ietf:params:xml:ns:carddav
+///
+/// Purpose:
+///
+///    1.  The parts of an address object resource that should be
+///        returned by a given address book REPORT request, and the media
+///        type and version for the returned data; or
+///
+/// Description:  When used in an address book REPORT request, the
+///    CARDDAV:address-data XML element specifies which parts of address
+///    object resources need to be returned in the response.  If the
+///    CARDDAV:address-data XML element doesn't contain any CARDDAV:prop
+///    elements, address object resources will be returned in their
+///    entirety.  Additionally, a media type and version can be specified
+///    to request that the server return the data in that format if
+///    possible.
+///
+/// Note:  The CARDDAV:address-data XML element is specified in requests
+///    and responses inside the DAV:prop XML element as if it were a
+///    WebDAV property.  However, the CARDDAV:address-data XML element is
+///    not a WebDAV property and as such it is not returned in PROPFIND
+///    responses nor used in PROPPATCH requests.
+///
+/// Definition:
+///
+/// <!ELEMENT address-data (allprop | prop*)>
+///
+/// when nested in the DAV:prop XML element in an address book
+/// REPORT request to specify which parts of address object
+/// resources should be returned in the response;
+///
+/// <!ATTLIST address-data content-type CDATA "text/vcard"
+///                        version CDATA "3.0">
+/// <!-- content-type value: a MIME media type -->
+/// <!-- version value: a version string -->
+#[derive(Debug, PartialEq, Clone)]
+// TODO default values
+pub struct AddressDataRequest {
+    pub prop_kind: Option<PropKind>,
+    pub content_type: Option<String>,
+    pub version: Option<String>,
+}
+
+/// Name:  address-data
+///
+/// Namespace:  urn:ietf:params:xml:ns:carddav
+///
+/// Purpose:
+///
+///    2.  The content of an address object resource in a response to an
+///        address book REPORT request.
+///
+/// Description:
+///
+///    When used in an address book REPORT response, the
+///    CARDDAV:address-data XML element specifies the content of an
+///    address object resource.  Given that XML parsers normalize the
+///    two-character sequence CRLF (US-ASCII decimal 13 and US-ASCII
+///    decimal 10) to a single LF character (US-ASCII decimal 10), the CR
+///    character (US-ASCII decimal 13) MAY be omitted in address object
+///    resources specified in the CARDDAV:address-data XML element.
+///    Furthermore, address object resources specified in the
+///    CARDDAV:address-data XML element MAY be invalid per their media
+///    type specification if the CARDDAV:address-data XML element part of
+///    the address book REPORT request did not specify required vCard
+///    properties (e.g., UID, etc.) or specified a CARDDAV:prop XML
+///    element with the "novalue" attribute set to "yes".
+///
+/// Note:  The CARDDAV:address-data XML element is specified in requests
+///    and responses inside the DAV:prop XML element as if it were a
+///    WebDAV property.  However, the CARDDAV:address-data XML element is
+///    not a WebDAV property and as such it is not returned in PROPFIND
+///    responses nor used in PROPPATCH requests.
+///
+/// Note:  The address data embedded within the CARDDAV:address-data XML
+///    element MUST follow the standard XML character data encoding
+///    rules, including use of &lt;, &gt;, &amp; etc., entity encoding or
+///    the use of a <![CDATA[ ... ]]> construct.  In the latter case, the
+///    vCard data cannot contain the character sequence "]]>", which is
+///    the end delimiter for the CDATA section.
+///
+/// Definition:
+///
+/// <!ELEMENT address-data (#PCDATA)>
+/// <!-- PCDATA value: address data -->
+///
+/// when nested in the DAV:prop XML element in an address book
+/// REPORT response to specify the content of a returned
+/// address object resource.
+///
+/// <!ATTLIST address-data content-type CDATA "text/vcard"
+///                       version CDATA "3.0">
+/// <!-- content-type value: a MIME media type -->
+/// <!-- version value: a version string -->
+#[derive(Debug, PartialEq, Clone)]
+// TODO default values
+pub struct AddressDataPayload {
+    pub payload: String,
+    pub content_type: Option<String>,
+    pub version: Option<String>,
+}
+
+/// Name:  addressbook-multiget
+///
+/// Namespace:  urn:ietf:params:xml:ns:carddav
+///
+/// Purpose:  CardDAV report used to retrieve specific address objects
+///    via their URIs.
+///
+/// Description:  See Section 8.7.
+///
+/// Definition:
+///
+/// <!ELEMENT addressbook-multiget ((DAV:allprop |
+///                                  DAV:propname |
+///                                  DAV:prop)?,
+///                                  DAV:href+)>
+#[derive(Debug, PartialEq, Clone)]
+pub struct AddressbookMultiget<E: Extension> {
+    pub selector: Option<AddressbookSelector<E>>,
+    pub href: Vec<dav::Href>,
+}
+
 // -------- Inner XML elements ---------
 
 /// <!ELEMENT address-data-type EMPTY>
@@ -321,6 +468,7 @@ pub enum Violation {
 ///                       version CDATA "3.0">
 /// <!-- content-type value: a MIME media type -->
 /// <!-- version value: a version string -->
+// TODO: handle default values
 #[derive(Debug, PartialEq, Clone)]
 pub struct AddressDataType {
     pub content_type: String,
@@ -389,3 +537,386 @@ impl Collation {
         }
     }
 }
+
+/// Name:  filter
+///
+/// Namespace:  urn:ietf:params:xml:ns:carddav
+///
+/// Purpose:  Determines which matching objects are returned.
+///
+/// Description:  The "filter" element specifies the search filter used
+///    to match address objects that should be returned by a report.  The
+///    "test" attribute specifies whether any (logical OR) or all
+///    (logical AND) of the prop-filter tests need to match in order for
+///    the overall filter to match.
+///
+/// Definition:
+///
+/// <!ELEMENT filter (prop-filter*)>
+///
+/// <!ATTLIST filter test (anyof | allof) "anyof">
+/// <!-- test value:
+///           anyof logical OR for prop-filter matches
+///           allof logical AND for prop-filter matches -->
+// TODO: default values?
+#[derive(Debug, PartialEq, Clone)]
+pub struct Filter {
+    pub prop_filters: Vec<PropFilter>,
+    pub test: Option<FilterTest>,
+}
+
+#[derive(Debug, PartialEq, Clone, Default)]
+pub enum FilterTest {
+    #[default]
+    AnyOf,
+    AllOf,
+}
+impl FilterTest {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::AnyOf => "anyof",
+            Self::AllOf => "allof",
+        }
+    }
+}
+impl std::str::FromStr for FilterTest {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "anyof" => Ok(Self::AnyOf),
+            "allof" => Ok(Self::AllOf),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Name:  prop-filter
+///
+/// Namespace:  urn:ietf:params:xml:ns:carddav
+///
+/// Purpose:  Limits the search to specific vCard properties.
+///
+/// Description:  The CARDDAV:prop-filter XML element specifies search
+///    criteria on a specific vCard property (e.g., "NICKNAME").  An
+///    address object is said to match a CARDDAV:prop-filter if:
+///
+///    *  A vCard property of the type specified by the "name" attribute
+///       exists, and the CARDDAV:prop-filter is empty, or it matches any
+///       specified CARDDAV:text-match or CARDDAV:param-filter
+///       conditions.  The "test" attribute specifies whether any
+///       (logical OR) or all (logical AND) of the text-filter and param-
+///       filter tests need to match in order for the overall filter to
+///       match.
+///
+///    or:
+///
+///    *  A vCard property of the type specified by the "name" attribute
+///       does not exist, and the CARDDAV:is-not-defined element is
+///       specified.
+///
+///    vCard allows a "group" prefix to appear before a property name in
+///    the vCard data.  When the "name" attribute does not specify a
+///    group prefix, it MUST match properties in the vCard data without a
+///    group prefix or with any group prefix.  When the "name" attribute
+///    includes a group prefix, it MUST match properties that have
+///    exactly the same group prefix and name.  For example, a "name" set
+///    to "TEL" will match "TEL", "X-ABC.TEL", "X-ABC-1.TEL" vCard
+///    properties.  A "name" set to "X-ABC.TEL" will match an "X-ABC.TEL"
+///    vCard property only, it will not match "TEL" or "X-ABC-1.TEL".
+///
+/// Definition:
+///
+/// <!ELEMENT prop-filter (is-not-defined |
+///                        (text-match*, param-filter*))>
+///
+/// <!ATTLIST prop-filter name CDATA #REQUIRED
+///                       test (anyof | allof) "anyof">
+/// <!-- name value: a vCard property name (e.g., "NICKNAME")
+///   test value:
+///       anyof logical OR for text-match/param-filter matches
+///       allof logical AND for text-match/param-filter matches -->
+#[derive(Debug, PartialEq, Clone)]
+pub struct PropFilter {
+    pub name: PropertyName,
+    // XXX "test" is only relevant when rules is PropFilterRules::Match
+    // TODO default value?
+    pub test: Option<FilterTest>,
+    pub rules: PropFilterRules,
+}
+#[derive(Debug, PartialEq, Clone)]
+pub enum PropFilterRules {
+    // "CARDDAV:prop-filter is empty"
+    Empty,
+    // last case, "CARDDAV:is-not-defined element is specified"
+    IsNotDefined,
+    Match {
+        text_match: Vec<TextMatch>,
+        param_filter: Vec<ParamFilter>,
+    }
+}
+
+/// Name:  text-match
+///
+/// Namespace:  urn:ietf:params:xml:ns:carddav
+///
+/// Purpose:  Specifies a substring match on a vCard property or
+///    parameter value.
+///
+/// Description:  The CARDDAV:text-match XML element specifies text used
+///    for a substring match against the vCard property or parameter
+///    value specified in an address book REPORT request.
+///
+///    The "collation" attribute is used to select the collation that the
+///    server MUST use for character string matching.  In the absence of
+///    this attribute, the server MUST use the "i;unicode-casemap"
+///    collation.
+///
+///    The "negate-condition" attribute is used to indicate that this
+///    test returns a match if the text matches, when the attribute value
+///    is set to "no", or return a match if the text does not match, if
+///    the attribute value is set to "yes".  For example, this can be
+///    used to match components with a CATEGORIES property not set to
+///    PERSON.
+///
+///    The "match-type" attribute is used to indicate the type of match
+///    operation to use.  Possible choices are:
+///
+///    -  "equals" - an exact match to the target string
+///
+///    -  "contains" - a substring match, matching anywhere within the
+///       target string
+///
+///    -  "starts-with" - a substring match, matching only at the start
+///       of the target string
+///
+///    -  "ends-with" - a substring match, matching only at the end of
+///       the target string
+///
+/// Definition:
+///
+/// <!ELEMENT text-match (#PCDATA)>
+/// <!-- PCDATA value: string -->
+///
+/// <!ATTLIST text-match
+///    collation        CDATA "i;unicode-casemap"
+///    negate-condition (yes | no) "no"
+///    match-type (equals|contains|starts-with|ends-with) "contains">
+// TODO: apply defaults?
+#[derive(Debug, PartialEq, Clone)]
+pub struct TextMatch {
+    pub collation: Option<Collation>,
+    pub negate_condition: Option<bool>,
+    pub match_type: Option<TextMatchType>,
+    pub text: String,
+}
+#[derive(Debug, PartialEq, Clone, Default)]
+pub enum TextMatchType {
+    Equals,
+    #[default]
+    Contains,
+    StartsWith,
+    EndsWith,
+}
+impl TextMatchType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Equals => "equals",
+            Self::Contains => "contains",
+            Self::StartsWith => "starts-with",
+            Self::EndsWith => "ends-with",
+        }
+    }
+}
+impl std::str::FromStr for TextMatchType {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "equals" => Ok(Self::Equals),
+            "contains" => Ok(Self::Contains),
+            "starts-with" => Ok(Self::StartsWith),
+            "ends-with" => Ok(Self::EndsWith),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Name:  param-filter
+///
+/// Namespace:  urn:ietf:params:xml:ns:carddav
+///
+/// Purpose:  Limits the search to specific parameter values.
+///
+/// Description:  The CARDDAV:param-filter XML element specifies search
+///    criteria on a specific vCard property parameter (e.g., TYPE) in
+///    the scope of a given CARDDAV:prop-filter.  A vCard property is
+///    said to match a CARDDAV:param-filter if:
+///
+///    *  A parameter of the type specified by the "name" attribute
+///       exists, and the CARDDAV:param-filter is empty, or it matches
+///       the CARDDAV:text-match conditions if specified.
+///
+///    or:
+///
+///    *  A parameter of the type specified by the "name" attribute does
+///       not exist, and the CARDDAV:is-not-defined element is specified.
+///
+/// Definition:
+///
+/// <!ELEMENT param-filter (is-not-defined | text-match)?>
+///
+/// <!ATTLIST param-filter name CDATA #REQUIRED>
+/// <!-- name value: a property parameter name (e.g., "TYPE") -->
+#[derive(Debug, PartialEq, Clone)]
+pub struct ParamFilter {
+    pub name: PropertyParameterName,
+    pub rules: Option<ParamFilterMatch>,
+}
+#[derive(Debug, PartialEq, Clone)]
+pub enum ParamFilterMatch {
+    IsNotDefined,
+    Match(TextMatch),
+}
+
+/// Name:  is-not-defined
+///
+/// Namespace:  urn:ietf:params:xml:ns:carddav
+///
+/// Purpose:  Specifies that a match should occur if the enclosing vCard
+///    property or parameter does not exist.
+///
+/// Description:  The CARDDAV:is-not-defined XML element specifies that a
+///    match occurs if the enclosing vCard property or parameter value
+///    specified in an address book REPORT request does not exist in the
+///    address data being tested.
+///
+/// Definition:
+///
+/// <!ELEMENT is-not-defined EMPTY>
+/* CURRENTLY INLINED */
+
+/// Name:  limit
+///
+/// Namespace:  urn:ietf:params:xml:ns:carddav
+///
+/// Purpose:  Specifies different types of limits that can be applied to
+///    the results returned by the server.
+///
+/// Description:  The CARDDAV:limit XML element can be used to specify
+///    different types of limits that the client can request the server
+///    to apply to the results returned by the server.  Currently, only
+///    the CARDDAV:nresults limit can be used; other types of limit could
+///    be defined in the future.
+///
+/// Definition:
+///
+/// <!ELEMENT limit (nresults)>
+///
+/// ------
+/// Name:  nresults
+///
+/// Namespace:  urn:ietf:params:xml:ns:carddav
+///
+/// Purpose:  Specifies a limit on the number of results returned by the
+///    server.
+///
+/// Description:  The CARDDAV:nresults XML element contains a requested
+///    maximum number of DAV:response elements to be returned in the
+///    response body of a query.  The server MAY disregard this limit.
+///    The value of this element is an unsigned integer.
+///
+/// Definition:
+///
+/// <!ELEMENT nresults (#PCDATA)>
+/// <!-- nresults value: unsigned integer, must be digits -->
+#[derive(Debug, PartialEq, Clone)]
+pub struct Limit {
+    pub nresults: u64,
+}
+
+/// Used by AddressbookQuery & AddressbookMultiget
+#[derive(Debug, PartialEq, Clone)]
+pub enum AddressbookSelector<E: Extension> {
+    AllProp,
+    PropName,
+    Prop(dav::PropName<E>),
+}
+
+/// Name:  allprop
+///
+/// Namespace:  urn:ietf:params:xml:ns:carddav
+///
+/// Purpose:  Specifies that all vCard properties shall be returned.
+///
+/// Description:  This element can be used when the client wants all
+///    vCard properties of components returned by a report.
+///
+/// Definition:
+///
+/// <!ELEMENT allprop EMPTY>
+///
+/// Note: The CARDDAV:allprop element defined here has the same name as
+/// the DAV:allprop element defined in WebDAV.  However, the
+/// CARDDAV:allprop element defined here uses the
+/// "urn:ietf:params:xml:ns:carddav" namespace, as opposed to the "DAV:"
+/// namespace used for the DAV:allprop element defined in WebDAV.
+// FIXME PropKind::Prop only represents non-empty vecs; callers must use
+// Option<PropKind> to match the RFC's "allprop | prop*".
+// (and same with caldav's PropKind)
+#[derive(Debug, PartialEq, Clone)]
+pub enum PropKind {
+    AllProp,
+    Prop(Vec<CardProp>),
+}
+
+/// Name:  prop
+///
+/// Namespace:  urn:ietf:params:xml:ns:carddav
+///
+/// Purpose:  Defines which vCard properties to return in the response.
+///
+/// Description:  The "name" attribute specifies the name of the vCard
+///    property to return (e.g., "NICKNAME").  The "novalue" attribute
+///    can be used by clients to request that the actual value of the
+///    property not be returned (if the "novalue" attribute is set to
+///    "yes").  In that case, the server will return just the vCard
+///    property name and any vCard parameters and a trailing ":" without
+///    the subsequent value data.
+///
+///    vCard allows a "group" prefix to appear before a property name in
+///    the vCard data.  When the "name" attribute does not specify a
+///    group prefix, it MUST match properties in the vCard data without a
+///    group prefix or with any group prefix.  When the "name" attribute
+///    includes a group prefix, it MUST match properties that have
+///    exactly the same group prefix and name.  For example, a "name" set
+///    to "TEL" will match "TEL", "X-ABC.TEL", and "X-ABC-1.TEL" vCard
+///    properties.  A "name" set to "X-ABC.TEL" will match an "X-ABC.TEL"
+///    vCard property only; it will not match "TEL" or "X-ABC-1.TEL".
+///
+/// Definition:
+///
+/// <!ELEMENT prop EMPTY>
+///
+/// <!ATTLIST prop name CDATA #REQUIRED
+///            novalue (yes | no) "no">
+/// <!-- name value: a vCard property name -->
+/// <!-- novalue value: "yes" or "no" -->
+///
+/// Note: The CARDDAV:prop element defined here has the same name as the
+/// DAV:prop element defined in WebDAV.  However, the CARDDAV:prop
+/// element defined here uses the "urn:ietf:params:xml:ns:carddav"
+/// namespace, as opposed to the "DAV:" namespace used for the DAV:prop
+/// element defined in WebDAV.
+#[derive(Debug, PartialEq, Clone)]
+// TODO: default value
+pub struct CardProp {
+    pub name: PropertyName,
+    pub novalue: Option<bool>,
+}
+
+/// A property parameter name (e.g. "TYPE")
+#[derive(Debug, PartialEq, Clone)]
+pub struct PropertyParameterName(pub String);
+
+/// A vCard property name (e.g. "NICKNAME")
+#[derive(Debug, PartialEq, Clone)]
+pub struct PropertyName(pub String);

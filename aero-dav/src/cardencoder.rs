@@ -2,6 +2,7 @@ use quick_xml::events::{BytesText, Event};
 use quick_xml::Error as QError;
 
 use super::cardtypes::*;
+use super::extension::Extension;
 use super::xml::{IWrite, Node, QWrite, Writer};
 
 // ---------------------- DAV::resourcetype ----------------------------------
@@ -130,7 +131,80 @@ impl QWrite for Violation {
     }
 }
 
+// ----------------------- REPORT METHOD -------------------------------------
+
+impl<E: Extension> QWrite for AddressbookQuery<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_card_element("addressbook-query");
+        let end = start.to_end();
+
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        if let Some(selector) = &self.selector {
+            selector.qwrite(xml).await?;
+        }
+        self.filter.qwrite(xml).await?;
+        if let Some(limit) = &self.limit {
+            limit.qwrite(xml).await?;
+        }
+        xml.q.write_event_async(Event::End(end)).await
+    }
+}
+
+impl QWrite for AddressDataRequest {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut start = xml.create_card_element("address-data");
+        if let Some(content_type) = &self.content_type {
+            start.push_attribute(("content-type", content_type.as_str()));
+        }
+        if let Some(version) = &self.version {
+            start.push_attribute(("version", version.as_str()));
+        }
+        let end = start.to_end();
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        if let Some(prop_kind) = &self.prop_kind {
+            prop_kind.qwrite(xml).await?;
+        }
+        xml.q.write_event_async(Event::End(end)).await
+    }
+}
+
+impl QWrite for AddressDataPayload {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut start = xml.create_card_element("address-data");
+        if let Some(content_type) = &self.content_type {
+            start.push_attribute(("content-type", content_type.as_str()));
+        }
+        if let Some(version) = &self.version {
+            start.push_attribute(("version", version.as_str()));
+        }
+        let end = start.to_end();
+
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        xml.q
+           .write_event_async(Event::Text(BytesText::new(self.payload.as_str())))
+           .await?;
+        xml.q.write_event_async(Event::End(end)).await
+    }
+}
+
+impl<E: Extension> QWrite for AddressbookMultiget<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_card_element("addressbook-multiget");
+        let end = start.to_end();
+
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        if let Some(selector) = &self.selector {
+            selector.qwrite(xml).await?;
+        }
+        for href in self.href.iter() {
+            href.qwrite(xml).await?;
+        }
+        xml.q.write_event_async(Event::End(end)).await
+    }
+}
+
 // ---------------------------- Inner XML ------------------------------------
+
 impl QWrite for AddressDataType {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut typ = xml.create_card_element("address-data-type");
@@ -156,5 +230,173 @@ impl QWrite for Collation {
         xml.q
             .write_event_async(Event::Text(BytesText::new(self.as_str())))
             .await
+    }
+}
+
+impl<E: Extension> QWrite for AddressbookSelector<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        match self {
+            Self::AllProp => {
+                let empty_tag = xml.create_dav_element("allprop");
+                xml.q.write_event_async(Event::Empty(empty_tag)).await
+            }
+            Self::PropName => {
+                let empty_tag = xml.create_dav_element("propname");
+                xml.q.write_event_async(Event::Empty(empty_tag)).await
+            }
+            Self::Prop(prop) => prop.qwrite(xml).await,
+        }
+    }
+}
+
+impl QWrite for Filter {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut start = xml.create_card_element("filter");
+        if let Some(test) = &self.test {
+            start.push_attribute(("test", test.as_str()));
+        }
+        let end = start.to_end();
+
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        for filter in &self.prop_filters {
+            filter.qwrite(xml).await?;
+        }
+        xml.q.write_event_async(Event::End(end)).await
+    }
+}
+
+impl QWrite for PropFilter {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut start = xml.create_card_element("prop-filter");
+        start.push_attribute(("name", self.name.0.as_str()));
+        if let Some(test) = &self.test {
+            start.push_attribute(("test", test.as_str()));
+        }
+        let end = start.to_end();
+
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        self.rules.qwrite(xml).await?;
+        xml.q.write_event_async(Event::End(end)).await
+    }
+}
+
+impl QWrite for PropFilterRules {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        match &self {
+            Self::Empty =>
+                Ok(()),
+            Self::IsNotDefined => {
+                let empty_tag = xml.create_card_element("is-not-defined");
+                xml.q.write_event_async(Event::Empty(empty_tag)).await
+            },
+            Self::Match { text_match, param_filter } => {
+                for tmatch in text_match {
+                    tmatch.qwrite(xml).await?;
+                }
+                for pfilter in param_filter {
+                    pfilter.qwrite(xml).await?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl QWrite for TextMatch {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut start = xml.create_card_element("text-match");
+        if let Some(collation) = &self.collation {
+            start.push_attribute(("collation", collation.as_str()));
+        }
+        match self.negate_condition {
+            None => (),
+            Some(true) => start.push_attribute(("negate-condition", "yes")),
+            Some(false) => start.push_attribute(("negate-condition", "no")),
+        }
+        if let Some(match_type) = &self.match_type {
+            start.push_attribute(("match-type", match_type.as_str()));
+        }
+        let end = start.to_end();
+
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        xml.q
+            .write_event_async(Event::Text(BytesText::new(self.text.as_str())))
+            .await?;
+        xml.q.write_event_async(Event::End(end)).await
+    }
+}
+
+impl QWrite for ParamFilter {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut start = xml.create_card_element("param-filter");
+        start.push_attribute(("name", self.name.0.as_str()));
+
+        match &self.rules {
+            None => xml.q.write_event_async(Event::Empty(start)).await,
+            Some(rules) => {
+                let end = start.to_end();
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                rules.qwrite(xml).await?;
+                xml.q.write_event_async(Event::End(end)).await
+            }
+        }
+    }
+}
+
+impl QWrite for ParamFilterMatch {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        match self {
+            Self::IsNotDefined => {
+                let empty_tag = xml.create_card_element("is-not-defined");
+                xml.q.write_event_async(Event::Empty(empty_tag)).await
+            }
+            Self::Match(tm) => tm.qwrite(xml).await,
+        }
+    }
+}
+
+impl QWrite for Limit {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let start = xml.create_card_element("limit");
+        let end = start.to_end();
+        xml.q.write_event_async(Event::Start(start.clone())).await?;
+        {
+            let start = xml.create_card_element("nresults");
+            let end = start.to_end();
+            xml.q.write_event_async(Event::Start(start.clone())).await?;
+            xml.q.write_event_async(Event::Text(BytesText::new(&self.nresults.to_string()))).await?;
+            xml.q.write_event_async(Event::End(end)).await?;
+        }
+        xml.q.write_event_async(Event::End(end)).await
+    }
+}
+
+impl QWrite for PropKind {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        match self {
+            Self::AllProp => {
+                let empty_tag = xml.create_card_element("allprop");
+                xml.q.write_event_async(Event::Empty(empty_tag)).await
+            }
+            Self::Prop(many_prop) => {
+                for prop in many_prop.iter() {
+                    prop.qwrite(xml).await?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl QWrite for CardProp {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        let mut empty = xml.create_card_element("prop");
+        empty.push_attribute(("name", self.name.0.as_str()));
+        match self.novalue {
+            None => (),
+            Some(true) => empty.push_attribute(("novalue", "yes")),
+            Some(false) => empty.push_attribute(("novalue", "no")),
+        }
+        xml.q.write_event_async(Event::Empty(empty)).await
     }
 }

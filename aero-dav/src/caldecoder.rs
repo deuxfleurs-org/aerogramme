@@ -649,6 +649,8 @@ impl QRead<PropKind> for PropKind {
             }
         }
 
+        // FIXME the syntax allows zero props ("prop*"), why do we error if prop
+        // is empty?
         match &prop[..] {
             [] => Err(ParsingError::Recoverable),
             _ => Ok(PropKind::Prop(prop)),
