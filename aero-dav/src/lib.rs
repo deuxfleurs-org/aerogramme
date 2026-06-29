@@ -10,10 +10,15 @@ pub mod coredecoder;
 pub mod coreencoder;
 pub mod coretypes;
 
-// calendar
+// calendar (CardDAV)
 pub mod caldecoder;
 pub mod calencoder;
 pub mod caltypes;
+
+// contacts (CalDAV)
+pub mod carddecoder;
+pub mod cardencoder;
+pub mod cardtypes;
 
 // acl (partial)
 pub mod acldecoder;

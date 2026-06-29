@@ -44,6 +44,9 @@ impl<T: IWrite> Writer<T> {
     pub fn create_cal_element(&mut self, name: &str) -> BytesStart<'static> {
         self.create_ns_element("C", name)
     }
+    pub fn create_card_element(&mut self, name: &str) -> BytesStart<'static> {
+        self.create_ns_element("CARD", name)
+    }
 
     fn create_ns_element(&mut self, ns: &str, name: &str) -> BytesStart<'static> {
         let mut start = BytesStart::new(format!("{}:{}", ns, name));

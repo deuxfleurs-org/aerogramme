@@ -328,7 +328,7 @@ pub enum Property {
     /// </C:supported-calendar-component-set>
     SupportedCalendarComponentSet(Vec<CompSupport>),
 
-    ///  Name:  supported-calendar-data
+    /// Name:  supported-calendar-data
     ///
     /// Namespace:  urn:ietf:params:xml:ns:caldav
     ///
@@ -364,11 +364,16 @@ pub enum Property {
     ///
     /// -----
     ///
+    /// When nested in the CALDAV:supported-calendar-data
+    /// property, the CALDAV:calendar-data XML element specifies a media
+    /// type supported by the CalDAV server for calendar object resources.
+    ///
     /// <!ELEMENT calendar-data EMPTY>
     ///
-    /// when nested in the CALDAV:supported-calendar-data property
-    /// to specify a supported media type for calendar object
-    /// resources;
+    /// <!ATTLIST calendar-data content-type CDATA "text/calendar"
+    ///                         version CDATA "2.0">
+    /// content-type value: a MIME media type
+    /// version value: a version string
     SupportedCalendarData(Vec<CalendarDataEmpty>),
 
     ///  Name:  max-resource-size
@@ -785,6 +790,8 @@ pub enum Violation {
     /// if a search specification would cause the return of an extremely
     /// large number of responses.
     NumberOfMatchesWithinLimits,
+
+    // TODO: CALDAV:supported-collation
 }
 
 // -------- Inner XML elements ---------

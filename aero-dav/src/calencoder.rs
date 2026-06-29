@@ -336,14 +336,8 @@ impl QWrite for SupportedCollation {
 
 impl QWrite for Collation {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
-        let col = match self {
-            Self::AsciiCaseMap => "i;ascii-casemap",
-            Self::Octet => "i;octet",
-            Self::Unknown(v) => v.as_str(),
-        };
-
         xml.q
-            .write_event_async(Event::Text(BytesText::new(col)))
+            .write_event_async(Event::Text(BytesText::new(self.as_str())))
             .await
     }
 }
