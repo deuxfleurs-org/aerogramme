@@ -1,17 +1,22 @@
 use super::types as dav;
 
-//@FIXME required for a full DAV implementation
-// See section 7.1 of the CalDAV RFC
-// It seems it's mainly due to the fact that the REPORT method is re-used.
-// https://datatracker.ietf.org/doc/html/rfc4791#section-7.1
-//
-// Defines (required by CalDAV):
-// - REPORT method
-// - expand-property root report method
-//
-// Defines (required by Sync):
-// - limit, nresults
-// - supported-report-set
+/**
+ * # RFC 3253 - WebDAV versioning
+ *
+ * This RFC intends to keep an history of the different versions of a resource.
+ * It is not a feature directly used by CalDAV/CardDAV but it introduces
+ * new WebDAV generic concepts (like the "REPORT" notion/method).
+ *
+ * Defines (required by CalDAV):
+ * - REPORT method
+ * - expand-property root report method
+ *
+ * Defines (required by Sync):
+ * - limit, nresults
+ * - supported-report-set
+ *
+ * This implementation is partial.
+ */
 
 // This property identifies the reports that are supported by the
 // resource.

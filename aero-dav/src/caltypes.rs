@@ -6,9 +6,6 @@ use chrono::{DateTime, Utc};
 pub const FLOATING_DATETIME_FMT: &str = "%Y%m%dT%H%M%S";
 pub const UTC_DATETIME_FMT: &str = "%Y%m%dT%H%M%SZ";
 
-//@FIXME ACL (rfc3744) is missing, required
-//@FIXME Versioning (rfc3253) is missing, required
-//@FIXME WebDAV sync (rfc6578) is missing, optional
 // For reference, SabreDAV guide gives high-level & real-world overview:
 // https://sabre.io/dav/building-a-caldav-client/
 // For reference, non-official extensions documented by SabreDAV:
