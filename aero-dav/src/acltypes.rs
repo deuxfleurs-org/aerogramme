@@ -1,12 +1,12 @@
 use super::types as dav;
 
 /** 
- * # RFC3744 ACL & RFC5397 ACL Current Principal Extension
+ * # WebDAV ACL & ACL Current Principal Extension
  *
  * The 1000-feet view: ACL introduces concepts that are useful, but we don't use/implement it
  * directly. Based on this concept, we implement a simple RFC that can return the homedir URL.
  *
- * ## ACL (RFC3744)
+ * ## RFC 3744 - WebDAV ACL
  *
  * It introduces the notion of principals, the principal is a name that define "who you are" (aka.
  * authentication, identity). Then a concept of permissions (aka authorization, called access control here)
@@ -31,13 +31,14 @@ use super::types as dav;
  *     - The CalDAV spec recommend we discover the homedir this way
  *     - But Thunderbird uses RFC5397 instead, which is simpler and better
  *
- * Conclusion: there is no type for this RFC. For now, we borrow only its concepts.
+ * This implementation is missing
  *
- * ## Current Principal Extension (RFC5397)
+ * ## RFC 5397 - WebDAV ACL Current Principal Extension
  *
  * It introduces the "current user principal" DAV property. 
  * This information is used by Thunderbird.
- * This RFC is fully implemented.
+ *
+ * This implementation should be complete.
  */
 
 #[derive(Debug, PartialEq, Clone)]

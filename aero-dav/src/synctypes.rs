@@ -2,7 +2,7 @@ use super::types as dav;
 use super::versioningtypes as vers;
 
 /** 
- * # RFC 6578
+ * # RFC 6578 - WebDAV Sync
  *
  * Implement a synchronization logic through WebDAV based on a token.
  * When the client sends a sync request with an appropriate token,
