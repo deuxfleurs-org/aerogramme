@@ -1,9 +1,12 @@
 use super::types as dav;
 
 /** 
- * RFC covered in this file are RFC3744 (ACL core) + RFC5397 (ACL Current Principal Extension)
+ * # RFC3744 ACL & RFC5397 ACL Current Principal Extension
  *
- * ## RFC3744 ACL 
+ * The 1000-feet view: ACL introduces concepts that are useful, but we don't use/implement it
+ * directly. Based on this concept, we implement a simple RFC that can return the homedir URL.
+ *
+ * ## ACL (RFC3744)
  *
  * It introduces the notion of principals, the principal is a name that define "who you are" (aka.
  * authentication, identity). Then a concept of permissions (aka authorization, called access control here)
@@ -30,7 +33,7 @@ use super::types as dav;
  *
  * Conclusion: there is no type for this RFC. For now, we borrow only its concepts.
  *
- * ## RFC5397 Current Principal
+ * ## Current Principal Extension (RFC5397)
  *
  * It introduces the "current user principal" DAV property. 
  * This information is used by Thunderbird.

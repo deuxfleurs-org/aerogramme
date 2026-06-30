@@ -6,10 +6,24 @@ use chrono::{DateTime, Utc};
 pub const FLOATING_DATETIME_FMT: &str = "%Y%m%dT%H%M%S";
 pub const UTC_DATETIME_FMT: &str = "%Y%m%dT%H%M%SZ";
 
-// For reference, SabreDAV guide gives high-level & real-world overview:
-// https://sabre.io/dav/building-a-caldav-client/
-// For reference, non-official extensions documented by SabreDAV:
-// https://github.com/apple/ccs-calendarserver/tree/master/doc/Extensions
+/**
+ * # CalDAV extension to WebDAV (RFC4791)
+ *
+ * Allow calendar synchronization, editing, viewing across devices.
+ *
+ * We aim to fully implement the specification here.
+ *
+ * ## References
+ *
+ * Official RFC
+ * https://datatracker.ietf.org/doc/html/rfc4791
+ *
+ * SabreDAV guide gives high-level & real-world overview: 
+ * https://sabre.io/dav/building-a-caldav-client/
+ *
+ * For reference, non-official extensions documented by SabreDAV:
+ * https://github.com/apple/ccs-calendarserver/tree/master/doc/Extensions
+ */
 
 // ----- Root elements -----
 
