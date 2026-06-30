@@ -267,7 +267,6 @@ pub enum Property {
     SupportedCollationSet(Vec<SupportedCollation>),
 }
 
-// TODO: add missing preconditions
 #[derive(Debug, PartialEq, Clone)]
 pub enum Violation {
     /// (CARDDAV:supported-address-data-conversion): The resource targeted
@@ -314,6 +313,29 @@ pub enum Violation {
     /// server MUST respond with a CARDDAV:supported-collation precondition
     /// error response.
     SupportedCollation,
+
+    /// Servers MUST fail with the CARDDAV:supported-filter precondition if
+    /// an address book REPORT request uses a CARDDAV:prop-filter or
+    /// CARDDAV:param-filter XML element that makes reference to a non-
+    /// standard vCard property or parameter name on which the server does
+    /// not support queries.
+    /// ------
+    /// (CARDDAV:supported-filter): The CARDDAV:prop-filter (see
+    /// Section 10.5.1) and CARDDAV:param-filter (see Section 10.5.2) XML
+    /// elements used in the CARDDAV:filter XML element (see Section 10.5)
+    /// in the REPORT request only make reference to vCard properties and
+    /// parameters for which queries are supported by the server.  That
+    /// is, if the CARDDAV:filter element attempts to reference an
+    /// unsupported vCard property or parameter, this precondition is
+    /// violated.  A server SHOULD report the CARDDAV:prop-filter or
+    /// CARDDAV:param-filter for which it does not provide support.
+    /// 
+    /// <!ELEMENT supported-filter (prop-filter*,
+    ///                             param-filter*)>
+    SupportedFilter {
+        prop_filters: Vec<PropFilter>,
+        param_filters: Vec<ParamFilter>,
+    },
 }
 
 /// Name:  addressbook-query

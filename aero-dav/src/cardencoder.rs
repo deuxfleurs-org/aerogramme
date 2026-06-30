@@ -127,6 +127,18 @@ impl QWrite for Violation {
                 atom("max-resource-size").await,
             Self::SupportedCollation =>
                 atom("supported-collation").await,
+            Self::SupportedFilter { prop_filters, param_filters } => {
+                let start = xml.create_card_element("supported-filter");
+                let end = start.to_end();
+                xml.q.write_event_async(Event::Start(start.clone())).await?;
+                for prop_filter in prop_filters {
+                    prop_filter.qwrite(xml).await?;
+                }
+                for param_filter in param_filters {
+                    param_filter.qwrite(xml).await?;
+                }
+                xml.q.write_event_async(Event::End(end)).await
+            }
         }
     }
 }
