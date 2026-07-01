@@ -1,13 +1,11 @@
 use anyhow::{bail, Result};
-use im::{ordset, OrdMap, OrdSet};
+use im::{OrdMap, OrdSet};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use aero_bayou::*;
 
 use crate::unique_ident::{gen_ident, UniqueIdent};
 
-/// Parents are only persisted in the event log,
-/// not in the checkpoints.
 pub type Token = UniqueIdent;
 pub type Parents = Vec<Token>;
 pub type SyncDesc = (Parents, Token);
@@ -15,26 +13,43 @@ pub type SyncDesc = (Parents, Token);
 pub type BlobId = UniqueIdent;
 pub type Etag = String;
 pub type FileName = String;
-pub type IndexEntry = (BlobId, FileName, Etag);
+pub type IndexEntry = (FileName, Etag);
 
+/// A `DavIndex` is the mutable part of a (flat) DAV collection.
+///
+/// It stores the mapping from resource path to its blob ID, and tracks
+/// modifications to these resources in a graph of changes, whre each node of
+/// the graph is labeled by a synchronization `Token`. This synchronization
+/// graph allows implementing the WebDAV synchronization primitives of RFC6578.
 #[derive(Clone, Default)]
-pub struct DavDag {
+pub struct DavIndex {
     /// Source of trust
     pub table: OrdMap<BlobId, IndexEntry>,
 
-    /// Indexes optimized for queries
-    pub idx_by_filename: OrdMap<FileName, BlobId>,
+    /// Head nodes of the synchronization graph
+    heads: OrdSet<Token>,
 
     // ------------ Below this line, data is ephemeral, ie. not checkpointed
-    /// Partial synchronization graph
-    pub ancestors: OrdMap<Token, OrdSet<Token>>,
+    
+    /// Index for queries on `table` by filename
+    pub idx_by_filename: OrdMap<FileName, BlobId>,
 
-    /// All nodes
-    pub all_nodes: OrdSet<Token>,
-    /// Head nodes
-    pub heads: OrdSet<Token>,
-    /// Origin nodes
-    pub origins: OrdSet<Token>,
+    /// Partial synchronization graph. The nodes of the graph are
+    /// `ancestors.keys()`, and each key-value pair in `ancestors` represents
+    /// directed edges from the key node to the set of its ancestor nodes.
+    ///
+    /// Note: ancestors are only persisted in the event log, not in the
+    /// checkpoints. Hence this is a *partial* graph: it only stores changes
+    /// after the last checkpoint. If a caller tries to use a token that relies
+    /// on a part of the graph that has been lost, the token is rejected and the
+    /// user needs to do obtain a newer token.
+    ancestors: OrdMap<Token, OrdSet<Token>>,
+    /// All nodes of the synchronization graph, as a set. Equal to
+    /// `ancestors.keys()`.
+    idx_all_nodes: OrdSet<Token>,
+    /// Nodes of the synchronization graph that have no ancestors. Equal to
+    /// `ancestors.iter().filter_map(|(k, v)| v.is_empty().then_some(k))`.
+    idx_origins: OrdSet<Token>,
 
     /// File change token by token
     pub change: OrdMap<Token, SyncChange>,
@@ -47,37 +62,37 @@ pub enum SyncChange {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub enum DavDagOp {
+pub enum DavIndexOp {
     /// Merge is a virtual operation run when multiple heads are discovered
     Merge(SyncDesc),
 
     /// Add an item to the collection
-    Put(SyncDesc, IndexEntry),
+    Put(SyncDesc, BlobId, IndexEntry),
 
     /// Delete an item from the collection
     Delete(SyncDesc, BlobId),
 }
-impl DavDagOp {
+impl DavIndexOp {
     pub fn token(&self) -> Token {
         match self {
             Self::Merge((_, t)) => *t,
-            Self::Put((_, t), _) => *t,
+            Self::Put((_, t), _, _) => *t,
             Self::Delete((_, t), _) => *t,
         }
     }
 }
 
-impl DavDag {
-    pub fn op_merge(&self) -> DavDagOp {
-        DavDagOp::Merge(self.sync_desc())
+impl DavIndex {
+    pub fn op_merge(&self) -> DavIndexOp {
+        DavIndexOp::Merge(self.sync_desc())
     }
 
-    pub fn op_put(&self, entry: IndexEntry) -> DavDagOp {
-        DavDagOp::Put(self.sync_desc(), entry)
+    pub fn op_put(&self, blob_id: BlobId, entry: IndexEntry) -> DavIndexOp {
+        DavIndexOp::Put(self.sync_desc(), blob_id, entry)
     }
 
-    pub fn op_delete(&self, blob_id: BlobId) -> DavDagOp {
-        DavDagOp::Delete(self.sync_desc(), blob_id)
+    pub fn op_delete(&self, blob_id: BlobId) -> DavIndexOp {
+        DavIndexOp::Delete(self.sync_desc(), blob_id)
     }
 
     // HELPER functions
@@ -87,7 +102,7 @@ impl DavDag {
     }
 
     /// A sync descriptor
-    pub fn sync_desc(&self) -> SyncDesc {
+    fn sync_desc(&self) -> SyncDesc {
         (self.heads_vec(), gen_ident())
     }
 
@@ -100,14 +115,14 @@ impl DavDag {
         // ie. if we don't already know all the sinks,
         // ie. if we are missing so much history that
         // the event log has been transformed into a checkpoint
-        if !self.origins.is_subset(already_known.clone()) {
+        if !self.idx_origins.is_subset(already_known.clone()) {
             bail!("Not enough history to produce a correct diff, a full resync is needed");
         }
 
         // Missing items are *all existing graph items* from which
         // we removed *all items known by the given node*.
-        // In other words, all values in `all_nodes` that are not in `already_known`.
-        Ok(self.all_nodes.clone().relative_complement(already_known))
+        // In other words, all nodes that are not in `already_known`.
+        Ok(self.idx_all_nodes.clone().relative_complement(already_known))
     }
 
     /// Find all ancestors of a given node
@@ -139,19 +154,19 @@ impl DavDag {
     // INTERNAL functions
 
     /// Register a WebDAV item (put, copy, move)
-    fn register(&mut self, sync_token: Option<Token>, entry: IndexEntry) {
-        let (blob_id, filename, _etag) = entry.clone();
+    fn register(&mut self, sync_token: Option<Token>, blob_id: &BlobId, entry: IndexEntry) {
+        let (filename, _etag) = entry.clone();
 
         // Insert item in the source of trust
-        self.table.insert(blob_id, entry);
+        self.table.insert(*blob_id, entry);
 
         // Update the cache
-        self.idx_by_filename.insert(filename.to_string(), blob_id);
+        self.idx_by_filename.insert(filename.to_string(), *blob_id);
 
         // Record the change in the ephemeral synchronization map
         if let Some(sync_token) = sync_token {
             self.change
-                .insert(sync_token, SyncChange::Ok((filename, blob_id)));
+                .insert(sync_token, SyncChange::Ok((filename, *blob_id)));
         }
     }
 
@@ -159,7 +174,7 @@ impl DavDag {
     fn unregister(&mut self, sync_token: Token, blob_id: &BlobId) {
         // Query the source of truth to get the information we
         // need to clean the indexes
-        let (_blob_id, filename, _etag) = match self.table.get(blob_id) {
+        let (filename, _etag) = match self.table.get(blob_id) {
             Some(v) => v,
             // Element does not exist, return early
             None => return,
@@ -182,16 +197,13 @@ impl DavDag {
         // We register ancestors as it is required for the sync algorithm
         self.ancestors.insert(
             *child,
-            parents.iter().fold(ordset![], |mut acc, p| {
-                acc.insert(*p);
-                acc
-            }),
+            OrdSet::from_iter(parents.iter().cloned()),
         );
 
         // --- Update ORIGINS
         // If this event has no parents, it's an origin
         if parents.is_empty() {
-            self.origins.insert(*child);
+            self.idx_origins.insert(*child);
         }
 
         // --- Update HEADS
@@ -204,13 +216,13 @@ impl DavDag {
         self.heads.insert(*child);
 
         // --- Update ALL NODES
-        self.all_nodes.insert(*child);
+        self.idx_all_nodes.insert(*child);
     }
 }
 
-impl std::fmt::Debug for DavDag {
+impl std::fmt::Debug for DavIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("DavDag\n")?;
+        f.write_str("DavIndex\n")?;
         for elem in self.table.iter() {
             f.write_fmt(format_args!("\t{:?} => {:?}", elem.0, elem.1))?;
         }
@@ -218,22 +230,22 @@ impl std::fmt::Debug for DavDag {
     }
 }
 
-impl BayouState for DavDag {
-    type Op = DavDagOp;
+impl BayouState for DavIndex {
+    type Op = DavIndexOp;
 
     fn apply(&self, op: &Self::Op) -> Self {
         let mut new = self.clone();
 
         match op {
-            DavDagOp::Put(sync_desc, entry) => {
+            DavIndexOp::Put(sync_desc, blob_id, entry) => {
                 new.sync_dag(sync_desc);
-                new.register(Some(sync_desc.1), entry.clone());
+                new.register(Some(sync_desc.1), blob_id, entry.clone());
             }
-            DavDagOp::Delete(sync_desc, blob_id) => {
+            DavIndexOp::Delete(sync_desc, blob_id) => {
                 new.sync_dag(sync_desc);
                 new.unregister(sync_desc.1, blob_id);
             }
-            DavDagOp::Merge(sync_desc) => {
+            DavIndexOp::Merge(sync_desc) => {
                 new.sync_dag(sync_desc);
             }
         }
@@ -244,49 +256,50 @@ impl BayouState for DavDag {
 
 // CUSTOM SERIALIZATION & DESERIALIZATION
 #[derive(Serialize, Deserialize)]
-struct DavDagSerializedRepr {
-    items: Vec<IndexEntry>,
+struct DavIndexSerializedRepr {
+    items: Vec<(BlobId, IndexEntry)>,
     heads: Vec<UniqueIdent>,
 }
 
-impl<'de> Deserialize<'de> for DavDag {
+impl<'de> Deserialize<'de> for DavIndex {
     fn deserialize<D>(d: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let val: DavDagSerializedRepr = DavDagSerializedRepr::deserialize(d)?;
-        let mut davdag = DavDag::default();
+        let val: DavIndexSerializedRepr = DavIndexSerializedRepr::deserialize(d)?;
+        let mut davdag = DavIndex::default();
 
         // Build the table + index
         val.items
             .into_iter()
-            .for_each(|entry| davdag.register(None, entry));
+            .for_each(|(blob_id, entry)| davdag.register(None, &blob_id, entry));
 
         // Initialize the synchronization DAG with its roots
         val.heads.into_iter().for_each(|ident| {
+            davdag.ancestors.insert(ident, OrdSet::new());
             davdag.heads.insert(ident);
-            davdag.origins.insert(ident);
-            davdag.all_nodes.insert(ident);
+            davdag.idx_origins.insert(ident);
+            davdag.idx_all_nodes.insert(ident);
         });
 
         Ok(davdag)
     }
 }
 
-impl Serialize for DavDag {
+impl Serialize for DavIndex {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         // Indexes are rebuilt on the fly, we serialize only the core database
-        let items = self.table.iter().map(|(_, entry)| entry.clone()).collect();
+        let items = self.table.iter().map(|(blob_id, entry)| (blob_id.clone(), entry.clone())).collect();
 
         // We keep only the head entries from the sync graph,
         // these entries will be used to initialize it back when deserializing
         let heads = self.heads_vec();
 
         // Finale serialization object
-        let val = DavDagSerializedRepr { items, heads };
+        let val = DavIndexSerializedRepr { items, heads };
         val.serialize(serializer)
     }
 }
@@ -296,15 +309,16 @@ impl Serialize for DavDag {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use im::ordset;
 
     #[test]
     fn base() {
-        let mut state = DavDag::default();
+        let mut state = DavIndex::default();
 
         // Add item 1
         {
             let m = UniqueIdent([0x01; 24]);
-            let ev = state.op_put((m, "cal.ics".into(), "321-321".into()));
+            let ev = state.op_put(m, ("cal.ics".into(), "321-321".into()));
             state = state.apply(&ev);
 
             assert_eq!(state.table.len(), 1);
@@ -314,7 +328,7 @@ mod tests {
         // Add 2 concurrent items
         let (t1, t2) = {
             let blob1 = UniqueIdent([0x02; 24]);
-            let ev1 = state.op_put((blob1, "cal2.ics".into(), "321-321".into()));
+            let ev1 = state.op_put(blob1, ("cal2.ics".into(), "321-321".into()));
 
             let blob2 = UniqueIdent([0x01; 24]);
             let ev2 = state.op_delete(blob2);
@@ -331,7 +345,7 @@ mod tests {
         // Add later a new item
         {
             let blob3 = UniqueIdent([0x03; 24]);
-            let ev = state.op_put((blob3, "cal3.ics".into(), "321-321".into()));
+            let ev = state.op_put(blob3, ("cal3.ics".into(), "321-321".into()));
 
             state = state.apply(&ev);
             assert_eq!(state.table.len(), 2);

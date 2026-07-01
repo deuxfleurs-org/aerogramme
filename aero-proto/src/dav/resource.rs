@@ -4,8 +4,8 @@ use futures::stream::{StreamExt, TryStreamExt};
 use futures::{future::BoxFuture, future::FutureExt};
 
 use aero_collections::{
-    calendar::Calendar,
-    davdag::{BlobId, Etag, SyncChange, Token},
+    dav::collection::Collection,
+    dav::davindex::{BlobId, Etag, SyncChange, Token},
     user::User,
 };
 use aero_dav::acltypes as acl;
@@ -273,7 +273,7 @@ pub(crate) struct CalendarListNode {
 }
 impl CalendarListNode {
     async fn new(user: &User) -> Result<Self> {
-        let list = user.calendars.list().await?;
+        let list = user.calendars.dav.list().await?;
         Ok(Self { list })
     }
 }
@@ -293,6 +293,7 @@ impl DavNode for CalendarListNode {
             //@FIXME: we should create a node if the open returns a "not found".
             let cal = user
                 .calendars
+                .dav
                 .open(path[0])
                 .await?
                 .ok_or(anyhow!("Not found"))?;
@@ -312,6 +313,7 @@ impl DavNode for CalendarListNode {
             futures::stream::iter(list.iter())
                 .filter_map(|name| async move {
                     user.calendars
+                        .dav
                         .open(name)
                         .await
                         .ok()
@@ -406,7 +408,7 @@ impl DavNode for CalendarListNode {
 
 #[derive(Clone)]
 pub(crate) struct CalendarNode {
-    col: Calendar,
+    col: Collection,
     calname: String,
 }
 impl DavNode for CalendarNode {
@@ -424,7 +426,7 @@ impl DavNode for CalendarNode {
         let col = self.col.clone();
         let calname = self.calname.clone();
         async move {
-            match (col.dag().await.idx_by_filename.get(path[0]), create) {
+            match (col.index().await.idx_by_filename.get(path[0]), create) {
                 (Some(blob_id), _) => {
                     let child = Box::new(EventNode {
                         col: col.clone(),
@@ -453,7 +455,7 @@ impl DavNode for CalendarNode {
         let calname = self.calname.clone();
 
         async move {
-            col.dag()
+            col.index()
                 .await
                 .idx_by_filename
                 .iter()
@@ -602,7 +604,7 @@ impl DavNode for CalendarNode {
                         .await
                         .or(Err(std::io::Error::from(std::io::ErrorKind::Interrupted)))?;
                     let ok_nodes = col
-                        .dag()
+                        .index()
                         .await
                         .idx_by_filename
                         .iter()
@@ -657,7 +659,7 @@ impl DavNode for CalendarNode {
 
 #[derive(Clone)]
 pub(crate) struct EventNode {
-    col: Calendar,
+    col: Collection,
     calname: String,
     filename: String,
     blob_id: BlobId,
@@ -808,7 +810,7 @@ impl DavNode for EventNode {
                 .read_to_end(&mut evt)
                 .await
                 .or(Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe)))?;
-            let (_token, (_, _, etag)) = self
+            let (_token, (_, etag)) = self
                 .col
                 .put(self.filename.as_str(), evt.as_ref())
                 .await
@@ -847,11 +849,11 @@ impl DavNode for EventNode {
 
         async move {
             calendar
-                .dag()
+                .index()
                 .await
                 .table
                 .get(&self.blob_id)
-                .map(|(_, _, etag)| etag.to_string())
+                .map(|(_, etag)| etag.to_string())
         }
         .boxed()
     }
@@ -893,7 +895,7 @@ impl DavNode for EventNode {
 
 #[derive(Clone)]
 pub(crate) struct CreateEventNode {
-    col: Calendar,
+    col: Collection,
     calname: String,
     filename: String,
 }
@@ -948,7 +950,7 @@ impl DavNode for CreateEventNode {
             let mut evt = Vec::new();
             let mut reader = stream.into_async_read();
             reader.read_to_end(&mut evt).await.unwrap();
-            let (_token, (_, _, etag)) = self
+            let (_token, (_, etag)) = self
                 .col
                 .put(self.filename.as_str(), evt.as_ref())
                 .await

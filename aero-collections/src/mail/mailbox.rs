@@ -44,9 +44,9 @@ pub struct Mailbox {
 }
 
 impl Mailbox {
-    pub(crate) async fn open(creds: &Credentials, id: UniqueIdent) -> Result<Self> {
-        let index_path = format!("index/{}", id);
-        let mail_path = format!("mail/{}", id);
+    pub(crate) async fn open(creds: &Credentials, prefix: &str, id: UniqueIdent) -> Result<Self> {
+        let index_path = format!("{}/index/{}", prefix, id);
+        let mail_path = format!("{}/blob/{}", prefix, id);
 
         let mut uid_index = Bayou::<UidIndex>::new(creds, index_path).await?;
         uid_index.sync().await?;

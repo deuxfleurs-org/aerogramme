@@ -3,7 +3,7 @@ use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{BoxStream, StreamExt};
 use hyper::body::Bytes;
 
-use aero_collections::davdag::{Etag, Token};
+use aero_collections::dav::davindex::{Etag, Token};
 use aero_collections::user::User;
 use aero_dav::realization::All;
 use aero_dav::types as dav;
