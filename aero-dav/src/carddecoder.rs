@@ -96,7 +96,12 @@ impl QRead<PropertyRequest> for PropertyRequest {
             xml.close().await?;
             return Ok(Self::SupportedCollationSet);
         }
-        return Err(ParsingError::Recoverable)
+        let mut dirty = false;
+        let mut m_cdr = None;
+        xml.maybe_read(&mut m_cdr, &mut dirty).await?;
+        m_cdr
+            .ok_or(ParsingError::Recoverable)
+            .map(Self::AddressData)
     }
 }
 
@@ -171,6 +176,13 @@ impl QRead<Property> for Property {
             let cols = xml.collect().await?;
             xml.close().await?;
             return Ok(Property::SupportedCollationSet(cols));
+        }
+
+        let mut dirty = false;
+        let mut addrdata: Option<AddressDataPayload> = None;
+        xml.maybe_read(&mut addrdata, &mut dirty).await?;
+        if let Some(addr) = addrdata {
+            return Ok(Property::AddressData(addr));
         }
         
         Err(ParsingError::Recoverable)
@@ -498,13 +510,29 @@ impl QRead<ParamFilterMatch> for ParamFilterMatch {
 
 impl QRead<Limit> for Limit {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        let mut nresults = None;
         xml.open(CARD_URN, "limit").await?;
-        xml.open(CARD_URN, "nresults").await?;
-        let nresults = u64::from_str(&xml.tag_string().await?)
-            .map_err(|_| ParsingError::InvalidValue)?;
+        loop {
+            if xml.maybe_open(CARD_URN, "nresults").await?.is_some() {
+                let text = xml.tag_string().await?;
+                nresults = Some(
+                    u64::from_str(text.trim())
+                        .map_err(|_| ParsingError::InvalidValue)?
+                );
+                xml.close().await?;
+                break;
+            }
+            match xml.peek() {
+                Event::End(_) => break,
+                _ => xml.skip().await?,
+            };
+        }
         xml.close().await?;
-        xml.close().await?;
-        Ok(Self { nresults })
+        if let Some(nresults) = nresults {
+            Ok(Self { nresults })
+        } else {
+            Err(ParsingError::Recoverable)
+        }
     }
 }
 
@@ -517,11 +545,13 @@ impl QRead<PropKind> for PropKind {
                 xml.close().await?;
                 return Ok(PropKind::AllProp);
             }
-
             xml.maybe_push(&mut prop, &mut dirty).await?;
 
             if !dirty {
-                break;
+                match xml.peek() {
+                    Event::End(_) => break,
+                    _ => xml.skip().await?,
+                };
             }
         }
 

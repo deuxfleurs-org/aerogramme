@@ -32,6 +32,7 @@ impl QWrite for PropertyRequest {
             Self::AddressbookHomeSet => atom("addressbook-home-set").await,
             Self::PrincipalAddress => atom("principal-address").await,
             Self::SupportedCollationSet => atom("supported-collation-set").await,
+            Self::AddressData(req) => req.qwrite(xml).await,
         }
     }
 }
@@ -95,6 +96,7 @@ impl QWrite for Property {
                 }
                 xml.q.write_event_async(Event::End(end)).await
             }
+            Self::AddressData(inner) => inner.qwrite(xml).await,
         }
     }
 }

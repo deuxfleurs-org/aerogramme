@@ -43,6 +43,7 @@ pub enum PropertyRequest {
     AddressbookHomeSet,
     PrincipalAddress,
     SupportedCollationSet,
+    AddressData(AddressDataRequest),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -280,6 +281,9 @@ pub enum Property {
     ///   <C:supported-collation>i;unicode-casemap</C:supported-collation>
     /// </C:supported-collation-set>
     SupportedCollationSet(Vec<SupportedCollation>),
+
+    /// See AddressDataPayload
+    AddressData(AddressDataPayload),
 }
 
 #[derive(Debug, PartialEq, Clone)]
