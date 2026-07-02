@@ -1,8 +1,17 @@
 use super::types as dav;
 use super::versioningtypes as vers;
 
-// RFC 6578
-// https://datatracker.ietf.org/doc/html/rfc6578
+/** 
+ * # RFC 6578 - WebDAV Sync
+ *
+ * Implement a synchronization logic through WebDAV based on a token.
+ * When the client sends a sync request with an appropriate token,
+ * the server *may* send only what changed since this token.
+ *
+ * This implementation should be complete.
+ *
+ * Source: https://datatracker.ietf.org/doc/html/rfc6578
+ */
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum PropertyRequest {
@@ -23,8 +32,6 @@ pub enum ReportTypeName {
 pub struct Multistatus {
     pub sync_token: SyncToken,
 }
-
-//@FIXME add SyncToken to Multistatus
 
 ///  Name:  sync-collection
 ///
