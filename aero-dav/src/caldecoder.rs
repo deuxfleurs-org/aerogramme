@@ -1,11 +1,12 @@
 use chrono::NaiveDateTime;
 use quick_xml::events::Event;
+use std::str::FromStr;
 
 use super::caltypes::*;
 use super::error::ParsingError;
 use super::extension::Extension;
 use super::coretypes as dav;
-use super::xml::{IRead, QRead, Reader, CAL_URN, DAV_URN};
+use super::xml::{IRead, QRead, Reader, CAL_URN, DAV_URN, WithDefault};
 
 // ---- ROOT ELEMENTS ---
 impl<E: Extension> QRead<MkCalendar<E>> for MkCalendar<E> {
@@ -466,7 +467,7 @@ impl QRead<SupportedCollation> for SupportedCollation {
 impl QRead<CalendarDataPayload> for CalendarDataPayload {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CAL_URN, "calendar-data").await?;
-        let mime = CalendarDataSupport::qread(xml).await.ok();
+        let mime = CalendarDataSupport::qread(xml).await?;
         let payload = xml.tag_string().await?;
         xml.close().await?;
         Ok(CalendarDataPayload { mime, payload })
@@ -475,22 +476,20 @@ impl QRead<CalendarDataPayload> for CalendarDataPayload {
 
 impl QRead<CalendarDataSupport> for CalendarDataSupport {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        let ct = xml.prev_attr("content-type");
-        let vs = xml.prev_attr("version");
-        match (ct, vs) {
-            (Some(content_type), Some(version)) => Ok(Self {
-                content_type,
-                version,
-            }),
-            _ => Err(ParsingError::Recoverable),
-        }
+        let content_type = WithDefault::from_opt(
+            xml.prev_attr("content-type").map(ContentType)
+        );
+        let version = WithDefault::from_opt(
+            xml.prev_attr("version").map(Version)
+        );
+        Ok(Self { content_type, version })
     }
 }
 
 impl QRead<CalendarDataRequest> for CalendarDataRequest {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CAL_URN, "calendar-data").await?;
-        let mime = CalendarDataSupport::qread(xml).await.ok();
+        let mime = CalendarDataSupport::qread(xml).await?;
         let (mut comp, mut recurrence, mut limit_freebusy_set) = (None, None, None);
 
         if !xml.parent_has_child() {
@@ -529,7 +528,7 @@ impl QRead<CalendarDataRequest> for CalendarDataRequest {
 impl QRead<CalendarDataEmpty> for CalendarDataEmpty {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CAL_URN, "calendar-data").await?;
-        let mime = CalendarDataSupport::qread(xml).await.ok();
+        let mime = CalendarDataSupport::qread(xml).await?;
         xml.close().await?;
         Ok(Self(mime))
     }
@@ -649,8 +648,6 @@ impl QRead<PropKind> for PropKind {
             }
         }
 
-        // FIXME the syntax allows zero props ("prop*"), why do we error if prop
-        // is empty?
         match &prop[..] {
             [] => Err(ParsingError::Recoverable),
             _ => Ok(PropKind::Prop(prop)),
@@ -897,8 +894,13 @@ impl QRead<TimeOrText> for TimeOrText {
 impl QRead<TextMatch> for TextMatch {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CAL_URN, "text-match").await?;
-        let collation = xml.prev_attr("collation").map(Collation::new);
-        let negate_condition = xml.prev_attr("negate-condition").map(|v| v == "yes");
+        let collation = WithDefault::from_opt(xml.prev_attr("collation").map(Collation::new));
+        let negate_condition = WithDefault::from_opt(
+            xml.prev_attr("negate-condition")
+               .map(|v| NegateCondition::from_str(v.as_str()))
+               .transpose()
+               .map_err(|()| ParsingError::InvalidValue)?
+        );
         let text = xml.tag_string().await?;
         xml.close().await?;
         Ok(Self {
@@ -973,7 +975,12 @@ impl QRead<CalProp> for CalProp {
             xml.prev_attr("name")
                 .ok_or(ParsingError::MissingAttribute)?,
         );
-        let novalue = xml.prev_attr("novalue").map(|v| v == "yes");
+        let novalue = WithDefault::from_opt(
+            xml.prev_attr("novalue")
+               .map(|v| NoValue::from_str(v.as_str()))
+               .transpose()
+               .map_err(|()| ParsingError::InvalidValue)?
+        );
         xml.close().await?;
         Ok(Self { name, novalue })
     }
@@ -1071,12 +1078,12 @@ END:VCALENDAR]]></C:calendar-timezone>
                 dav::PropertyRequest::GetEtag,
                 dav::PropertyRequest::Extension(PropertyRequest::CalendarData(
                     CalendarDataRequest {
-                        mime: None,
+                        mime: Default::default(),
                         comp: Some(Comp {
                             name: Component::VCalendar,
                             prop_kind: Some(PropKind::Prop(vec![CalProp {
                                 name: ComponentProperty("VERSION".into()),
-                                novalue: None,
+                                novalue: Default::default(),
                             }])),
                             comp_kind: Some(CompKind::Comp(vec![
                                 Comp {
@@ -1084,43 +1091,43 @@ END:VCALENDAR]]></C:calendar-timezone>
                                     prop_kind: Some(PropKind::Prop(vec![
                                         CalProp {
                                             name: ComponentProperty("SUMMARY".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                         CalProp {
                                             name: ComponentProperty("UID".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                         CalProp {
                                             name: ComponentProperty("DTSTART".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                         CalProp {
                                             name: ComponentProperty("DTEND".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                         CalProp {
                                             name: ComponentProperty("DURATION".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                         CalProp {
                                             name: ComponentProperty("RRULE".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                         CalProp {
                                             name: ComponentProperty("RDATE".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                         CalProp {
                                             name: ComponentProperty("EXRULE".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                         CalProp {
                                             name: ComponentProperty("EXDATE".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                         CalProp {
                                             name: ComponentProperty("RECURRENCE-ID".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                     ])),
                                     comp_kind: None,
@@ -1213,7 +1220,7 @@ END:VCALENDAR]]></C:calendar-timezone>
                                 )),
                                 dav::AnyProperty::Value(dav::Property::Extension(
                                     Property::CalendarData(CalendarDataPayload {
-                                        mime: None,
+                                        mime: Default::default(),
                                         payload: "BEGIN:VCALENDAR".into(),
                                     }),
                                 )),
@@ -1237,7 +1244,7 @@ END:VCALENDAR]]></C:calendar-timezone>
                                 )),
                                 dav::AnyProperty::Value(dav::Property::Extension(
                                     Property::CalendarData(CalendarDataPayload {
-                                        mime: None,
+                                        mime: Default::default(),
                                         payload: "BEGIN:VCALENDAR".into(),
                                     }),
                                 )),
@@ -1290,7 +1297,7 @@ END:VCALENDAR]]></C:calendar-timezone>
             selector: Some(CalendarSelector::Prop(dav::PropName(vec![
                 dav::PropertyRequest::Extension(PropertyRequest::CalendarData(
                     CalendarDataRequest {
-                        mime: None,
+                        mime: Default::default(),
                         comp: None,
                         recurrence: Some(RecurrenceModifier::LimitRecurrenceSet(
                             LimitRecurrenceSet(
@@ -1354,7 +1361,7 @@ END:VCALENDAR]]></C:calendar-timezone>
                 dav::PropertyRequest::GetEtag,
                 dav::PropertyRequest::Extension(PropertyRequest::CalendarData(
                     CalendarDataRequest {
-                        mime: None,
+                        mime: Default::default(),
                         comp: None,
                         recurrence: None,
                         limit_freebusy_set: None,
@@ -1382,8 +1389,8 @@ END:VCALENDAR]]></C:calendar-timezone>
                                         PropFilterMatch {
                                             param_filter: vec![],
                                             time_or_text: Some(TimeOrText::Text(TextMatch {
-                                                collation: None,
-                                                negate_condition: Some(true),
+                                                collation: Default::default(),
+                                                negate_condition: WithDefault::new(NegateCondition::Yes),
                                                 text: "CANCELLED".into(),
                                             })),
                                         },

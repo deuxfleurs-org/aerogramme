@@ -22,9 +22,9 @@ pub fn component<'a>(src: &'a Component<'a>, prune: &cal::Comp) -> Option<Compon
                     None => return None,
                 };
 
-                match sel_filt.novalue {
-                    None | Some(false) => Some(prop.clone()),
-                    Some(true) => Some(Property {
+                match sel_filt.novalue.get() {
+                    cal::NoValue::No => Some(prop.clone()),
+                    cal::NoValue::Yes => Some(Property {
                         name: prop.name.clone(),
                         params: prop.params.clone(),
                         val: "".into(),

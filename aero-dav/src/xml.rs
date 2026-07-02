@@ -30,6 +30,45 @@ pub trait QRead<T> {
 // The representation of an XML node in Rust
 pub trait Node<T> = QRead<T> + QWrite + std::fmt::Debug + PartialEq + Clone + Sync;
 
+// Indicates whether a value was obtained from the default value of an attribute
+// or was specified explicitly
+#[derive(Debug, PartialEq, Clone)]
+pub struct WithDefault<T: Default> {
+    pub(crate) v: T,
+    pub(crate) is_default: bool,
+}
+
+impl<T: Default> WithDefault<T> {
+    pub fn new(v: T) -> Self {
+        Self { v, is_default: false }
+    }
+
+    pub fn from_opt(opt: Option<T>) -> Self {
+        match opt {
+            Some(v) => Self { v, is_default: false },
+            None => Self { v: T::default(), is_default: true },
+        }
+    }
+
+    pub fn as_explicit(&self) -> Option<&T> {
+        if !self.is_default {
+            Some(&self.v)
+        } else {
+            None
+        }
+    }
+
+    pub fn get(&self) -> &T {
+        &self.v
+    }
+}
+
+impl<T: Default> Default for WithDefault<T> {
+    fn default() -> Self {
+        Self::from_opt(None)
+    }
+}
+
 // ---------------
 
 /// Transform a Rust object into an XML stream of characters

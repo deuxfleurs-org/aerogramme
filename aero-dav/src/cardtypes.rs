@@ -1,5 +1,6 @@
 use super::extension::Extension;
 use super::coretypes as dav;
+use super::xml::WithDefault;
 
 /**
  * # CardDAV extension to WebDAV (RFC6352)
@@ -396,11 +397,10 @@ pub struct AddressbookQuery<E: Extension> {
 /// <!-- content-type value: a MIME media type -->
 /// <!-- version value: a version string -->
 #[derive(Debug, PartialEq, Clone)]
-// TODO default values
 pub struct AddressDataRequest {
     pub prop_kind: Option<PropKind>,
-    pub content_type: Option<String>,
-    pub version: Option<String>,
+    pub content_type: WithDefault<ContentType>,
+    pub version: WithDefault<Version>,
 }
 
 /// Name:  address-data
@@ -455,11 +455,10 @@ pub struct AddressDataRequest {
 /// <!-- content-type value: a MIME media type -->
 /// <!-- version value: a version string -->
 #[derive(Debug, PartialEq, Clone)]
-// TODO default values
 pub struct AddressDataPayload {
     pub payload: String,
-    pub content_type: Option<String>,
-    pub version: Option<String>,
+    pub content_type: WithDefault<ContentType>,
+    pub version: WithDefault<Version>,
 }
 
 /// Name:  addressbook-multiget
@@ -580,11 +579,10 @@ impl Collation {
 /// <!-- test value:
 ///           anyof logical OR for prop-filter matches
 ///           allof logical AND for prop-filter matches -->
-// TODO: default values?
 #[derive(Debug, PartialEq, Clone)]
 pub struct Filter {
     pub prop_filters: Vec<PropFilter>,
-    pub test: Option<FilterTest>,
+    pub test: WithDefault<FilterTest>,
 }
 
 #[derive(Debug, PartialEq, Clone, Default)]
@@ -661,8 +659,7 @@ impl std::str::FromStr for FilterTest {
 pub struct PropFilter {
     pub name: PropertyName,
     // XXX "test" is only relevant when rules is PropFilterRules::Match
-    // TODO default value?
-    pub test: Option<FilterTest>,
+    pub test: WithDefault<FilterTest>,
     pub rules: PropFilterRules,
 }
 #[derive(Debug, PartialEq, Clone)]
@@ -723,12 +720,11 @@ pub enum PropFilterRules {
 ///    collation        CDATA "i;unicode-casemap"
 ///    negate-condition (yes | no) "no"
 ///    match-type (equals|contains|starts-with|ends-with) "contains">
-// TODO: apply defaults?
 #[derive(Debug, PartialEq, Clone)]
 pub struct TextMatch {
-    pub collation: Option<Collation>,
-    pub negate_condition: Option<bool>,
-    pub match_type: Option<TextMatchType>,
+    pub collation: WithDefault<Collation>,
+    pub negate_condition: WithDefault<NegateCondition>,
+    pub match_type: WithDefault<TextMatchType>,
     pub text: String,
 }
 #[derive(Debug, PartialEq, Clone, Default)]
@@ -757,6 +753,31 @@ impl std::str::FromStr for TextMatchType {
             "contains" => Ok(Self::Contains),
             "starts-with" => Ok(Self::StartsWith),
             "ends-with" => Ok(Self::EndsWith),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Default)]
+pub enum NegateCondition {
+    Yes,
+    #[default]
+    No,
+}
+impl NegateCondition {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Yes => "yes",
+            Self::No => "no",
+        }
+    }
+}
+impl std::str::FromStr for NegateCondition {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "yes" => Ok(Self::Yes),
+            "no" => Ok(Self::No),
             _ => Err(()),
         }
     }
@@ -929,10 +950,50 @@ pub enum PropKind {
 /// namespace, as opposed to the "DAV:" namespace used for the DAV:prop
 /// element defined in WebDAV.
 #[derive(Debug, PartialEq, Clone)]
-// TODO: default value
 pub struct CardProp {
     pub name: PropertyName,
-    pub novalue: Option<bool>,
+    pub novalue: WithDefault<NoValue>,
+}
+
+#[derive(Debug, PartialEq, Clone, Default)]
+pub enum NoValue {
+    Yes,
+    #[default]
+    No,
+}
+impl NoValue {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Yes => "yes",
+            Self::No => "no",
+        }
+    }
+}
+impl std::str::FromStr for NoValue {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "yes" => Ok(Self::Yes),
+            "no" => Ok(Self::No),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ContentType(pub String);
+impl Default for ContentType {
+    fn default() -> Self {
+        Self("text/vcard".to_string())
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Version(pub String);
+impl Default for Version {
+    fn default() -> Self {
+        Self("3.0".to_string())
+    }
 }
 
 /// A property parameter name (e.g. "TYPE")

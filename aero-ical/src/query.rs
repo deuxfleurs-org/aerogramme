@@ -106,11 +106,12 @@ fn is_properties_match(props: &[icalendar::parser::Property], filters: &[cal::Pr
                         }
                         Some(cal::TimeOrText::Text(txt_match)) => {
                             //@FIXME ignoring collation
-                            let is_match = match txt_match.negate_condition {
-                                None | Some(false) => {
+                            let is_match = match txt_match.negate_condition.get() {
+                                cal::NegateCondition::No => {
                                     prop.val.as_str().contains(txt_match.text.as_str())
                                 }
-                                Some(true) => !prop.val.as_str().contains(txt_match.text.as_str()),
+                                cal::NegateCondition::Yes =>
+                                    !prop.val.as_str().contains(txt_match.text.as_str()),
                             };
                             if !is_match {
                                 return false;
@@ -141,11 +142,11 @@ fn is_properties_match(props: &[icalendar::parser::Property], filters: &[cal::Pr
                                         None => return false,
                                     };
 
-                                    match txt_match.negate_condition {
-                                        None | Some(false) => {
+                                    match txt_match.negate_condition.get() {
+                                        cal::NegateCondition::No => {
                                             param_val.as_str().contains(txt_match.text.as_str())
                                         }
-                                        Some(true) => {
+                                        cal::NegateCondition::Yes => {
                                             !param_val.as_str().contains(txt_match.text.as_str())
                                         }
                                     }

@@ -768,7 +768,7 @@ impl DavNode for EventNode {
 
                             dav::Property::Extension(all::Property::Cal(
                                 cal::Property::CalendarData(cal::CalendarDataPayload {
-                                    mime: None,
+                                    mime: Default::default(),
                                     payload: new_ics,
                                 }),
                             ))

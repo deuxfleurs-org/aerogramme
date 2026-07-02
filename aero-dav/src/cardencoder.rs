@@ -165,11 +165,11 @@ impl<E: Extension> QWrite for AddressbookQuery<E> {
 impl QWrite for AddressDataRequest {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut start = xml.create_card_element("address-data");
-        if let Some(content_type) = &self.content_type {
-            start.push_attribute(("content-type", content_type.as_str()));
+        if let Some(content_type) = self.content_type.as_explicit() {
+            start.push_attribute(("content-type", content_type.0.as_str()));
         }
-        if let Some(version) = &self.version {
-            start.push_attribute(("version", version.as_str()));
+        if let Some(version) = self.version.as_explicit() {
+            start.push_attribute(("version", version.0.as_str()));
         }
         let end = start.to_end();
         xml.q.write_event_async(Event::Start(start.clone())).await?;
@@ -183,11 +183,11 @@ impl QWrite for AddressDataRequest {
 impl QWrite for AddressDataPayload {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut start = xml.create_card_element("address-data");
-        if let Some(content_type) = &self.content_type {
-            start.push_attribute(("content-type", content_type.as_str()));
+        if let Some(content_type) = self.content_type.as_explicit() {
+            start.push_attribute(("content-type", content_type.0.as_str()));
         }
-        if let Some(version) = &self.version {
-            start.push_attribute(("version", version.as_str()));
+        if let Some(version) = self.version.as_explicit() {
+            start.push_attribute(("version", version.0.as_str()));
         }
         let end = start.to_end();
 
@@ -264,7 +264,7 @@ impl<E: Extension> QWrite for AddressbookSelector<E> {
 impl QWrite for Filter {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut start = xml.create_card_element("filter");
-        if let Some(test) = &self.test {
+        if let Some(test) = self.test.as_explicit() {
             start.push_attribute(("test", test.as_str()));
         }
         let end = start.to_end();
@@ -281,7 +281,7 @@ impl QWrite for PropFilter {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut start = xml.create_card_element("prop-filter");
         start.push_attribute(("name", self.name.0.as_str()));
-        if let Some(test) = &self.test {
+        if let Some(test) = self.test.as_explicit() {
             start.push_attribute(("test", test.as_str()));
         }
         let end = start.to_end();
@@ -317,15 +317,13 @@ impl QWrite for PropFilterRules {
 impl QWrite for TextMatch {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut start = xml.create_card_element("text-match");
-        if let Some(collation) = &self.collation {
+        if let Some(collation) = self.collation.as_explicit() {
             start.push_attribute(("collation", collation.as_str()));
         }
-        match self.negate_condition {
-            None => (),
-            Some(true) => start.push_attribute(("negate-condition", "yes")),
-            Some(false) => start.push_attribute(("negate-condition", "no")),
+        if let Some(ng) = self.negate_condition.as_explicit() {
+            start.push_attribute(("negate-condition", ng.as_str()));
         }
-        if let Some(match_type) = &self.match_type {
+        if let Some(match_type) = self.match_type.as_explicit() {
             start.push_attribute(("match-type", match_type.as_str()));
         }
         let end = start.to_end();
@@ -404,10 +402,8 @@ impl QWrite for CardProp {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut empty = xml.create_card_element("prop");
         empty.push_attribute(("name", self.name.0.as_str()));
-        match self.novalue {
-            None => (),
-            Some(true) => empty.push_attribute(("novalue", "yes")),
-            Some(false) => empty.push_attribute(("novalue", "no")),
+        if let Some(nv) = self.novalue.as_explicit() {
+            empty.push_attribute(("novalue", nv.as_str()))
         }
         xml.q.write_event_async(Event::Empty(empty)).await
     }

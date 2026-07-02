@@ -5,7 +5,7 @@ use super::cardtypes::*;
 use super::coretypes as dav;
 use super::error::ParsingError;
 use super::extension::Extension;
-use super::xml::{IRead, QRead, Reader, CARD_URN, DAV_URN};
+use super::xml::{IRead, QRead, Reader, CARD_URN, DAV_URN, WithDefault};
 
 impl QRead<ResourceType> for ResourceType {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
@@ -239,8 +239,12 @@ impl<E: Extension> QRead<AddressbookQuery<E>> for AddressbookQuery<E> {
 impl QRead<AddressDataRequest> for AddressDataRequest {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CARD_URN, "address-data").await?;
-        let content_type = xml.prev_attr("content-type");
-        let version = xml.prev_attr("version");
+        let content_type = WithDefault::from_opt(
+            xml.prev_attr("content-type").map(ContentType)
+        );
+        let version = WithDefault::from_opt(
+            xml.prev_attr("version").map(Version)
+        );
         let prop_kind = xml.maybe_find().await?;
         xml.close().await?;
         Ok(Self { prop_kind, content_type, version })
@@ -250,8 +254,12 @@ impl QRead<AddressDataRequest> for AddressDataRequest {
 impl QRead<AddressDataPayload> for AddressDataPayload {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CARD_URN, "address-data").await?;
-        let content_type = xml.prev_attr("content-type");
-        let version = xml.prev_attr("version");
+        let content_type = WithDefault::from_opt(
+            xml.prev_attr("content-type").map(ContentType)
+        );
+        let version = WithDefault::from_opt(
+            xml.prev_attr("version").map(Version)
+        );
         let payload = xml.tag_string().await?;
         xml.close().await?;
         Ok(AddressDataPayload { payload, content_type, version })
@@ -335,11 +343,13 @@ impl<E: Extension> QRead<AddressbookSelector<E>> for AddressbookSelector<E> {
 impl QRead<Filter> for Filter {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CARD_URN, "filter").await?;
-        let test = xml
-            .prev_attr("test")
-            .map(|s| FilterTest::from_str(&s))
-            .transpose()
-            .map_err(|()| ParsingError::InvalidValue)?;
+        let test = WithDefault::from_opt(
+            xml
+                .prev_attr("test")
+                .map(|s| FilterTest::from_str(&s))
+                .transpose()
+                .map_err(|()| ParsingError::InvalidValue)?
+        );
         let prop_filters = xml.collect().await?;
         xml.close().await?;
         Ok(Self { prop_filters, test })
@@ -353,10 +363,12 @@ impl QRead<PropFilter> for PropFilter {
             xml.prev_attr("name")
                 .ok_or(ParsingError::MissingAttribute)?,
         );
-        let test = xml.prev_attr("test")
-                      .map(|s| FilterTest::from_str(&s))
-                      .transpose()
-                      .map_err(|()| ParsingError::InvalidValue)?;
+        let test = WithDefault::from_opt(
+            xml.prev_attr("test")
+               .map(|s| FilterTest::from_str(&s))
+               .transpose()
+               .map_err(|()| ParsingError::InvalidValue)?
+        );
         let rules = xml.find().await?;
         xml.close().await?;
         Ok(Self {
@@ -405,12 +417,19 @@ impl QRead<PropFilterRules> for PropFilterRules {
 impl QRead<TextMatch> for TextMatch {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CARD_URN, "text-match").await?;
-        let collation = xml.prev_attr("collation").map(Collation::new);
-        let negate_condition = xml.prev_attr("negate-condition").map(|v| v == "yes");
-        let match_type = xml.prev_attr("match-type")
-                            .map(|s| TextMatchType::from_str(&s))
-                            .transpose()
-                            .map_err(|()| ParsingError::InvalidValue)?;
+        let collation = WithDefault::from_opt(xml.prev_attr("collation").map(Collation::new));
+        let negate_condition = WithDefault::from_opt(
+            xml.prev_attr("negate-condition")
+               .map(|s| NegateCondition::from_str(&s))
+               .transpose()
+               .map_err(|()| ParsingError::InvalidValue)?
+        );
+        let match_type = WithDefault::from_opt(
+            xml.prev_attr("match-type")
+               .map(|s| TextMatchType::from_str(&s))
+               .transpose()
+               .map_err(|()| ParsingError::InvalidValue)?
+        );
         let text = xml.tag_string().await?;
         xml.close().await?;
         Ok(Self {
@@ -491,7 +510,12 @@ impl QRead<CardProp> for CardProp {
             xml.prev_attr("name")
                 .ok_or(ParsingError::MissingAttribute)?,
         );
-        let novalue = xml.prev_attr("novalue").map(|v| v == "yes");
+        let novalue = WithDefault::from_opt(
+            xml.prev_attr("novalue")
+               .map(|s| NoValue::from_str(&s))
+               .transpose()
+               .map_err(|()| ParsingError::InvalidValue)?
+        );
         xml.close().await?;
         Ok(Self { name, novalue })
     }

@@ -2,6 +2,7 @@
 
 use super::extension::Extension;
 use super::coretypes as dav;
+use super::xml::WithDefault;
 use chrono::{DateTime, Utc};
 
 pub const FLOATING_DATETIME_FMT: &str = "%Y%m%dT%H%M%S";
@@ -844,7 +845,7 @@ pub struct SupportedCollation(pub Collation);
 /// calendar object resource.
 #[derive(Debug, PartialEq, Clone)]
 pub struct CalendarDataPayload {
-    pub mime: Option<CalendarDataSupport>,
+    pub mime: CalendarDataSupport,
     pub payload: String,
 }
 
@@ -857,7 +858,7 @@ pub struct CalendarDataPayload {
 /// resources should be returned in the response;
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct CalendarDataRequest {
-    pub mime: Option<CalendarDataSupport>,
+    pub mime: CalendarDataSupport,
     pub comp: Option<Comp>,
     pub recurrence: Option<RecurrenceModifier>,
     pub limit_freebusy_set: Option<LimitFreebusySet>,
@@ -871,7 +872,7 @@ pub struct CalendarDataRequest {
 /// to specify a supported media type for calendar object
 /// resources;
 #[derive(Debug, PartialEq, Clone)]
-pub struct CalendarDataEmpty(pub Option<CalendarDataSupport>);
+pub struct CalendarDataEmpty(pub CalendarDataSupport);
 
 /// <!ATTLIST calendar-data content-type CDATA "text/calendar"
 ///                         version CDATA "2.0">
@@ -879,10 +880,10 @@ pub struct CalendarDataEmpty(pub Option<CalendarDataSupport>);
 /// version value: a version string
 /// attributes can be used on all three variants of the
 /// CALDAV:calendar-data XML element.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub struct CalendarDataSupport {
-    pub content_type: String,
-    pub version: String,
+    pub content_type: WithDefault<ContentType>,
+    pub version: WithDefault<Version>,
 }
 
 /// Name:  comp
@@ -998,7 +999,32 @@ pub enum PropKind {
 #[derive(Debug, PartialEq, Clone)]
 pub struct CalProp {
     pub name: ComponentProperty,
-    pub novalue: Option<bool>,
+    pub novalue: WithDefault<NoValue>,
+}
+
+#[derive(Debug, PartialEq, Clone, Default)]
+pub enum NoValue {
+    Yes,
+    #[default]
+    No,
+}
+impl NoValue {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Yes => "yes",
+            Self::No => "no",
+        }
+    }
+}
+impl std::str::FromStr for NoValue {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "yes" => Ok(Self::Yes),
+            "no" => Ok(Self::No),
+            _ => Err(()),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -1308,9 +1334,34 @@ pub enum TimeOrText {
 ///  negate-condition (yes | no) "no">
 #[derive(Debug, PartialEq, Clone)]
 pub struct TextMatch {
-    pub collation: Option<Collation>,
-    pub negate_condition: Option<bool>,
+    pub collation: WithDefault<Collation>,
+    pub negate_condition: WithDefault<NegateCondition>,
     pub text: String,
+}
+
+#[derive(Debug, PartialEq, Clone, Default)]
+pub enum NegateCondition {
+    Yes,
+    #[default]
+    No,
+}
+impl NegateCondition {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Yes => "yes",
+            Self::No => "no",
+        }
+    }
+}
+impl std::str::FromStr for NegateCondition {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "yes" => Ok(Self::Yes),
+            "no" => Ok(Self::No),
+            _ => Err(()),
+        }
+    }
 }
 
 /// Name:  param-filter
@@ -1476,6 +1527,22 @@ impl Component {
             "VTIMEZONE" => Self::VTimeZone,
             _ => Self::Unknown(v),
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ContentType(pub String);
+impl Default for ContentType {
+    fn default() -> Self {
+        Self("text/calendar".to_string())
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Version(pub String);
+impl Default for Version {
+    fn default() -> Self {
+        Self("2.0".to_string())
     }
 }
 

@@ -351,9 +351,11 @@ impl QWrite for CalendarDataSupport {
 impl QWrite for CalendarDataPayload {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut start = xml.create_cal_element("calendar-data");
-        if let Some(mime) = &self.mime {
-            start.push_attribute(("content-type", mime.content_type.as_str()));
-            start.push_attribute(("version", mime.version.as_str()));
+        if let Some(content_type) = self.mime.content_type.as_explicit() {
+            start.push_attribute(("content-type", content_type.0.as_str()));
+        }
+        if let Some(version) = self.mime.version.as_explicit() {
+            start.push_attribute(("version", version.0.as_str()));
         }
         let end = start.to_end();
 
@@ -368,9 +370,11 @@ impl QWrite for CalendarDataPayload {
 impl QWrite for CalendarDataRequest {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut start = xml.create_cal_element("calendar-data");
-        if let Some(mime) = &self.mime {
-            start.push_attribute(("content-type", mime.content_type.as_str()));
-            start.push_attribute(("version", mime.version.as_str()));
+        if let Some(content_type) = self.mime.content_type.as_explicit() {
+            start.push_attribute(("content-type", content_type.0.as_str()));
+        }
+        if let Some(version) = self.mime.version.as_explicit() {
+            start.push_attribute(("version", version.0.as_str()));
         }
 
         // Empty tag
@@ -396,9 +400,11 @@ impl QWrite for CalendarDataRequest {
 impl QWrite for CalendarDataEmpty {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut empty = xml.create_cal_element("calendar-data");
-        if let Some(mime) = &self.0 {
-            empty.push_attribute(("content-type", mime.content_type.as_str()));
-            empty.push_attribute(("version", mime.version.as_str()));
+        if let Some(content_type) = self.0.content_type.as_explicit() {
+            empty.push_attribute(("content-type", content_type.0.as_str()));
+        }
+        if let Some(version) = self.0.version.as_explicit() {
+            empty.push_attribute(("version", version.0.as_str()));
         }
         xml.q.write_event_async(Event::Empty(empty)).await
     }
@@ -483,10 +489,8 @@ impl QWrite for CalProp {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut empty = xml.create_cal_element("prop");
         empty.push_attribute(("name", self.name.0.as_str()));
-        match self.novalue {
-            None => (),
-            Some(true) => empty.push_attribute(("novalue", "yes")),
-            Some(false) => empty.push_attribute(("novalue", "no")),
+        if let Some(nv) = self.novalue.as_explicit() {
+            empty.push_attribute(("novalue", nv.as_str()));
         }
         xml.q.write_event_async(Event::Empty(empty)).await
     }
@@ -674,13 +678,11 @@ impl QWrite for TimeOrText {
 impl QWrite for TextMatch {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut start = xml.create_cal_element("text-match");
-        if let Some(collation) = &self.collation {
+        if let Some(collation) = &self.collation.as_explicit() {
             start.push_attribute(("collation", collation.as_str()));
         }
-        match self.negate_condition {
-            None => (),
-            Some(true) => start.push_attribute(("negate-condition", "yes")),
-            Some(false) => start.push_attribute(("negate-condition", "no")),
+        if let Some(ng) = self.negate_condition.as_explicit() {
+            start.push_attribute(("negate-condition", ng.as_str()));
         }
         let end = start.to_end();
 
@@ -818,12 +820,12 @@ mod tests {
                 dav::PropertyRequest::GetEtag,
                 dav::PropertyRequest::Extension(PropertyRequest::CalendarData(
                     CalendarDataRequest {
-                        mime: None,
+                        mime: Default::default(),
                         comp: Some(Comp {
                             name: Component::VCalendar,
                             prop_kind: Some(PropKind::Prop(vec![CalProp {
                                 name: ComponentProperty("VERSION".into()),
-                                novalue: None,
+                                novalue: Default::default(),
                             }])),
                             comp_kind: Some(CompKind::Comp(vec![
                                 Comp {
@@ -831,43 +833,43 @@ mod tests {
                                     prop_kind: Some(PropKind::Prop(vec![
                                         CalProp {
                                             name: ComponentProperty("SUMMARY".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                         CalProp {
                                             name: ComponentProperty("UID".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                         CalProp {
                                             name: ComponentProperty("DTSTART".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                         CalProp {
                                             name: ComponentProperty("DTEND".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                         CalProp {
                                             name: ComponentProperty("DURATION".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                         CalProp {
                                             name: ComponentProperty("RRULE".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                         CalProp {
                                             name: ComponentProperty("RDATE".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                         CalProp {
                                             name: ComponentProperty("EXRULE".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                         CalProp {
                                             name: ComponentProperty("EXDATE".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                         CalProp {
                                             name: ComponentProperty("RECURRENCE-ID".into()),
-                                            novalue: None,
+                                            novalue: Default::default(),
                                         },
                                     ])),
                                     comp_kind: None,
@@ -958,7 +960,7 @@ mod tests {
                                 )),
                                 dav::AnyProperty::Value(dav::Property::Extension(
                                     Property::CalendarData(CalendarDataPayload {
-                                        mime: None,
+                                        mime: Default::default(),
                                         payload: "PLACEHOLDER".into(),
                                     }),
                                 )),
@@ -982,7 +984,7 @@ mod tests {
                                 )),
                                 dav::AnyProperty::Value(dav::Property::Extension(
                                     Property::CalendarData(CalendarDataPayload {
-                                        mime: None,
+                                        mime: Default::default(),
                                         payload: "PLACEHOLDER".into(),
                                     }),
                                 )),
