@@ -145,6 +145,31 @@ impl QWrite for Violation {
 
 // ----------------------- REPORT METHOD -------------------------------------
 
+impl QWrite for ReportTypeName {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        match self {
+            Self::Query => {
+                let start = xml.create_card_element("addressbook-query");
+                xml.q.write_event_async(Event::Empty(start)).await
+            }
+            Self::Multiget => {
+                let start = xml.create_card_element("addressbook-multiget");
+                xml.q.write_event_async(Event::Empty(start)).await
+            }
+        }
+    }
+}
+
+impl<E: Extension> QWrite for ReportType<E> {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        match self {
+            Self::Query(v) => v.qwrite(xml).await,
+            Self::Multiget(v) => v.qwrite(xml).await,
+        }
+    }
+}
+
+
 impl<E: Extension> QWrite for AddressbookQuery<E> {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let start = xml.create_card_element("addressbook-query");

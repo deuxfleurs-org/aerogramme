@@ -108,6 +108,7 @@ impl QRead<FreeBusyQuery> for FreeBusyQuery {
 
 impl QRead<ReportTypeName> for ReportTypeName {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        // FIXME according to the RFC these should be in namespace CAL_URN?
         if xml.maybe_open(DAV_URN, "calendar-query").await?.is_some() {
             xml.close().await?;
             return Ok(Self::Query);

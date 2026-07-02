@@ -35,6 +35,7 @@ impl<E: Extension> QWrite for MkCalendarResponse<E> {
 // ----------------------- REPORT METHOD -------------------------------------
 impl QWrite for ReportTypeName {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        // FIXME according to the RFC these should be create_cal_element?
         match self {
             Self::Query => {
                 let start = xml.create_dav_element("calendar-query");

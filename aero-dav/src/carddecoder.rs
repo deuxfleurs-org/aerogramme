@@ -7,6 +7,35 @@ use super::error::ParsingError;
 use super::extension::Extension;
 use super::xml::{IRead, QRead, Reader, CARD_URN, DAV_URN, WithDefault};
 
+impl<E: Extension> QRead<ReportType<E>> for ReportType<E> {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        match AddressbookQuery::<E>::qread(xml).await {
+            Err(ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(Self::Query),
+        }
+
+        AddressbookMultiget::<E>::qread(xml).await.map(Self::Multiget)
+    }
+}
+
+impl QRead<ReportTypeName> for ReportTypeName {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        if xml.maybe_open(CARD_URN, "addressbook-query").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::Query);
+        }
+        if xml
+            .maybe_open(CARD_URN, "addressbook-multiget")
+            .await?
+            .is_some()
+        {
+            xml.close().await?;
+            return Ok(Self::Multiget);
+        }
+        Err(ParsingError::Recoverable)
+    }
+}
+
 impl QRead<ResourceType> for ResourceType {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         if xml.maybe_open(CARD_URN, "addressbook").await?.is_some() {

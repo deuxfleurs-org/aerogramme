@@ -15,6 +15,20 @@ use super::xml::WithDefault;
  * https://datatracker.ietf.org/doc/html/rfc6352
  */
 
+// --- (REPORT PART) ---
+#[derive(Debug, PartialEq, Clone)]
+pub enum ReportTypeName {
+    Query,
+    Multiget,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ReportType<E: Extension> {
+    Query(AddressbookQuery<E>),
+    Multiget(AddressbookMultiget<E>),
+}
+
+// ----- Hooks -----
 #[derive(Debug, PartialEq, Clone)]
 pub enum ResourceType {
     Addressbook,
