@@ -141,6 +141,10 @@ impl QWrite for Violation {
                 }
                 xml.q.write_event_async(Event::End(end)).await
             }
+            Self::NumberOfMatchesWithinLimits => {
+                let empty_tag = xml.create_dav_element("number-of-matches-within-limits");
+                xml.q.write_event_async(Event::Empty(empty_tag)).await
+            }
         }
     }
 }
@@ -863,7 +867,9 @@ mod tests {
                         vec![dav::Href("/home/bernard/addressbook/".into())],
                         dav::Status(http::status::StatusCode::INSUFFICIENT_STORAGE),
                     ),
-                    error: Some(dav::Error(vec![])), // FIXME: missing error
+                    error: Some(dav::Error(vec![
+                        dav::Violation::Extension(Violation::NumberOfMatchesWithinLimits),
+                    ])),
                     responsedescription: Some(dav::ResponseDescription(
                         "\n         Only two matching records were returned\n       ".into()
                     )),
@@ -914,6 +920,7 @@ mod tests {
         <D:href>/home/bernard/addressbook/</D:href>
         <D:status>HTTP/1.1 507 Insufficient Storage</D:status>
         <D:error>
+            <D:number-of-matches-within-limits/>
         </D:error>
         <D:responsedescription>
          Only two matching records were returned
