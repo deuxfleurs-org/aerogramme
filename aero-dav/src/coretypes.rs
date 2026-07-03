@@ -1,20 +1,9 @@
 #![allow(dead_code)]
 use std::fmt::Debug;
 
-use super::xml;
 use chrono::{DateTime, FixedOffset};
 
-/// It's how we implement a DAV extension
-/// (That's the dark magic part...)
-pub trait Extension: std::fmt::Debug + PartialEq + Clone {
-    type Error: xml::Node<Self::Error>;
-    type Property: xml::Node<Self::Property>;
-    type PropertyRequest: xml::Node<Self::PropertyRequest>;
-    type ResourceType: xml::Node<Self::ResourceType>;
-    type ReportType: xml::Node<Self::ReportType>;
-    type ReportTypeName: xml::Node<Self::ReportTypeName>;
-    type Multistatus: xml::Node<Self::Multistatus>;
-}
+use super::extension::Extension;
 
 /// 14.1.  activelock XML Element
 ///
@@ -551,6 +540,7 @@ pub struct Response<E: Extension> {
 /// user.
 ///
 /// <!ELEMENT responsedescription (#PCDATA) >
+// TODO: handle xml:lang
 #[derive(Debug, PartialEq, Clone)]
 pub struct ResponseDescription(pub String);
 

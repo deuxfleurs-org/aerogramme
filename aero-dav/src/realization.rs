@@ -1,8 +1,9 @@
 use super::acltypes as acl;
 use super::caltypes as cal;
+use super::cardtypes as card;
 use super::error;
+use super::extension::Extension;
 use super::synctypes as sync;
-use super::types as dav;
 use super::versioningtypes as vers;
 use super::xml;
 
@@ -28,7 +29,7 @@ impl xml::QWrite for Disabled {
 /// due to a private inner element.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Core {}
-impl dav::Extension for Core {
+impl Extension for Core {
     type Error = Disabled;
     type Property = Disabled;
     type PropertyRequest = Disabled;
@@ -41,7 +42,7 @@ impl dav::Extension for Core {
 // WebDAV with the base Calendar implementation (RFC4791)
 #[derive(Debug, PartialEq, Clone)]
 pub struct Calendar {}
-impl dav::Extension for Calendar {
+impl Extension for Calendar {
     type Error = cal::Violation;
     type Property = cal::Property;
     type PropertyRequest = cal::PropertyRequest;
@@ -51,10 +52,23 @@ impl dav::Extension for Calendar {
     type Multistatus = Disabled;
 }
 
+// WebDAV with the base CardDAV implementation (RFC6352)
+#[derive(Debug, PartialEq, Clone)]
+pub struct Addressbook {}
+impl Extension for Addressbook {
+    type Error = card::Violation;
+    type Property = card::Property;
+    type PropertyRequest = card::PropertyRequest;
+    type ResourceType = card::ResourceType;
+    type ReportType = card::ReportType<Addressbook>;
+    type ReportTypeName = card::ReportTypeName;
+    type Multistatus = Disabled;
+}
+
 // ACL
 #[derive(Debug, PartialEq, Clone)]
 pub struct Acl {}
-impl dav::Extension for Acl {
+impl Extension for Acl {
     type Error = Disabled;
     type Property = acl::Property;
     type PropertyRequest = acl::PropertyRequest;
@@ -67,7 +81,7 @@ impl dav::Extension for Acl {
 // All merged
 #[derive(Debug, PartialEq, Clone)]
 pub struct All {}
-impl dav::Extension for All {
+impl Extension for All {
     type Error = cal::Violation;
     type Property = Property<All>;
     type PropertyRequest = PropertyRequest;
@@ -78,17 +92,22 @@ impl dav::Extension for All {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Property<E: dav::Extension> {
+pub enum Property<E: Extension> {
     Cal(cal::Property),
+    Card(card::Property),
     Acl(acl::Property),
     Sync(sync::Property),
     Vers(vers::Property<E>),
 }
-impl<E: dav::Extension> xml::QRead<Property<E>> for Property<E> {
+impl<E: Extension> xml::QRead<Property<E>> for Property<E> {
     async fn qread(xml: &mut xml::Reader<impl xml::IRead>) -> Result<Self, error::ParsingError> {
         match cal::Property::qread(xml).await {
             Err(error::ParsingError::Recoverable) => (),
             otherwise => return otherwise.map(Property::<E>::Cal),
+        }
+        match card::Property::qread(xml).await {
+            Err(error::ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(Property::<E>::Card),
         }
         match acl::Property::qread(xml).await {
             Err(error::ParsingError::Recoverable) => (),
@@ -101,13 +120,14 @@ impl<E: dav::Extension> xml::QRead<Property<E>> for Property<E> {
         vers::Property::qread(xml).await.map(Property::Vers)
     }
 }
-impl<E: dav::Extension> xml::QWrite for Property<E> {
+impl<E: Extension> xml::QWrite for Property<E> {
     async fn qwrite(
         &self,
         xml: &mut xml::Writer<impl xml::IWrite>,
     ) -> Result<(), quick_xml::Error> {
         match self {
             Self::Cal(c) => c.qwrite(xml).await,
+            Self::Card(c) => c.qwrite(xml).await,
             Self::Acl(a) => a.qwrite(xml).await,
             Self::Sync(s) => s.qwrite(xml).await,
             Self::Vers(v) => v.qwrite(xml).await,
@@ -118,6 +138,7 @@ impl<E: dav::Extension> xml::QWrite for Property<E> {
 #[derive(Debug, PartialEq, Clone)]
 pub enum PropertyRequest {
     Cal(cal::PropertyRequest),
+    Card(card::PropertyRequest),
     Acl(acl::PropertyRequest),
     Sync(sync::PropertyRequest),
     Vers(vers::PropertyRequest),
@@ -127,6 +148,10 @@ impl xml::QRead<PropertyRequest> for PropertyRequest {
         match cal::PropertyRequest::qread(xml).await {
             Err(error::ParsingError::Recoverable) => (),
             otherwise => return otherwise.map(PropertyRequest::Cal),
+        }
+        match card::PropertyRequest::qread(xml).await {
+            Err(error::ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(PropertyRequest::Card),
         }
         match acl::PropertyRequest::qread(xml).await {
             Err(error::ParsingError::Recoverable) => (),
@@ -148,6 +173,7 @@ impl xml::QWrite for PropertyRequest {
     ) -> Result<(), quick_xml::Error> {
         match self {
             Self::Cal(c) => c.qwrite(xml).await,
+            Self::Card(c) => c.qwrite(xml).await,
             Self::Acl(a) => a.qwrite(xml).await,
             Self::Sync(s) => s.qwrite(xml).await,
             Self::Vers(v) => v.qwrite(xml).await,
@@ -158,6 +184,7 @@ impl xml::QWrite for PropertyRequest {
 #[derive(Debug, PartialEq, Clone)]
 pub enum ResourceType {
     Cal(cal::ResourceType),
+    Card(card::ResourceType),
     Acl(acl::ResourceType),
 }
 impl xml::QRead<ResourceType> for ResourceType {
@@ -165,6 +192,10 @@ impl xml::QRead<ResourceType> for ResourceType {
         match cal::ResourceType::qread(xml).await {
             Err(error::ParsingError::Recoverable) => (),
             otherwise => return otherwise.map(ResourceType::Cal),
+        }
+        match card::ResourceType::qread(xml).await {
+            Err(error::ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(ResourceType::Card),
         }
         acl::ResourceType::qread(xml).await.map(ResourceType::Acl)
     }
@@ -176,17 +207,19 @@ impl xml::QWrite for ResourceType {
     ) -> Result<(), quick_xml::Error> {
         match self {
             Self::Cal(c) => c.qwrite(xml).await,
+            Self::Card(c) => c.qwrite(xml).await,
             Self::Acl(a) => a.qwrite(xml).await,
         }
     }
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum ReportType<E: dav::Extension> {
+pub enum ReportType<E: Extension> {
     Cal(cal::ReportType<E>),
+    Card(card::ReportType<E>),
     Sync(sync::SyncCollection<E>),
 }
-impl<E: dav::Extension> xml::QRead<ReportType<E>> for ReportType<E> {
+impl<E: Extension> xml::QRead<ReportType<E>> for ReportType<E> {
     async fn qread(
         xml: &mut xml::Reader<impl xml::IRead>,
     ) -> Result<ReportType<E>, error::ParsingError> {
@@ -194,16 +227,21 @@ impl<E: dav::Extension> xml::QRead<ReportType<E>> for ReportType<E> {
             Err(error::ParsingError::Recoverable) => (),
             otherwise => return otherwise.map(ReportType::Cal),
         }
+        match card::ReportType::qread(xml).await {
+            Err(error::ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(ReportType::Card),
+        }
         sync::SyncCollection::qread(xml).await.map(ReportType::Sync)
     }
 }
-impl<E: dav::Extension> xml::QWrite for ReportType<E> {
+impl<E: Extension> xml::QWrite for ReportType<E> {
     async fn qwrite(
         &self,
         xml: &mut xml::Writer<impl xml::IWrite>,
     ) -> Result<(), quick_xml::Error> {
         match self {
             Self::Cal(c) => c.qwrite(xml).await,
+            Self::Card(c) => c.qwrite(xml).await,
             Self::Sync(s) => s.qwrite(xml).await,
         }
     }
@@ -212,6 +250,7 @@ impl<E: dav::Extension> xml::QWrite for ReportType<E> {
 #[derive(Debug, PartialEq, Clone)]
 pub enum ReportTypeName {
     Cal(cal::ReportTypeName),
+    Card(card::ReportTypeName),
     Sync(sync::ReportTypeName),
 }
 impl xml::QRead<ReportTypeName> for ReportTypeName {
@@ -219,6 +258,10 @@ impl xml::QRead<ReportTypeName> for ReportTypeName {
         match cal::ReportTypeName::qread(xml).await {
             Err(error::ParsingError::Recoverable) => (),
             otherwise => return otherwise.map(ReportTypeName::Cal),
+        }
+        match card::ReportTypeName::qread(xml).await {
+            Err(error::ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(ReportTypeName::Card),
         }
         sync::ReportTypeName::qread(xml)
             .await
@@ -232,6 +275,7 @@ impl xml::QWrite for ReportTypeName {
     ) -> Result<(), quick_xml::Error> {
         match self {
             Self::Cal(c) => c.qwrite(xml).await,
+            Self::Card(c) => c.qwrite(xml).await,
             Self::Sync(s) => s.qwrite(xml).await,
         }
     }

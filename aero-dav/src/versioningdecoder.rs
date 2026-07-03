@@ -1,5 +1,5 @@
 use super::error::ParsingError;
-use super::types as dav;
+use super::extension::Extension;
 use super::versioningtypes::*;
 use super::xml::{IRead, QRead, Reader, DAV_URN};
 
@@ -18,7 +18,7 @@ impl QRead<PropertyRequest> for PropertyRequest {
     }
 }
 
-impl<E: dav::Extension> QRead<Property<E>> for Property<E> {
+impl<E: Extension> QRead<Property<E>> for Property<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         if xml
             .maybe_open_start(DAV_URN, "supported-report-set")
@@ -33,7 +33,7 @@ impl<E: dav::Extension> QRead<Property<E>> for Property<E> {
     }
 }
 
-impl<E: dav::Extension> QRead<SupportedReport<E>> for SupportedReport<E> {
+impl<E: Extension> QRead<SupportedReport<E>> for SupportedReport<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(DAV_URN, "supported-report").await?;
         let r = xml.find().await?;
@@ -42,7 +42,7 @@ impl<E: dav::Extension> QRead<SupportedReport<E>> for SupportedReport<E> {
     }
 }
 
-impl<E: dav::Extension> QRead<ReportName<E>> for ReportName<E> {
+impl<E: Extension> QRead<ReportName<E>> for ReportName<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(DAV_URN, "report").await?;
 
@@ -66,7 +66,7 @@ impl<E: dav::Extension> QRead<ReportName<E>> for ReportName<E> {
     }
 }
 
-impl<E: dav::Extension> QRead<Report<E>> for Report<E> {
+impl<E: Extension> QRead<Report<E>> for Report<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         if xml.maybe_open(DAV_URN, "version-tree").await?.is_some() {
             xml.close().await?;

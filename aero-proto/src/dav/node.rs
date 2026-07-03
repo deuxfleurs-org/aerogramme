@@ -6,7 +6,7 @@ use hyper::body::Bytes;
 use aero_collections::dav::davindex::{Etag, Token};
 use aero_collections::user::User;
 use aero_dav::realization::All;
-use aero_dav::types as dav;
+use aero_dav::coretypes as dav;
 
 pub(crate) type Content<'a> = BoxStream<'a, std::result::Result<Bytes, std::io::Error>>;
 pub(crate) type PropertyStream<'a> =

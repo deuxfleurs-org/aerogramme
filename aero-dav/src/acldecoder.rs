@@ -1,6 +1,6 @@
 use super::acltypes::*;
 use super::error::ParsingError;
-use super::types as dav;
+use super::coretypes as dav;
 use super::xml::{IRead, QRead, Reader, DAV_URN};
 
 impl QRead<Property> for Property {

@@ -369,7 +369,7 @@ use aero_dav::acltypes as acl;
 use aero_dav::caltypes as cal;
 use aero_dav::realization::{self, All};
 use aero_dav::synctypes as sync;
-use aero_dav::types as dav;
+use aero_dav::coretypes as dav;
 use aero_dav::versioningtypes as vers;
 
 use crate::common::{dav_deserialize, dav_serialize};

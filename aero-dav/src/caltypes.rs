@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 
-use super::types as dav;
+use super::extension::Extension;
+use super::coretypes as dav;
+use super::xml::WithDefault;
 use chrono::{DateTime, Utc};
 
 pub const FLOATING_DATETIME_FMT: &str = "%Y%m%dT%H%M%S";
@@ -42,7 +44,7 @@ pub const UTC_DATETIME_FMT: &str = "%Y%m%dT%H%M%SZ";
 /// <!ELEMENT mkcalendar (DAV:set)>
 /// ```
 #[derive(Debug, PartialEq, Clone)]
-pub struct MkCalendar<E: dav::Extension>(pub dav::Set<E>);
+pub struct MkCalendar<E: Extension>(pub dav::Set<E>);
 
 /// If a response body for a successful request is included, it MUST
 /// be a CALDAV:mkcalendar-response XML element.
@@ -58,7 +60,7 @@ pub struct MkCalendar<E: dav::Extension>(pub dav::Set<E>);
 ///
 /// <!ELEMENT mkcol-response (propstat+)>
 #[derive(Debug, PartialEq, Clone)]
-pub struct MkCalendarResponse<E: dav::Extension>(pub Vec<dav::PropStat<E>>);
+pub struct MkCalendarResponse<E: Extension>(pub Vec<dav::PropStat<E>>);
 
 // --- (REPORT PART) ---
 #[derive(Debug, PartialEq, Clone)]
@@ -69,7 +71,7 @@ pub enum ReportTypeName {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum ReportType<E: dav::Extension> {
+pub enum ReportType<E: Extension> {
     Query(CalendarQuery<E>),
     Multiget(CalendarMultiget<E>),
     FreeBusy(FreeBusyQuery),
@@ -89,7 +91,7 @@ pub enum ReportType<E: dav::Extension> {
 ///                            DAV:propname |
 ///                            DAV:prop)?, filter, timezone?)>
 #[derive(Debug, PartialEq, Clone)]
-pub struct CalendarQuery<E: dav::Extension> {
+pub struct CalendarQuery<E: Extension> {
     pub selector: Option<CalendarSelector<E>>,
     pub filter: Filter,
     pub timezone: Option<TimeZone>,
@@ -110,7 +112,7 @@ pub struct CalendarQuery<E: dav::Extension> {
 ///                               DAV:propname |
 ///                               DAV:prop)?, DAV:href+)>
 #[derive(Debug, PartialEq, Clone)]
-pub struct CalendarMultiget<E: dav::Extension> {
+pub struct CalendarMultiget<E: Extension> {
     pub selector: Option<CalendarSelector<E>>,
     pub href: Vec<dav::Href>,
 }
@@ -327,7 +329,7 @@ pub enum Property {
     /// </C:supported-calendar-component-set>
     SupportedCalendarComponentSet(Vec<CompSupport>),
 
-    ///  Name:  supported-calendar-data
+    /// Name:  supported-calendar-data
     ///
     /// Namespace:  urn:ietf:params:xml:ns:caldav
     ///
@@ -363,11 +365,16 @@ pub enum Property {
     ///
     /// -----
     ///
+    /// When nested in the CALDAV:supported-calendar-data
+    /// property, the CALDAV:calendar-data XML element specifies a media
+    /// type supported by the CalDAV server for calendar object resources.
+    ///
     /// <!ELEMENT calendar-data EMPTY>
     ///
-    /// when nested in the CALDAV:supported-calendar-data property
-    /// to specify a supported media type for calendar object
-    /// resources;
+    /// <!ATTLIST calendar-data content-type CDATA "text/calendar"
+    ///                         version CDATA "2.0">
+    /// content-type value: a MIME media type
+    /// version value: a version string
     SupportedCalendarData(Vec<CalendarDataEmpty>),
 
     ///  Name:  max-resource-size
@@ -784,6 +791,8 @@ pub enum Violation {
     /// if a search specification would cause the return of an extremely
     /// large number of responses.
     NumberOfMatchesWithinLimits,
+
+    // TODO: CALDAV:supported-collation
 }
 
 // -------- Inner XML elements ---------
@@ -836,7 +845,7 @@ pub struct SupportedCollation(pub Collation);
 /// calendar object resource.
 #[derive(Debug, PartialEq, Clone)]
 pub struct CalendarDataPayload {
-    pub mime: Option<CalendarDataSupport>,
+    pub mime: CalendarDataSupport,
     pub payload: String,
 }
 
@@ -849,7 +858,7 @@ pub struct CalendarDataPayload {
 /// resources should be returned in the response;
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct CalendarDataRequest {
-    pub mime: Option<CalendarDataSupport>,
+    pub mime: CalendarDataSupport,
     pub comp: Option<Comp>,
     pub recurrence: Option<RecurrenceModifier>,
     pub limit_freebusy_set: Option<LimitFreebusySet>,
@@ -863,7 +872,7 @@ pub struct CalendarDataRequest {
 /// to specify a supported media type for calendar object
 /// resources;
 #[derive(Debug, PartialEq, Clone)]
-pub struct CalendarDataEmpty(pub Option<CalendarDataSupport>);
+pub struct CalendarDataEmpty(pub CalendarDataSupport);
 
 /// <!ATTLIST calendar-data content-type CDATA "text/calendar"
 ///                         version CDATA "2.0">
@@ -871,10 +880,10 @@ pub struct CalendarDataEmpty(pub Option<CalendarDataSupport>);
 /// version value: a version string
 /// attributes can be used on all three variants of the
 /// CALDAV:calendar-data XML element.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub struct CalendarDataSupport {
-    pub content_type: String,
-    pub version: String,
+    pub content_type: WithDefault<ContentType>,
+    pub version: WithDefault<Version>,
 }
 
 /// Name:  comp
@@ -990,7 +999,32 @@ pub enum PropKind {
 #[derive(Debug, PartialEq, Clone)]
 pub struct CalProp {
     pub name: ComponentProperty,
-    pub novalue: Option<bool>,
+    pub novalue: WithDefault<NoValue>,
+}
+
+#[derive(Debug, PartialEq, Clone, Default)]
+pub enum NoValue {
+    Yes,
+    #[default]
+    No,
+}
+impl NoValue {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Yes => "yes",
+            Self::No => "no",
+        }
+    }
+}
+impl std::str::FromStr for NoValue {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "yes" => Ok(Self::Yes),
+            "no" => Ok(Self::No),
+            _ => Err(()),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -1123,7 +1157,7 @@ pub struct LimitFreebusySet(pub DateTime<Utc>, pub DateTime<Utc>);
 
 /// Used by CalendarQuery & CalendarMultiget
 #[derive(Debug, PartialEq, Clone)]
-pub enum CalendarSelector<E: dav::Extension> {
+pub enum CalendarSelector<E: Extension> {
     AllProp,
     PropName,
     Prop(dav::PropName<E>),
@@ -1300,9 +1334,34 @@ pub enum TimeOrText {
 ///  negate-condition (yes | no) "no">
 #[derive(Debug, PartialEq, Clone)]
 pub struct TextMatch {
-    pub collation: Option<Collation>,
-    pub negate_condition: Option<bool>,
+    pub collation: WithDefault<Collation>,
+    pub negate_condition: WithDefault<NegateCondition>,
     pub text: String,
+}
+
+#[derive(Debug, PartialEq, Clone, Default)]
+pub enum NegateCondition {
+    Yes,
+    #[default]
+    No,
+}
+impl NegateCondition {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Yes => "yes",
+            Self::No => "no",
+        }
+    }
+}
+impl std::str::FromStr for NegateCondition {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "yes" => Ok(Self::Yes),
+            "no" => Ok(Self::No),
+            _ => Err(()),
+        }
+    }
 }
 
 /// Name:  param-filter
@@ -1468,6 +1527,22 @@ impl Component {
             "VTIMEZONE" => Self::VTimeZone,
             _ => Self::Unknown(v),
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ContentType(pub String);
+impl Default for ContentType {
+    fn default() -> Self {
+        Self("text/calendar".to_string())
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Version(pub String);
+impl Default for Version {
+    fn default() -> Self {
+        Self("2.0".to_string())
     }
 }
 

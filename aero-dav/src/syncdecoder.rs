@@ -1,8 +1,8 @@
 use quick_xml::events::Event;
 
 use super::error::ParsingError;
+use super::extension::Extension;
 use super::synctypes::*;
-use super::types as dav;
 use super::xml::{IRead, QRead, Reader, DAV_URN};
 
 impl QRead<PropertyRequest> for PropertyRequest {
@@ -42,7 +42,7 @@ impl QRead<Multistatus> for Multistatus {
     }
 }
 
-impl<E: dav::Extension> QRead<SyncCollection<E>> for SyncCollection<E> {
+impl<E: Extension> QRead<SyncCollection<E>> for SyncCollection<E> {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(DAV_URN, "sync-collection").await?;
         let (mut sync_token, mut sync_level, mut limit, mut prop) = (None, None, None, None);
@@ -113,7 +113,7 @@ impl QRead<SyncLevel> for SyncLevel {
 mod tests {
     use super::*;
     use crate::realization::{self, All};
-    use crate::types as dav;
+    use crate::coretypes as dav;
     use crate::versioningtypes as vers;
     use crate::xml::Node;
 
