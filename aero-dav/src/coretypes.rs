@@ -540,6 +540,7 @@ pub struct Response<E: Extension> {
 /// user.
 ///
 /// <!ELEMENT responsedescription (#PCDATA) >
+// TODO: handle xml:lang
 #[derive(Debug, PartialEq, Clone)]
 pub struct ResponseDescription(pub String);
 
