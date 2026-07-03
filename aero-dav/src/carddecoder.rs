@@ -241,6 +241,13 @@ impl QRead<Violation> for Violation {
         {
             xml.close().await?;
             Ok(Self::SupportedCollation)
+        } else if xml
+            .maybe_open(DAV_URN, "number-of-matches-within-limits")
+            .await?
+            .is_some()
+        {
+            xml.close().await?;
+            Ok(Self::NumberOfMatchesWithinLimits)
         } else {
             Err(ParsingError::Recoverable)
         }
@@ -1031,7 +1038,9 @@ mod tests {
                         vec![dav::Href("/home/bernard/addressbook/".into())],
                         dav::Status(http::status::StatusCode::INSUFFICIENT_STORAGE),
                     ),
-                    error: Some(dav::Error(vec![])), // FIXME: missing error
+                    error: Some(dav::Error(vec![
+                        dav::Violation::Extension(Violation::NumberOfMatchesWithinLimits),
+                    ])),
                     responsedescription: Some(dav::ResponseDescription(
                         "\n         Only two matching records were returned\n       ".into()
                     )),
