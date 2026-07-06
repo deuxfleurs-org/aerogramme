@@ -441,26 +441,18 @@ impl DavNode for CalendarNode {
         let col = self.col.clone();
         let calname = self.calname.clone();
         async move {
-            match (col.index().await.idx_by_filename.get(path[0]), create) {
-                (Some(blob_id), _) => {
-                    let child = Box::new(CalendarEventNode {
-                        col: col.clone(),
-                        calname,
-                        filename: path[0].to_string(),
-                        blob_id: *blob_id,
-                    });
-                    child.fetch(user, &path[1..], create).await
-                }
-                (None, true) => {
-                    let child = Box::new(CalendarCreateEventNode {
-                        col: col.clone(),
-                        calname,
-                        filename: path[0].to_string(),
-                    });
-                    child.fetch(user, &path[1..], create).await
-                }
-                _ => Err(anyhow!("Not found")),
-            }
+            let blob_id = match (col.index().await.idx_by_filename.get(path[0]), create) {
+                (Some(blob_id), _) => Some(blob_id.clone()),
+                (None, true) => None,
+                (None, false) => Err(anyhow!("Not found"))?
+            };
+            let child = Box::new(CalendarEventNode {
+                col: col.clone(),
+                calname,
+                filename: path[0].to_string(),
+                blob_id,
+            });
+            child.fetch(user, &path[1..], create).await
         }
         .boxed()
     }
@@ -479,7 +471,7 @@ impl DavNode for CalendarNode {
                         col: col.clone(),
                         calname: calname.clone(),
                         filename: filename.to_string(),
-                        blob_id: *blob_id,
+                        blob_id: Some(*blob_id),
                     }) as Box<dyn DavNode>
                 })
                 .collect()
@@ -628,7 +620,7 @@ impl DavNode for CalendarNode {
                                 col: col.clone(),
                                 calname: calname.clone(),
                                 filename: filename.to_string(),
-                                blob_id: *blob_id,
+                                blob_id: Some(*blob_id),
                             }) as Box<dyn DavNode>
                         })
                         .collect();
@@ -653,7 +645,7 @@ impl DavNode for CalendarNode {
                             col: col.clone(),
                             calname: calname.clone(),
                             filename,
-                            blob_id,
+                            blob_id: Some(blob_id),
                         });
                         ok_nodes.push(child);
                     }
@@ -672,13 +664,15 @@ impl DavNode for CalendarNode {
     }
 }
 
-/// An existing calendar event, a single object.
+/// A calendar event, which may or may not exist in storage. It is a single object.
 #[derive(Clone)]
 pub(crate) struct CalendarEventNode {
     col: Collection,
     calname: String,
     filename: String,
-    blob_id: BlobId,
+    /// `blob_id` is `Some(id)` if the event already exists in storage,
+    /// otherwise it is `None` if the event needs to be created.
+    blob_id: Option<BlobId>,
 }
 
 impl DavNode for CalendarEventNode {
@@ -713,17 +707,26 @@ impl DavNode for CalendarEventNode {
     }
 
     fn supported_properties(&self, _user: &User) -> dav::PropName<All> {
-        dav::PropName(vec![
-            dav::PropertyRequest::DisplayName,
-            dav::PropertyRequest::ResourceType,
-            dav::PropertyRequest::GetEtag,
-            dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
-                cal::PropertyRequest::CalendarData(cal::CalendarDataRequest::default()),
-            )),
-        ])
+        if self.blob_id.is_some() {
+            dav::PropName(vec![
+                dav::PropertyRequest::DisplayName,
+                dav::PropertyRequest::ResourceType,
+                dav::PropertyRequest::GetEtag,
+                dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
+                    cal::PropertyRequest::CalendarData(cal::CalendarDataRequest::default()),
+                )),
+            ])
+        } else {
+            dav::PropName(vec![])
+        }
     }
     fn properties(&self, _user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
         let this = self.clone();
+
+        let blob_id = match self.blob_id {
+            Some(blob_id) => blob_id,
+            None => return futures::stream::iter(vec![]).boxed()
+        };
 
         futures::stream::iter(prop.0)
             .then(move |n| {
@@ -746,7 +749,7 @@ impl DavNode for CalendarEventNode {
                                 cal::PropertyRequest::CalendarData(req),
                                 )) => {
                             let ics = String::from_utf8(
-                                this.col.get(this.blob_id).await.or(Err(n.clone()))?,
+                                this.col.get(blob_id).await.or(Err(n.clone()))?,
                                 )
                                 .or(Err(n.clone()))?;
 
@@ -803,20 +806,21 @@ impl DavNode for CalendarEventNode {
         stream: Content<'a>,
     ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
         async {
-            let existing_etag = self
-                .etag()
-                .await
-                .ok_or(std::io::Error::new(std::io::ErrorKind::Other, "Etag error"))?;
-
             match policy {
-                PutPolicy::CreateOnly => {
+                PutPolicy::CreateOnly if self.blob_id.is_some() => {
                     return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists))
                 }
-                PutPolicy::ReplaceEtag(etag) if etag != existing_etag.as_str() => {
-                    return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists))
+                PutPolicy::ReplaceEtag(etag) if self.blob_id.is_some() => {
+                    let existing_etag = self
+                        .etag()
+                        .await
+                        .ok_or(std::io::Error::new(std::io::ErrorKind::Other, "Etag error"))?;
+                    if etag != existing_etag.as_str() {
+                        return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists))
+                    }
                 }
                 _ => (),
-            };
+            }
 
             //@FIXME for now, our storage interface does not allow streaming,
             // so we load everything in memory
@@ -841,19 +845,25 @@ impl DavNode for CalendarEventNode {
     }
 
     fn content<'a>(&self) -> Content<'a> {
-        //@FIXME for now, our storage interface does not allow streaming,
-        // so we load everything in memory
-        let calendar = self.col.clone();
-        let blob_id = self.blob_id.clone();
-        let calblob = async move {
-            let raw_ics = calendar
-                .get(blob_id)
-                .await
-                .or(Err(std::io::Error::from(std::io::ErrorKind::Interrupted)))?;
+        if let Some(blob_id) = self.blob_id {
+            //@FIXME for now, our storage interface does not allow streaming,
+            // so we load everything in memory
+            let calendar = self.col.clone();
+            let calblob = async move {
+                let raw_ics = calendar
+                    .get(blob_id)
+                    .await
+                    .or(Err(std::io::Error::from(std::io::ErrorKind::Interrupted)))?;
 
-            Ok(hyper::body::Bytes::from(raw_ics))
-        };
-        futures::stream::once(Box::pin(calblob)).boxed()
+                Ok(hyper::body::Bytes::from(raw_ics))
+            };
+            futures::stream::once(Box::pin(calblob)).boxed()
+        } else {
+            futures::stream::once(futures::future::err(std::io::Error::from(
+                std::io::ErrorKind::Unsupported,
+            )))
+            .boxed()
+        }
     }
 
     fn content_type(&self) -> &str {
@@ -861,22 +871,33 @@ impl DavNode for CalendarEventNode {
     }
 
     fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
-        let calendar = self.col.clone();
+        if let Some(blob_id) = self.blob_id { 
+            let calendar = self.col.clone();
 
-        async move {
-            calendar
-                .index()
-                .await
-                .table
-                .get(&self.blob_id)
-                .map(|(_, etag)| etag.to_string())
+            async move {
+                calendar
+                    .index()
+                    .await
+                    .table
+                    .get(&blob_id)
+                    .map(|(_, etag)| etag.to_string())
+            }
+            .boxed()
+        } else {
+            async { None }.boxed()
         }
-        .boxed()
     }
 
     fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
+        let blob_id = match self.blob_id {
+            None => {
+                // Nothing to delete
+                return async { Ok(()) }.boxed()
+            },
+            Some(blob_id) => blob_id,
+        };
+
         let mut calendar = self.col.clone();
-        let blob_id = self.blob_id.clone();
 
         async move {
             let _token = match calendar.delete(blob_id).await {
@@ -893,112 +914,6 @@ impl DavNode for CalendarEventNode {
             Ok(())
         }
         .boxed()
-    }
-    fn diff<'a>(
-        &self,
-        _sync_token: Option<Token>,
-    ) -> BoxFuture<
-        'a,
-        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
-    > {
-        async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
-    }
-
-    fn dav_header(&self) -> String {
-        "1, access-control".into()
-    }
-}
-
-/// A calendar event that does not exist yet but needs to be created.
-#[derive(Clone)]
-pub(crate) struct CalendarCreateEventNode {
-    col: Collection,
-    calname: String,
-    filename: String,
-}
-impl DavNode for CalendarCreateEventNode {
-    fn fetch<'a>(
-        &self,
-        _user: &'a User,
-        path: &'a [&str],
-        _create: bool,
-    ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
-        if path.len() == 0 {
-            let node = Box::new(self.clone()) as Box<dyn DavNode>;
-            return async { Ok(node) }.boxed();
-        }
-
-        async {
-            Err(anyhow!(
-                "Not supported: can't create a child on an event node"
-            ))
-        }
-        .boxed()
-    }
-
-    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
-        async { vec![] }.boxed()
-    }
-
-    fn path(&self, user: &User) -> String {
-        format!(
-            "/{}/calendar/{}/{}",
-            user.username, self.calname, self.filename
-        )
-    }
-
-    fn supported_properties(&self, _user: &User) -> dav::PropName<All> {
-        dav::PropName(vec![])
-    }
-
-    fn properties(&self, _user: &User, _prop: dav::PropName<All>) -> PropertyStream<'static> {
-        futures::stream::iter(vec![]).boxed()
-    }
-
-    fn put<'a>(
-        &'a mut self,
-        _policy: PutPolicy,
-        stream: Content<'a>,
-    ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
-        //@NOTE: policy might not be needed here: whatever we put, there is no known entries here
-
-        async {
-            //@FIXME for now, our storage interface does not allow for streaming
-            let mut evt = Vec::new();
-            let mut reader = stream.into_async_read();
-            reader.read_to_end(&mut evt).await.unwrap();
-            let (_token, (_, etag)) = self
-                .col
-                .put(self.filename.as_str(), evt.as_ref())
-                .await
-                .or(Err(std::io::ErrorKind::Interrupted))?;
-            self.col
-                .sync()
-                .await
-                .or(Err(std::io::ErrorKind::ConnectionReset))?;
-            Ok(etag)
-        }
-        .boxed()
-    }
-
-    fn content<'a>(&self) -> Content<'a> {
-        futures::stream::once(futures::future::err(std::io::Error::from(
-            std::io::ErrorKind::Unsupported,
-        )))
-        .boxed()
-    }
-
-    fn content_type(&self) -> &str {
-        "text/plain"
-    }
-
-    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
-        async { None }.boxed()
-    }
-
-    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
-        // Nothing to delete
-        async { Ok(()) }.boxed()
     }
     fn diff<'a>(
         &self,
