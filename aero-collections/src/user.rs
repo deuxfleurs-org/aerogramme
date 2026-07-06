@@ -7,6 +7,7 @@ use aero_user::login::Credentials;
 use aero_user::storage;
 
 use crate::calendar::CalendarNs;
+use crate::addressbook::AddressbookNs;
 use crate::mail::namespace::MailboxNs;
 
 #[derive(Clone)]
@@ -15,6 +16,7 @@ pub struct User {
     pub creds: Credentials,
     pub mailboxes: MailboxNs,
     pub calendars: CalendarNs,
+    pub addressbooks: AddressbookNs,
 }
 
 impl User {
@@ -46,6 +48,7 @@ impl User {
             creds: creds.clone(),
             mailboxes: MailboxNs::new(creds.clone()).await?,
             calendars: CalendarNs::new(creds.clone()),
+            addressbooks: AddressbookNs::new(creds.clone()),
         };
 
         Ok(user)

@@ -343,6 +343,7 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
         }.boxed()
     }
 
+    // TODO: shouldn't this be extensible?
     fn dav_header(&self) -> String {
         "1, access-control".into()
     }

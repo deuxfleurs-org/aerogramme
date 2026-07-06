@@ -94,6 +94,7 @@ dependencies = [
  "aero-ical",
  "aero-sasl",
  "aero-user",
+ "aero-vcard",
  "anyhow",
  "async-trait",
  "base64 0.22.1",

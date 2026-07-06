@@ -61,6 +61,7 @@ impl std::fmt::Display for SyncTokenUri {
 /// compared to the expressiveness of a UNIX path
 /// For example getting parent with ../ is not supported, scheme is not supported, etc.
 /// More complex support could be added later if needed by clients
+#[derive(Clone)]
 pub enum Path<'a> {
     Abs(Vec<&'a str>),
     Rel(Vec<&'a str>),
@@ -78,6 +79,47 @@ impl<'a> Path<'a> {
             return Ok(Path::Abs(path_segments));
         }
         Ok(Path::Rel(path_segments))
+    }
+
+    pub fn relativize(&self, base: &Self) -> Option<Self> {
+        use Path::*;
+        fn strip_common_prefix<'a, 'b>(mut s1: &'b[&'a str], mut s2: &'b[&'a str]) -> (&'b[&'a str], &'b[&'a str]) {
+            while !s1.is_empty() && !s2.is_empty() {
+                if s1[0] == s2[0] {
+                    s1 = &s1[1..];
+                    s2 = &s2[1..];
+                } else {
+                    break
+                }
+            }
+            (s1, s2)
+        }
+        match (&base, &self) {
+            (Abs(_), Rel(_)) => Some(self.clone()),
+            (Abs(v1), Abs(v2)) | (Rel(v1), Rel(v2)) => {
+                let (s1, s2) = strip_common_prefix(v1.as_slice(), v2.as_slice());
+                if s1.is_empty() {
+                    Some(Rel(s2.to_vec()))
+                } else {
+                    None
+                }
+            }
+            (Rel(_), Abs(_)) => None,
+        }
+    }
+
+    pub fn as_single_name(&self) -> Option<&'a str> {
+        match self {
+            Path::Abs(v) if v.len() == 1 => Some(v[0]),
+            Path::Rel(v) if v.len() == 1 => Some(v[0]),
+            _ => None,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Path::Abs(v) | Path::Rel(v) => v.is_empty(),
+        }
     }
 }
 

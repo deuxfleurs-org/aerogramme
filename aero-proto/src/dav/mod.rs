@@ -1,4 +1,5 @@
 mod cal_resource;
+mod card_resource;
 mod codec;
 mod controller;
 mod middleware;

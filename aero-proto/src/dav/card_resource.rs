@@ -1,5 +1,5 @@
-//! DAV Resources for calendars:
-//! calendar namespace, calendar collection, and calendar event.
+//! DAV Resources for carddav:
+//! addressbook namespace, addressbook collection, and addressbook contact item.
 
 use anyhow::Result;
 use futures::{future::BoxFuture, future::FutureExt};
@@ -9,11 +9,10 @@ use aero_collections::{
     dav::collection::Collection,
     user::User,
 };
-use aero_dav::caltypes as cal;
+use aero_dav::cardtypes as card;
 use aero_dav::realization::{self as all, All};
 use aero_dav::coretypes as dav;
 use aero_dav::versioningtypes as vers;
-use aero_ical::query::is_component_match;
 
 use crate::dav::codec::Path;
 use crate::dav::multistatus::multistatus;
@@ -27,18 +26,18 @@ use crate::dav::node::{
     ReportResponse,
 };
 
-/// The calendar namespace of a user. It contains calendar collections.
+/// The addressbook namespace of a user. It contains addressbook collections.
 #[derive(Clone)]
-pub(crate) struct CalendarListNode {
+pub(crate) struct AddressbookListNode {
     list: Vec<String>,
 }
-impl CalendarListNode {
+impl AddressbookListNode {
     pub async fn new(user: &User) -> Result<Self> {
         let list = user.calendars.dav.list().await?;
         Ok(Self { list })
     }
 }
-impl DavNode for CalendarListNode {
+impl DavNode for AddressbookListNode {
     fn clone_node(&self) -> Box<dyn DavNode> {
         Box::new(self.clone())
     }
@@ -49,12 +48,12 @@ impl DavNode for CalendarListNode {
     }
 
     fn child_node<'a>(&self, user: &'a User, name: &str) -> BoxFuture<'a, IOResult<ChildNode>> {
-        let calname = name.to_string();
+        let addrbookname = name.to_string();
         async {
             let col = user
-                .calendars
+                .addressbooks
                 .dav
-                .open(&calname)
+                .open(&addrbookname)
                 .await
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Interrupted, e))?;
             match col {
@@ -62,9 +61,9 @@ impl DavNode for CalendarListNode {
                 None => Ok(ChildNode::CannotCreate),
                 Some(col) => {
                     Ok(ChildNode::Existing(
-                        Box::new(DavStoredCollectionNode(CalendarNode {
+                        Box::new(DavStoredCollectionNode(AddressbookNode {
                             col,
-                            calname,
+                            addrbookname,
                         })) as Box<dyn DavNode>
                     ))
                 }
@@ -73,7 +72,7 @@ impl DavNode for CalendarListNode {
     }
 
     fn path(&self, user: &User) -> String {
-        format!("/{}/calendar/", user.username)
+        format!("/{}/addressbook/", user.username)
     }
 
     fn supported_properties(&self, _user: &User) -> dav::PropName<All> {
@@ -89,7 +88,7 @@ impl DavNode for CalendarListNode {
             for n in prop.0 {
                 let res = match n {
                     dav::PropertyRequest::DisplayName =>
-                        Ok(dav::Property::DisplayName(format!("{} calendars", user.username))),
+                        Ok(dav::Property::DisplayName(format!("{} addressbooks", user.username))),
                     dav::PropertyRequest::ResourceType =>
                         Ok(dav::Property::ResourceType(vec![dav::ResourceType::Collection])),
                     dav::PropertyRequest::GetContentType =>
@@ -103,7 +102,7 @@ impl DavNode for CalendarListNode {
     }
 
     fn dav_header(&self) -> String {
-        "1, access-control, calendar-access".into()
+        "1, access-control, addressbook".into()
     }
 
     fn content_type(&self) -> &str {
@@ -111,13 +110,13 @@ impl DavNode for CalendarListNode {
     }
 }
 
-/// A calendar collection. It contains calendar events.
+/// An addressbook collection. It contains addressbook objects.
 #[derive(Clone)]
-pub(crate) struct CalendarNode {
+pub(crate) struct AddressbookNode {
     col: Collection,
-    calname: String,
+    addrbookname: String,
 }
-impl DavStoredCollection for CalendarNode {
+impl DavStoredCollection for AddressbookNode {
     fn collection(&self) -> &Collection {
         &self.col
     }
@@ -127,67 +126,49 @@ impl DavStoredCollection for CalendarNode {
     }
 
     fn display_name(&self) -> String {
-        format!("{} calendar", self.calname)
+        format!("{} addressbook", self.addrbookname)
     }
 
     fn path(&self, user: &User) -> String {
-        format!("/{}/calendar/{}/", user.username, self.calname)
+        format!("/{}/addressbook/{}/", user.username, self.addrbookname)
     }
 
     fn content_type(&self) -> &str {
-        //dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
-        //@FIXME seems wrong but seems to be what Thunderbird expects...
-        "text/calendar"
+        // TODO: is this correct?
+        "httpd/unix-directory"
     }
     
     fn mk_child_node(&self, filename: &str) -> Box<dyn DavNode> {
-        Box::new(DavObjectNode(CalendarEventNode {
+        Box::new(DavObjectNode(AddressbookObject {
             col: self.col.clone(),
-            calname: self.calname.clone(),
+            addrbookname: self.addrbookname.clone(),
             filename: filename.to_string(),
         }))
     }
 
     fn additional_resource_types(&self) -> Vec<dav::ResourceType<All>> {
         vec![
-            dav::ResourceType::Extension(all::ResourceType::Cal(
-                cal::ResourceType::Calendar,
+            dav::ResourceType::Extension(all::ResourceType::Card(
+                card::ResourceType::Addressbook,
             )),
         ]
     }
 
     fn additional_supported_properties(&self) -> Vec<dav::PropertyRequest<All>> {
-        vec![
-            dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
-                cal::PropertyRequest::SupportedCalendarComponentSet,
-            )),
-        ]            
+        vec![]            
     }
 
     fn additional_property<'a>(&'a mut self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult> {
-        async move {
-            match prop {
-                dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
-                    cal::PropertyRequest::SupportedCalendarComponentSet,
-                )) => Ok(dav::Property::Extension(all::Property::Cal(
-                    cal::Property::SupportedCalendarComponentSet(vec![
-                        cal::CompSupport(cal::Component::VEvent),
-                        cal::CompSupport(cal::Component::VTodo),
-                        cal::CompSupport(cal::Component::VJournal),
-                    ]),
-                ))),
-                _ => Err(prop.clone()),
-            }
-        }.boxed()
+        async move { Err(prop.clone()) }.boxed()
     }
 
     fn additional_supported_reports(&self) -> Vec<vers::SupportedReport<All>> {
         vec![
             vers::SupportedReport(vers::ReportName::Extension(
-                all::ReportTypeName::Cal(cal::ReportTypeName::Multiget),
+                all::ReportTypeName::Card(card::ReportTypeName::Multiget),
             )),
             vers::SupportedReport(vers::ReportName::Extension(
-                all::ReportTypeName::Cal(cal::ReportTypeName::Query),
+                all::ReportTypeName::Card(card::ReportTypeName::Query),
             )),
         ]
     }
@@ -195,7 +176,7 @@ impl DavStoredCollection for CalendarNode {
     fn additional_report<'a>(&'a mut self, user: &'a User, report: &'a vers::Report<All>) -> BoxFuture<'a, IOResult<ReportResponse>> {
         async {
             match report {
-                vers::Report::Extension(all::ReportType::Cal(cal::ReportType::Multiget(m))) => {
+                vers::Report::Extension(all::ReportType::Card(card::ReportType::Multiget(m))) => {
                     // Multiget is really like a propfind where Depth: 0|1|Infinity is replaced by an arbitrary
                     // list of URLs
                     let (mut ok_node, mut not_found) = (Vec::new(), Vec::new());
@@ -206,12 +187,12 @@ impl DavStoredCollection for CalendarNode {
                             .ok()
                             .and_then(|p| p.relativize(&self_path))
                             .and_then(|p| p.as_single_name());
-                        
+
                         match filename {
                             Some(name) if self.col.index().idx_by_filename.contains_key(name) =>
                                 ok_node.push(self.mk_child_node(name)),
                             _ =>
-                                not_found.push(h),
+                                not_found.push(h)
                         }
                     }
 
@@ -224,7 +205,7 @@ impl DavStoredCollection for CalendarNode {
                     ).await))
                 },
 
-                vers::Report::Extension(all::ReportType::Cal(cal::ReportType::Query(q))) => {
+                vers::Report::Extension(all::ReportType::Card(card::ReportType::Query(q))) => {
                     let children_nodes: Vec<_> = self
                         .col
                         .index()
@@ -249,19 +230,19 @@ impl DavStoredCollection for CalendarNode {
     }
     
     fn additional_dav_headers(&self) -> Vec<String> {
-        vec!["calendar-access".to_string()]
+        vec!["addressbook".to_string()]
     }
 }
 
-/// A calendar event, which may or may not exist in storage. It is a single object.
+/// An addressbok object, which may or may not exist in storage. It is a single object.
 #[derive(Clone)]
-pub(crate) struct CalendarEventNode {
+pub(crate) struct AddressbookObject {
     col: Collection,
-    calname: String,
+    addrbookname: String,
     filename: String,
 }
 
-impl DavObject for CalendarEventNode {
+impl DavObject for AddressbookObject {
     fn collection(&self) -> &Collection {
         &self.col
     }
@@ -276,13 +257,13 @@ impl DavObject for CalendarEventNode {
 
     fn path(&self, user: &User) -> String {
         format!(
-            "/{}/calendar/{}/{}",
-            user.username, self.calname, self.filename
+            "/{}/addressbook/{}/{}",
+            user.username, self.addrbookname, self.filename
         )
     }
 
     fn content_type(&self) -> &str {
-        "text/calendar"
+        "text/vcard"
     }
 
     fn additional_supported_properties(&self) -> Vec<dav::PropertyRequest<All>> {
@@ -294,48 +275,30 @@ impl DavObject for CalendarEventNode {
         async move {
             match prop {
                 // This is not a "real" property (it cannot be queried by
-                // PROPFIND), but is queried internally by calendar reports.
-                dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
-                    cal::PropertyRequest::CalendarData(req),
+                // PROPFIND), but is queried internally by addressbook reports.
+                dav::PropertyRequest::Extension(all::PropertyRequest::Card(
+                    card::PropertyRequest::AddressData(req),
                 )) => {
                     let blob_id = this.blob_id().ok_or(prop.clone())?;
-                    let bytes = this.col.get(blob_id).await.or(Err(prop.clone()))?;
-                    let ics = String::from_utf8(bytes).or(Err(prop.clone()))?;
+                    let vcard = this.col.get(blob_id).await.or(Err(prop.clone()))?;
+                    let filtered_vcard = match &req.prop_kind {
+                        None | Some(card::PropKind::AllProp) => vcard,
+                        Some(prop_kind) => {
+                            let filtered = aero_vcard::parse_lossy(vcard.as_slice())
+                                .into_iter()
+                                .filter_map(|line| aero_vcard::filter::property(&line, prop_kind));
 
-                    let new_ics = match &req.comp {
-                        None => ics,
-                        Some(prune_comp) => {
-                            // parse content
-                            let ics = match icalendar::parser::read_calendar(&ics) {
-                                Ok(v) => v,
-                                Err(e) => {
-                                    tracing::warn!(err=?e, "Unable to parse ICS in calendar-query");
-                                    return Err::<_, dav::PropertyRequest<_>>(prop.clone())
-                                }
-                            };
-
-                            // build a fake vcal component for caldav compat
-                            let fake_vcal_component = icalendar::parser::Component {
-                                name: cal::Component::VCalendar.as_str().into(),
-                                properties: ics.properties,
-                                components: ics.components,
-                            };
-
-                            // rebuild component
-                            let new_comp = match aero_ical::prune::component(&fake_vcal_component, prune_comp) {
-                                Some(v) => v,
-                                None => return Err(prop.clone()),
-                            };
-
-                            // reserialize
-                            format!("{}", icalendar::parser::Calendar { properties: new_comp.properties, components: new_comp.components })
-                        },
+                            let mut buf = vec![];
+                            aero_vcard::write(&mut buf, filtered).or(Err(prop.clone()))?;
+                            buf
+                        }
                     };
-
-                    Ok(dav::Property::Extension(all::Property::Cal(
-                        cal::Property::CalendarData(cal::CalendarDataPayload {
-                            mime: Default::default(),
-                            payload: new_ics,
+                    
+                    Ok(dav::Property::Extension(all::Property::Card(
+                        card::Property::AddressData(card::AddressDataPayload {
+                            payload: String::from_utf8(filtered_vcard).or(Err(prop.clone()))?,
+                            content_type: Default::default(),
+                            version: Default::default(),
                         }),
                     )))
                 },
@@ -347,10 +310,10 @@ impl DavObject for CalendarEventNode {
     fn supported_reports(&self) -> Vec<vers::SupportedReport<All>> {
         vec![
             vers::SupportedReport(vers::ReportName::Extension(
-                all::ReportTypeName::Cal(cal::ReportTypeName::Multiget),
+                all::ReportTypeName::Card(card::ReportTypeName::Multiget),
             )),
             vers::SupportedReport(vers::ReportName::Extension(
-                all::ReportTypeName::Cal(cal::ReportTypeName::Query),
+                all::ReportTypeName::Card(card::ReportTypeName::Query),
             )),
         ]
     }
@@ -358,7 +321,7 @@ impl DavObject for CalendarEventNode {
     fn report<'a>(&'a mut self, user: &'a User, report: vers::Report<All>) -> BoxFuture<'a, IOResult<ReportResponse>> {
         async {
             match report {
-                vers::Report::Extension(all::ReportType::Cal(cal::ReportType::Multiget(m))) => {
+                vers::Report::Extension(all::ReportType::Card(card::ReportType::Multiget(m))) => {
                     // On a single object, multiget must contain a single URL pointing to this object
                     let self_path = self.path(user);
                     let self_path = Path::new(self_path.as_str()).unwrap();
@@ -382,7 +345,7 @@ impl DavObject for CalendarEventNode {
                     ).await))
                 },
 
-                vers::Report::Extension(all::ReportType::Cal(cal::ReportType::Query(q))) => {
+                vers::Report::Extension(all::ReportType::Card(card::ReportType::Query(q))) => {
                     let nodes = vec![Box::new(DavObjectNode(self.clone())) as Box<dyn DavNode>];
 
                     let ok_node = apply_filter(nodes, &q.filter).try_collect().await?;
@@ -401,60 +364,35 @@ impl DavObject for CalendarEventNode {
     }
 }
 
-fn selector_to_propfind(s: Option<cal::CalendarSelector<All>>) -> dav::PropFind<All> {
+fn selector_to_propfind(s: Option<card::AddressbookSelector<All>>) -> dav::PropFind<All> {
     match s {
-        None | Some(cal::CalendarSelector::AllProp) => dav::PropFind::AllProp(None),
-        Some(cal::CalendarSelector::PropName) => dav::PropFind::PropName,
-        Some(cal::CalendarSelector::Prop(inner)) => dav::PropFind::Prop(inner),
+        None | Some(card::AddressbookSelector::AllProp) => dav::PropFind::AllProp(None),
+        Some(card::AddressbookSelector::PropName) => dav::PropFind::PropName,
+        Some(card::AddressbookSelector::Prop(inner)) => dav::PropFind::Prop(inner),
     }
 }
 
-//@FIXME naive implementation, must be refactored later
+//@FIXME equally naive implementation as cal_resource::apply_filter
 fn apply_filter<'a>(
     nodes: Vec<Box<dyn DavNode>>,
-    filter: &'a cal::Filter,
+    filter: &'a card::Filter,
 ) -> impl Stream<Item = std::result::Result<Box<dyn DavNode>, std::io::Error>> + 'a {
     futures::stream::iter(nodes).filter_map(move |single_node| async move {
-        // Get ICS
+        // Get vCard
         let chunks: Vec<_> = match single_node.content().try_collect().await {
             Ok(v) => v,
             Err(e) => return Some(Err(e)),
         };
-        let raw_ics = chunks.iter().fold(String::new(), |mut acc, single_chunk| {
-            let str_fragment = std::str::from_utf8(single_chunk.as_ref());
-            acc.extend(str_fragment);
+        let raw_vcard = chunks.iter().fold(Vec::new(), |mut acc, single_chunk| {
+            acc.extend_from_slice(single_chunk.as_ref());
             acc
         });
-
-        // Parse ICS
-        let ics = match icalendar::parser::read_calendar(&raw_ics) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(err=?e, "Unable to parse ICS in calendar-query");
-                return Some(Err(std::io::Error::from(std::io::ErrorKind::InvalidData)));
-            }
-        };
-
-        // Do checks
-        // @FIXME: icalendar does not consider VCALENDAR as a component
-        // but WebDAV does...
-        // Build a fake VCALENDAR component for icalendar compatibility, it's a hack
-        let root_filter = &filter.0;
-        let fake_vcal_component = icalendar::parser::Component {
-            name: cal::Component::VCalendar.as_str().into(),
-            properties: ics.properties,
-            components: ics.components,
-        };
-        tracing::debug!(filter=?root_filter, "calendar-query filter");
-
-        // Adjust return value according to filter
-        match is_component_match(
-            &fake_vcal_component,
-            &[fake_vcal_component.clone()],
-            root_filter,
-        ) {
-            true => Some(Ok(single_node)),
-            _ => None,
+        // Parse vCard
+        let vcard = aero_vcard::parse_lossy(raw_vcard.as_slice());
+        if aero_vcard::query::object_matches_filter(vcard.as_slice(), filter) {
+            Some(Ok(single_node))
+        } else {
+            None
         }
     })
 }

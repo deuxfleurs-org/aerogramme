@@ -1,3 +1,4 @@
+pub mod addressbook;
 pub mod calendar;
 pub mod dav;
 pub mod ident_list;

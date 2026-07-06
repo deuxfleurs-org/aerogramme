@@ -11,11 +11,12 @@ license = "EUPL-1.2"
 description = "Binding between Aerogramme's internal components and well-known protocols"
 
 [dependencies]
+aero-collections.workspace = true
+aero-dav.workspace = true
 aero-ical.workspace = true
 aero-sasl.workspace = true
-aero-dav.workspace = true
 aero-user.workspace = true
-aero-collections.workspace = true
+aero-vcard.workspace = true
 
 async-trait.workspace = true
 anyhow.workspace = true
