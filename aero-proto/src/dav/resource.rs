@@ -443,7 +443,7 @@ impl DavNode for CalendarNode {
         async move {
             match (col.index().await.idx_by_filename.get(path[0]), create) {
                 (Some(blob_id), _) => {
-                    let child = Box::new(EventNode {
+                    let child = Box::new(CalendarEventNode {
                         col: col.clone(),
                         calname,
                         filename: path[0].to_string(),
@@ -452,7 +452,7 @@ impl DavNode for CalendarNode {
                     child.fetch(user, &path[1..], create).await
                 }
                 (None, true) => {
-                    let child = Box::new(CreateEventNode {
+                    let child = Box::new(CalendarCreateEventNode {
                         col: col.clone(),
                         calname,
                         filename: path[0].to_string(),
@@ -475,7 +475,7 @@ impl DavNode for CalendarNode {
                 .idx_by_filename
                 .iter()
                 .map(|(filename, blob_id)| {
-                    Box::new(EventNode {
+                    Box::new(CalendarEventNode {
                         col: col.clone(),
                         calname: calname.clone(),
                         filename: filename.to_string(),
@@ -624,7 +624,7 @@ impl DavNode for CalendarNode {
                         .idx_by_filename
                         .iter()
                         .map(|(filename, blob_id)| {
-                            Box::new(EventNode {
+                            Box::new(CalendarEventNode {
                                 col: col.clone(),
                                 calname: calname.clone(),
                                 filename: filename.to_string(),
@@ -649,7 +649,7 @@ impl DavNode for CalendarNode {
             for change in listed_changes.into_iter() {
                 match change {
                     SyncChange::Ok((filename, blob_id)) => {
-                        let child = Box::new(EventNode {
+                        let child = Box::new(CalendarEventNode {
                             col: col.clone(),
                             calname: calname.clone(),
                             filename,
@@ -674,14 +674,14 @@ impl DavNode for CalendarNode {
 
 /// An existing calendar event, a single object.
 #[derive(Clone)]
-pub(crate) struct EventNode {
+pub(crate) struct CalendarEventNode {
     col: Collection,
     calname: String,
     filename: String,
     blob_id: BlobId,
 }
 
-impl DavNode for EventNode {
+impl DavNode for CalendarEventNode {
     fn fetch<'a>(
         &self,
         _user: &'a User,
@@ -911,12 +911,12 @@ impl DavNode for EventNode {
 
 /// A calendar event that does not exist yet but needs to be created.
 #[derive(Clone)]
-pub(crate) struct CreateEventNode {
+pub(crate) struct CalendarCreateEventNode {
     col: Collection,
     calname: String,
     filename: String,
 }
-impl DavNode for CreateEventNode {
+impl DavNode for CalendarCreateEventNode {
     fn fetch<'a>(
         &self,
         _user: &'a User,
