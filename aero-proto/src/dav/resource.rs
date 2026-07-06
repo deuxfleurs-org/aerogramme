@@ -10,13 +10,12 @@
 //! │   └── ...
 
 use anyhow::{anyhow, Result};
-use futures::io::AsyncReadExt;
-use futures::stream::{StreamExt, TryStreamExt};
+use futures::stream::StreamExt;
 use futures::{future::BoxFuture, future::FutureExt};
 
 use aero_collections::{
     dav::collection::Collection,
-    dav::davindex::{BlobId, Etag, SyncChange, Token},
+    dav::davindex::{Etag, SyncChange, Token},
     user::User,
 };
 use aero_dav::acltypes as acl;
@@ -27,7 +26,7 @@ use aero_dav::coretypes as dav;
 use aero_dav::versioningtypes as vers;
 
 use super::node::PropertyStream;
-use crate::dav::node::{Content, DavNode, PutPolicy};
+use crate::dav::node::{Content, DavNode, DavObject, PutPolicy, PropertyResult};
 
 /// Why "https://aerogramme.0"?
 /// Because tokens must be valid URI.
@@ -441,16 +440,13 @@ impl DavNode for CalendarNode {
         let col = self.col.clone();
         let calname = self.calname.clone();
         async move {
-            let blob_id = match (col.index().await.idx_by_filename.get(path[0]), create) {
-                (Some(blob_id), _) => Some(blob_id.clone()),
-                (None, true) => None,
-                (None, false) => Err(anyhow!("Not found"))?
-            };
+            if let (None, false) = (col.index().idx_by_filename.get(path[0]), create) {
+                return Err(anyhow!("Not found"))
+            }
             let child = Box::new(CalendarEventNode {
                 col: col.clone(),
                 calname,
                 filename: path[0].to_string(),
-                blob_id,
             });
             child.fetch(user, &path[1..], create).await
         }
@@ -463,15 +459,13 @@ impl DavNode for CalendarNode {
 
         async move {
             col.index()
-                .await
                 .idx_by_filename
                 .iter()
-                .map(|(filename, blob_id)| {
+                .map(|(filename, _)| {
                     Box::new(CalendarEventNode {
                         col: col.clone(),
                         calname: calname.clone(),
                         filename: filename.to_string(),
-                        blob_id: Some(*blob_id),
                     }) as Box<dyn DavNode>
                 })
                 .collect()
@@ -612,15 +606,13 @@ impl DavNode for CalendarNode {
                         .or(Err(std::io::Error::from(std::io::ErrorKind::Interrupted)))?;
                     let ok_nodes = col
                         .index()
-                        .await
                         .idx_by_filename
                         .iter()
-                        .map(|(filename, blob_id)| {
+                        .map(|(filename, _)| {
                             Box::new(CalendarEventNode {
                                 col: col.clone(),
                                 calname: calname.clone(),
                                 filename: filename.to_string(),
-                                blob_id: Some(*blob_id),
                             }) as Box<dyn DavNode>
                         })
                         .collect();
@@ -640,12 +632,11 @@ impl DavNode for CalendarNode {
             let mut rm_nodes: Vec<dav::Href> = vec![];
             for change in listed_changes.into_iter() {
                 match change {
-                    SyncChange::Ok((filename, blob_id)) => {
+                    SyncChange::Ok((filename, _)) => {
                         let child = Box::new(CalendarEventNode {
                             col: col.clone(),
                             calname: calname.clone(),
                             filename,
-                            blob_id: Some(blob_id),
                         });
                         ok_nodes.push(child);
                     }
@@ -670,33 +661,19 @@ pub(crate) struct CalendarEventNode {
     col: Collection,
     calname: String,
     filename: String,
-    /// `blob_id` is `Some(id)` if the event already exists in storage,
-    /// otherwise it is `None` if the event needs to be created.
-    blob_id: Option<BlobId>,
 }
 
-impl DavNode for CalendarEventNode {
-    fn fetch<'a>(
-        &self,
-        _user: &'a User,
-        path: &'a [&str],
-        _create: bool,
-    ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
-        if path.len() == 0 {
-            let node = Box::new(self.clone()) as Box<dyn DavNode>;
-            return async { Ok(node) }.boxed();
-        }
-
-        async {
-            Err(anyhow!(
-                "Not supported: can't create a child on an event node"
-            ))
-        }
-        .boxed()
+impl DavObject for CalendarEventNode {
+    fn collection(&self) -> &Collection {
+        &self.col
     }
 
-    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
-        async { vec![] }.boxed()
+    fn collection_mut(&mut self) -> &mut Collection {
+        &mut self.col
+    }
+
+    fn filename(&self) -> &str {
+        &self.filename
     }
 
     fn path(&self, user: &User) -> String {
@@ -706,226 +683,68 @@ impl DavNode for CalendarEventNode {
         )
     }
 
-    fn supported_properties(&self, _user: &User) -> dav::PropName<All> {
-        if self.blob_id.is_some() {
-            dav::PropName(vec![
-                dav::PropertyRequest::DisplayName,
-                dav::PropertyRequest::ResourceType,
-                dav::PropertyRequest::GetEtag,
-                dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
-                    cal::PropertyRequest::CalendarData(cal::CalendarDataRequest::default()),
-                )),
-            ])
-        } else {
-            dav::PropName(vec![])
-        }
-    }
-    fn properties(&self, _user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
-        let this = self.clone();
-
-        let blob_id = match self.blob_id {
-            Some(blob_id) => blob_id,
-            None => return futures::stream::iter(vec![]).boxed()
-        };
-
-        futures::stream::iter(prop.0)
-            .then(move |n| {
-                let this = this.clone();
-
-                async move {
-                    let prop = match &n {
-                        dav::PropertyRequest::DisplayName => {
-                            dav::Property::DisplayName(format!("{} event", this.filename))
-                        }
-                        dav::PropertyRequest::ResourceType => dav::Property::ResourceType(vec![]),
-                        dav::PropertyRequest::GetContentType => {
-                            dav::Property::GetContentType("text/calendar".into())
-                        }
-                        dav::PropertyRequest::GetEtag => {
-                            let etag = this.etag().await.ok_or(n.clone())?;
-                            dav::Property::GetEtag(etag)
-                        }
-                        dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
-                                cal::PropertyRequest::CalendarData(req),
-                                )) => {
-                            let ics = String::from_utf8(
-                                this.col.get(blob_id).await.or(Err(n.clone()))?,
-                                )
-                                .or(Err(n.clone()))?;
-
-                            let new_ics = match &req.comp {
-                                None => ics,
-                                Some(prune_comp) => {
-                                    // parse content
-                                    let ics = match icalendar::parser::read_calendar(&ics) {
-                                        Ok(v) => v,
-                                        Err(e) => {
-                                            tracing::warn!(err=?e, "Unable to parse ICS in calendar-query");
-                                            return Err(n.clone())
-                                        }
-                                    };
-
-                                    // build a fake vcal component for caldav compat
-                                    let fake_vcal_component = icalendar::parser::Component {
-                                        name: cal::Component::VCalendar.as_str().into(),
-                                        properties: ics.properties,
-                                        components: ics.components,
-                                    };
-
-                                    // rebuild component
-                                    let new_comp = match aero_ical::prune::component(&fake_vcal_component, prune_comp) {
-                                        Some(v) => v,
-                                        None => return Err(n.clone()),
-                                    };
-
-                                    // reserialize
-                                    format!("{}", icalendar::parser::Calendar { properties: new_comp.properties, components: new_comp.components })
-                                },
-                            };
-
-
-
-                            dav::Property::Extension(all::Property::Cal(
-                                cal::Property::CalendarData(cal::CalendarDataPayload {
-                                    mime: Default::default(),
-                                    payload: new_ics,
-                                }),
-                            ))
-                        }
-                        _ => return Err(n),
-                    };
-                    Ok(prop)
-                }
-            })
-            .boxed()
-    }
-
-    fn put<'a>(
-        &'a mut self,
-        policy: PutPolicy,
-        stream: Content<'a>,
-    ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
-        async {
-            match policy {
-                PutPolicy::CreateOnly if self.blob_id.is_some() => {
-                    return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists))
-                }
-                PutPolicy::ReplaceEtag(etag) if self.blob_id.is_some() => {
-                    let existing_etag = self
-                        .etag()
-                        .await
-                        .ok_or(std::io::Error::new(std::io::ErrorKind::Other, "Etag error"))?;
-                    if etag != existing_etag.as_str() {
-                        return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists))
-                    }
-                }
-                _ => (),
-            }
-
-            //@FIXME for now, our storage interface does not allow streaming,
-            // so we load everything in memory
-            let mut evt = Vec::new();
-            let mut reader = stream.into_async_read();
-            reader
-                .read_to_end(&mut evt)
-                .await
-                .or(Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe)))?;
-            let (_token, (_, etag)) = self
-                .col
-                .put(self.filename.as_str(), evt.as_ref())
-                .await
-                .or(Err(std::io::ErrorKind::Interrupted))?;
-            self.col
-                .sync()
-                .await
-                .or(Err(std::io::ErrorKind::ConnectionReset))?;
-            Ok(etag)
-        }
-        .boxed()
-    }
-
-    fn content<'a>(&self) -> Content<'a> {
-        if let Some(blob_id) = self.blob_id {
-            //@FIXME for now, our storage interface does not allow streaming,
-            // so we load everything in memory
-            let calendar = self.col.clone();
-            let calblob = async move {
-                let raw_ics = calendar
-                    .get(blob_id)
-                    .await
-                    .or(Err(std::io::Error::from(std::io::ErrorKind::Interrupted)))?;
-
-                Ok(hyper::body::Bytes::from(raw_ics))
-            };
-            futures::stream::once(Box::pin(calblob)).boxed()
-        } else {
-            futures::stream::once(futures::future::err(std::io::Error::from(
-                std::io::ErrorKind::Unsupported,
-            )))
-            .boxed()
-        }
-    }
-
     fn content_type(&self) -> &str {
         "text/calendar"
     }
 
-    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
-        if let Some(blob_id) = self.blob_id { 
-            let calendar = self.col.clone();
-
-            async move {
-                calendar
-                    .index()
-                    .await
-                    .table
-                    .get(&blob_id)
-                    .map(|(_, etag)| etag.to_string())
-            }
-            .boxed()
-        } else {
-            async { None }.boxed()
-        }
+    fn additional_supported_properties(&self) -> Vec<dav::PropertyRequest<All>> {
+        vec![
+            dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
+                cal::PropertyRequest::CalendarData(cal::CalendarDataRequest::default()),
+            )),
+        ]
     }
 
-    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
-        let blob_id = match self.blob_id {
-            None => {
-                // Nothing to delete
-                return async { Ok(()) }.boxed()
-            },
-            Some(blob_id) => blob_id,
-        };
-
-        let mut calendar = self.col.clone();
-
+    fn additional_property<'a>(&self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult> {
+        let this = self.clone();
         async move {
-            let _token = match calendar.delete(blob_id).await {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::error!(err=?e, "delete event node");
-                    return Err(std::io::Error::from(std::io::ErrorKind::Interrupted));
-                }
-            };
-            calendar
-                .sync()
-                .await
-                .or(Err(std::io::ErrorKind::ConnectionReset))?;
-            Ok(())
-        }
-        .boxed()
-    }
-    fn diff<'a>(
-        &self,
-        _sync_token: Option<Token>,
-    ) -> BoxFuture<
-        'a,
-        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
-    > {
-        async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
-    }
+            match prop {
+                dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
+                    cal::PropertyRequest::CalendarData(req),
+                )) => {
+                    let blob_id = this.blob_id().ok_or(prop.clone())?;
+                    let bytes = this.col.get(blob_id).await.or(Err(prop.clone()))?;
+                    let ics = String::from_utf8(bytes).or(Err(prop.clone()))?;
 
-    fn dav_header(&self) -> String {
-        "1, access-control".into()
+                    let new_ics = match &req.comp {
+                        None => ics,
+                        Some(prune_comp) => {
+                            // parse content
+                            let ics = match icalendar::parser::read_calendar(&ics) {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    tracing::warn!(err=?e, "Unable to parse ICS in calendar-query");
+                                    return Err::<_, dav::PropertyRequest<_>>(prop.clone())
+                                }
+                            };
+
+                            // build a fake vcal component for caldav compat
+                            let fake_vcal_component = icalendar::parser::Component {
+                                name: cal::Component::VCalendar.as_str().into(),
+                                properties: ics.properties,
+                                components: ics.components,
+                            };
+
+                            // rebuild component
+                            let new_comp = match aero_ical::prune::component(&fake_vcal_component, prune_comp) {
+                                Some(v) => v,
+                                None => return Err(prop.clone()),
+                            };
+
+                            // reserialize
+                            format!("{}", icalendar::parser::Calendar { properties: new_comp.properties, components: new_comp.components })
+                        },
+                    };
+
+                    Ok(dav::Property::Extension(all::Property::Cal(
+                        cal::Property::CalendarData(cal::CalendarDataPayload {
+                            mime: Default::default(),
+                            payload: new_ics,
+                        }),
+                    )))
+                },
+                _ => Err(prop.clone()),
+            }
+        }.boxed()
     }
 }
