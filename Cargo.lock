@@ -162,6 +162,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "aero-vcard"
+version = "0.4.0"
+dependencies = [
+ "aero-dav",
+ "ical_vcard",
+ "tracing",
+]
+
+[[package]]
 name = "aerogramme"
 version = "0.4.0"
 dependencies = [
@@ -2342,6 +2351,12 @@ checksum = "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f"
 dependencies = [
  "cc",
 ]
+
+[[package]]
+name = "ical_vcard"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a7126db14d2b69f768daae07f898d86bede8fddc4bb9344f68ade52599d0f99"
 
 [[package]]
 name = "icalendar"

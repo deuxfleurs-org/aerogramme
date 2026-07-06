@@ -1,0 +1,16 @@
+[package]
+name = "aero-vcard"
+version = "0.4.0"
+authors = [
+  "Alex Auvolat <alex@adnab.me>", 
+  "Quentin Dufour <quentin@dufour.io>",
+  "Armaël Guéneau <armael@deuxfleurs.fr>",
+]
+edition = "2021"
+license = "EUPL-1.2"
+description = "vCard parsing and querying"
+
+[dependencies]
+aero-dav.workspace = true
+ical_vcard.workspace = true
+tracing.workspace = true

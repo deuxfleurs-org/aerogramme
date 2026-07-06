@@ -315,7 +315,7 @@ impl QWrite for Filter {
 impl QWrite for PropFilter {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut start = xml.create_card_element("prop-filter");
-        start.push_attribute(("name", self.name.0.as_str()));
+        start.push_attribute(("name", self.name.to_string().as_str()));
         if let Some(test) = self.test.as_explicit() {
             start.push_attribute(("test", test.as_str()));
         }
@@ -436,7 +436,7 @@ impl QWrite for PropKind {
 impl QWrite for CardProp {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut empty = xml.create_card_element("prop");
-        empty.push_attribute(("name", self.name.0.as_str()));
+        empty.push_attribute(("name", self.name.to_string().as_str()));
         if let Some(nv) = self.novalue.as_explicit() {
             empty.push_attribute(("novalue", nv.as_str()))
         }
@@ -514,23 +514,23 @@ mod tests {
                         version: Default::default(),
                         prop_kind: Some(PropKind::Prop(vec![
                             CardProp {
-                                name: PropertyName("VERSION".into()),
+                                name: PropertyName { group: None, name: "VERSION".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("UID".into()),
+                                name: PropertyName { group: None, name: "UID".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("NICKNAME".into()),
+                                name: PropertyName { group: None, name: "NICKNAME".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("EMAIL".into()),
+                                name: PropertyName { group: None, name: "EMAIL".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("FN".into()),
+                                name: PropertyName { group: None, name: "FN".into() },
                                 novalue: Default::default(),
                             },
                         ])),
@@ -539,7 +539,7 @@ mod tests {
             ]))),
             filter: Filter {
                 prop_filters: vec![PropFilter {
-                    name: PropertyName("NICKNAME".to_string()),
+                    name: PropertyName { group: None, name: "NICKNAME".to_string() },
                     test: Default::default(),
                     rules: PropFilterRules::Match {
                         text_match: vec![TextMatch {
@@ -644,23 +644,23 @@ mod tests {
                         version: Default::default(),
                         prop_kind: Some(PropKind::Prop(vec![
                             CardProp {
-                                name: PropertyName("VERSION".into()),
+                                name: PropertyName { group: None, name: "VERSION".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("UID".into()),
+                                name: PropertyName { group: None, name: "UID".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("NICKNAME".into()),
+                                name: PropertyName { group: None, name: "NICKNAME".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("EMAIL".into()),
+                                name: PropertyName { group: None, name: "EMAIL".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("FN".into()),
+                                name: PropertyName { group: None, name: "FN".into() },
                                 novalue: Default::default(),
                             },
                         ])),
@@ -670,7 +670,7 @@ mod tests {
             filter: Filter {
                 prop_filters: vec![
                     PropFilter {
-                        name: PropertyName("FN".to_string()),
+                        name: PropertyName { group: None, name: "FN".to_string() },
                         test: Default::default(),
                         rules: PropFilterRules::Match {
                             text_match: vec![TextMatch {
@@ -683,7 +683,7 @@ mod tests {
                         },
                     },
                     PropFilter {
-                        name: PropertyName("EMAIL".to_string()),
+                        name: PropertyName { group: None, name: "EMAIL".to_string() },
                         test: Default::default(),
                         rules: PropFilterRules::Match {
                             text_match: vec![TextMatch {
@@ -824,7 +824,7 @@ mod tests {
             filter: Filter {
                 prop_filters: vec![
                     PropFilter {
-                        name: PropertyName("FN".to_string()),
+                        name: PropertyName { group: None, name: "FN".to_string() },
                         test: Default::default(),
                         rules: PropFilterRules::Match {
                             text_match: vec![TextMatch {
@@ -966,23 +966,23 @@ mod tests {
                         version: Default::default(),
                         prop_kind: Some(PropKind::Prop(vec![
                             CardProp {
-                                name: PropertyName("VERSION".into()),
+                                name: PropertyName { group: None, name: "VERSION".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("UID".into()),
+                                name: PropertyName { group: None, name: "UID".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("NICKNAME".into()),
+                                name: PropertyName { group: None, name: "NICKNAME".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("EMAIL".into()),
+                                name: PropertyName { group: None, name: "EMAIL".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("FN".into()),
+                                name: PropertyName { group: None, name: "FN".into() },
                                 novalue: Default::default(),
                             },
                         ])),

@@ -610,7 +610,7 @@ pub struct Filter {
     pub test: WithDefault<FilterTest>,
 }
 
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Clone, Copy, Default)]
 pub enum FilterTest {
     #[default]
     AnyOf,
@@ -752,7 +752,7 @@ pub struct TextMatch {
     pub match_type: WithDefault<TextMatchType>,
     pub text: String,
 }
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Clone, Copy, Default)]
 pub enum TextMatchType {
     Equals,
     #[default]
@@ -1025,6 +1025,33 @@ impl Default for Version {
 #[derive(Debug, PartialEq, Clone)]
 pub struct PropertyParameterName(pub String);
 
-/// A vCard property name (e.g. "NICKNAME")
+/// A vCard property name (e.g. "NICKNAME").
+/// Can also include a "group" prefix, e.g. "X-ABC.NICKNAME".
 #[derive(Debug, PartialEq, Clone)]
-pub struct PropertyName(pub String);
+pub struct PropertyName {
+    pub group: Option<String>, 
+    pub name: String,
+}
+
+impl std::str::FromStr for PropertyName {
+    type Err = ();
+    // FIXME this only splits on '.' and does not try to validate
+    // that the input is using proper property name syntax.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.split_once(".") {
+            None => Ok(PropertyName { group: None, name: s.to_string() }),
+            Some((group, name)) => Ok(PropertyName {
+                group: Some(group.to_string()),
+                name: name.to_string(),
+            })
+        }
+    }
+}
+impl std::fmt::Display for PropertyName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.group {
+            None => write!(f, "{}", self.name),
+            Some(g) => write!(f, "{}.{}", g, self.name),
+        }
+    }
+}
