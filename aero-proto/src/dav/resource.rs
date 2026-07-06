@@ -1,3 +1,14 @@
+//! This modules defines the WebDAV filesystem structure exposed by aerogramme
+//! 
+//! /                                 root
+//! ├── alice                         homedir for user "alice"
+//! │   └── calendar                  calendar namespace
+//! │       └── Personal              default calendar collection
+//! │           └── event1.ics        calendar event
+//! │           └── ...
+//! ├── bob                           homedir for user "bob"
+//! │   └── ...
+
 use anyhow::{anyhow, Result};
 use futures::io::AsyncReadExt;
 use futures::stream::{StreamExt, TryStreamExt};
@@ -30,6 +41,7 @@ use crate::dav::node::{Content, DavNode, PutPolicy};
 /// now. So here we are: https://aerogramme.0.
 pub const BASE_TOKEN_URI: &str = "https://aerogramme.0/sync/";
 
+/// The root of the webdav filesystem
 #[derive(Clone)]
 pub(crate) struct RootNode {}
 impl DavNode for RootNode {
@@ -142,6 +154,7 @@ impl DavNode for RootNode {
     }
 }
 
+/// The homedir collection of a user. It contains namespaces.
 #[derive(Clone)]
 pub(crate) struct HomeNode {}
 impl DavNode for HomeNode {
@@ -267,6 +280,7 @@ impl DavNode for HomeNode {
     }
 }
 
+/// The calendar namespace of a user. It contains calendar collections.
 #[derive(Clone)]
 pub(crate) struct CalendarListNode {
     list: Vec<String>,
@@ -406,6 +420,7 @@ impl DavNode for CalendarListNode {
     }
 }
 
+/// A calendar collection. It contains calendar events.
 #[derive(Clone)]
 pub(crate) struct CalendarNode {
     col: Collection,
@@ -657,6 +672,7 @@ impl DavNode for CalendarNode {
     }
 }
 
+/// An existing calendar event, a single object.
 #[derive(Clone)]
 pub(crate) struct EventNode {
     col: Collection,
@@ -893,6 +909,7 @@ impl DavNode for EventNode {
     }
 }
 
+/// A calendar event that does not exist yet but needs to be created.
 #[derive(Clone)]
 pub(crate) struct CreateEventNode {
     col: Collection,
