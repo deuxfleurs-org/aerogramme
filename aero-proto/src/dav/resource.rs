@@ -15,30 +15,22 @@ use futures::{future::BoxFuture, future::FutureExt};
 
 use aero_collections::{
     dav::collection::Collection,
-    dav::davindex::{Etag, SyncChange, Token},
+    dav::davindex::{Etag, Token},
     user::User,
 };
 use aero_dav::acltypes as acl;
 use aero_dav::caltypes as cal;
 use aero_dav::realization::{self as all, All};
-use aero_dav::synctypes as sync;
 use aero_dav::coretypes as dav;
 use aero_dav::versioningtypes as vers;
 
 use super::node::PropertyStream;
-use crate::dav::node::{Content, DavNode, DavObject, PutPolicy, PropertyResult};
-
-/// Why "https://aerogramme.0"?
-/// Because tokens must be valid URI.
-/// And numeric TLD are ~mostly valid in URI (check the .42 TLD experience)
-/// and at the same time, they are not used sold by the ICANN and there is no plan to use them.
-/// So I am sure that the URL remains invalid, avoiding leaking requests to an hardcoded URL in the
-/// future.
-/// The best option would be to make it configurable ofc, so someone can put a domain name
-/// that they control, it would probably improve compatibility (maybe some WebDAV spec tells us
-/// how to handle/resolve this URI but I am not aware of that...). But that's not the plan for
-/// now. So here we are: https://aerogramme.0.
-pub const BASE_TOKEN_URI: &str = "https://aerogramme.0/sync/";
+use crate::dav::node::{
+    Content, DavNode,
+    DavObject, DavObjectNode,
+    DavStoredCollection, DavStoredCollectionNode,
+    PutPolicy, PropertyResult,
+};
 
 /// The root of the webdav filesystem
 #[derive(Clone)]
@@ -310,10 +302,10 @@ impl DavNode for CalendarListNode {
                 .open(path[0])
                 .await?
                 .ok_or(anyhow!("Not found"))?;
-            let child = Box::new(CalendarNode {
+            let child = Box::new(DavStoredCollectionNode(CalendarNode {
                 col: cal,
                 calname: path[0].to_string(),
-            });
+            }));
             child.fetch(user, &path[1..], create).await
         }
         .boxed()
@@ -334,10 +326,10 @@ impl DavNode for CalendarListNode {
                         .map(|v| (name, v))
                 })
                 .map(|(name, cal)| {
-                    Box::new(CalendarNode {
+                    Box::new(DavStoredCollectionNode(CalendarNode {
                         col: cal,
                         calname: name.to_string(),
-                    }) as Box<dyn DavNode>
+                    })) as Box<dyn DavNode>
                 })
                 .collect::<Vec<Box<dyn DavNode>>>()
                 .await
@@ -425,233 +417,83 @@ pub(crate) struct CalendarNode {
     col: Collection,
     calname: String,
 }
-impl DavNode for CalendarNode {
-    fn fetch<'a>(
-        &self,
-        user: &'a User,
-        path: &'a [&str],
-        create: bool,
-    ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
-        if path.len() == 0 {
-            let node = Box::new(self.clone()) as Box<dyn DavNode>;
-            return async { Ok(node) }.boxed();
-        }
-
-        let col = self.col.clone();
-        let calname = self.calname.clone();
-        async move {
-            if let (None, false) = (col.index().idx_by_filename.get(path[0]), create) {
-                return Err(anyhow!("Not found"))
-            }
-            let child = Box::new(CalendarEventNode {
-                col: col.clone(),
-                calname,
-                filename: path[0].to_string(),
-            });
-            child.fetch(user, &path[1..], create).await
-        }
-        .boxed()
+impl DavStoredCollection for CalendarNode {
+    fn collection(&self) -> &Collection {
+        &self.col
     }
 
-    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
-        let col = self.col.clone();
-        let calname = self.calname.clone();
+    fn collection_mut(&mut self) -> &mut Collection {
+        &mut self.col
+    }
 
-        async move {
-            col.index()
-                .idx_by_filename
-                .iter()
-                .map(|(filename, _)| {
-                    Box::new(CalendarEventNode {
-                        col: col.clone(),
-                        calname: calname.clone(),
-                        filename: filename.to_string(),
-                    }) as Box<dyn DavNode>
-                })
-                .collect()
-        }
-        .boxed()
+    fn display_name(&self) -> String {
+        format!("{} calendar", self.calname)
     }
 
     fn path(&self, user: &User) -> String {
         format!("/{}/calendar/{}/", user.username, self.calname)
     }
 
-    fn supported_properties(&self, _user: &User) -> dav::PropName<All> {
-        dav::PropName(vec![
-            dav::PropertyRequest::DisplayName,
-            dav::PropertyRequest::ResourceType,
-            dav::PropertyRequest::GetContentType,
+    fn content_type(&self) -> &str {
+        //dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
+        //@FIXME seems wrong but seems to be what Thunderbird expects...
+        "text/calendar"
+    }
+    
+    fn mk_child_node(&self, filename: &str) -> Box<dyn DavNode> {
+        Box::new(DavObjectNode(CalendarEventNode {
+            col: self.col.clone(),
+            calname: self.calname.clone(),
+            filename: filename.to_string(),
+        }))
+    }
+
+    fn additional_resource_types(&self) -> Vec<dav::ResourceType<All>> {
+        vec![
+            dav::ResourceType::Extension(all::ResourceType::Cal(
+                cal::ResourceType::Calendar,
+            )),
+        ]
+    }
+
+    fn additional_supported_properties(&self) -> Vec<dav::PropertyRequest<All>> {
+        vec![
             dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
                 cal::PropertyRequest::SupportedCalendarComponentSet,
             )),
-            dav::PropertyRequest::Extension(all::PropertyRequest::Sync(
-                sync::PropertyRequest::SyncToken,
-            )),
-            dav::PropertyRequest::Extension(all::PropertyRequest::Vers(
-                vers::PropertyRequest::SupportedReportSet,
-            )),
-        ])
-    }
-    fn properties(&self, _user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
-        let calname = self.calname.to_string();
-        let col = self.col.clone();
-
-        futures::stream::iter(prop.0)
-            .then(move |n| {
-                let calname = calname.clone();
-                let mut col = col.clone();
-
-                async move {
-                    let prop = match n {
-                        dav::PropertyRequest::DisplayName => {
-                            dav::Property::DisplayName(format!("{} calendar", calname))
-                        }
-                        dav::PropertyRequest::ResourceType => dav::Property::ResourceType(vec![
-                            dav::ResourceType::Collection,
-                            dav::ResourceType::Extension(all::ResourceType::Cal(
-                                cal::ResourceType::Calendar,
-                            )),
-                        ]),
-                        //dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
-                        //@FIXME seems wrong but seems to be what Thunderbird expects...
-                        dav::PropertyRequest::GetContentType => {
-                            dav::Property::GetContentType("text/calendar".into())
-                        }
-                        dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
-                            cal::PropertyRequest::SupportedCalendarComponentSet,
-                        )) => dav::Property::Extension(all::Property::Cal(
-                            cal::Property::SupportedCalendarComponentSet(vec![
-                                cal::CompSupport(cal::Component::VEvent),
-                                cal::CompSupport(cal::Component::VTodo),
-                                cal::CompSupport(cal::Component::VJournal),
-                            ]),
-                        )),
-                        dav::PropertyRequest::Extension(all::PropertyRequest::Sync(
-                            sync::PropertyRequest::SyncToken,
-                        )) => match col.token().await {
-                            Ok(token) => dav::Property::Extension(all::Property::Sync(
-                                sync::Property::SyncToken(sync::SyncToken(format!(
-                                    "{}{}",
-                                    BASE_TOKEN_URI, token
-                                ))),
-                            )),
-                            _ => return Err(n.clone()),
-                        },
-                        dav::PropertyRequest::Extension(all::PropertyRequest::Vers(
-                            vers::PropertyRequest::SupportedReportSet,
-                        )) => dav::Property::Extension(all::Property::Vers(
-                            vers::Property::SupportedReportSet(vec![
-                                vers::SupportedReport(vers::ReportName::Extension(
-                                    all::ReportTypeName::Cal(cal::ReportTypeName::Multiget),
-                                )),
-                                vers::SupportedReport(vers::ReportName::Extension(
-                                    all::ReportTypeName::Cal(cal::ReportTypeName::Query),
-                                )),
-                                vers::SupportedReport(vers::ReportName::Extension(
-                                    all::ReportTypeName::Sync(sync::ReportTypeName::SyncCollection),
-                                )),
-                            ]),
-                        )),
-                        v => return Err(v),
-                    };
-                    Ok(prop)
-                }
-            })
-            .boxed()
+        ]            
     }
 
-    fn put<'a>(
-        &'a mut self,
-        _policy: PutPolicy,
-        _stream: Content<'a>,
-    ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
-        futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported)).boxed()
-    }
-
-    fn content<'a>(&self) -> Content<'a> {
-        futures::stream::once(futures::future::err(std::io::Error::from(
-            std::io::ErrorKind::Unsupported,
-        )))
-        .boxed()
-    }
-
-    fn content_type(&self) -> &str {
-        "text/plain"
-    }
-
-    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
-        async { None }.boxed()
-    }
-
-    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
-        async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
-    }
-    fn diff<'a>(
-        &self,
-        sync_token: Option<Token>,
-    ) -> BoxFuture<
-        'a,
-        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
-    > {
-        let mut col = self.col.clone();
-        let calname = self.calname.clone();
+    fn additional_property<'a>(&self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult> {
         async move {
-            let sync_token = match sync_token {
-                Some(v) => v,
-                None => {
-                    let token = col
-                        .token()
-                        .await
-                        .or(Err(std::io::Error::from(std::io::ErrorKind::Interrupted)))?;
-                    let ok_nodes = col
-                        .index()
-                        .idx_by_filename
-                        .iter()
-                        .map(|(filename, _)| {
-                            Box::new(CalendarEventNode {
-                                col: col.clone(),
-                                calname: calname.clone(),
-                                filename: filename.to_string(),
-                            }) as Box<dyn DavNode>
-                        })
-                        .collect();
-
-                    return Ok((token, ok_nodes, vec![]));
-                }
-            };
-            let (new_token, listed_changes) = match col.diff(sync_token).await {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::info!(err=?e, "token resolution failed, maybe a forgotten token");
-                    return Err(std::io::Error::from(std::io::ErrorKind::NotFound));
-                }
-            };
-
-            let mut ok_nodes: Vec<Box<dyn DavNode>> = vec![];
-            let mut rm_nodes: Vec<dav::Href> = vec![];
-            for change in listed_changes.into_iter() {
-                match change {
-                    SyncChange::Ok((filename, _)) => {
-                        let child = Box::new(CalendarEventNode {
-                            col: col.clone(),
-                            calname: calname.clone(),
-                            filename,
-                        });
-                        ok_nodes.push(child);
-                    }
-                    SyncChange::NotFound(filename) => {
-                        rm_nodes.push(dav::Href(filename));
-                    }
-                }
+            match prop {
+                dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
+                    cal::PropertyRequest::SupportedCalendarComponentSet,
+                )) => Ok(dav::Property::Extension(all::Property::Cal(
+                    cal::Property::SupportedCalendarComponentSet(vec![
+                        cal::CompSupport(cal::Component::VEvent),
+                        cal::CompSupport(cal::Component::VTodo),
+                        cal::CompSupport(cal::Component::VJournal),
+                    ]),
+                ))),
+                _ => Err(prop.clone()),
             }
-
-            Ok((new_token, ok_nodes, rm_nodes))
-        }
-        .boxed()
+        }.boxed()
     }
-    fn dav_header(&self) -> String {
-        "1, access-control, calendar-access".into()
+
+    fn additional_supported_reports(&self) -> Vec<vers::SupportedReport<All>> {
+        vec![
+            vers::SupportedReport(vers::ReportName::Extension(
+                all::ReportTypeName::Cal(cal::ReportTypeName::Multiget),
+            )),
+            vers::SupportedReport(vers::ReportName::Extension(
+                all::ReportTypeName::Cal(cal::ReportTypeName::Query),
+            )),
+        ]
+    }
+
+    fn additional_dav_headers(&self) -> Vec<String> {
+        vec!["calendar-access".to_string()]
     }
 }
 

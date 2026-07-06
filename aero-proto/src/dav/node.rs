@@ -6,11 +6,25 @@ use hyper::body::Bytes;
 
 use aero_collections::{
     dav::collection::Collection,
-    dav::davindex::{BlobId, Etag, Token},
+    dav::davindex::{BlobId, Etag, SyncChange, Token},
 };
 use aero_collections::user::User;
-use aero_dav::realization::All;
+use aero_dav::realization::{self as all, All};
 use aero_dav::coretypes as dav;
+use aero_dav::synctypes as sync;
+use aero_dav::versioningtypes as vers;
+
+/// Why "https://aerogramme.0"?
+/// Because tokens must be valid URI.
+/// And numeric TLD are ~mostly valid in URI (check the .42 TLD experience)
+/// and at the same time, they are not used sold by the ICANN and there is no plan to use them.
+/// So I am sure that the URL remains invalid, avoiding leaking requests to an hardcoded URL in the
+/// future.
+/// The best option would be to make it configurable ofc, so someone can put a domain name
+/// that they control, it would probably improve compatibility (maybe some WebDAV spec tells us
+/// how to handle/resolve this URI but I am not aware of that...). But that's not the plan for
+/// now. So here we are: https://aerogramme.0.
+pub const BASE_TOKEN_URI: &str = "https://aerogramme.0/sync/";
 
 pub(crate) type Content<'a> = BoxStream<'a, std::result::Result<Bytes, std::io::Error>>;
 pub(crate) type PropertyStream<'a> = BoxStream<'a, PropertyResult>;
@@ -155,7 +169,7 @@ pub(crate) trait DavNode: Send {
 /// `DavObject` implements `DavNode`, providing generic WebDAV behavior for
 /// objects, which can be further extended by implementors of `DavObject` (with
 /// in particular `additional_supported_properties` and `additional_property`).
-pub(crate) trait DavObject: Send + Sync + Clone {
+pub(crate) trait DavObject: Send + Sync + Clone + 'static {
     /// Access to the underlying collection store containing this object
     fn collection(&self) -> &Collection;
     fn collection_mut(&mut self) -> &mut Collection;
@@ -186,7 +200,11 @@ pub(crate) trait DavObject: Send + Sync + Clone {
     }
 }
 
-impl<T: DavObject + 'static> DavNode for T {
+#[derive(Clone)]
+pub(crate) struct DavObjectNode<T>(pub T);
+
+impl<T: DavObject> DavNode for DavObjectNode<T>
+{
     fn fetch<'a>(
         &self,
         _user: &'a User,
@@ -211,18 +229,18 @@ impl<T: DavObject + 'static> DavNode for T {
     }
 
     fn path(&self, user: &User) -> String {
-        DavObject::path(self, user)
+        self.0.path(user)
     }
 
     fn supported_properties(&self, _user: &User) -> dav::PropName<All> {
         let mut props = vec![];
-        if self.blob_id().is_some() {
+        if self.0.blob_id().is_some() {
             props.extend_from_slice(&[
                 dav::PropertyRequest::DisplayName,
                 dav::PropertyRequest::ResourceType,
                 dav::PropertyRequest::GetEtag,
             ]);
-            props.extend_from_slice(&self.additional_supported_properties());
+            props.extend_from_slice(&self.0.additional_supported_properties());
         }
         dav::PropName(props)
     }
@@ -233,13 +251,13 @@ impl<T: DavObject + 'static> DavNode for T {
                 let this = this.clone();
 
                 async move {
-                    if let Ok(prop) = this.additional_property(&n).await {
+                    if let Ok(prop) = this.0.additional_property(&n).await {
                         return Ok(prop)
                     }
 
                     let prop = match &n {
                         dav::PropertyRequest::DisplayName => {
-                            dav::Property::DisplayName(format!("{}", this.filename()))
+                            dav::Property::DisplayName(format!("{}", this.0.filename()))
                         }
                         dav::PropertyRequest::ResourceType => dav::Property::ResourceType(vec![]),
                         dav::PropertyRequest::GetContentType => {
@@ -263,7 +281,7 @@ impl<T: DavObject + 'static> DavNode for T {
         stream: Content<'a>,
     ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
         async {
-            let blob_id = self.blob_id();
+            let blob_id = self.0.blob_id();
             match policy {
                 PutPolicy::CreateOnly if blob_id.is_some() => {
                     return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists))
@@ -288,13 +306,15 @@ impl<T: DavObject + 'static> DavNode for T {
                 .read_to_end(&mut evt)
                 .await
                 .or(Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe)))?;
-            let filename = self.filename().to_string();
+            let filename = self.0.filename().to_string();
             let (_token, (_, etag)) = self
+                .0
                 .collection_mut()
                 .put(&filename, evt.as_ref())
                 .await
                 .or(Err(std::io::ErrorKind::Interrupted))?;
-            self.collection_mut()
+            self.0
+                .collection_mut()
                 .sync()
                 .await
                 .or(Err(std::io::ErrorKind::ConnectionReset))?;
@@ -304,10 +324,10 @@ impl<T: DavObject + 'static> DavNode for T {
     }
 
     fn content<'a>(&self) -> Content<'a> {
-        if let Some(blob_id) = self.blob_id() {
+        if let Some(blob_id) = self.0.blob_id() {
             //@FIXME for now, our storage interface does not allow streaming,
             // so we load everything in memory
-            let col = self.collection().clone();
+            let col = self.0.collection().clone();
             let blob = async move {
                 let raw = col
                     .get(blob_id)
@@ -326,12 +346,12 @@ impl<T: DavObject + 'static> DavNode for T {
     }
 
     fn content_type(&self) -> &str {
-        self.content_type()
+        self.0.content_type()
     }
 
     fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
-        if let Some(blob_id) = self.blob_id() { 
-            let col = self.collection().clone();
+        if let Some(blob_id) = self.0.blob_id() { 
+            let col = self.0.collection().clone();
 
             async move {
                 col
@@ -347,7 +367,7 @@ impl<T: DavObject + 'static> DavNode for T {
     }
 
     fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
-        let blob_id = match self.blob_id() {
+        let blob_id = match self.0.blob_id() {
             None => {
                 // Nothing to delete
                 return async { Ok(()) }.boxed()
@@ -355,7 +375,7 @@ impl<T: DavObject + 'static> DavNode for T {
             Some(blob_id) => blob_id,
         };
 
-        let mut col = self.collection().clone();
+        let mut col = self.0.collection().clone();
 
         async move {
             let _token = match col.delete(blob_id).await {
@@ -385,5 +405,254 @@ impl<T: DavObject + 'static> DavNode for T {
 
     fn dav_header(&self) -> String {
         "1, access-control".into()
+    }
+}
+
+/// A `DavStoredCollection` is a `DavNode` that represents a collection backed by
+/// a Bayou DAV store.
+///
+/// `DavStoredCollection` implements `DavNode`, implementing base WebDAV
+/// behavior, including WebDAV Sync, which can be further extended by
+/// implementors of `DavStoredCollection` through the `additional_*` methods.
+pub(crate) trait DavStoredCollection: Send + Sync + Clone + 'static {
+    /// Access to the underlying collection store
+    fn collection(&self) -> &Collection;
+    fn collection_mut(&mut self) -> &mut Collection;
+
+    /// Collection display name
+    fn display_name(&self) -> String;
+
+    /// WebDAV path at which this collection is located
+    fn path(&self, user: &User) -> String;
+
+    /// Collection content-type
+    fn content_type(&self) -> &str;
+    
+    /// Create a `DavNode` instance for an element of the collection.
+    /// It is possible for `filename` not to be in the collection already
+    /// (if creating a new element).
+    fn mk_child_node(&self, filename: &str) -> Box<dyn DavNode>;
+
+    /// Additional resource types advertised by this collection.
+    fn additional_resource_types(&self) -> Vec<dav::ResourceType<All>>; 
+
+    /// Additional properties supported by this collection, on top of base WebDAV properties.
+    fn additional_supported_properties(&self) -> Vec<dav::PropertyRequest<All>>;
+
+    /// Getter for the value of properties listed by `additional_supported_properties`.
+    fn additional_property<'a>(&self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult>;
+
+    /// Additional report types advertised by this collection.
+    fn additional_supported_reports(&self) -> Vec<vers::SupportedReport<All>>;
+
+    /// Additional Dav headers to advertise.
+    fn additional_dav_headers(&self) -> Vec<String>;
+}
+
+#[derive(Clone)]
+pub struct DavStoredCollectionNode<T>(pub T);
+
+impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
+{
+    fn fetch<'a>(
+        &self,
+        user: &'a User,
+        path: &'a [&str],
+        create: bool,
+    ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
+        if path.len() == 0 {
+            let node = Box::new(self.clone()) as Box<dyn DavNode>;
+            return async { Ok(node) }.boxed();
+        }
+
+        let this = self.clone();
+        async move {
+            let child_idx = this.0.collection().index().idx_by_filename.get(path[0]).copied();
+            if child_idx.is_none() && !create {
+                return Err(anyhow!("Not found"))
+            }
+            let child = this.0.mk_child_node(path[0]);
+            child.fetch(user, &path[1..], create).await
+        }
+        .boxed()
+    }
+
+    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+        let this = self.clone();
+
+        async move {
+            this.0
+                .collection()
+                .index()
+                .idx_by_filename
+                .iter()
+                .map(|(filename, _)| this.0.mk_child_node(filename))
+                .collect()
+        }
+        .boxed()
+    }
+
+    fn path(&self, user: &User) -> String {
+        self.0.path(user)
+    }
+
+    fn supported_properties(&self, _user: &User) -> dav::PropName<All> {
+        let mut props = vec![
+            dav::PropertyRequest::DisplayName,
+            dav::PropertyRequest::ResourceType,
+            dav::PropertyRequest::GetContentType,
+            dav::PropertyRequest::Extension(all::PropertyRequest::Sync(
+                sync::PropertyRequest::SyncToken,
+            )),
+            dav::PropertyRequest::Extension(all::PropertyRequest::Vers(
+                vers::PropertyRequest::SupportedReportSet,
+            )),
+        ];
+        props.extend_from_slice(&self.0.additional_supported_properties());
+        dav::PropName(props)
+    }
+
+    fn properties(&self, _user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
+        let this = self.clone();
+        futures::stream::iter(prop.0)
+            .then(move |n| {
+                let mut this = this.clone();
+
+                async move {
+                    if let Ok(prop) = this.0.additional_property(&n).await {
+                        return Ok(prop)
+                    }
+                    
+                    let prop = match n {
+                        dav::PropertyRequest::DisplayName => {
+                            dav::Property::DisplayName(this.0.display_name().clone())
+                        }
+                        dav::PropertyRequest::ResourceType => {
+                            let mut typ = vec![dav::ResourceType::Collection];
+                            typ.extend(this.0.additional_resource_types());
+                            dav::Property::ResourceType(typ)
+                        },
+                        dav::PropertyRequest::GetContentType => {
+                            dav::Property::GetContentType(this.content_type().to_string())
+                        }
+                        dav::PropertyRequest::Extension(all::PropertyRequest::Sync(
+                            sync::PropertyRequest::SyncToken,
+                        )) => match this.0.collection_mut().token().await {
+                            Ok(token) => dav::Property::Extension(all::Property::Sync(
+                                sync::Property::SyncToken(sync::SyncToken(format!(
+                                    "{}{}",
+                                    BASE_TOKEN_URI, token
+                                ))),
+                            )),
+                            _ => return Err(n.clone()),
+                        },
+                        dav::PropertyRequest::Extension(all::PropertyRequest::Vers(
+                            vers::PropertyRequest::SupportedReportSet,
+                        )) => {
+                            let mut reports = vec![
+                                vers::SupportedReport(vers::ReportName::Extension(
+                                    all::ReportTypeName::Sync(sync::ReportTypeName::SyncCollection),
+                                )),
+                            ];
+                            reports.extend(this.0.additional_supported_reports());
+                            dav::Property::Extension(all::Property::Vers(
+                                vers::Property::SupportedReportSet(reports)
+                            ))
+                        },
+                        v => return Err(v),
+                    };
+                    Ok(prop)
+                }
+            })
+            .boxed()
+    }
+
+    fn put<'a>(
+        &'a mut self,
+        _policy: PutPolicy,
+        _stream: Content<'a>,
+    ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
+        futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported)).boxed()
+    }
+
+    fn content<'a>(&self) -> Content<'a> {
+        futures::stream::once(futures::future::err(std::io::Error::from(
+            std::io::ErrorKind::Unsupported,
+        )))
+        .boxed()
+    }
+
+    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
+        async { None }.boxed()
+    }
+
+    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
+        async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
+    }
+    
+    fn diff<'a>(
+        &self,
+        sync_token: Option<Token>,
+    ) -> BoxFuture<
+        'a,
+        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
+    > {
+        let mut this = self.clone();
+        async move {
+            let sync_token = match sync_token {
+                Some(v) => v,
+                None => {
+                    let token = this
+                        .0
+                        .collection_mut()
+                        .token()
+                        .await
+                        .or(Err(std::io::Error::from(std::io::ErrorKind::Interrupted)))?;
+                    let ok_nodes = this
+                        .0
+                        .collection()
+                        .index()
+                        .idx_by_filename
+                        .iter()
+                        .map(|(filename, _)| this.0.mk_child_node(filename))
+                        .collect();
+
+                    return Ok((token, ok_nodes, vec![]));
+                }
+            };
+            let (new_token, listed_changes) = match this.0.collection_mut().diff(sync_token).await {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::info!(err=?e, "token resolution failed, maybe a forgotten token");
+                    return Err(std::io::Error::from(std::io::ErrorKind::NotFound));
+                }
+            };
+
+            let mut ok_nodes: Vec<Box<dyn DavNode>> = vec![];
+            let mut rm_nodes: Vec<dav::Href> = vec![];
+            for change in listed_changes.into_iter() {
+                match change {
+                    SyncChange::Ok((filename, _)) => {
+                        ok_nodes.push(this.0.mk_child_node(&filename));
+                    }
+                    SyncChange::NotFound(filename) => {
+                        rm_nodes.push(dav::Href(filename));
+                    }
+                }
+            }
+
+            Ok((new_token, ok_nodes, rm_nodes))
+        }
+        .boxed()
+    }
+
+    fn content_type(&self) -> &str {
+        self.0.content_type()
+    }
+    
+    fn dav_header(&self) -> String {
+        let mut parts = vec!["1, access-control".to_string()];
+        parts.extend(self.0.additional_dav_headers());
+        parts.join(", ")
     }
 }

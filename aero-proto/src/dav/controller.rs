@@ -17,8 +17,8 @@ use aero_ical::query::is_component_match;
 
 use crate::dav::codec;
 use crate::dav::codec::{depth, deserialize, serialize, text_body};
-use crate::dav::node::DavNode;
-use crate::dav::resource::{RootNode, BASE_TOKEN_URI};
+use crate::dav::node::{DavNode, BASE_TOKEN_URI};
+use crate::dav::resource::RootNode;
 
 pub(super) type HttpResponse = Response<UnsyncBoxBody<Bytes, std::io::Error>>;
 
