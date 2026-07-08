@@ -24,7 +24,6 @@ use aero_dav::realization::{self as all, All};
 use aero_dav::coretypes as dav;
 use aero_dav::versioningtypes as vers;
 
-use super::node::PropertyStream;
 use crate::dav::node::{
     Content, DavNode,
     DavObject, DavObjectNode,
@@ -75,32 +74,30 @@ impl DavNode for RootNode {
         ])
     }
 
-    fn properties(&self, user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
-        let user = user.clone();
-        futures::stream::iter(prop.0)
-            .map(move |n| {
-                let prop = match n {
-                    dav::PropertyRequest::DisplayName => {
-                        dav::Property::DisplayName("DAV Root".to_string())
-                    }
-                    dav::PropertyRequest::ResourceType => {
-                        dav::Property::ResourceType(vec![dav::ResourceType::Collection])
-                    }
-                    dav::PropertyRequest::GetContentType => {
-                        dav::Property::GetContentType("httpd/unix-directory".into())
-                    }
+    fn properties<'a>(&'a mut self, user: &'a User, prop: dav::PropName<All>) -> BoxFuture<'a, Vec<PropertyResult>> {
+        async move {
+            let mut v = vec![];
+            for n in prop.0 {
+                let res = match n {
+                    dav::PropertyRequest::DisplayName =>
+                        Ok(dav::Property::DisplayName("DAV Root".to_string())),
+                    dav::PropertyRequest::ResourceType =>
+                        Ok(dav::Property::ResourceType(vec![dav::ResourceType::Collection])),
+                    dav::PropertyRequest::GetContentType =>
+                        Ok(dav::Property::GetContentType("httpd/unix-directory".into())),
                     dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
                         acl::PropertyRequest::CurrentUserPrincipal,
-                    )) => dav::Property::Extension(all::Property::Acl(
+                    )) => Ok(dav::Property::Extension(all::Property::Acl(
                         acl::Property::CurrentUserPrincipal(acl::User::Authenticated(dav::Href(
                             HomeNode {}.path(&user),
                         ))),
-                    )),
-                    v => return Err(v),
+                    ))),
+                    v => Err(v),
                 };
-                Ok(prop)
-            })
-            .boxed()
+                v.push(res)
+            }
+            v
+        }.boxed()
     }
 
     fn put<'a>(
@@ -126,12 +123,12 @@ impl DavNode for RootNode {
         async { None }.boxed()
     }
 
-    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
+    fn delete<'a>(&'a mut self) -> BoxFuture<'a, std::result::Result<(), std::io::Error>> {
         async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
     }
 
     fn diff<'a>(
-        &self,
+        &'a mut self,
         _sync_token: Option<Token>,
     ) -> BoxFuture<
         'a,
@@ -196,38 +193,36 @@ impl DavNode for HomeNode {
             )),
         ])
     }
-    fn properties(&self, user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
-        let user = user.clone();
-
-        futures::stream::iter(prop.0)
-            .map(move |n| {
-                let prop = match n {
-                    dav::PropertyRequest::DisplayName => {
-                        dav::Property::DisplayName(format!("{} home", user.username))
-                    }
-                    dav::PropertyRequest::ResourceType => dav::Property::ResourceType(vec![
+    fn properties<'a>(&'a mut self, user: &'a User, prop: dav::PropName<All>) -> BoxFuture<'a, Vec<PropertyResult>> {
+        async move {
+            let mut v = vec![];
+            for n in prop.0 {
+                let res = match n {
+                    dav::PropertyRequest::DisplayName =>
+                        Ok(dav::Property::DisplayName(format!("{} home", user.username))),
+                    dav::PropertyRequest::ResourceType => Ok(dav::Property::ResourceType(vec![
                         dav::ResourceType::Collection,
                         dav::ResourceType::Extension(all::ResourceType::Acl(
                             acl::ResourceType::Principal,
                         )),
-                    ]),
-                    dav::PropertyRequest::GetContentType => {
-                        dav::Property::GetContentType("httpd/unix-directory".into())
-                    }
+                    ])),
+                    dav::PropertyRequest::GetContentType =>
+                        Ok(dav::Property::GetContentType("httpd/unix-directory".into())),
                     dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
                         cal::PropertyRequest::CalendarHomeSet,
-                    )) => dav::Property::Extension(all::Property::Cal(
+                    )) => Ok(dav::Property::Extension(all::Property::Cal(
                         cal::Property::CalendarHomeSet(dav::Href(
                             //@FIXME we are hardcoding the calendar path, instead we would want to use
                             //objects
                             format!("/{}/calendar/", user.username),
                         )),
-                    )),
-                    v => return Err(v),
+                    ))),
+                    v => Err(v),
                 };
-                Ok(prop)
-            })
-            .boxed()
+                v.push(res);
+            }
+            v
+        }.boxed()
     }
 
     fn put<'a>(
@@ -253,11 +248,11 @@ impl DavNode for HomeNode {
         async { None }.boxed()
     }
 
-    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
+    fn delete<'a>(&'a mut self) -> BoxFuture<'a, std::result::Result<(), std::io::Error>> {
         async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
     }
     fn diff<'a>(
-        &self,
+        &'a mut self,
         _sync_token: Option<Token>,
     ) -> BoxFuture<
         'a,
@@ -348,26 +343,23 @@ impl DavNode for CalendarListNode {
             dav::PropertyRequest::GetContentType,
         ])
     }
-    fn properties(&self, user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
-        let user = user.clone();
-
-        futures::stream::iter(prop.0)
-            .map(move |n| {
-                let prop = match n {
-                    dav::PropertyRequest::DisplayName => {
-                        dav::Property::DisplayName(format!("{} calendars", user.username))
-                    }
-                    dav::PropertyRequest::ResourceType => {
-                        dav::Property::ResourceType(vec![dav::ResourceType::Collection])
-                    }
-                    dav::PropertyRequest::GetContentType => {
-                        dav::Property::GetContentType("httpd/unix-directory".into())
-                    }
-                    v => return Err(v),
+    fn properties<'a>(&'a mut self, user: &'a User, prop: dav::PropName<All>) -> BoxFuture<'a, Vec<PropertyResult>> {
+        async move {
+            let mut v = vec![];
+            for n in prop.0 {
+                let res = match n {
+                    dav::PropertyRequest::DisplayName =>
+                        Ok(dav::Property::DisplayName(format!("{} calendars", user.username))),
+                    dav::PropertyRequest::ResourceType =>
+                        Ok(dav::Property::ResourceType(vec![dav::ResourceType::Collection])),
+                    dav::PropertyRequest::GetContentType =>
+                        Ok(dav::Property::GetContentType("httpd/unix-directory".into())),
+                    v => Err(v),
                 };
-                Ok(prop)
-            })
-            .boxed()
+                v.push(res)
+            }
+            v
+        }.boxed()
     }
 
     fn put<'a>(
@@ -393,11 +385,11 @@ impl DavNode for CalendarListNode {
         async { None }.boxed()
     }
 
-    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
+    fn delete<'a>(&'a mut self) -> BoxFuture<'a, std::result::Result<(), std::io::Error>> {
         async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
     }
     fn diff<'a>(
-        &self,
+        &'a mut self,
         _sync_token: Option<Token>,
     ) -> BoxFuture<
         'a,
@@ -464,7 +456,7 @@ impl DavStoredCollection for CalendarNode {
         ]            
     }
 
-    fn additional_property<'a>(&self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult> {
+    fn additional_property<'a>(&'a mut self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult> {
         async move {
             match prop {
                 dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
@@ -537,7 +529,7 @@ impl DavObject for CalendarEventNode {
         ]
     }
 
-    fn additional_property<'a>(&self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult> {
+    fn additional_property<'a>(&'a mut self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult> {
         let this = self.clone();
         async move {
             match prop {

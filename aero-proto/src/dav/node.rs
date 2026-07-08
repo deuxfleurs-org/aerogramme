@@ -27,7 +27,6 @@ use aero_dav::versioningtypes as vers;
 pub const BASE_TOKEN_URI: &str = "https://aerogramme.0/sync/";
 
 pub(crate) type Content<'a> = BoxStream<'a, std::result::Result<Bytes, std::io::Error>>;
-pub(crate) type PropertyStream<'a> = BoxStream<'a, PropertyResult>;
 pub(crate) type PropertyResult =
     std::result::Result<dav::Property<All>, dav::PropertyRequest<All>>;
 
@@ -57,7 +56,7 @@ pub(crate) trait DavNode: Send {
     /// Get the supported WebDAV properties
     fn supported_properties(&self, user: &User) -> dav::PropName<All>;
     /// Get the values for the given properties
-    fn properties(&self, user: &User, prop: dav::PropName<All>) -> PropertyStream<'static>;
+    fn properties<'a>(&'a mut self, user: &'a User, prop: dav::PropName<All>) -> BoxFuture<'a, Vec<PropertyResult>>;
     /// Get the value of the DAV header to return
     fn dav_header(&self) -> String;
 
@@ -74,10 +73,10 @@ pub(crate) trait DavNode: Send {
     /// Get content
     fn content<'a>(&self) -> Content<'a>;
     /// Delete
-    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>>;
+    fn delete<'a>(&'a mut self) -> BoxFuture<'a, std::result::Result<(), std::io::Error>>;
     /// Sync
     fn diff<'a>(
-        &self,
+        &'a mut self,
         sync_token: Option<Token>,
     ) -> BoxFuture<
         'a,
@@ -109,19 +108,19 @@ pub(crate) trait DavNode: Send {
     }
 
     /// Utility function to get a prop response from a node & a list of propname
-    fn response_props(
-        &self,
-        user: &User,
+    fn response_props<'a>(
+        &'a mut self,
+        user: &'a User,
         props: dav::PropName<All>,
-    ) -> BoxFuture<'static, dav::Response<All>> {
+    ) -> BoxFuture<'a, dav::Response<All>> {
         //@FIXME we should make the DAV parsed object a stream...
-        let mut result_stream = self.properties(user, props);
         let path = self.path(user);
+        let prop_results = self.properties(user, props);
 
         async move {
             let mut prop_desc = vec![];
             let (mut found, mut not_found) = (vec![], vec![]);
-            while let Some(maybe_prop) = result_stream.next().await {
+            for maybe_prop in prop_results.await {
                 match maybe_prop {
                     Ok(v) => found.push(dav::AnyProperty::Value(v)),
                     Err(v) => not_found.push(dav::AnyProperty::Request(v)),
@@ -187,7 +186,7 @@ pub(crate) trait DavObject: Send + Sync + Clone + 'static {
     fn additional_supported_properties(&self) -> Vec<dav::PropertyRequest<All>>;
 
     /// Getter for the value of properties listed by `additional_supported_properties`.
-    fn additional_property<'a>(&self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult>;
+    fn additional_property<'a>(&'a mut self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult>;
 
     /// Helper to get the id of the object contents in the store.
     /// Returns `None` if the object does not exist in the store.
@@ -244,35 +243,30 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
         }
         dav::PropName(props)
     }
-    fn properties(&self, _user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
-        let this = self.clone();
-        futures::stream::iter(prop.0)
-            .then(move |n| {
-                let this = this.clone();
-
-                async move {
-                    if let Ok(prop) = this.0.additional_property(&n).await {
-                        return Ok(prop)
-                    }
-
-                    let prop = match &n {
-                        dav::PropertyRequest::DisplayName => {
-                            dav::Property::DisplayName(format!("{}", this.0.filename()))
-                        }
-                        dav::PropertyRequest::ResourceType => dav::Property::ResourceType(vec![]),
-                        dav::PropertyRequest::GetContentType => {
-                            dav::Property::GetContentType(this.content_type().to_string())
-                        }
-                        dav::PropertyRequest::GetEtag => {
-                            let etag = this.etag().await.ok_or(n.clone())?;
-                            dav::Property::GetEtag(etag)
-                        }
-                        _ => return Err(n),
-                    };
-                    Ok(prop)
+    fn properties<'a>(&'a mut self, _user: &'a User, prop: dav::PropName<All>) -> BoxFuture<'a, Vec<PropertyResult>> {
+        async move {
+            let mut v = vec![];
+            for n in prop.0 {
+                if let Ok(prop) = self.0.additional_property(&n).await {
+                    v.push(Ok(prop));
+                    continue
                 }
-            })
-            .boxed()
+
+                let res = match &n {
+                    dav::PropertyRequest::DisplayName =>
+                        Ok(dav::Property::DisplayName(format!("{}", self.0.filename()))),
+                    dav::PropertyRequest::ResourceType =>
+                        Ok(dav::Property::ResourceType(vec![])),
+                    dav::PropertyRequest::GetContentType =>
+                        Ok(dav::Property::GetContentType(self.content_type().to_string())),
+                    dav::PropertyRequest::GetEtag =>
+                        self.etag().await.ok_or(n.clone()).map(dav::Property::GetEtag),
+                    _ => Err(n),
+                };
+                v.push(res)
+            }
+            v
+        }.boxed()
     }
 
     fn put<'a>(
@@ -327,6 +321,9 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
         if let Some(blob_id) = self.0.blob_id() {
             //@FIXME for now, our storage interface does not allow streaming,
             // so we load everything in memory
+            // NOTE: we need to clone the collection so that the returned
+            // `Content` outlives the lifetime of `&self`. Cloning collections
+            // is cheap so this is fine.
             let col = self.0.collection().clone();
             let blob = async move {
                 let raw = col
@@ -366,7 +363,7 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
         }
     }
 
-    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
+    fn delete<'a>(&'a mut self) -> BoxFuture<'a, std::result::Result<(), std::io::Error>> {
         let blob_id = match self.0.blob_id() {
             None => {
                 // Nothing to delete
@@ -375,26 +372,24 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
             Some(blob_id) => blob_id,
         };
 
-        let mut col = self.0.collection().clone();
-
         async move {
-            let _token = match col.delete(blob_id).await {
+            let _token = match self.0.collection_mut().delete(blob_id).await {
                 Ok(v) => v,
                 Err(e) => {
                     tracing::error!(err=?e, "delete object node");
                     return Err(std::io::Error::from(std::io::ErrorKind::Interrupted));
                 }
             };
-            col
-                .sync()
-                .await
-                .or(Err(std::io::ErrorKind::ConnectionReset))?;
+            self.0.collection_mut()
+                  .sync()
+                  .await
+                  .or(Err(std::io::ErrorKind::ConnectionReset))?;
             Ok(())
         }
         .boxed()
     }
     fn diff<'a>(
-        &self,
+        &'a mut self,
         _sync_token: Option<Token>,
     ) -> BoxFuture<
         'a,
@@ -440,7 +435,7 @@ pub(crate) trait DavStoredCollection: Send + Sync + Clone + 'static {
     fn additional_supported_properties(&self) -> Vec<dav::PropertyRequest<All>>;
 
     /// Getter for the value of properties listed by `additional_supported_properties`.
-    fn additional_property<'a>(&self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult>;
+    fn additional_property<'a>(&'a mut self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult>;
 
     /// Additional report types advertised by this collection.
     fn additional_supported_reports(&self) -> Vec<vers::SupportedReport<All>>;
@@ -479,7 +474,6 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
 
     fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
         let this = self.clone();
-
         async move {
             this.0
                 .collection()
@@ -512,59 +506,55 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
         dav::PropName(props)
     }
 
-    fn properties(&self, _user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
-        let this = self.clone();
-        futures::stream::iter(prop.0)
-            .then(move |n| {
-                let mut this = this.clone();
-
-                async move {
-                    if let Ok(prop) = this.0.additional_property(&n).await {
-                        return Ok(prop)
-                    }
-                    
-                    let prop = match n {
-                        dav::PropertyRequest::DisplayName => {
-                            dav::Property::DisplayName(this.0.display_name().clone())
-                        }
-                        dav::PropertyRequest::ResourceType => {
-                            let mut typ = vec![dav::ResourceType::Collection];
-                            typ.extend(this.0.additional_resource_types());
-                            dav::Property::ResourceType(typ)
-                        },
-                        dav::PropertyRequest::GetContentType => {
-                            dav::Property::GetContentType(this.content_type().to_string())
-                        }
-                        dav::PropertyRequest::Extension(all::PropertyRequest::Sync(
-                            sync::PropertyRequest::SyncToken,
-                        )) => match this.0.collection_mut().token().await {
-                            Ok(token) => dav::Property::Extension(all::Property::Sync(
-                                sync::Property::SyncToken(sync::SyncToken(format!(
-                                    "{}{}",
-                                    BASE_TOKEN_URI, token
-                                ))),
-                            )),
-                            _ => return Err(n.clone()),
-                        },
-                        dav::PropertyRequest::Extension(all::PropertyRequest::Vers(
-                            vers::PropertyRequest::SupportedReportSet,
-                        )) => {
-                            let mut reports = vec![
-                                vers::SupportedReport(vers::ReportName::Extension(
-                                    all::ReportTypeName::Sync(sync::ReportTypeName::SyncCollection),
-                                )),
-                            ];
-                            reports.extend(this.0.additional_supported_reports());
-                            dav::Property::Extension(all::Property::Vers(
-                                vers::Property::SupportedReportSet(reports)
-                            ))
-                        },
-                        v => return Err(v),
-                    };
-                    Ok(prop)
+    fn properties<'a>(&'a mut self, _user: &'a User, prop: dav::PropName<All>) -> BoxFuture<'a, Vec<PropertyResult>> {
+        async {
+            let mut v = vec![];
+            for n in prop.0 {
+                if let Ok(prop) = self.0.additional_property(&n).await {
+                    v.push(Ok(prop));
+                    continue
                 }
-            })
-            .boxed()
+                    
+                let res = match n {
+                    dav::PropertyRequest::DisplayName =>
+                        Ok(dav::Property::DisplayName(self.0.display_name().clone())),
+                    dav::PropertyRequest::ResourceType => {
+                        let mut typ = vec![dav::ResourceType::Collection];
+                        typ.extend(self.0.additional_resource_types());
+                        Ok(dav::Property::ResourceType(typ))
+                    },
+                    dav::PropertyRequest::GetContentType =>
+                        Ok(dav::Property::GetContentType(self.content_type().to_string())),
+                    dav::PropertyRequest::Extension(all::PropertyRequest::Sync(
+                        sync::PropertyRequest::SyncToken,
+                    )) => match self.0.collection_mut().token().await {
+                        Ok(token) => Ok(dav::Property::Extension(all::Property::Sync(
+                            sync::Property::SyncToken(sync::SyncToken(format!(
+                                "{}{}",
+                                BASE_TOKEN_URI, token
+                            ))),
+                        ))),
+                        _ => Err(n.clone()),
+                    },
+                    dav::PropertyRequest::Extension(all::PropertyRequest::Vers(
+                        vers::PropertyRequest::SupportedReportSet,
+                    )) => {
+                        let mut reports = vec![
+                            vers::SupportedReport(vers::ReportName::Extension(
+                                all::ReportTypeName::Sync(sync::ReportTypeName::SyncCollection),
+                            )),
+                        ];
+                        reports.extend(self.0.additional_supported_reports());
+                        Ok(dav::Property::Extension(all::Property::Vers(
+                            vers::Property::SupportedReportSet(reports)
+                        )))
+                    },
+                    v => Err(v),
+                };
+                v.push(res)
+            }
+            v
+        }.boxed()
     }
 
     fn put<'a>(
@@ -586,41 +576,40 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
         async { None }.boxed()
     }
 
-    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
+    fn delete<'a>(&'a mut self) -> BoxFuture<'a, std::result::Result<(), std::io::Error>> {
         async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
     }
     
     fn diff<'a>(
-        &self,
+        &'a mut self,
         sync_token: Option<Token>,
     ) -> BoxFuture<
         'a,
         std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
     > {
-        let mut this = self.clone();
         async move {
             let sync_token = match sync_token {
                 Some(v) => v,
                 None => {
-                    let token = this
+                    let token = self
                         .0
                         .collection_mut()
                         .token()
                         .await
                         .or(Err(std::io::Error::from(std::io::ErrorKind::Interrupted)))?;
-                    let ok_nodes = this
+                    let ok_nodes = self
                         .0
                         .collection()
                         .index()
                         .idx_by_filename
                         .iter()
-                        .map(|(filename, _)| this.0.mk_child_node(filename))
+                        .map(|(filename, _)| self.0.mk_child_node(filename))
                         .collect();
 
                     return Ok((token, ok_nodes, vec![]));
                 }
             };
-            let (new_token, listed_changes) = match this.0.collection_mut().diff(sync_token).await {
+            let (new_token, listed_changes) = match self.0.collection_mut().diff(sync_token).await {
                 Ok(v) => v,
                 Err(e) => {
                     tracing::info!(err=?e, "token resolution failed, maybe a forgotten token");
@@ -633,7 +622,7 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
             for change in listed_changes.into_iter() {
                 match change {
                     SyncChange::Ok((filename, _)) => {
-                        ok_nodes.push(this.0.mk_child_node(&filename));
+                        ok_nodes.push(self.0.mk_child_node(&filename));
                     }
                     SyncChange::NotFound(filename) => {
                         rm_nodes.push(dav::Href(filename));
