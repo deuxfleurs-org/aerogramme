@@ -26,7 +26,8 @@ use aero_dav::versioningtypes as vers;
 /// now. So here we are: https://aerogramme.0.
 pub const BASE_TOKEN_URI: &str = "https://aerogramme.0/sync/";
 
-pub(crate) type Content<'a> = BoxStream<'a, std::result::Result<Bytes, std::io::Error>>;
+pub(crate) type IOResult<T> = std::result::Result<T, std::io::Error>;
+pub(crate) type Content<'a> = BoxStream<'a, IOResult<Bytes>>;
 pub(crate) type PropertyResult =
     std::result::Result<dav::Property<All>, dav::PropertyRequest<All>>;
 
@@ -63,25 +64,32 @@ pub(crate) trait DavNode: Send {
     /// Put an element (create or update)
     fn put<'a>(
         &'a mut self,
-        policy: PutPolicy,
-        stream: Content<'a>,
-    ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>>;
+        _policy: PutPolicy,
+        _stream: Content<'a>,
+    ) -> BoxFuture<'a, IOResult<Etag>> {
+        async { Err(unsupported()) }.boxed()
+    }
     /// Content type of the element
     fn content_type(&self) -> &str;
     /// Get ETag
-    fn etag(&self) -> BoxFuture<'_, Option<Etag>>;
+    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
+        async { None }.boxed()
+    }
     /// Get content
-    fn content<'a>(&self) -> Content<'a>;
+    fn content<'a>(&self) -> Content<'a> {
+        futures::stream::once(futures::future::err(unsupported())).boxed()
+    }
     /// Delete
-    fn delete<'a>(&'a mut self) -> BoxFuture<'a, std::result::Result<(), std::io::Error>>;
+    fn delete<'a>(&'a mut self) -> BoxFuture<'a, IOResult<()>> {
+        async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
+    }
     /// Sync
     fn diff<'a>(
         &'a mut self,
-        sync_token: Option<Token>,
-    ) -> BoxFuture<
-        'a,
-        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
-    >;
+        _sync_token: Option<Token>,
+    ) -> BoxFuture<'a, IOResult<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>)>> {
+        async { Err(unsupported()) }.boxed()
+    }
 
     /// Utility function to get a propname response from a node
     fn response_propname(&self, user: &User) -> dav::Response<All> {
@@ -159,6 +167,10 @@ pub(crate) trait DavNode: Send {
         }
         .boxed()
     }
+}
+
+fn unsupported() -> std::io::Error {
+    std::io::Error::from(std::io::ErrorKind::Unsupported)
 }
 
 // ---- DavNode sub-traits that factor generic WebDAV behaviors
@@ -273,7 +285,7 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
         &'a mut self,
         policy: PutPolicy,
         stream: Content<'a>,
-    ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
+    ) -> BoxFuture<'a, IOResult<Etag>> {
         async {
             let blob_id = self.0.blob_id();
             match policy {
@@ -363,7 +375,7 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
         }
     }
 
-    fn delete<'a>(&'a mut self) -> BoxFuture<'a, std::result::Result<(), std::io::Error>> {
+    fn delete<'a>(&'a mut self) -> BoxFuture<'a, IOResult<()>> {
         let blob_id = match self.0.blob_id() {
             None => {
                 // Nothing to delete
@@ -387,15 +399,6 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
             Ok(())
         }
         .boxed()
-    }
-    fn diff<'a>(
-        &'a mut self,
-        _sync_token: Option<Token>,
-    ) -> BoxFuture<
-        'a,
-        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
-    > {
-        async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
     }
 
     fn dav_header(&self) -> String {
@@ -557,36 +560,10 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
         }.boxed()
     }
 
-    fn put<'a>(
-        &'a mut self,
-        _policy: PutPolicy,
-        _stream: Content<'a>,
-    ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
-        futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported)).boxed()
-    }
-
-    fn content<'a>(&self) -> Content<'a> {
-        futures::stream::once(futures::future::err(std::io::Error::from(
-            std::io::ErrorKind::Unsupported,
-        )))
-        .boxed()
-    }
-
-    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
-        async { None }.boxed()
-    }
-
-    fn delete<'a>(&'a mut self) -> BoxFuture<'a, std::result::Result<(), std::io::Error>> {
-        async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
-    }
-    
     fn diff<'a>(
         &'a mut self,
         sync_token: Option<Token>,
-    ) -> BoxFuture<
-        'a,
-        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
-    > {
+    ) -> BoxFuture<'a, IOResult<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>)>> {
         async move {
             let sync_token = match sync_token {
                 Some(v) => v,
@@ -645,3 +622,4 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
         parts.join(", ")
     }
 }
+

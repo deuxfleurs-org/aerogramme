@@ -15,7 +15,6 @@ use futures::{future::BoxFuture, future::FutureExt};
 
 use aero_collections::{
     dav::collection::Collection,
-    dav::davindex::{Etag, Token},
     user::User,
 };
 use aero_dav::acltypes as acl;
@@ -25,10 +24,10 @@ use aero_dav::coretypes as dav;
 use aero_dav::versioningtypes as vers;
 
 use crate::dav::node::{
-    Content, DavNode,
+    DavNode,
     DavObject, DavObjectNode,
     DavStoredCollection, DavStoredCollectionNode,
-    PutPolicy, PropertyResult,
+    PropertyResult,
 };
 
 /// The root of the webdav filesystem
@@ -100,41 +99,8 @@ impl DavNode for RootNode {
         }.boxed()
     }
 
-    fn put<'a>(
-        &'a mut self,
-        _policy: PutPolicy,
-        _stream: Content<'a>,
-    ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
-        futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported)).boxed()
-    }
-
-    fn content<'a>(&self) -> Content<'a> {
-        futures::stream::once(futures::future::err(std::io::Error::from(
-            std::io::ErrorKind::Unsupported,
-        )))
-        .boxed()
-    }
-
     fn content_type(&self) -> &str {
         "text/plain"
-    }
-
-    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
-        async { None }.boxed()
-    }
-
-    fn delete<'a>(&'a mut self) -> BoxFuture<'a, std::result::Result<(), std::io::Error>> {
-        async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
-    }
-
-    fn diff<'a>(
-        &'a mut self,
-        _sync_token: Option<Token>,
-    ) -> BoxFuture<
-        'a,
-        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
-    > {
-        async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
     }
 
     fn dav_header(&self) -> String {
@@ -225,40 +191,8 @@ impl DavNode for HomeNode {
         }.boxed()
     }
 
-    fn put<'a>(
-        &'a mut self,
-        _policy: PutPolicy,
-        _stream: Content<'a>,
-    ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
-        futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported)).boxed()
-    }
-
-    fn content<'a>(&self) -> Content<'a> {
-        futures::stream::once(futures::future::err(std::io::Error::from(
-            std::io::ErrorKind::Unsupported,
-        )))
-        .boxed()
-    }
-
     fn content_type(&self) -> &str {
         "text/plain"
-    }
-
-    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
-        async { None }.boxed()
-    }
-
-    fn delete<'a>(&'a mut self) -> BoxFuture<'a, std::result::Result<(), std::io::Error>> {
-        async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
-    }
-    fn diff<'a>(
-        &'a mut self,
-        _sync_token: Option<Token>,
-    ) -> BoxFuture<
-        'a,
-        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
-    > {
-        async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
     }
 
     fn dav_header(&self) -> String {
@@ -362,40 +296,8 @@ impl DavNode for CalendarListNode {
         }.boxed()
     }
 
-    fn put<'a>(
-        &'a mut self,
-        _policy: PutPolicy,
-        _stream: Content<'a>,
-    ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
-        futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported)).boxed()
-    }
-
-    fn content<'a>(&self) -> Content<'a> {
-        futures::stream::once(futures::future::err(std::io::Error::from(
-            std::io::ErrorKind::Unsupported,
-        )))
-        .boxed()
-    }
-
     fn content_type(&self) -> &str {
         "text/plain"
-    }
-
-    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
-        async { None }.boxed()
-    }
-
-    fn delete<'a>(&'a mut self) -> BoxFuture<'a, std::result::Result<(), std::io::Error>> {
-        async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
-    }
-    fn diff<'a>(
-        &'a mut self,
-        _sync_token: Option<Token>,
-    ) -> BoxFuture<
-        'a,
-        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
-    > {
-        async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
     }
 
     fn dav_header(&self) -> String {
