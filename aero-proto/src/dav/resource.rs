@@ -9,8 +9,7 @@
 //! ├── bob                           homedir for user "bob"
 //! │   └── ...
 
-use anyhow::{anyhow, Result};
-use futures::stream::StreamExt;
+use anyhow::Result;
 use futures::{future::BoxFuture, future::FutureExt};
 
 use aero_collections::{
@@ -24,6 +23,7 @@ use aero_dav::coretypes as dav;
 use aero_dav::versioningtypes as vers;
 
 use crate::dav::node::{
+    ChildNode,
     DavNode,
     DavObject, DavObjectNode,
     DavStoredCollection, DavStoredCollectionNode,
@@ -34,28 +34,22 @@ use crate::dav::node::{
 #[derive(Clone)]
 pub(crate) struct RootNode {}
 impl DavNode for RootNode {
-    fn fetch<'a>(
-        &self,
-        user: &'a User,
-        path: &'a [&str],
-        create: bool,
-    ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
-        if path.len() == 0 {
-            let this = self.clone();
-            return async { Ok(Box::new(this) as Box<dyn DavNode>) }.boxed();
-        }
-
-        if path[0] == user.username {
-            let child = Box::new(HomeNode {});
-            return child.fetch(user, &path[1..], create);
-        }
-
-        //@NOTE: We can't create a node at this level
-        async { Err(anyhow!("Not found")) }.boxed()
+    fn clone_node(&self) -> Box<dyn DavNode> {
+        Box::new(self.clone())
     }
 
-    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
-        async { vec![Box::new(HomeNode {}) as Box<dyn DavNode>] }.boxed()
+    fn children<'a>(&self, user: &'a User) -> BoxFuture<'a, Vec<String>> {
+        async { vec![user.username.to_string()] }.boxed()
+    }
+
+    fn child_node<'a>(&self, user: &'a User, name: &str) -> BoxFuture<'a, Result<ChildNode>> {
+        let node =
+            if name == user.username {
+                ChildNode::Existing(Box::new(HomeNode {}) as Box<dyn DavNode>)
+            } else {
+                ChildNode::CannotCreate
+            };
+        async move { Ok(node) }.boxed()
     }
 
     fn path(&self, _user: &User) -> String {
@@ -99,12 +93,12 @@ impl DavNode for RootNode {
         }.boxed()
     }
 
-    fn content_type(&self) -> &str {
-        "text/plain"
-    }
-
     fn dav_header(&self) -> String {
         "1".into()
+    }
+
+    fn content_type(&self) -> &str {
+        "text/plain"
     }
 }
 
@@ -112,37 +106,23 @@ impl DavNode for RootNode {
 #[derive(Clone)]
 pub(crate) struct HomeNode {}
 impl DavNode for HomeNode {
-    fn fetch<'a>(
-        &self,
-        user: &'a User,
-        path: &'a [&str],
-        create: bool,
-    ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
-        if path.len() == 0 {
-            let node = Box::new(self.clone()) as Box<dyn DavNode>;
-            return async { Ok(node) }.boxed();
-        }
-
-        if path[0] == "calendar" {
-            return async move {
-                let child = Box::new(CalendarListNode::new(user).await?);
-                child.fetch(user, &path[1..], create).await
-            }
-            .boxed();
-        }
-
-        //@NOTE: we can't create a node at this level
-        async { Err(anyhow!("Not found")) }.boxed()
+    fn clone_node(&self) -> Box<dyn DavNode> {
+        Box::new(self.clone())
     }
 
-    fn children<'a>(&self, user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
-        async {
-            CalendarListNode::new(user)
-                .await
-                .map(|c| vec![Box::new(c) as Box<dyn DavNode>])
-                .unwrap_or(vec![])
+    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<String>> {
+        async { vec!["calendar".to_string()] }.boxed()
+    }
+
+    fn child_node<'a>(&self, user: &'a User, name: &str) -> BoxFuture<'a, Result<ChildNode>> {
+        if name == "calendar" {
+            async move {
+                let node = Box::new(CalendarListNode::new(user).await?) as Box<dyn DavNode>;
+                Ok(ChildNode::Existing(node))
+            }.boxed()
+        } else {
+            async move { Ok(ChildNode::CannotCreate) }.boxed()
         }
-        .boxed()
     }
 
     fn path(&self, user: &User) -> String {
@@ -212,58 +192,36 @@ impl CalendarListNode {
     }
 }
 impl DavNode for CalendarListNode {
-    fn fetch<'a>(
-        &self,
-        user: &'a User,
-        path: &'a [&str],
-        create: bool,
-    ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
-        if path.len() == 0 {
-            let node = Box::new(self.clone()) as Box<dyn DavNode>;
-            return async { Ok(node) }.boxed();
-        }
-
-        async move {
-            //@FIXME: we should create a node if the open returns a "not found".
-            let cal = user
-                .calendars
-                .dav
-                .open(path[0])
-                .await?
-                .ok_or(anyhow!("Not found"))?;
-            let child = Box::new(DavStoredCollectionNode(CalendarNode {
-                col: cal,
-                calname: path[0].to_string(),
-            }));
-            child.fetch(user, &path[1..], create).await
-        }
-        .boxed()
+    fn clone_node(&self) -> Box<dyn DavNode> {
+        Box::new(self.clone())
     }
 
-    fn children<'a>(&self, user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<String>> {
         let list = self.list.clone();
-        async move {
-            //@FIXME maybe we want to be lazy here?!
-            futures::stream::iter(list.iter())
-                .filter_map(|name| async move {
-                    user.calendars
-                        .dav
-                        .open(name)
-                        .await
-                        .ok()
-                        .flatten()
-                        .map(|v| (name, v))
-                })
-                .map(|(name, cal)| {
-                    Box::new(DavStoredCollectionNode(CalendarNode {
-                        col: cal,
-                        calname: name.to_string(),
-                    })) as Box<dyn DavNode>
-                })
-                .collect::<Vec<Box<dyn DavNode>>>()
-                .await
-        }
-        .boxed()
+        async move { list }.boxed()
+    }
+
+    fn child_node<'a>(&self, user: &'a User, name: &str) -> BoxFuture<'a, Result<ChildNode>> {
+        let calname = name.to_string();
+        async {
+            let col = user
+                .calendars
+                .dav
+                .open(&calname)
+                .await?;
+            match col {
+                //@FIXME: allow creating new calendar nodes
+                None => Ok(ChildNode::CannotCreate),
+                Some(col) => {
+                    Ok(ChildNode::Existing(
+                        Box::new(DavStoredCollectionNode(CalendarNode {
+                            col,
+                            calname,
+                        })) as Box<dyn DavNode>
+                    ))
+                }
+            }
+        }.boxed()
     }
 
     fn path(&self, user: &User) -> String {
@@ -296,12 +254,12 @@ impl DavNode for CalendarListNode {
         }.boxed()
     }
 
-    fn content_type(&self) -> &str {
-        "text/plain"
-    }
-
     fn dav_header(&self) -> String {
         "1, access-control, calendar-access".into()
+    }
+
+    fn content_type(&self) -> &str {
+        "text/plain"
     }
 }
 

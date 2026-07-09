@@ -37,21 +37,36 @@ pub(crate) enum PutPolicy {
     ReplaceEtag(String),
 }
 
+pub(crate) enum ChildNode {
+    Existing(Box<dyn DavNode>),
+    Creating(Box<dyn DavNode>),
+    CannotCreate,
+}
+
 /// A DAV node should implement the following methods
 /// @FIXME not satisfied by BoxFutures but I have no better idea currently
 pub(crate) trait DavNode: Send {
-    // recurence, filesystem hierarchy
-    /// This node direct children
-    fn children<'a>(&self, user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>>;
-    /// Recursively fetch a child (progress inside the filesystem hierarchy)
-    fn fetch<'a>(
-        &self,
-        user: &'a User,
-        path: &'a [&str],
-        create: bool,
-    ) -> BoxFuture<'a, Result<Box<dyn DavNode>>>;
+    // --- recurence, filesystem hierarchy
 
-    // node properties
+    /// Clone self as a new node.
+    fn clone_node(&self) -> Box<dyn DavNode>;
+
+    /// List direct children of this node
+    fn children<'a>(&self, user: &'a User) -> BoxFuture<'a, Vec<String>>;
+
+    /// Create a `DavNode` for a child of this node.
+    ///
+    /// - If `name` is in `self.children()`, this function must return
+    ///   `ChildNode::Existing()` with the corresponding node.
+    /// - If `name` is not in `self.children()`:
+    ///   + if the node supports creating new children, this must return
+    ///     `ChildNode::Creating()` with a node for the new child.
+    ///   + if the node does not support adding children, this must return
+    ///     `ChildNode::CannotCreate`.
+    fn child_node<'a>(&self, user: &'a User, name: &str) -> BoxFuture<'a, Result<ChildNode>>;
+
+    // --- node properties
+
     /// Get the path
     fn path(&self, user: &User) -> String;
     /// Get the supported WebDAV properties
@@ -60,6 +75,10 @@ pub(crate) trait DavNode: Send {
     fn properties<'a>(&'a mut self, user: &'a User, prop: dav::PropName<All>) -> BoxFuture<'a, Vec<PropertyResult>>;
     /// Get the value of the DAV header to return
     fn dav_header(&self) -> String;
+    /// Content type of the element
+    fn content_type(&self) -> &str;
+
+    // --- operations (with default impls, intended to be redefined)
 
     /// Put an element (create or update)
     fn put<'a>(
@@ -69,8 +88,6 @@ pub(crate) trait DavNode: Send {
     ) -> BoxFuture<'a, IOResult<Etag>> {
         async { Err(unsupported()) }.boxed()
     }
-    /// Content type of the element
-    fn content_type(&self) -> &str;
     /// Get ETag
     fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
         async { None }.boxed()
@@ -89,6 +106,47 @@ pub(crate) trait DavNode: Send {
         _sync_token: Option<Token>,
     ) -> BoxFuture<'a, IOResult<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>)>> {
         async { Err(unsupported()) }.boxed()
+    }
+
+    // --- derived utility functions, not intended to be redefined
+
+    fn children_nodes<'a>(&self, user: &'a User) -> BoxFuture<'a, Result<Vec<Box<dyn DavNode>>>> {
+        let this = self.clone_node();
+        async move {
+            let mut res = vec![];
+            for name in this.children(user).await {
+                match this.child_node(user, &name).await? {
+                    ChildNode::Existing(n) => res.push(n),
+                    _ => unreachable!(),
+                }
+            }
+            Ok(res)
+        }.boxed()
+    }
+    
+    /// Recursively fetch a child (progress inside the filesystem hierarchy)
+    fn fetch<'a>(
+        &self,
+        user: &'a User,
+        path: &'a [&str],
+        create: bool,
+    ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
+        if path.len() == 0 {
+            let node = self.clone_node();
+            return async { Ok(node) }.boxed();
+        }
+
+        let this = self.clone_node();
+        async move {
+            let child = match this.child_node(user, path[0]).await? {
+                ChildNode::Existing(n) => n,
+                ChildNode::Creating(n) if create => n,
+                ChildNode::Creating(_) => return Err(anyhow!("Not found")),
+                ChildNode::CannotCreate =>
+                    return Err(anyhow!("Unsupported: can't create child on this node")),
+            };
+            child.fetch(user, &path[1..], create).await
+        }.boxed()
     }
 
     /// Utility function to get a propname response from a node
@@ -216,27 +274,14 @@ pub(crate) struct DavObjectNode<T>(pub T);
 
 impl<T: DavObject> DavNode for DavObjectNode<T>
 {
-    fn fetch<'a>(
-        &self,
-        _user: &'a User,
-        path: &'a [&str],
-        _create: bool,
-    ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
-        if path.len() == 0 {
-            let node = Box::new(self.clone()) as Box<dyn DavNode>;
-            return async { Ok(node) }.boxed();
-        }
-
-        async {
-            Err(anyhow!(
-                "Not supported: can't create a child on an event node"
-            ))
-        }
-        .boxed()
+    fn clone_node(&self) -> Box<dyn DavNode> {
+        Box::new(self.clone())
     }
-
-    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<String>> {
         async { vec![] }.boxed()
+    }
+    fn child_node<'a>(&self, _user: &'a User, _name: &str) -> BoxFuture<'a, Result<ChildNode>> {
+        async { Ok(ChildNode::CannotCreate) }.boxed()
     }
 
     fn path(&self, user: &User) -> String {
@@ -279,6 +324,14 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
             }
             v
         }.boxed()
+    }
+
+    fn dav_header(&self) -> String {
+        "1, access-control".into()
+    }
+
+    fn content_type(&self) -> &str {
+        self.0.content_type()
     }
 
     fn put<'a>(
@@ -354,10 +407,6 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
         }
     }
 
-    fn content_type(&self) -> &str {
-        self.0.content_type()
-    }
-
     fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
         if let Some(blob_id) = self.0.blob_id() { 
             let col = self.0.collection().clone();
@@ -399,10 +448,6 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
             Ok(())
         }
         .boxed()
-    }
-
-    fn dav_header(&self) -> String {
-        "1, access-control".into()
     }
 }
 
@@ -452,41 +497,31 @@ pub struct DavStoredCollectionNode<T>(pub T);
 
 impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
 {
-    fn fetch<'a>(
-        &self,
-        user: &'a User,
-        path: &'a [&str],
-        create: bool,
-    ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
-        if path.len() == 0 {
-            let node = Box::new(self.clone()) as Box<dyn DavNode>;
-            return async { Ok(node) }.boxed();
-        }
-
-        let this = self.clone();
-        async move {
-            let child_idx = this.0.collection().index().idx_by_filename.get(path[0]).copied();
-            if child_idx.is_none() && !create {
-                return Err(anyhow!("Not found"))
-            }
-            let child = this.0.mk_child_node(path[0]);
-            child.fetch(user, &path[1..], create).await
-        }
-        .boxed()
+    fn clone_node(&self) -> Box<dyn DavNode> {
+        Box::new(self.clone())
     }
 
-    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
-        let this = self.clone();
-        async move {
-            this.0
+    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<String>> {
+        let res = self.0
                 .collection()
                 .index()
                 .idx_by_filename
-                .iter()
-                .map(|(filename, _)| this.0.mk_child_node(filename))
-                .collect()
-        }
-        .boxed()
+                .keys()
+                .map(|name| name.to_string())
+                .collect();
+        async move { res }.boxed()
+    }
+
+    fn child_node<'a>(&self, _user: &'a User, name: &str) -> BoxFuture<'a, Result<ChildNode>> {
+        let exists = self.0.collection().index().idx_by_filename.contains_key(name);
+        let node = self.0.mk_child_node(name);
+        async move {
+            if exists {
+                Ok(ChildNode::Existing(node))
+            } else {
+                Ok(ChildNode::Creating(node))
+            }
+        }.boxed()
     }
 
     fn path(&self, user: &User) -> String {
@@ -559,6 +594,16 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
             v
         }.boxed()
     }
+    
+    fn dav_header(&self) -> String {
+        let mut parts = vec!["1, access-control".to_string()];
+        parts.extend(self.0.additional_dav_headers());
+        parts.join(", ")
+    }
+
+    fn content_type(&self) -> &str {
+        self.0.content_type()
+    }
 
     fn diff<'a>(
         &'a mut self,
@@ -611,15 +656,4 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
         }
         .boxed()
     }
-
-    fn content_type(&self) -> &str {
-        self.0.content_type()
-    }
-    
-    fn dav_header(&self) -> String {
-        let mut parts = vec!["1, access-control".to_string()];
-        parts.extend(self.0.additional_dav_headers());
-        parts.join(", ")
-    }
 }
-

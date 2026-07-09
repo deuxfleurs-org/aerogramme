@@ -140,7 +140,7 @@ impl Controller {
             vers::Report::Extension(realization::ReportType::Cal(cal::ReportType::Query(q))) => {
                 calprop = q.selector;
                 extension = None;
-                ok_node = apply_filter(self.node.children(&self.user).await, &q.filter)
+                ok_node = apply_filter(self.node.children_nodes(&self.user).await?, &q.filter)
                     .try_collect()
                     .await?;
             }
@@ -227,7 +227,7 @@ impl Controller {
         // Collect nodes as PROPFIND is not limited to the targeted node
         let mut nodes = vec![];
         if matches!(depth, dav::Depth::One | dav::Depth::Infinity) {
-            nodes.extend(self.node.children(&self.user).await);
+            nodes.extend(self.node.children_nodes(&self.user).await?);
         }
         nodes.push(self.node);
 
