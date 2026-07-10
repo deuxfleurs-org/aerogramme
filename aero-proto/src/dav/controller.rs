@@ -207,14 +207,20 @@ impl Controller {
     /// PROPFIND is the standard way to fetch WebDAV properties
     async fn propfind(self) -> Result<HttpResponse> {
         let depth = depth(&self.req);
+        // The specification allows "depth: infinity" to not be implemented. "In
+        // practice, support for infinite-depth requests MAY be disabled, due to
+        // the performance and security concerns associated with this behavior."
         if matches!(depth, dav::Depth::Infinity) {
             return Ok(Response::builder()
                 .status(501)
                 .body(text_body("Depth: Infinity not implemented"))?);
         }
 
+        // 207 Multi-Status
         let status = hyper::StatusCode::from_u16(207)?;
 
+        // A client may submit a 'propfind' XML element in the body of the
+        // request method describing what information is being requested.
         // A client may choose not to submit a request body.  An empty PROPFIND
         // request body MUST be treated as if it were an 'allprop' request.
         // @FIXME here we handle any invalid data as an allprop, an empty request is thus correctly
@@ -226,23 +232,45 @@ impl Controller {
 
         // Collect nodes as PROPFIND is not limited to the targeted node
         let mut nodes = vec![];
-        if matches!(depth, dav::Depth::One | dav::Depth::Infinity) {
+        if matches!(depth, dav::Depth::One) {
             nodes.extend(self.node.children_nodes(&self.user).await?);
         }
         nodes.push(self.node);
 
-        // Expand properties request
-        let propname = match propfind {
+        // Expand properties request.
+        //
+        // If `propname` is `None`, the request is for *all property names*.
+        // If `propname` is `Some(list)`, the request is for the *values*
+        // of property names in `list`.
+        let propname: Option<dav::PropName<_>> = match propfind {
+            // Request a list of names of all the properties defined on the
+            // resource, by using the 'propname' element.
             dav::PropFind::PropName => None,
+
+            // Request property values for those properties defined in this
+            // specification (at a minimum) plus dead properties, by using the
+            // 'allprop' element (the 'include' element can be used with
+            // 'allprop' to instruct the server to also include additional live
+            // properties that may not have been returned otherwise),
+            //
+            // Note that 'allprop' does not return values for all live
+            // properties. Instead, WebDAV clients can use propname requests to
+            // discover what live properties exist, and request named properties
+            // when retrieving values.
             dav::PropFind::AllProp(None) => Some(dav::PropName(ALLPROP.to_vec())),
             dav::PropFind::AllProp(Some(dav::Include(mut include))) => {
                 include.extend_from_slice(&ALLPROP);
                 Some(dav::PropName(include))
             }
+
+            // Request particular property values, by naming the properties
+            // desired within the 'prop' element (the ordering of properties in
+            // here MAY be ignored by the server),
             dav::PropFind::Prop(inner) => Some(inner),
         };
 
-        // Not Found is currently impossible considering the way we designed this function
+        // `not_found` is used to indicate nodes that were requested but not found.
+        // This cannot happen with this function.
         let not_found = vec![];
         serialize(
             status,
@@ -317,19 +345,20 @@ impl Controller {
         props: Option<dav::PropName<All>>,
         extension: Option<realization::Multistatus>,
     ) -> dav::Multistatus<All> {
+        let mut responses: Vec<dav::Response<All>> = vec![];
+
         // Collect properties on existing objects
-        let mut responses: Vec<dav::Response<All>> = match props {
+        match props {
             Some(props) => {
-                let mut v = vec![];
                 for mut node in nodes {
-                    v.push(node.response_props(user, props.clone()).await)
+                    responses.push(node.response_props(user, props.clone()).await)
                 }
-                v
             }
-            None => nodes
-                .into_iter()
-                .map(|n| n.response_propname(user))
-                .collect(),
+            None => {
+                for node in nodes {
+                    responses.push(node.response_propname(user))
+                }
+            }
         };
 
         // Register not found objects only if relevant
