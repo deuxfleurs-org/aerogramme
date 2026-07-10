@@ -49,7 +49,7 @@ pub enum ReportName<E: Extension> {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Report<E: Extension> {
     VersionTree,    // Not yet implemented
-    ExpandProperty, // Not yet implemented
+    ExpandProperty, // Not yet implemented //@FIXME must be implemented according to the caldav & carddav RFCs
     Extension(E::ReportType),
 }
 

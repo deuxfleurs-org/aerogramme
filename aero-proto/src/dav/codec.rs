@@ -44,15 +44,40 @@ impl std::str::FromStr for SyncTokenUri {
         if raw.len() != Self::BASE_URI.len() + 48 {
             return Err("invalid token length".to_string())
         }
-        raw[Self::BASE_URI.len()..]
-            .parse()
-            .or_else(|_| Err("cannot parse token".to_string()))
+        let id = raw[Self::BASE_URI.len()..]
+            .parse::<UniqueIdent>()
+            .or_else(|_| Err("cannot parse token".to_string()))?;
+        Ok(Self(id))
     }
 }
 
 impl std::fmt::Display for SyncTokenUri {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}{}", Self::BASE_URI, self.0)
+    }
+}
+
+/// Path is a voluntarily feature limited
+/// compared to the expressiveness of a UNIX path
+/// For example getting parent with ../ is not supported, scheme is not supported, etc.
+/// More complex support could be added later if needed by clients
+pub enum Path<'a> {
+    Abs(Vec<&'a str>),
+    Rel(Vec<&'a str>),
+}
+impl<'a> Path<'a> {
+    pub fn new(path: &'a str) -> Result<Self> {
+        // This check is naive, it does not aim at detecting all fully qualified
+        // URL or protect from any attack, its only goal is to help debugging.
+        if path.starts_with("http://") || path.starts_with("https://") {
+            anyhow::bail!("Full URL are not supported")
+        }
+
+        let path_segments: Vec<_> = path.split("/").filter(|s| *s != "" && *s != ".").collect();
+        if path.starts_with("/") {
+            return Ok(Path::Abs(path_segments));
+        }
+        Ok(Path::Rel(path_segments))
     }
 }
 
@@ -100,6 +125,10 @@ pub(crate) fn put_policy(req: &Request<impl hyper::body::Body>) -> Result<PutPol
 }
 
 pub(crate) fn text_body(txt: &'static str) -> UnsyncBoxBody<Bytes, std::io::Error> {
+    UnsyncBoxBody::new(Full::new(Bytes::from(txt)).map_err(|e| match e {}))
+}
+
+pub(crate) fn text_body_owned(txt: String) -> UnsyncBoxBody<Bytes, std::io::Error> {
     UnsyncBoxBody::new(Full::new(Bytes::from(txt)).map_err(|e| match e {}))
 }
 

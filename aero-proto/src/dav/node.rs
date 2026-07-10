@@ -1,4 +1,3 @@
-use anyhow::{anyhow, Result};
 use futures::io::AsyncReadExt;
 use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{BoxStream, StreamExt, TryStreamExt};
@@ -15,6 +14,7 @@ use aero_dav::synctypes as sync;
 use aero_dav::versioningtypes as vers;
 
 use crate::dav::codec::SyncTokenUri;
+use crate::dav::multistatus::multistatus;
 
 pub(crate) type IOResult<T> = std::result::Result<T, std::io::Error>;
 pub(crate) type Content<'a> = BoxStream<'a, IOResult<Bytes>>;
@@ -31,6 +31,15 @@ pub(crate) enum ChildNode {
     Existing(Box<dyn DavNode>),
     Creating(Box<dyn DavNode>),
     CannotCreate,
+}
+
+/// The response to a REPORT operation.
+///
+/// RFC 3253 does not define a common format for report responses, but in
+/// practice, all the ones we implement return a Multistatus in case of success.
+pub(crate) enum ReportResponse {
+    Ok(dav::Multistatus<All>),
+    Err((hyper::StatusCode, String))
 }
 
 /// A DAV node should implement the following methods
@@ -53,7 +62,7 @@ pub(crate) trait DavNode: Send {
     ///     `ChildNode::Creating()` with a node for the new child.
     ///   + if the node does not support adding children, this must return
     ///     `ChildNode::CannotCreate`.
-    fn child_node<'a>(&self, user: &'a User, name: &str) -> BoxFuture<'a, Result<ChildNode>>;
+    fn child_node<'a>(&self, user: &'a User, name: &str) -> BoxFuture<'a, IOResult<ChildNode>>;
 
     // --- node properties
 
@@ -90,17 +99,17 @@ pub(crate) trait DavNode: Send {
     fn delete<'a>(&'a mut self) -> BoxFuture<'a, IOResult<()>> {
         async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
     }
-    /// Sync
-    fn diff<'a>(
-        &'a mut self,
-        _sync_token: Option<Token>,
-    ) -> BoxFuture<'a, IOResult<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>)>> {
+    /// Report (introduced by RFC 3253)
+    /// NOTE: to handle reports it is not enough to define `report`, the
+    /// property vers::Property::SupportedReportSet must be set to the list of
+    /// supported report types (in `supported_properties` and `property`).
+    fn report<'a>(&'a mut self, _user: &'a User, _report: vers::Report<All>) -> BoxFuture<'a, IOResult<ReportResponse>> {
         async { Err(unsupported()) }.boxed()
     }
 
     // --- derived utility functions, not intended to be redefined
 
-    fn children_nodes<'a>(&self, user: &'a User) -> BoxFuture<'a, Result<Vec<Box<dyn DavNode>>>> {
+    fn children_nodes<'a>(&self, user: &'a User) -> BoxFuture<'a, IOResult<Vec<Box<dyn DavNode>>>> {
         let this = self.clone_node();
         async move {
             let mut res = vec![];
@@ -120,7 +129,7 @@ pub(crate) trait DavNode: Send {
         user: &'a User,
         path: &'a [&str],
         create: bool,
-    ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
+    ) -> BoxFuture<'a, IOResult<Box<dyn DavNode>>> {
         if path.len() == 0 {
             let node = self.clone_node();
             return async { Ok(node) }.boxed();
@@ -131,9 +140,12 @@ pub(crate) trait DavNode: Send {
             let child = match this.child_node(user, path[0]).await? {
                 ChildNode::Existing(n) => n,
                 ChildNode::Creating(n) if create => n,
-                ChildNode::Creating(_) => return Err(anyhow!("Not found")),
+                ChildNode::Creating(_) => return Err(std::io::Error::from(std::io::ErrorKind::NotFound)),
                 ChildNode::CannotCreate =>
-                    return Err(anyhow!("Unsupported: can't create child on this node")),
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Unsupported,
+                        "can't create child on this node",
+                    )),
             };
             child.fetch(user, &path[1..], create).await
         }.boxed()
@@ -248,6 +260,12 @@ pub(crate) trait DavObject: Send + Sync + Clone + 'static {
     /// Getter for the value of properties listed by `additional_supported_properties`.
     fn additional_property<'a>(&'a mut self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult>;
 
+    /// Supported report types.
+    fn supported_reports(&self) -> Vec<vers::SupportedReport<All>>;
+
+    /// Handler for reports.
+    fn report<'a>(&'a mut self, user: &'a User, report: vers::Report<All>) -> BoxFuture<'a, IOResult<ReportResponse>>;
+
     /// Helper to get the id of the object contents in the store.
     /// Returns `None` if the object does not exist in the store.
     fn blob_id(&self) -> Option<BlobId> {
@@ -270,7 +288,7 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
     fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<String>> {
         async { vec![] }.boxed()
     }
-    fn child_node<'a>(&self, _user: &'a User, _name: &str) -> BoxFuture<'a, Result<ChildNode>> {
+    fn child_node<'a>(&self, _user: &'a User, _name: &str) -> BoxFuture<'a, IOResult<ChildNode>> {
         async { Ok(ChildNode::CannotCreate) }.boxed()
     }
 
@@ -285,6 +303,9 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
                 dav::PropertyRequest::DisplayName,
                 dav::PropertyRequest::ResourceType,
                 dav::PropertyRequest::GetEtag,
+                dav::PropertyRequest::Extension(all::PropertyRequest::Vers(
+                    vers::PropertyRequest::SupportedReportSet,
+                )),
             ]);
             props.extend_from_slice(&self.0.additional_supported_properties());
         }
@@ -308,6 +329,12 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
                         Ok(dav::Property::GetContentType(self.content_type().to_string())),
                     dav::PropertyRequest::GetEtag =>
                         self.etag().await.ok_or(n.clone()).map(dav::Property::GetEtag),
+                    dav::PropertyRequest::Extension(all::PropertyRequest::Vers(
+                        vers::PropertyRequest::SupportedReportSet,
+                    )) =>
+                        Ok(dav::Property::Extension(all::Property::Vers(
+                            vers::Property::SupportedReportSet(self.0.supported_reports())
+                        ))),
                     _ => Err(n),
                 };
                 v.push(res)
@@ -439,6 +466,10 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
         }
         .boxed()
     }
+
+    fn report<'a>(&'a mut self, user: &'a User, report: vers::Report<All>) -> BoxFuture<'a, IOResult<ReportResponse>> {
+        self.0.report(user, report)
+    }
 }
 
 /// A `DavStoredCollection` is a `DavNode` that represents a collection backed by
@@ -475,8 +506,11 @@ pub(crate) trait DavStoredCollection: Send + Sync + Clone + 'static {
     /// Getter for the value of properties listed by `additional_supported_properties`.
     fn additional_property<'a>(&'a mut self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult>;
 
-    /// Additional report types advertised by this collection.
+    /// Additional report types advertised by this collection, on top of sync reports.
     fn additional_supported_reports(&self) -> Vec<vers::SupportedReport<All>>;
+
+    /// Handler for reports declared by `additional_supported_reports`.
+    fn additional_report<'a>(&'a mut self, user: &'a User, report: &'a vers::Report<All>) -> BoxFuture<'a, IOResult<ReportResponse>>;
 
     /// Additional Dav headers to advertise.
     fn additional_dav_headers(&self) -> Vec<String>;
@@ -502,7 +536,7 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
         async move { res }.boxed()
     }
 
-    fn child_node<'a>(&self, _user: &'a User, name: &str) -> BoxFuture<'a, Result<ChildNode>> {
+    fn child_node<'a>(&self, _user: &'a User, name: &str) -> BoxFuture<'a, IOResult<ChildNode>> {
         let exists = self.0.collection().index().idx_by_filename.contains_key(name);
         let node = self.0.mk_child_node(name);
         async move {
@@ -593,6 +627,64 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
         self.0.content_type()
     }
 
+    fn report<'a>(&'a mut self, user: &'a User, report: vers::Report<All>) -> BoxFuture<'a, IOResult<ReportResponse>> {
+        async move {
+            if let Ok(res) = self.0.additional_report(user, &report).await {
+                return Ok(res)
+            }
+
+            match report {
+                vers::Report::Extension(all::ReportType::Sync(sync_col)) => {
+                    if sync_col.limit.is_some() {
+                        tracing::warn!("limit is not supported, ignoring");
+                    }
+                    if matches!(sync_col.sync_level, sync::SyncLevel::Infinite) {
+                        tracing::debug!("aerogramme calendar collections are not nested");
+                    }
+
+                    let token = match sync_col.sync_token {
+                        sync::SyncTokenRequest::InitialSync => None,
+                        sync::SyncTokenRequest::IncrementalSync(token_raw) => {
+                            let token = token_raw.parse::<SyncTokenUri>()
+                                .map_err(|msg| std::io::Error::new(std::io::ErrorKind::Other, msg))?
+                                .0;
+                            Some(token)
+                        }
+                    };
+                    // do the diff
+                    let (new_token, ok_node, not_found) = match self.diff(token).await {
+                        Ok(t) => t,
+                        Err(e) => match e.kind() {
+                            std::io::ErrorKind::NotFound =>
+                                return Ok(ReportResponse::Err((
+                                    hyper::StatusCode::GONE,
+                                    "Diff failed, token might be expired".to_string(),
+                                ))),
+                            _ =>
+                                return Err(e),
+                        },
+                    };
+                    let extension = Some(all::Multistatus::Sync(sync::Multistatus {
+                        sync_token: sync::SyncToken(SyncTokenUri(new_token).to_string()),
+                    }));
+                    
+                    Ok(ReportResponse::Ok(multistatus(
+                        user,
+                        ok_node,
+                        not_found,
+                        dav::PropFind::Prop(sync_col.prop),
+                        extension
+                    ).await))
+                },
+                _ => Err(unsupported())
+            }
+        }.boxed()
+    }
+}
+
+impl <T: DavStoredCollection> DavStoredCollectionNode<T> {
+    /// Helper function, used to compute Sync reports. Computes a diff of
+    /// changes since a given sync token.
     fn diff<'a>(
         &'a mut self,
         sync_token: Option<Token>,
