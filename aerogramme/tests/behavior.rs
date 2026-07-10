@@ -382,13 +382,16 @@ fn rfc4918_webdav_core() {
         let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087").send()?.text()?;
         let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
         let root_propstats = multistatus.responses.iter()
-            .find_map(|v| match &v.status_or_propstat {
+            .find_map(|resp| match &resp.status_or_propstat {
                 dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/" => Some(x),
                 _ => None,
             })
             .expect("propstats for root must exist"); 
 
-        let root_success = root_propstats.iter().find(|p| p.status.0.as_u16() == 200).expect("some propstats for root must be 200");
+        assert_eq!(root_propstats.len(), 1, "PROPFIND allprop must return a single propstat");
+        assert_eq!(root_propstats[0].status.0.as_u16(), 200, "PROPFIND allprop must return a success propstat");
+        let root_success = &root_propstats[0];
+
         let display_name = root_success.prop.0.iter()
             .find_map(|v| match v { dav::AnyProperty::Value(dav::Property::DisplayName(x)) => Some(x), _ => None } )
             .expect("root has a display name");
@@ -398,7 +401,7 @@ fn rfc4918_webdav_core() {
         let resource_type = root_success.prop.0.iter()
             .find_map(|v| match v { dav::AnyProperty::Value(dav::Property::ResourceType(x)) => Some(x), _ => None } )
             .expect("root has a resource type");
-
+        
         assert_eq!(display_name, "DAV Root");
         assert_eq!(content_type, "httpd/unix-directory");
         assert_eq!(resource_type, &[ dav::ResourceType::Collection ]);
