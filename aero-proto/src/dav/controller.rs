@@ -214,7 +214,7 @@ impl Controller {
 
     /// PROPFIND is the standard way to fetch WebDAV properties
     async fn propfind(self) -> Result<HttpResponse> {
-        let depth = depth(&self.req);
+        let depth = depth(&self.req).unwrap_or(dav::Depth::Zero);
         // The specification allows "depth: infinity" to not be implemented. "In
         // practice, support for infinite-depth requests MAY be disabled, due to
         // the performance and security concerns associated with this behavior."

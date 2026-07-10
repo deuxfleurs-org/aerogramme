@@ -19,16 +19,16 @@ use super::node::PutPolicy;
 use aero_dav::coretypes as dav;
 use aero_dav::xml as dxml;
 
-pub(crate) fn depth(req: &Request<impl hyper::body::Body>) -> dav::Depth {
+pub(crate) fn depth(req: &Request<impl hyper::body::Body>) -> Option<dav::Depth> {
     match req
         .headers()
         .get("Depth")
         .map(hyper::header::HeaderValue::to_str)
     {
-        Some(Ok("0")) => dav::Depth::Zero,
-        Some(Ok("1")) => dav::Depth::One,
-        Some(Ok("Infinity")) => dav::Depth::Infinity,
-        _ => dav::Depth::Zero,
+        Some(Ok("0")) => Some(dav::Depth::Zero),
+        Some(Ok("1")) => Some(dav::Depth::One),
+        Some(Ok("Infinity")) => Some(dav::Depth::Infinity),
+        _ => None,
     }
 }
 
