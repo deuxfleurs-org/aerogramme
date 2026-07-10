@@ -67,7 +67,7 @@ impl Controller {
                 .header("Allow", "HEAD,GET,PUT,OPTIONS,DELETE,PROPFIND,PROPPATCH,MKCOL,COPY,MOVE,LOCK,UNLOCK,MKCALENDAR,REPORT")
                 .body(codec::text_body(""))?),
             "HEAD" => {
-                tracing::warn!("HEAD might not correctly implemented: should return ETags & co");
+                tracing::warn!("HEAD might not be correctly implemented: should return ETags & co");
                 Ok(Response::builder()
                     .status(200)
                     .body(codec::text_body(""))?)
@@ -76,7 +76,15 @@ impl Controller {
             "PUT" => ctrl.put().await,
             "DELETE" => ctrl.delete().await,
             "PROPFIND" => ctrl.propfind().await,
+            // RFC 3253 (Versioning) introduces the (extensible) REPORT method
             "REPORT" => ctrl.report().await,
+            // base webdav:
+            //@TODO: PROPPATCH
+            //@TODO: MKCOL
+            //@TODO: COPY
+            //@TODO: MOVE
+            // caldav:
+            //@TODO: MKCALENDAR
             _ => Ok(Response::builder()
                 .status(501)
                 .body(codec::text_body("HTTP Method not implemented"))?),
@@ -85,8 +93,8 @@ impl Controller {
 
     // --- Per-method functions ---
 
-    /// REPORT has been first described in the "Versioning Extension" of WebDAV
-    /// It allows more complex queries compared to PROPFIND
+    /// REPORT has been first described in the "Versioning Extension" of WebDAV.
+    /// It allows for more complex queries compared to PROPFIND.
     ///
     /// Note: current implementation is not generic at all, it is heavily tied to CalDAV.
     /// A rewrite would be required to make it more generic (with the extension system that has
