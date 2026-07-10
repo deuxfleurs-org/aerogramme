@@ -17,7 +17,7 @@ use aero_ical::query::is_component_match;
 
 use crate::dav::codec;
 use crate::dav::codec::{depth, deserialize, serialize, text_body};
-use crate::dav::node::{DavNode, BASE_TOKEN_URI};
+use crate::dav::node::DavNode;
 use crate::dav::resource::RootNode;
 
 pub(super) type HttpResponse = Response<UnsyncBoxBody<Bytes, std::io::Error>>;
@@ -165,14 +165,9 @@ impl Controller {
                 let token = match sync_col.sync_token {
                     sync::SyncTokenRequest::InitialSync => None,
                     sync::SyncTokenRequest::IncrementalSync(token_raw) => {
-                        // parse token
-                        if token_raw.len() != BASE_TOKEN_URI.len() + 48 {
-                            anyhow::bail!("invalid token length")
-                        }
-                        let token = token_raw[BASE_TOKEN_URI.len()..]
-                            .parse()
-                            .or(Err(anyhow::anyhow!("can't parse token")))?;
-                        Some(token)
+                        let token = token_raw.parse::<codec::SyncTokenUri>()
+                            .map_err(|msg| anyhow::anyhow!("{}", msg))?;
+                        Some(token.0)
                     }
                 };
                 // do the diff
@@ -189,7 +184,7 @@ impl Controller {
                     },
                 };
                 extension = Some(realization::Multistatus::Sync(sync::Multistatus {
-                    sync_token: sync::SyncToken(format!("{}{}", BASE_TOKEN_URI, new_token)),
+                    sync_token: sync::SyncToken(codec::SyncTokenUri(new_token).to_string()),
                 }));
             }
             _ => {

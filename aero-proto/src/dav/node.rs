@@ -14,17 +14,7 @@ use aero_dav::coretypes as dav;
 use aero_dav::synctypes as sync;
 use aero_dav::versioningtypes as vers;
 
-/// Why "https://aerogramme.0"?
-/// Because tokens must be valid URI.
-/// And numeric TLD are ~mostly valid in URI (check the .42 TLD experience)
-/// and at the same time, they are not used sold by the ICANN and there is no plan to use them.
-/// So I am sure that the URL remains invalid, avoiding leaking requests to an hardcoded URL in the
-/// future.
-/// The best option would be to make it configurable ofc, so someone can put a domain name
-/// that they control, it would probably improve compatibility (maybe some WebDAV spec tells us
-/// how to handle/resolve this URI but I am not aware of that...). But that's not the plan for
-/// now. So here we are: https://aerogramme.0.
-pub const BASE_TOKEN_URI: &str = "https://aerogramme.0/sync/";
+use crate::dav::codec::SyncTokenUri;
 
 pub(crate) type IOResult<T> = std::result::Result<T, std::io::Error>;
 pub(crate) type Content<'a> = BoxStream<'a, IOResult<Bytes>>;
@@ -567,11 +557,9 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
                         sync::PropertyRequest::SyncToken,
                     )) => match self.0.collection_mut().token().await {
                         Ok(token) => Ok(dav::Property::Extension(all::Property::Sync(
-                            sync::Property::SyncToken(sync::SyncToken(format!(
-                                "{}{}",
-                                BASE_TOKEN_URI, token
-                            ))),
-                        ))),
+                            sync::Property::SyncToken(sync::SyncToken(
+                                SyncTokenUri(token).to_string()
+                            ))))),
                         _ => Err(n.clone()),
                     },
                     dav::PropertyRequest::Extension(all::PropertyRequest::Vers(

@@ -16,8 +16,45 @@ use tokio_util::sync::PollSender;
 
 use super::controller::HttpResponse;
 use super::node::PutPolicy;
+use aero_collections::unique_ident::UniqueIdent;
 use aero_dav::coretypes as dav;
 use aero_dav::xml as dxml;
+
+pub struct SyncTokenUri(pub UniqueIdent);
+
+impl SyncTokenUri {
+    /// Base URI for sync tokens.
+    ///
+    /// Why "https://aerogramme.0"?
+    /// Because tokens must be valid URI.
+    /// And numeric TLD are ~mostly valid in URI (check the .42 TLD experience)
+    /// and at the same time, they are not used sold by the ICANN and there is no plan to use them.
+    /// So I am sure that the URL remains invalid, avoiding leaking requests to an hardcoded URL in the
+    /// future.
+    /// The best option would be to make it configurable ofc, so someone can put a domain name
+    /// that they control, it would probably improve compatibility (maybe some WebDAV spec tells us
+    /// how to handle/resolve this URI but I am not aware of that...). But that's not the plan for
+    /// now. So here we are: https://aerogramme.0.
+    pub const BASE_URI: &str = "https://aerogramme.0/sync/";
+}
+
+impl std::str::FromStr for SyncTokenUri {
+    type Err = String;
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        if raw.len() != Self::BASE_URI.len() + 48 {
+            return Err("invalid token length".to_string())
+        }
+        raw[Self::BASE_URI.len()..]
+            .parse()
+            .or_else(|_| Err("cannot parse token".to_string()))
+    }
+}
+
+impl std::fmt::Display for SyncTokenUri {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", Self::BASE_URI, self.0)
+    }
+}
 
 pub(crate) fn depth(req: &Request<impl hyper::body::Body>) -> Option<dav::Depth> {
     match req
