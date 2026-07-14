@@ -251,8 +251,12 @@ impl<E: Extension> QWrite for AddressbookMultiget<E> {
 impl QWrite for AddressDataType {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut typ = xml.create_card_element("address-data-type");
-        typ.push_attribute(("content-type", self.content_type.as_str()));
-        typ.push_attribute(("version", self.version.as_str()));
+        if let Some(content_type) = self.content_type.as_explicit() {
+            typ.push_attribute(("content-type", content_type.0.as_str()))
+        };
+        if let Some(version) = self.version.as_explicit() {
+            typ.push_attribute(("version", version.0.as_str()));
+        }
         xml.q.write_event_async(Event::Empty(typ)).await
     }
 }

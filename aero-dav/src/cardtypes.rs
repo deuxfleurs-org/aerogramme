@@ -515,11 +515,10 @@ pub struct AddressbookMultiget<E: Extension> {
 ///                       version CDATA "3.0">
 /// <!-- content-type value: a MIME media type -->
 /// <!-- version value: a version string -->
-// TODO: handle default values
 #[derive(Debug, PartialEq, Clone)]
 pub struct AddressDataType {
-    pub content_type: String,
-    pub version: String,
+    pub content_type: WithDefault<ContentType>,
+    pub version: WithDefault<Version>,
 }
 
 /// Some of the reports defined in this section do text matches of

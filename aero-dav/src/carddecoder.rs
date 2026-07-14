@@ -342,12 +342,12 @@ impl<E: Extension> QRead<AddressbookMultiget<E>> for AddressbookMultiget<E> {
 impl QRead<AddressDataType> for AddressDataType {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CARD_URN, "address-data-type").await?;
-        let ct = xml.prev_attr("content-type");
-        let vs = xml.prev_attr("version");
-        let (content_type, version) = match (ct, vs) {
-            (Some(content_type), Some(version)) => (content_type, version),
-            _ => return Err(ParsingError::Recoverable),
-        };
+        let content_type = WithDefault::from_opt(
+            xml.prev_attr("content-type").map(ContentType)
+        );
+        let version = WithDefault::from_opt(
+            xml.prev_attr("version").map(Version)
+        );
         xml.close().await?;
         Ok(Self { content_type, version })
     }
