@@ -606,10 +606,10 @@ mod tests {
         let expected = Property::PrincipalAddress(dav::Href("/system/cyrus.vcf".to_string()));
 
         let src = r#"
-       <C:principal-address xmlns:D="DAV:"
-          xmlns:C="urn:ietf:params:xml:ns:carddav">
+       <CD:principal-address xmlns:D="DAV:"
+          xmlns:CD="urn:ietf:params:xml:ns:carddav">
           <D:href>/system/cyrus.vcf</D:href>
-       </C:principal-address>
+       </CD:principal-address>
 "#;
         
         let got = deserialize::<Property>(src).await;
@@ -626,12 +626,12 @@ mod tests {
         ]);
 
         let src = r#"
-      <C:supported-collation-set
-        xmlns:C="urn:ietf:params:xml:ns:carddav">
-        <C:supported-collation>i;ascii-casemap</C:supported-collation>
-        <C:supported-collation>i;octet</C:supported-collation>
-        <C:supported-collation>i;unicode-casemap</C:supported-collation>
-      </C:supported-collation-set>
+      <CD:supported-collation-set
+        xmlns:CD="urn:ietf:params:xml:ns:carddav">
+        <CD:supported-collation>i;ascii-casemap</CD:supported-collation>
+        <CD:supported-collation>i;octet</CD:supported-collation>
+        <CD:supported-collation>i;unicode-casemap</CD:supported-collation>
+      </CD:supported-collation-set>
 "#;
         
         let got = deserialize::<Property>(src).await;
@@ -695,26 +695,26 @@ mod tests {
 
         let src = r#"
    <?xml version="1.0" encoding="utf-8" ?>
-   <C:addressbook-query xmlns:D="DAV:"
-                     xmlns:C="urn:ietf:params:xml:ns:carddav">
+   <CD:addressbook-query xmlns:D="DAV:"
+                     xmlns:CD="urn:ietf:params:xml:ns:carddav">
      <D:prop>
        <D:getetag/>
-       <C:address-data>
-         <C:prop name="VERSION"/>
-         <C:prop name="UID"/>
-         <C:prop name="NICKNAME"/>
-         <C:prop name="EMAIL"/>
-         <C:prop name="FN"/>
-       </C:address-data>
+       <CD:address-data>
+         <CD:prop name="VERSION"/>
+         <CD:prop name="UID"/>
+         <CD:prop name="NICKNAME"/>
+         <CD:prop name="EMAIL"/>
+         <CD:prop name="FN"/>
+       </CD:address-data>
      </D:prop>
-     <C:filter>
-       <C:prop-filter name="NICKNAME">
-         <C:text-match collation="i;unicode-casemap"
+     <CD:filter>
+       <CD:prop-filter name="NICKNAME">
+         <CD:text-match collation="i;unicode-casemap"
                        match-type="equals"
-         >me</C:text-match>
-       </C:prop-filter>
-     </C:filter>
-   </C:addressbook-query>
+         >me</CD:text-match>
+       </CD:prop-filter>
+     </CD:filter>
+   </CD:addressbook-query>
 "#;
         
         let got = deserialize::<AddressbookQuery<Addressbook>>(src).await;
@@ -760,13 +760,13 @@ mod tests {
         let src = r#"
    <?xml version="1.0" encoding="utf-8" ?>
    <D:multistatus xmlns:D="DAV:"
-                  xmlns:C="urn:ietf:params:xml:ns:carddav">
+                  xmlns:CD="urn:ietf:params:xml:ns:carddav">
      <D:response>
        <D:href>/home/bernard/addressbook/v102.vcf</D:href>
        <D:propstat>
          <D:prop>
            <D:getetag>"23ba4d-ff11fb"</D:getetag>
-           <C:address-data>BEGIN:VCARD</C:address-data>
+           <CD:address-data>BEGIN:VCARD</CD:address-data>
          </D:prop>
          <D:status>HTTP/1.1 200 OK</D:status>
        </D:propstat>
@@ -849,31 +849,31 @@ mod tests {
 
         let src = r#"
    <?xml version="1.0" encoding="utf-8" ?>
-   <C:addressbook-query xmlns:D="DAV:"
-                     xmlns:C="urn:ietf:params:xml:ns:carddav">
+   <CD:addressbook-query xmlns:D="DAV:"
+                     xmlns:CD="urn:ietf:params:xml:ns:carddav">
      <D:prop>
        <D:getetag/>
-       <C:address-data>
-         <C:prop name="VERSION"/>
-         <C:prop name="UID"/>
-         <C:prop name="NICKNAME"/>
-         <C:prop name="EMAIL"/>
-         <C:prop name="FN"/>
-       </C:address-data>
+       <CD:address-data>
+         <CD:prop name="VERSION"/>
+         <CD:prop name="UID"/>
+         <CD:prop name="NICKNAME"/>
+         <CD:prop name="EMAIL"/>
+         <CD:prop name="FN"/>
+       </CD:address-data>
      </D:prop>
-     <C:filter test="anyof">
-       <C:prop-filter name="FN">
-         <C:text-match collation="i;unicode-casemap"
+     <CD:filter test="anyof">
+       <CD:prop-filter name="FN">
+         <CD:text-match collation="i;unicode-casemap"
                        match-type="contains"
-         >daboo</C:text-match>
-       </C:prop-filter>
-       <C:prop-filter name="EMAIL">
-         <C:text-match collation="i;unicode-casemap"
+         >daboo</CD:text-match>
+       </CD:prop-filter>
+       <CD:prop-filter name="EMAIL">
+         <CD:text-match collation="i;unicode-casemap"
                        match-type="contains"
-         >daboo</C:text-match>
-       </C:prop-filter>
-     </C:filter>
-   </C:addressbook-query>
+         >daboo</CD:text-match>
+       </CD:prop-filter>
+     </CD:filter>
+   </CD:addressbook-query>
 "#;
         
         let got = deserialize::<AddressbookQuery<Addressbook>>(src).await;
@@ -944,13 +944,13 @@ mod tests {
         let src = r#"
    <?xml version="1.0" encoding="utf-8" ?>
    <D:multistatus xmlns:D="DAV:"
-                  xmlns:C="urn:ietf:params:xml:ns:carddav">
+                  xmlns:CD="urn:ietf:params:xml:ns:carddav">
      <D:response>
        <D:href>/home/bernard/addressbook/v102.vcf</D:href>
        <D:propstat>
          <D:prop>
            <D:getetag>"23ba4d-ff11fb"</D:getetag>
-           <C:address-data>BEGIN:VCARD</C:address-data>
+           <CD:address-data>BEGIN:VCARD</CD:address-data>
          </D:prop>
          <D:status>HTTP/1.1 200 OK</D:status>
        </D:propstat>
@@ -960,7 +960,7 @@ mod tests {
        <D:propstat>
          <D:prop>
            <D:getetag>"23ba4d-ff11fc"</D:getetag>
-           <C:address-data>BEGIN:VCARD</C:address-data>
+           <CD:address-data>BEGIN:VCARD</CD:address-data>
          </D:prop>
          <D:status>HTTP/1.1 200 OK</D:status>
        </D:propstat>
@@ -1002,24 +1002,24 @@ mod tests {
 
         let src = r#"
    <?xml version="1.0" encoding="utf-8" ?>
-   <C:addressbook-query xmlns:D="DAV:"
-                     xmlns:C="urn:ietf:params:xml:ns:carddav">
+   <CD:addressbook-query xmlns:D="DAV:"
+                     xmlns:CD="urn:ietf:params:xml:ns:carddav">
      <D:prop>
        <D:getetag/>
      </D:prop>
-     <C:filter test="anyof">
-       <C:prop-filter name="FN">
-         <C:text-match collation="i;unicode-casemap"
+     <CD:filter test="anyof">
+       <CD:prop-filter name="FN">
+         <CD:text-match collation="i;unicode-casemap"
                        match-type="contains"
-         >daboo</C:text-match>
-       </C:prop-filter>
-     </C:filter>
-     <C:limit>
-       <C:nresults>
+         >daboo</CD:text-match>
+       </CD:prop-filter>
+     </CD:filter>
+     <CD:limit>
+       <CD:nresults>
          2
-       </C:nresults>
-     </C:limit>
-   </C:addressbook-query>
+       </CD:nresults>
+     </CD:limit>
+   </CD:addressbook-query>
 "#;
         
         let got = deserialize::<AddressbookQuery<Addressbook>>(src).await;
@@ -1089,7 +1089,7 @@ mod tests {
         let src = r#"
    <?xml version="1.0" encoding="utf-8" ?>
    <D:multistatus xmlns:D="DAV:"
-                  xmlns:C="urn:ietf:params:xml:ns:carddav">
+                  xmlns:CD="urn:ietf:params:xml:ns:carddav">
      <D:response>
        <D:href>/home/bernard/addressbook/</D:href>
        <D:status>HTTP/1.1 507 Insufficient Storage</D:status>
@@ -1166,21 +1166,21 @@ mod tests {
 
         let src = r#"
    <?xml version="1.0" encoding="utf-8" ?>
-   <C:addressbook-multiget xmlns:D="DAV:"
-                        xmlns:C="urn:ietf:params:xml:ns:carddav">
+   <CD:addressbook-multiget xmlns:D="DAV:"
+                        xmlns:CD="urn:ietf:params:xml:ns:carddav">
      <D:prop>
        <D:getetag/>
-       <C:address-data>
-         <C:prop name="VERSION"/>
-         <C:prop name="UID"/>
-         <C:prop name="NICKNAME"/>
-         <C:prop name="EMAIL"/>
-         <C:prop name="FN"/>
-       </C:address-data>
+       <CD:address-data>
+         <CD:prop name="VERSION"/>
+         <CD:prop name="UID"/>
+         <CD:prop name="NICKNAME"/>
+         <CD:prop name="EMAIL"/>
+         <CD:prop name="FN"/>
+       </CD:address-data>
      </D:prop>
      <D:href>/home/bernard/addressbook/vcf102.vcf</D:href>
      <D:href>/home/bernard/addressbook/vcf1.vcf</D:href>
-   </C:addressbook-multiget>
+   </CD:addressbook-multiget>
 "#;
         
         let got = deserialize::<AddressbookMultiget<Addressbook>>(src).await;
@@ -1235,13 +1235,13 @@ mod tests {
         let src = r#"
    <?xml version="1.0" encoding="utf-8" ?>
    <D:multistatus xmlns:D="DAV:"
-                  xmlns:C="urn:ietf:params:xml:ns:carddav">
+                  xmlns:CD="urn:ietf:params:xml:ns:carddav">
      <D:response>
        <D:href>/home/bernard/addressbook/vcf102.vcf</D:href>
        <D:propstat>
          <D:prop>
            <D:getetag>"23ba4d-ff11fb"</D:getetag>
-           <C:address-data>BEGIN:VCARD</C:address-data>
+           <CD:address-data>BEGIN:VCARD</CD:address-data>
          </D:prop>
          <D:status>HTTP/1.1 200 OK</D:status>
        </D:propstat>
@@ -1278,14 +1278,14 @@ mod tests {
 
         let src = r#"
  <?xml version="1.0" encoding="utf-8" ?>
-   <C:addressbook-multiget xmlns:D="DAV:"
-                        xmlns:C="urn:ietf:params:xml:ns:carddav">
+   <CD:addressbook-multiget xmlns:D="DAV:"
+                        xmlns:CD="urn:ietf:params:xml:ns:carddav">
      <D:prop>
        <D:getetag/>
-       <C:address-data content-type='text/vcard' version='4.0'/>
+       <CD:address-data content-type='text/vcard' version='4.0'/>
      </D:prop>
      <D:href>/home/bernard/addressbook/vcf3.vcf</D:href>
-   </C:addressbook-multiget>
+   </CD:addressbook-multiget>
 "#;
         
         let got = deserialize::<AddressbookMultiget<Addressbook>>(src).await;
@@ -1321,11 +1321,11 @@ mod tests {
         let src = r#"
    <?xml version="1.0" encoding="utf-8" ?>
    <D:multistatus xmlns:D="DAV:"
-                  xmlns:C="urn:ietf:params:xml:ns:carddav">
+                  xmlns:CD="urn:ietf:params:xml:ns:carddav">
      <D:response>
        <D:href>/home/bernard/addressbook/vcf3.vcf</D:href>
        <D:status>HTTP/1.1 415 Unsupported Media Type</D:status>
-       <D:error><C:supported-address-data-conversion/></D:error>
+       <D:error><CD:supported-address-data-conversion/></D:error>
        <D:responsedescription>Unable to convert from vCard v3.0
        to vCard v4.0</D:responsedescription>
      </D:response>

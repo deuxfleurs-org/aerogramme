@@ -174,6 +174,9 @@ pub(crate) fn text_body_owned(txt: String) -> UnsyncBoxBody<Bytes, std::io::Erro
     UnsyncBoxBody::new(Full::new(Bytes::from(txt)).map_err(|e| match e {}))
 }
 
+//@FIXME should some of this logic be moved to aero-dav? (there is coupling
+// where `ns_to_apply` below needs to match the `create_*_element` methods in
+// aero_dav::xml::Writer...)
 pub(crate) fn serialize<T: dxml::QWrite + Send + 'static>(
     status_ok: hyper::StatusCode,
     elem: T,
@@ -188,6 +191,7 @@ pub(crate) fn serialize<T: dxml::QWrite + Send + 'static>(
         let ns_to_apply = vec![
             ("xmlns:D".into(), "DAV:".into()),
             ("xmlns:C".into(), "urn:ietf:params:xml:ns:caldav".into()),
+            ("xmlns:CD".into(), "urn:ietf:params:xml:ns:carddav".into()),
         ];
         let mut qwriter = dxml::Writer { q, ns_to_apply };
         let decl =

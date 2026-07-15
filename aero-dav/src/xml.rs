@@ -84,7 +84,7 @@ impl<T: IWrite> Writer<T> {
         self.create_ns_element("C", name)
     }
     pub fn create_card_element(&mut self, name: &str) -> BytesStart<'static> {
-        self.create_ns_element("C", name)
+        self.create_ns_element("CD", name)
     }
 
     fn create_ns_element(&mut self, ns: &str, name: &str) -> BytesStart<'static> {
