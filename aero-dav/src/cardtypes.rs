@@ -577,7 +577,10 @@ impl Collation {
     }
     pub fn new(v: String) -> Self {
         match v.as_str() {
-            "i;unicode-casemap" => Self::UnicodeCaseMap,
+             // if the client specifies the "default" collation identifier (as
+             // defined in [RFC4790], Section 3.1), the server MUST default to
+             // using "i;unicode-casemap" as the collation.
+            "default" | "i;unicode-casemap" => Self::UnicodeCaseMap,
             "i;ascii-casemap" => Self::AsciiCaseMap,
             _ => Self::Unknown(v),
         }

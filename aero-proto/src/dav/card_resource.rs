@@ -167,11 +167,29 @@ impl DavStoredCollection for AddressbookNode {
     }
 
     fn additional_supported_properties(&self) -> Vec<dav::PropertyRequest<All>> {
-        vec![]            
+        vec![
+            dav::PropertyRequest::Extension(all::PropertyRequest::Card(
+                card::PropertyRequest::SupportedCollationSet
+            ))
+        ]         
     }
 
     fn additional_property<'a>(&'a mut self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult> {
-        async move { Err(prop.clone()) }.boxed()
+        async move {
+            match prop {
+                dav::PropertyRequest::Extension(all::PropertyRequest::Card(
+                    card::PropertyRequest::SupportedCollationSet
+                )) => {
+                    Ok(dav::Property::Extension(all::Property::Card(
+                        card::Property::SupportedCollationSet(vec![
+                            card::SupportedCollation(card::Collation::UnicodeCaseMap),
+                            card::SupportedCollation(card::Collation::AsciiCaseMap),
+                        ])
+                    )))
+                },
+                _ => Err(prop.clone()),
+            }
+        }.boxed()
     }
 
     fn additional_supported_reports(&self) -> Vec<vers::SupportedReport<All>> {
@@ -279,13 +297,27 @@ impl DavObject for AddressbookObject {
     }
 
     fn additional_supported_properties(&self) -> Vec<dav::PropertyRequest<All>> {
-        vec![]
+        vec![
+            dav::PropertyRequest::Extension(all::PropertyRequest::Card(
+                card::PropertyRequest::SupportedCollationSet
+            ))
+        ]
     }
 
     fn additional_property<'a>(&'a mut self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult> {
         let this = self.clone();
         async move {
             match prop {
+                dav::PropertyRequest::Extension(all::PropertyRequest::Card(
+                    card::PropertyRequest::SupportedCollationSet
+                )) => {
+                    Ok(dav::Property::Extension(all::Property::Card(
+                        card::Property::SupportedCollationSet(vec![
+                            card::SupportedCollation(card::Collation::UnicodeCaseMap),
+                            card::SupportedCollation(card::Collation::AsciiCaseMap),
+                        ])
+                    )))
+                },
                 // This is not a "real" property (it cannot be queried by
                 // PROPFIND), but is queried internally by addressbook reports.
                 dav::PropertyRequest::Extension(all::PropertyRequest::Card(

@@ -1578,7 +1578,10 @@ impl Collation {
     }
     pub fn new(v: String) -> Self {
         match v.as_str() {
-            "i;ascii-casemap" => Self::AsciiCaseMap,
+            // if the client specifies the "default" collation identifier (as
+            // defined in [RFC4790], Section 3.1), the server MUST default to
+            // using "i;ascii-casemap" as the collation.
+            "default" | "i;ascii-casemap" => Self::AsciiCaseMap,
             "i;octet" => Self::Octet,
             _ => Self::Unknown(v),
         }

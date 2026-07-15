@@ -161,6 +161,9 @@ impl DavStoredCollection for CalendarNode {
             dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
                 cal::PropertyRequest::SupportedCalendarComponentSet,
             )),
+            dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
+                cal::PropertyRequest::SupportedCollationSet,
+            )),
         ]            
     }
 
@@ -175,6 +178,14 @@ impl DavStoredCollection for CalendarNode {
                         cal::CompSupport(cal::Component::VTodo),
                         cal::CompSupport(cal::Component::VJournal),
                     ]),
+                ))),
+                dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
+                    cal::PropertyRequest::SupportedCollationSet,
+                )) => Ok(dav::Property::Extension(all::Property::Cal(
+                    cal::Property::SupportedCollationSet(vec![
+                        cal::SupportedCollation(cal::Collation::AsciiCaseMap),
+                        cal::SupportedCollation(cal::Collation::Octet),
+                    ])
                 ))),
                 _ => Err(prop.clone()),
             }
@@ -286,13 +297,25 @@ impl DavObject for CalendarEventNode {
     }
 
     fn additional_supported_properties(&self) -> Vec<dav::PropertyRequest<All>> {
-        vec![]
+        vec![
+            dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
+                cal::PropertyRequest::SupportedCollationSet,
+            )),
+        ]
     }
 
     fn additional_property<'a>(&'a mut self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult> {
         let this = self.clone();
         async move {
             match prop {
+                dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
+                    cal::PropertyRequest::SupportedCollationSet,
+                )) => Ok(dav::Property::Extension(all::Property::Cal(
+                    cal::Property::SupportedCollationSet(vec![
+                        cal::SupportedCollation(cal::Collation::AsciiCaseMap),
+                        cal::SupportedCollation(cal::Collation::Octet),
+                    ])
+                ))),
                 // This is not a "real" property (it cannot be queried by
                 // PROPFIND), but is queried internally by calendar reports.
                 dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
