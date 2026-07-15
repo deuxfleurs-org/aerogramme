@@ -95,7 +95,7 @@ impl Controller {
         match self.node.report(&self.user, req_report).await? {
             ReportResponse::Ok(multistatus) => serialize(
                 // 207 Multi-Status
-                hyper::StatusCode::from_u16(207)?,
+                hyper::StatusCode::MULTI_STATUS,
                 multistatus,
             ),
             ReportResponse::Err((status, msg)) => 
