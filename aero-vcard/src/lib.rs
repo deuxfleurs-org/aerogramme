@@ -1,6 +1,7 @@
 use ical_vcard::Contentline; 
 use std::io::Write;
 
+pub mod collation;
 pub mod filter;
 pub mod query;
 

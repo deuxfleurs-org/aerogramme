@@ -459,7 +459,9 @@ impl QRead<ResourceType> for ResourceType {
 impl QRead<SupportedCollation> for SupportedCollation {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CAL_URN, "supported-collation").await?;
-        let col = Collation::new(xml.tag_string().await?);
+        // FIXME: an unknown collation should result in precondition error,
+        // not a parsing error (different error codes and response body).
+        let col = Collation::from_str(&xml.tag_string().await?).or(Err(ParsingError::InvalidValue))?;
         xml.close().await?;
         Ok(SupportedCollation(col))
     }
@@ -895,7 +897,14 @@ impl QRead<TimeOrText> for TimeOrText {
 impl QRead<TextMatch> for TextMatch {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CAL_URN, "text-match").await?;
-        let collation = WithDefault::from_opt(xml.prev_attr("collation").map(Collation::new));
+        let collation = WithDefault::from_opt(
+            // FIXME: an unknown collation should result in precondition error,
+            // not a parsing error (different error codes and response body).
+            xml.prev_attr("collation")
+               .map(|s| Collation::from_str(s.as_str()))
+               .transpose()
+               .or(Err(ParsingError::InvalidValue))?
+            );
         let negate_condition = WithDefault::from_opt(
             xml.prev_attr("negate-condition")
                .map(|v| NegateCondition::from_str(v.as_str()))

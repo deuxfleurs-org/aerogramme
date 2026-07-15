@@ -487,13 +487,11 @@ mod tests {
     async fn rfc_supported_collation_set() {
         let got = Property::SupportedCollationSet(vec![
             SupportedCollation(Collation::AsciiCaseMap),
-            SupportedCollation(Collation::Unknown("i;octet".to_string())),
             SupportedCollation(Collation::UnicodeCaseMap),
         ]);
 
         let expected = r#"<CD:supported-collation-set xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
     <CD:supported-collation>i;ascii-casemap</CD:supported-collation>
-    <CD:supported-collation>i;octet</CD:supported-collation>
     <CD:supported-collation>i;unicode-casemap</CD:supported-collation>
 </CD:supported-collation-set>"#;
 

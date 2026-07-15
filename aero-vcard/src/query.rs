@@ -1,6 +1,7 @@
 use aero_dav::cardtypes as card;
 use ical_vcard::{Contentline, Param};
 
+use crate::collation::{self, contains_subslice};
 use crate::filter::prop_matches_name;
 
 // NOTE: the filtering logic is naive and could be optimized
@@ -32,13 +33,14 @@ fn object_matches_prop_filter(vcard: &[Contentline], filter: &card::PropFilter) 
 }
 
 fn is_text_match(s: &str, text_match: &card::TextMatch) -> bool {
-    //@FIXME ignoring collation
-    let pat = text_match.text.as_str();
+    let collation = *text_match.collation.get();
+    let pat = collation::normalize(collation, text_match.text.as_str());
+    let s = collation::normalize(collation, s);
     let matches = match text_match.match_type.get() {
         card::TextMatchType::Equals => s == pat,
-        card::TextMatchType::Contains => s.contains(pat),
-        card::TextMatchType::StartsWith => s.starts_with(pat),
-        card::TextMatchType::EndsWith => s.ends_with(pat),
+        card::TextMatchType::Contains => contains_subslice(&s, &pat),
+        card::TextMatchType::StartsWith => s.starts_with(&pat),
+        card::TextMatchType::EndsWith => s.ends_with(&pat),
     };
     match text_match.negate_condition.get() {
         card::NegateCondition::Yes => !matches,

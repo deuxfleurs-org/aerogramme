@@ -47,6 +47,9 @@ im = "15"
 anyhow = "1"
 async-trait = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["alloc"] }
+# TODO: replace with std::char::to_titlecase when it becomes stable
+unicode-case-mapping = "1.0.0"
+unicode-normalization = "0.1.25"
 
 # process related
 nix = { version = "0.30", features = ["signal"] }

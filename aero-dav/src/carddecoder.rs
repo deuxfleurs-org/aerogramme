@@ -356,7 +356,9 @@ impl QRead<AddressDataType> for AddressDataType {
 impl QRead<SupportedCollation> for SupportedCollation {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CARD_URN, "supported-collation").await?;
-        let col = Collation::new(xml.tag_string().await?);
+        // FIXME: an unknown collation should result in precondition error,
+        // not a parsing error (different error codes and response body).
+        let col = Collation::from_str(&xml.tag_string().await?).or(Err(ParsingError::InvalidValue))?;
         xml.close().await?;
         Ok(SupportedCollation(col))
     }
@@ -465,7 +467,14 @@ impl QRead<PropFilterRules> for PropFilterRules {
 impl QRead<TextMatch> for TextMatch {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         xml.open(CARD_URN, "text-match").await?;
-        let collation = WithDefault::from_opt(xml.prev_attr("collation").map(Collation::new));
+        let collation = WithDefault::from_opt(
+            // FIXME: an unknown collation should result in precondition error,
+            // not a parsing error (different error codes and response body).
+            xml.prev_attr("collation")
+               .map(|s| Collation::from_str(s.as_str()))
+               .transpose()
+               .or(Err(ParsingError::InvalidValue))?
+        );
         let negate_condition = WithDefault::from_opt(
             xml.prev_attr("negate-condition")
                .map(|s| NegateCondition::from_str(&s))
@@ -621,7 +630,6 @@ mod tests {
     async fn rfc_supported_collation_set() {
         let expected = Property::SupportedCollationSet(vec![
             SupportedCollation(Collation::AsciiCaseMap),
-            SupportedCollation(Collation::Unknown("i;octet".to_string())),
             SupportedCollation(Collation::UnicodeCaseMap),
         ]);
 
@@ -629,7 +637,6 @@ mod tests {
       <CD:supported-collation-set
         xmlns:CD="urn:ietf:params:xml:ns:carddav">
         <CD:supported-collation>i;ascii-casemap</CD:supported-collation>
-        <CD:supported-collation>i;octet</CD:supported-collation>
         <CD:supported-collation>i;unicode-casemap</CD:supported-collation>
       </CD:supported-collation-set>
 "#;

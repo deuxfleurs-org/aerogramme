@@ -1561,29 +1561,27 @@ impl PropertyParameter {
     }
 }
 
-#[derive(Default, Debug, PartialEq, Clone)]
+#[derive(Default, Debug, PartialEq, Clone, Copy)]
 pub enum Collation {
     #[default]
     AsciiCaseMap,
     Octet,
-    Unknown(String),
 }
 impl Collation {
     pub fn as_str<'a>(&'a self) -> &'a str {
         match self {
             Self::AsciiCaseMap => "i;ascii-casemap",
             Self::Octet => "i;octet",
-            Self::Unknown(c) => c.as_str(),
         }
     }
-    pub fn new(v: String) -> Self {
-        match v.as_str() {
+    pub fn from_str(s: &str) -> Result<Self, ()> {
+        match s {
             // if the client specifies the "default" collation identifier (as
             // defined in [RFC4790], Section 3.1), the server MUST default to
             // using "i;ascii-casemap" as the collation.
-            "default" | "i;ascii-casemap" => Self::AsciiCaseMap,
-            "i;octet" => Self::Octet,
-            _ => Self::Unknown(v),
+            "default" | "i;ascii-casemap" => Ok(Self::AsciiCaseMap),
+            "i;octet" => Ok(Self::Octet),
+            _ => Err(()),
         }
     }
 }

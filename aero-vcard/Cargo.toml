@@ -14,3 +14,5 @@ description = "vCard parsing and querying"
 aero-dav.workspace = true
 ical_vcard.workspace = true
 tracing.workspace = true
+unicode-case-mapping.workspace = true
+unicode-normalization.workspace = true
