@@ -92,6 +92,32 @@ impl Extension for All {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub enum Error {
+    Cal(cal::Violation),
+    Card(card::Violation),
+}
+impl xml::QRead<Error> for Error {
+    async fn qread(xml: &mut xml::Reader<impl xml::IRead>) -> Result<Self, error::ParsingError> {
+        match cal::Violation::qread(xml).await {
+            Err(error::ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(Error::Cal),
+        }
+        card::Violation::qread(xml).await.map(Error::Card)
+    }
+}
+impl xml::QWrite for Error {
+    async fn qwrite(
+        &self,
+        xml: &mut xml::Writer<impl xml::IWrite>,
+    ) -> Result<(), quick_xml::Error> {
+        match self {
+            Self::Cal(c) => c.qwrite(xml).await,
+            Self::Card(c) => c.qwrite(xml).await,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Property<E: Extension> {
     Cal(cal::Property),
     Card(card::Property),
