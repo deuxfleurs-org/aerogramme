@@ -146,6 +146,9 @@ impl DavNode for HomeNode {
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
             dav::PropertyRequest::GetContentType,
+            dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
+                acl::PropertyRequest::CurrentUserPrivilegeSet,
+            )),
             dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
                 cal::PropertyRequest::CalendarHomeSet,
             )),
@@ -167,6 +170,13 @@ impl DavNode for HomeNode {
                             acl::ResourceType::Principal,
                         )),
                     ])),
+                    dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
+                        acl::PropertyRequest::CurrentUserPrivilegeSet,
+                    )) =>
+                        Ok(dav::Property::Extension(all::Property::Acl(
+                            acl::Property::CurrentUserPrivilegeSet(
+                                acl::PrivilegeSet(vec![acl::Privilege::All]))
+                        ))),
                     dav::PropertyRequest::GetContentType =>
                         Ok(dav::Property::GetContentType("httpd/unix-directory".into())),
                     dav::PropertyRequest::Extension(all::PropertyRequest::Cal(

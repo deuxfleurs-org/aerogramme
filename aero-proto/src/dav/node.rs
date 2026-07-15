@@ -9,6 +9,7 @@ use aero_collections::{
 };
 use aero_collections::user::User;
 use aero_dav::realization::{self as all, All};
+use aero_dav::acltypes as acl;
 use aero_dav::coretypes as dav;
 use aero_dav::synctypes as sync;
 use aero_dav::versioningtypes as vers;
@@ -306,6 +307,9 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
                 dav::PropertyRequest::Extension(all::PropertyRequest::Vers(
                     vers::PropertyRequest::SupportedReportSet,
                 )),
+                dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
+                    acl::PropertyRequest::CurrentUserPrivilegeSet,
+                )),
             ]);
             props.extend_from_slice(&self.0.additional_supported_properties());
         }
@@ -334,6 +338,14 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
                     )) =>
                         Ok(dav::Property::Extension(all::Property::Vers(
                             vers::Property::SupportedReportSet(self.0.supported_reports())
+                        ))),
+                    dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
+                        acl::PropertyRequest::CurrentUserPrivilegeSet,
+                    )) =>
+                        Ok(dav::Property::Extension(all::Property::Acl(
+                            acl::Property::CurrentUserPrivilegeSet(
+                                acl::PrivilegeSet(vec![acl::Privilege::All])
+                            )
                         ))),
                     _ => Err(n),
                 };
@@ -477,8 +489,9 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
 /// a Bayou DAV store.
 ///
 /// `DavStoredCollection` implements `DavNode`, implementing base WebDAV
-/// behavior, including WebDAV Sync, which can be further extended by
-/// implementors of `DavStoredCollection` through the `additional_*` methods.
+/// behavior, including WebDAV Sync and (very limited) Acl. Its behavior can be
+/// further extended by implementors of `DavStoredCollection` through the
+/// `additional_*` methods.
 pub(crate) trait DavStoredCollection: Send + Sync + Clone + 'static {
     /// Access to the underlying collection store
     fn collection(&self) -> &Collection;
@@ -564,6 +577,9 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
             dav::PropertyRequest::Extension(all::PropertyRequest::Vers(
                 vers::PropertyRequest::SupportedReportSet,
             )),
+            dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
+                acl::PropertyRequest::CurrentUserPrivilegeSet,
+            )),
         ];
         props.extend_from_slice(&self.0.additional_supported_properties());
         dav::PropName(props)
@@ -610,6 +626,14 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
                             vers::Property::SupportedReportSet(reports)
                         )))
                     },
+                    dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
+                        acl::PropertyRequest::CurrentUserPrivilegeSet,
+                    )) =>
+                        Ok(dav::Property::Extension(all::Property::Acl(
+                            acl::Property::CurrentUserPrivilegeSet(
+                                acl::PrivilegeSet(vec![acl::Privilege::All])
+                            )
+                        ))),
                     v => Err(v),
                 };
                 v.push(res)

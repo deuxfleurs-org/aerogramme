@@ -9,9 +9,10 @@ use aero_collections::{
     dav::collection::Collection,
     user::User,
 };
+use aero_dav::acltypes as acl;
 use aero_dav::cardtypes as card;
-use aero_dav::realization::{self as all, All};
 use aero_dav::coretypes as dav;
+use aero_dav::realization::{self as all, All};
 use aero_dav::versioningtypes as vers;
 
 use crate::dav::codec::Path;
@@ -80,6 +81,9 @@ impl DavNode for AddressbookListNode {
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
             dav::PropertyRequest::GetContentType,
+            dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
+                acl::PropertyRequest::CurrentUserPrivilegeSet,
+            )),
         ])
     }
     fn properties<'a>(&'a mut self, user: &'a User, prop: dav::PropName<All>) -> BoxFuture<'a, Vec<PropertyResult>> {
@@ -93,6 +97,14 @@ impl DavNode for AddressbookListNode {
                         Ok(dav::Property::ResourceType(vec![dav::ResourceType::Collection])),
                     dav::PropertyRequest::GetContentType =>
                         Ok(dav::Property::GetContentType("httpd/unix-directory".into())),
+                    dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
+                        acl::PropertyRequest::CurrentUserPrivilegeSet,
+                    )) =>
+                        Ok(dav::Property::Extension(all::Property::Acl(
+                            acl::Property::CurrentUserPrivilegeSet(
+                                acl::PrivilegeSet(vec![acl::Privilege::All])
+                            )
+                        ))),
                     v => Err(v),
                 };
                 v.push(res)

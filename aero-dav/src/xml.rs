@@ -99,6 +99,11 @@ impl<T: IWrite> Writer<T> {
         }
         start
     }
+
+    pub async fn create_dav_atom(&mut self, name: &str) -> quick_xml::Result<()> {
+        let elt = self.create_dav_element(name);
+        self.q.write_event_async(Event::Empty(elt)).await
+    }
 }
 
 /// Transform an XML stream of characters into a Rust object

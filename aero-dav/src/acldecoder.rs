@@ -1,3 +1,5 @@
+use quick_xml::events::Event;
+
 use super::acltypes::*;
 use super::error::ParsingError;
 use super::coretypes as dav;
@@ -24,8 +26,9 @@ impl QRead<Property> for Property {
             .await?
             .is_some()
         {
+            let privilegeset = xml.find().await?;
             xml.close().await?;
-            return Ok(Self::CurrentUserPrivilegeSet(vec![]));
+            return Ok(Self::CurrentUserPrivilegeSet(privilegeset))
         }
 
         Err(ParsingError::Recoverable)
@@ -67,6 +70,83 @@ impl QRead<ResourceType> for ResourceType {
             xml.close().await?;
             return Ok(Self::Principal);
         }
+        Err(ParsingError::Recoverable)
+    }
+}
+
+impl QRead<Privilege> for Privilege {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        if xml.maybe_open(DAV_URN, "read").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::Read);
+        }
+        if xml.maybe_open(DAV_URN, "write").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::Write);
+        }
+        if xml.maybe_open(DAV_URN, "write-properties").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::WriteProperties);
+        }
+        if xml.maybe_open(DAV_URN, "write-content").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::WriteContent);
+        }
+        if xml.maybe_open(DAV_URN, "unlock").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::Unlock);
+        }
+        if xml.maybe_open(DAV_URN, "read-acl").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::ReadAcl);
+        }
+        if xml.maybe_open(DAV_URN, "read-current-user-privilege-set").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::ReadCurrentUserPrivilegeSet);
+        }
+        if xml.maybe_open(DAV_URN, "write-acl").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::WriteAcl);
+        }
+        if xml.maybe_open(DAV_URN, "bind").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::Bind);
+        }
+        if xml.maybe_open(DAV_URN, "unbind").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::Unbind);
+        }
+        if xml.maybe_open(DAV_URN, "all").await?.is_some() {
+            xml.close().await?;
+            return Ok(Self::All);
+        }
+        Err(ParsingError::Recoverable)
+    }
+}
+
+impl QRead<PrivilegeSet> for PrivilegeSet {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        if xml
+            .maybe_open_start(DAV_URN, "privilege")
+            .await?
+            .is_some()
+        {
+            let mut privileges = Vec::new();
+            loop {
+                let mut dirty = false;
+                xml.maybe_push(&mut privileges, &mut dirty).await?;
+                if !dirty {
+                    match xml.peek() {
+                        Event::End(_) => break,
+                        _ => xml.skip().await?,
+                    };
+                }
+            }
+           
+            xml.close().await?;
+            return Ok(Self(privileges));
+        }
+
         Err(ParsingError::Recoverable)
     }
 }
