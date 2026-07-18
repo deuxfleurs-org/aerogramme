@@ -253,13 +253,15 @@ impl MailboxNs {
 
 impl MailboxNsInner {
     pub(crate) async fn open_by_id(&self, id: UniqueIdent) -> Result<Mailbox> {
-        {
+        if let Some(mut mb) = {
             let cache = self.mailboxes.lock().unwrap();
-            if let Some(mbox_weak) = cache.get(&id) {
-                if let Some(mb) = mbox_weak.upgrade() {
-                    return Ok(mb);
-                }
-            }
+            cache.get(&id)
+                 .and_then(|mbox_weak| mbox_weak.upgrade())
+        } {
+            // Sync now after getting the mbox out of cache to get a recent mbox
+            // state
+            mb.sync().await?;
+            return Ok(mb)
         }
 
         // The idea here is that:

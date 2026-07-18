@@ -49,13 +49,14 @@ impl DavNs {
     /// Open a collection by unique id
     /// Check mail::namespace::open_mailbox_by_id to understand this function
     pub async fn open_by_id(&self, id: UniqueIdent) -> Result<Collection> {
-        {
+        if let Some(mut col) = {
             let cache = self.collections.lock().unwrap();
-            if let Some(cal_weak) = cache.get(&id) {
-                if let Some(cal) = cal_weak.upgrade() {
-                    return Ok(cal);
-                }
-            }
+            cache.get(&id)
+                 .and_then(|col_weak| col_weak.upgrade())
+        } {
+            // Sync now to get a recent collection state
+            col.sync().await?;
+            return Ok(col)
         }
 
         let col = Collection::open(&self.creds, &self.prefix, id).await?;
