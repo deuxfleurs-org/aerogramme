@@ -16,19 +16,81 @@ use tokio_util::sync::PollSender;
 
 use super::controller::HttpResponse;
 use super::node::PutPolicy;
+use aero_collections::unique_ident::UniqueIdent;
 use aero_dav::coretypes as dav;
 use aero_dav::xml as dxml;
 
-pub(crate) fn depth(req: &Request<impl hyper::body::Body>) -> dav::Depth {
+pub struct SyncTokenUri(pub UniqueIdent);
+
+impl SyncTokenUri {
+    /// Base URI for sync tokens.
+    ///
+    /// Why "https://aerogramme.0"?
+    /// Because tokens must be valid URI.
+    /// And numeric TLD are ~mostly valid in URI (check the .42 TLD experience)
+    /// and at the same time, they are not used sold by the ICANN and there is no plan to use them.
+    /// So I am sure that the URL remains invalid, avoiding leaking requests to an hardcoded URL in the
+    /// future.
+    /// The best option would be to make it configurable ofc, so someone can put a domain name
+    /// that they control, it would probably improve compatibility (maybe some WebDAV spec tells us
+    /// how to handle/resolve this URI but I am not aware of that...). But that's not the plan for
+    /// now. So here we are: https://aerogramme.0.
+    pub const BASE_URI: &str = "https://aerogramme.0/sync/";
+}
+
+impl std::str::FromStr for SyncTokenUri {
+    type Err = String;
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        if raw.len() != Self::BASE_URI.len() + 48 {
+            return Err("invalid token length".to_string())
+        }
+        let id = raw[Self::BASE_URI.len()..]
+            .parse::<UniqueIdent>()
+            .or_else(|_| Err("cannot parse token".to_string()))?;
+        Ok(Self(id))
+    }
+}
+
+impl std::fmt::Display for SyncTokenUri {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", Self::BASE_URI, self.0)
+    }
+}
+
+/// Path is a voluntarily feature limited
+/// compared to the expressiveness of a UNIX path
+/// For example getting parent with ../ is not supported, scheme is not supported, etc.
+/// More complex support could be added later if needed by clients
+pub enum Path<'a> {
+    Abs(Vec<&'a str>),
+    Rel(Vec<&'a str>),
+}
+impl<'a> Path<'a> {
+    pub fn new(path: &'a str) -> Result<Self> {
+        // This check is naive, it does not aim at detecting all fully qualified
+        // URL or protect from any attack, its only goal is to help debugging.
+        if path.starts_with("http://") || path.starts_with("https://") {
+            anyhow::bail!("Full URL are not supported")
+        }
+
+        let path_segments: Vec<_> = path.split("/").filter(|s| *s != "" && *s != ".").collect();
+        if path.starts_with("/") {
+            return Ok(Path::Abs(path_segments));
+        }
+        Ok(Path::Rel(path_segments))
+    }
+}
+
+pub(crate) fn depth(req: &Request<impl hyper::body::Body>) -> Option<dav::Depth> {
     match req
         .headers()
         .get("Depth")
         .map(hyper::header::HeaderValue::to_str)
     {
-        Some(Ok("0")) => dav::Depth::Zero,
-        Some(Ok("1")) => dav::Depth::One,
-        Some(Ok("Infinity")) => dav::Depth::Infinity,
-        _ => dav::Depth::Zero,
+        Some(Ok("0")) => Some(dav::Depth::Zero),
+        Some(Ok("1")) => Some(dav::Depth::One),
+        Some(Ok("Infinity")) => Some(dav::Depth::Infinity),
+        _ => None,
     }
 }
 
@@ -63,6 +125,10 @@ pub(crate) fn put_policy(req: &Request<impl hyper::body::Body>) -> Result<PutPol
 }
 
 pub(crate) fn text_body(txt: &'static str) -> UnsyncBoxBody<Bytes, std::io::Error> {
+    UnsyncBoxBody::new(Full::new(Bytes::from(txt)).map_err(|e| match e {}))
+}
+
+pub(crate) fn text_body_owned(txt: String) -> UnsyncBoxBody<Bytes, std::io::Error> {
     UnsyncBoxBody::new(Full::new(Bytes::from(txt)).map_err(|e| match e {}))
 }
 
