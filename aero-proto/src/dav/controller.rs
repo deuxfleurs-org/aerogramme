@@ -193,9 +193,9 @@ impl Controller {
 
         // Getting props
         let props = match calprop {
-            None | Some(cal::CalendarSelector::AllProp) => Some(dav::PropName(ALLPROP.to_vec())),
-            Some(cal::CalendarSelector::PropName) => None,
-            Some(cal::CalendarSelector::Prop(inner)) => Some(inner),
+            None | Some(cal::CalendarSelector::AllProp) => dav::PropFind::AllProp(None),
+            Some(cal::CalendarSelector::PropName) => dav::PropFind::PropName,
+            Some(cal::CalendarSelector::Prop(inner)) => dav::PropFind::Prop(inner),
         };
 
         serialize(
@@ -207,14 +207,20 @@ impl Controller {
     /// PROPFIND is the standard way to fetch WebDAV properties
     async fn propfind(self) -> Result<HttpResponse> {
         let depth = depth(&self.req);
+        // The specification allows "depth: infinity" to not be implemented. "In
+        // practice, support for infinite-depth requests MAY be disabled, due to
+        // the performance and security concerns associated with this behavior."
         if matches!(depth, dav::Depth::Infinity) {
             return Ok(Response::builder()
                 .status(501)
                 .body(text_body("Depth: Infinity not implemented"))?);
         }
 
+        // 207 Multi-Status
         let status = hyper::StatusCode::from_u16(207)?;
 
+        // A client may submit a 'propfind' XML element in the body of the
+        // request method describing what information is being requested.
         // A client may choose not to submit a request body.  An empty PROPFIND
         // request body MUST be treated as if it were an 'allprop' request.
         // @FIXME here we handle any invalid data as an allprop, an empty request is thus correctly
@@ -226,27 +232,17 @@ impl Controller {
 
         // Collect nodes as PROPFIND is not limited to the targeted node
         let mut nodes = vec![];
-        if matches!(depth, dav::Depth::One | dav::Depth::Infinity) {
+        if matches!(depth, dav::Depth::One) {
             nodes.extend(self.node.children_nodes(&self.user).await?);
         }
         nodes.push(self.node);
 
-        // Expand properties request
-        let propname = match propfind {
-            dav::PropFind::PropName => None,
-            dav::PropFind::AllProp(None) => Some(dav::PropName(ALLPROP.to_vec())),
-            dav::PropFind::AllProp(Some(dav::Include(mut include))) => {
-                include.extend_from_slice(&ALLPROP);
-                Some(dav::PropName(include))
-            }
-            dav::PropFind::Prop(inner) => Some(inner),
-        };
-
-        // Not Found is currently impossible considering the way we designed this function
+        // `not_found` is used to indicate nodes that were requested but not found.
+        // This cannot happen with this function.
         let not_found = vec![];
         serialize(
             status,
-            Self::multistatus(&self.user, nodes, not_found, propname, None).await,
+            Self::multistatus(&self.user, nodes, not_found, propfind, None).await,
         )
     }
 
@@ -314,23 +310,47 @@ impl Controller {
         user: &User,
         nodes: Vec<Box<dyn DavNode>>,
         not_found: Vec<dav::Href>,
-        props: Option<dav::PropName<All>>,
+        propfind: dav::PropFind<All>,
         extension: Option<realization::Multistatus>,
     ) -> dav::Multistatus<All> {
+        let mut responses: Vec<dav::Response<All>> = vec![];
+
         // Collect properties on existing objects
-        let mut responses: Vec<dav::Response<All>> = match props {
-            Some(props) => {
-                let mut v = vec![];
+        match &propfind {
+            // Request a list of names of all the properties defined on the
+            // resource, by using the 'propname' element.
+            dav::PropFind::PropName =>
+                for node in nodes {
+                    responses.push(node.response_propname(user))
+                },
+
+            // Request property values for those properties defined in this
+            // specification (at a minimum) plus dead properties, by using the
+            // 'allprop' element (the 'include' element can be used with
+            // 'allprop' to instruct the server to also include additional live
+            // properties that may not have been returned otherwise),
+            //
+            // Note that 'allprop' does not return values for all live
+            // properties. Instead, WebDAV clients can use propname requests to
+            // discover what live properties exist, and request named properties
+            // when retrieving values.
+            dav::PropFind::AllProp(include) =>
+                for mut node in nodes { 
+                    let mut props = Self::supported_allprops(&node, user);
+                    if let Some(dav::Include(include)) = include {
+                        props.extend_from_slice(include);
+                    }
+                    responses.push(node.response_props(user, dav::PropName(props)).await)
+                },
+
+            // Request particular property values, by naming the properties
+            // desired within the 'prop' element (the ordering of properties in
+            // here MAY be ignored by the server),
+            dav::PropFind::Prop(inner) =>
                 for mut node in nodes {
-                    v.push(node.response_props(user, props.clone()).await)
-                }
-                v
-            }
-            None => nodes
-                .into_iter()
-                .map(|n| n.response_propname(user))
-                .collect(),
-        };
+                    responses.push(node.response_props(user, inner.clone()).await)
+                },
+        }
 
         // Register not found objects only if relevant
         if !not_found.is_empty() {
@@ -354,6 +374,15 @@ impl Controller {
 
         tracing::debug!(multistatus=?multistatus, "multistatus response");
         multistatus
+    }
+
+    fn supported_allprops(node: &Box<dyn DavNode>, user: &User) -> Vec<dav::PropertyRequest<All>> {
+        let supported = node.supported_properties(user);
+        ALLPROP
+            .iter()
+            .filter(|p| supported.0.contains(p))
+            .cloned()
+            .collect()
     }
 }
 
@@ -431,3 +460,4 @@ fn apply_filter<'a>(
         }
     })
 }
+
