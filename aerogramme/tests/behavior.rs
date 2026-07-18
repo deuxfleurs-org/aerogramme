@@ -1062,9 +1062,9 @@ fn rfc6578_webdav_sync() {
             _ => None
         }).expect("supported report set exists");
         assert_eq!(&supported[..], &[
+            vers::SupportedReport(vers::ReportName::Extension(realization::ReportTypeName::Sync(sync::ReportTypeName::SyncCollection))),
             vers::SupportedReport(vers::ReportName::Extension(realization::ReportTypeName::Cal(cal::ReportTypeName::Multiget))),
             vers::SupportedReport(vers::ReportName::Extension(realization::ReportTypeName::Cal(cal::ReportTypeName::Query))),
-            vers::SupportedReport(vers::ReportName::Extension(realization::ReportTypeName::Sync(sync::ReportTypeName::SyncCollection))),
         ]);
 
 

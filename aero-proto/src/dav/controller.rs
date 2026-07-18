@@ -17,8 +17,8 @@ use aero_ical::query::is_component_match;
 
 use crate::dav::codec;
 use crate::dav::codec::{depth, deserialize, serialize, text_body};
-use crate::dav::node::DavNode;
-use crate::dav::resource::{RootNode, BASE_TOKEN_URI};
+use crate::dav::node::{DavNode, BASE_TOKEN_URI};
+use crate::dav::resource::RootNode;
 
 pub(super) type HttpResponse = Response<UnsyncBoxBody<Bytes, std::io::Error>>;
 
@@ -91,7 +91,7 @@ impl Controller {
     /// Note: current implementation is not generic at all, it is heavily tied to CalDAV.
     /// A rewrite would be required to make it more generic (with the extension system that has
     /// been introduced in aero-dav)
-    async fn report(self) -> Result<HttpResponse> {
+    async fn report(mut self) -> Result<HttpResponse> {
         let status = hyper::StatusCode::from_u16(207)?;
 
         let cal_report = match deserialize::<vers::Report<All>>(self.req).await {
@@ -140,7 +140,7 @@ impl Controller {
             vers::Report::Extension(realization::ReportType::Cal(cal::ReportType::Query(q))) => {
                 calprop = q.selector;
                 extension = None;
-                ok_node = apply_filter(self.node.children(&self.user).await, &q.filter)
+                ok_node = apply_filter(self.node.children_nodes(&self.user).await?, &q.filter)
                     .try_collect()
                     .await?;
             }
@@ -227,7 +227,7 @@ impl Controller {
         // Collect nodes as PROPFIND is not limited to the targeted node
         let mut nodes = vec![];
         if matches!(depth, dav::Depth::One | dav::Depth::Infinity) {
-            nodes.extend(self.node.children(&self.user).await);
+            nodes.extend(self.node.children_nodes(&self.user).await?);
         }
         nodes.push(self.node);
 
@@ -299,7 +299,7 @@ impl Controller {
         Ok(response)
     }
 
-    async fn delete(self) -> Result<HttpResponse> {
+    async fn delete(mut self) -> Result<HttpResponse> {
         self.node.delete().await?;
         let response = Response::builder()
             .status(204)
@@ -320,10 +320,11 @@ impl Controller {
         // Collect properties on existing objects
         let mut responses: Vec<dav::Response<All>> = match props {
             Some(props) => {
-                futures::stream::iter(nodes)
-                    .then(|n| n.response_props(user, props.clone()))
-                    .collect()
-                    .await
+                let mut v = vec![];
+                for mut node in nodes {
+                    v.push(node.response_props(user, props.clone()).await)
+                }
+                v
             }
             None => nodes
                 .into_iter()

@@ -52,7 +52,7 @@ impl Collection {
     // ---- Data API
 
     /// Access the index (you can get the list of files for example)
-    pub async fn index(&self) -> DavIndex {
+    pub fn index(&self) -> DavIndex {
         // Cloning is cheap
         self.davindex.state().clone()
     }

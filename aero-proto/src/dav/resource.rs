@@ -1,60 +1,55 @@
-use anyhow::{anyhow, Result};
-use futures::io::AsyncReadExt;
-use futures::stream::{StreamExt, TryStreamExt};
+//! This modules defines the WebDAV filesystem structure exposed by aerogramme
+//! 
+//! /                                 root
+//! ├── alice                         homedir for user "alice"
+//! │   └── calendar                  calendar namespace
+//! │       └── Personal              default calendar collection
+//! │           └── event1.ics        calendar event
+//! │           └── ...
+//! ├── bob                           homedir for user "bob"
+//! │   └── ...
+
+use anyhow::Result;
 use futures::{future::BoxFuture, future::FutureExt};
 
 use aero_collections::{
     dav::collection::Collection,
-    dav::davindex::{BlobId, Etag, SyncChange, Token},
     user::User,
 };
 use aero_dav::acltypes as acl;
 use aero_dav::caltypes as cal;
 use aero_dav::realization::{self as all, All};
-use aero_dav::synctypes as sync;
 use aero_dav::coretypes as dav;
 use aero_dav::versioningtypes as vers;
 
-use super::node::PropertyStream;
-use crate::dav::node::{Content, DavNode, PutPolicy};
+use crate::dav::node::{
+    ChildNode,
+    DavNode,
+    DavObject, DavObjectNode,
+    DavStoredCollection, DavStoredCollectionNode,
+    PropertyResult,
+};
 
-/// Why "https://aerogramme.0"?
-/// Because tokens must be valid URI.
-/// And numeric TLD are ~mostly valid in URI (check the .42 TLD experience)
-/// and at the same time, they are not used sold by the ICANN and there is no plan to use them.
-/// So I am sure that the URL remains invalid, avoiding leaking requests to an hardcoded URL in the
-/// future.
-/// The best option would be to make it configurable ofc, so someone can put a domain name
-/// that they control, it would probably improve compatibility (maybe some WebDAV spec tells us
-/// how to handle/resolve this URI but I am not aware of that...). But that's not the plan for
-/// now. So here we are: https://aerogramme.0.
-pub const BASE_TOKEN_URI: &str = "https://aerogramme.0/sync/";
-
+/// The root of the webdav filesystem
 #[derive(Clone)]
 pub(crate) struct RootNode {}
 impl DavNode for RootNode {
-    fn fetch<'a>(
-        &self,
-        user: &'a User,
-        path: &'a [&str],
-        create: bool,
-    ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
-        if path.len() == 0 {
-            let this = self.clone();
-            return async { Ok(Box::new(this) as Box<dyn DavNode>) }.boxed();
-        }
-
-        if path[0] == user.username {
-            let child = Box::new(HomeNode {});
-            return child.fetch(user, &path[1..], create);
-        }
-
-        //@NOTE: We can't create a node at this level
-        async { Err(anyhow!("Not found")) }.boxed()
+    fn clone_node(&self) -> Box<dyn DavNode> {
+        Box::new(self.clone())
     }
 
-    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
-        async { vec![Box::new(HomeNode {}) as Box<dyn DavNode>] }.boxed()
+    fn children<'a>(&self, user: &'a User) -> BoxFuture<'a, Vec<String>> {
+        async { vec![user.username.to_string()] }.boxed()
+    }
+
+    fn child_node<'a>(&self, user: &'a User, name: &str) -> BoxFuture<'a, Result<ChildNode>> {
+        let node =
+            if name == user.username {
+                ChildNode::Existing(Box::new(HomeNode {}) as Box<dyn DavNode>)
+            } else {
+                ChildNode::CannotCreate
+            };
+        async move { Ok(node) }.boxed()
     }
 
     fn path(&self, _user: &User) -> String {
@@ -72,110 +67,62 @@ impl DavNode for RootNode {
         ])
     }
 
-    fn properties(&self, user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
-        let user = user.clone();
-        futures::stream::iter(prop.0)
-            .map(move |n| {
-                let prop = match n {
-                    dav::PropertyRequest::DisplayName => {
-                        dav::Property::DisplayName("DAV Root".to_string())
-                    }
-                    dav::PropertyRequest::ResourceType => {
-                        dav::Property::ResourceType(vec![dav::ResourceType::Collection])
-                    }
-                    dav::PropertyRequest::GetContentType => {
-                        dav::Property::GetContentType("httpd/unix-directory".into())
-                    }
+    fn properties<'a>(&'a mut self, user: &'a User, prop: dav::PropName<All>) -> BoxFuture<'a, Vec<PropertyResult>> {
+        async move {
+            let mut v = vec![];
+            for n in prop.0 {
+                let res = match n {
+                    dav::PropertyRequest::DisplayName =>
+                        Ok(dav::Property::DisplayName("DAV Root".to_string())),
+                    dav::PropertyRequest::ResourceType =>
+                        Ok(dav::Property::ResourceType(vec![dav::ResourceType::Collection])),
+                    dav::PropertyRequest::GetContentType =>
+                        Ok(dav::Property::GetContentType("httpd/unix-directory".into())),
                     dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
                         acl::PropertyRequest::CurrentUserPrincipal,
-                    )) => dav::Property::Extension(all::Property::Acl(
+                    )) => Ok(dav::Property::Extension(all::Property::Acl(
                         acl::Property::CurrentUserPrincipal(acl::User::Authenticated(dav::Href(
                             HomeNode {}.path(&user),
                         ))),
-                    )),
-                    v => return Err(v),
+                    ))),
+                    v => Err(v),
                 };
-                Ok(prop)
-            })
-            .boxed()
-    }
-
-    fn put<'a>(
-        &'a mut self,
-        _policy: PutPolicy,
-        _stream: Content<'a>,
-    ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
-        futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported)).boxed()
-    }
-
-    fn content<'a>(&self) -> Content<'a> {
-        futures::stream::once(futures::future::err(std::io::Error::from(
-            std::io::ErrorKind::Unsupported,
-        )))
-        .boxed()
-    }
-
-    fn content_type(&self) -> &str {
-        "text/plain"
-    }
-
-    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
-        async { None }.boxed()
-    }
-
-    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
-        async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
-    }
-
-    fn diff<'a>(
-        &self,
-        _sync_token: Option<Token>,
-    ) -> BoxFuture<
-        'a,
-        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
-    > {
-        async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
+                v.push(res)
+            }
+            v
+        }.boxed()
     }
 
     fn dav_header(&self) -> String {
         "1".into()
     }
+
+    fn content_type(&self) -> &str {
+        "text/plain"
+    }
 }
 
+/// The homedir collection of a user. It contains namespaces.
 #[derive(Clone)]
 pub(crate) struct HomeNode {}
 impl DavNode for HomeNode {
-    fn fetch<'a>(
-        &self,
-        user: &'a User,
-        path: &'a [&str],
-        create: bool,
-    ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
-        if path.len() == 0 {
-            let node = Box::new(self.clone()) as Box<dyn DavNode>;
-            return async { Ok(node) }.boxed();
-        }
-
-        if path[0] == "calendar" {
-            return async move {
-                let child = Box::new(CalendarListNode::new(user).await?);
-                child.fetch(user, &path[1..], create).await
-            }
-            .boxed();
-        }
-
-        //@NOTE: we can't create a node at this level
-        async { Err(anyhow!("Not found")) }.boxed()
+    fn clone_node(&self) -> Box<dyn DavNode> {
+        Box::new(self.clone())
     }
 
-    fn children<'a>(&self, user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
-        async {
-            CalendarListNode::new(user)
-                .await
-                .map(|c| vec![Box::new(c) as Box<dyn DavNode>])
-                .unwrap_or(vec![])
+    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<String>> {
+        async { vec!["calendar".to_string()] }.boxed()
+    }
+
+    fn child_node<'a>(&self, user: &'a User, name: &str) -> BoxFuture<'a, Result<ChildNode>> {
+        if name == "calendar" {
+            async move {
+                let node = Box::new(CalendarListNode::new(user).await?) as Box<dyn DavNode>;
+                Ok(ChildNode::Existing(node))
+            }.boxed()
+        } else {
+            async move { Ok(ChildNode::CannotCreate) }.boxed()
         }
-        .boxed()
     }
 
     fn path(&self, user: &User) -> String {
@@ -192,74 +139,40 @@ impl DavNode for HomeNode {
             )),
         ])
     }
-    fn properties(&self, user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
-        let user = user.clone();
-
-        futures::stream::iter(prop.0)
-            .map(move |n| {
-                let prop = match n {
-                    dav::PropertyRequest::DisplayName => {
-                        dav::Property::DisplayName(format!("{} home", user.username))
-                    }
-                    dav::PropertyRequest::ResourceType => dav::Property::ResourceType(vec![
+    fn properties<'a>(&'a mut self, user: &'a User, prop: dav::PropName<All>) -> BoxFuture<'a, Vec<PropertyResult>> {
+        async move {
+            let mut v = vec![];
+            for n in prop.0 {
+                let res = match n {
+                    dav::PropertyRequest::DisplayName =>
+                        Ok(dav::Property::DisplayName(format!("{} home", user.username))),
+                    dav::PropertyRequest::ResourceType => Ok(dav::Property::ResourceType(vec![
                         dav::ResourceType::Collection,
                         dav::ResourceType::Extension(all::ResourceType::Acl(
                             acl::ResourceType::Principal,
                         )),
-                    ]),
-                    dav::PropertyRequest::GetContentType => {
-                        dav::Property::GetContentType("httpd/unix-directory".into())
-                    }
+                    ])),
+                    dav::PropertyRequest::GetContentType =>
+                        Ok(dav::Property::GetContentType("httpd/unix-directory".into())),
                     dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
                         cal::PropertyRequest::CalendarHomeSet,
-                    )) => dav::Property::Extension(all::Property::Cal(
+                    )) => Ok(dav::Property::Extension(all::Property::Cal(
                         cal::Property::CalendarHomeSet(dav::Href(
                             //@FIXME we are hardcoding the calendar path, instead we would want to use
                             //objects
                             format!("/{}/calendar/", user.username),
                         )),
-                    )),
-                    v => return Err(v),
+                    ))),
+                    v => Err(v),
                 };
-                Ok(prop)
-            })
-            .boxed()
-    }
-
-    fn put<'a>(
-        &'a mut self,
-        _policy: PutPolicy,
-        _stream: Content<'a>,
-    ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
-        futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported)).boxed()
-    }
-
-    fn content<'a>(&self) -> Content<'a> {
-        futures::stream::once(futures::future::err(std::io::Error::from(
-            std::io::ErrorKind::Unsupported,
-        )))
-        .boxed()
+                v.push(res);
+            }
+            v
+        }.boxed()
     }
 
     fn content_type(&self) -> &str {
         "text/plain"
-    }
-
-    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
-        async { None }.boxed()
-    }
-
-    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
-        async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
-    }
-    fn diff<'a>(
-        &self,
-        _sync_token: Option<Token>,
-    ) -> BoxFuture<
-        'a,
-        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
-    > {
-        async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
     }
 
     fn dav_header(&self) -> String {
@@ -267,6 +180,7 @@ impl DavNode for HomeNode {
     }
 }
 
+/// The calendar namespace of a user. It contains calendar collections.
 #[derive(Clone)]
 pub(crate) struct CalendarListNode {
     list: Vec<String>,
@@ -278,58 +192,36 @@ impl CalendarListNode {
     }
 }
 impl DavNode for CalendarListNode {
-    fn fetch<'a>(
-        &self,
-        user: &'a User,
-        path: &'a [&str],
-        create: bool,
-    ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
-        if path.len() == 0 {
-            let node = Box::new(self.clone()) as Box<dyn DavNode>;
-            return async { Ok(node) }.boxed();
-        }
-
-        async move {
-            //@FIXME: we should create a node if the open returns a "not found".
-            let cal = user
-                .calendars
-                .dav
-                .open(path[0])
-                .await?
-                .ok_or(anyhow!("Not found"))?;
-            let child = Box::new(CalendarNode {
-                col: cal,
-                calname: path[0].to_string(),
-            });
-            child.fetch(user, &path[1..], create).await
-        }
-        .boxed()
+    fn clone_node(&self) -> Box<dyn DavNode> {
+        Box::new(self.clone())
     }
 
-    fn children<'a>(&self, user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
+    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<String>> {
         let list = self.list.clone();
-        async move {
-            //@FIXME maybe we want to be lazy here?!
-            futures::stream::iter(list.iter())
-                .filter_map(|name| async move {
-                    user.calendars
-                        .dav
-                        .open(name)
-                        .await
-                        .ok()
-                        .flatten()
-                        .map(|v| (name, v))
-                })
-                .map(|(name, cal)| {
-                    Box::new(CalendarNode {
-                        col: cal,
-                        calname: name.to_string(),
-                    }) as Box<dyn DavNode>
-                })
-                .collect::<Vec<Box<dyn DavNode>>>()
-                .await
-        }
-        .boxed()
+        async move { list }.boxed()
+    }
+
+    fn child_node<'a>(&self, user: &'a User, name: &str) -> BoxFuture<'a, Result<ChildNode>> {
+        let calname = name.to_string();
+        async {
+            let col = user
+                .calendars
+                .dav
+                .open(&calname)
+                .await?;
+            match col {
+                //@FIXME: allow creating new calendar nodes
+                None => Ok(ChildNode::CannotCreate),
+                Some(col) => {
+                    Ok(ChildNode::Existing(
+                        Box::new(DavStoredCollectionNode(CalendarNode {
+                            col,
+                            calname,
+                        })) as Box<dyn DavNode>
+                    ))
+                }
+            }
+        }.boxed()
     }
 
     fn path(&self, user: &User) -> String {
@@ -343,350 +235,139 @@ impl DavNode for CalendarListNode {
             dav::PropertyRequest::GetContentType,
         ])
     }
-    fn properties(&self, user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
-        let user = user.clone();
-
-        futures::stream::iter(prop.0)
-            .map(move |n| {
-                let prop = match n {
-                    dav::PropertyRequest::DisplayName => {
-                        dav::Property::DisplayName(format!("{} calendars", user.username))
-                    }
-                    dav::PropertyRequest::ResourceType => {
-                        dav::Property::ResourceType(vec![dav::ResourceType::Collection])
-                    }
-                    dav::PropertyRequest::GetContentType => {
-                        dav::Property::GetContentType("httpd/unix-directory".into())
-                    }
-                    v => return Err(v),
+    fn properties<'a>(&'a mut self, user: &'a User, prop: dav::PropName<All>) -> BoxFuture<'a, Vec<PropertyResult>> {
+        async move {
+            let mut v = vec![];
+            for n in prop.0 {
+                let res = match n {
+                    dav::PropertyRequest::DisplayName =>
+                        Ok(dav::Property::DisplayName(format!("{} calendars", user.username))),
+                    dav::PropertyRequest::ResourceType =>
+                        Ok(dav::Property::ResourceType(vec![dav::ResourceType::Collection])),
+                    dav::PropertyRequest::GetContentType =>
+                        Ok(dav::Property::GetContentType("httpd/unix-directory".into())),
+                    v => Err(v),
                 };
-                Ok(prop)
-            })
-            .boxed()
-    }
-
-    fn put<'a>(
-        &'a mut self,
-        _policy: PutPolicy,
-        _stream: Content<'a>,
-    ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
-        futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported)).boxed()
-    }
-
-    fn content<'a>(&self) -> Content<'a> {
-        futures::stream::once(futures::future::err(std::io::Error::from(
-            std::io::ErrorKind::Unsupported,
-        )))
-        .boxed()
-    }
-
-    fn content_type(&self) -> &str {
-        "text/plain"
-    }
-
-    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
-        async { None }.boxed()
-    }
-
-    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
-        async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
-    }
-    fn diff<'a>(
-        &self,
-        _sync_token: Option<Token>,
-    ) -> BoxFuture<
-        'a,
-        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
-    > {
-        async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
+                v.push(res)
+            }
+            v
+        }.boxed()
     }
 
     fn dav_header(&self) -> String {
         "1, access-control, calendar-access".into()
     }
+
+    fn content_type(&self) -> &str {
+        "text/plain"
+    }
 }
 
+/// A calendar collection. It contains calendar events.
 #[derive(Clone)]
 pub(crate) struct CalendarNode {
     col: Collection,
     calname: String,
 }
-impl DavNode for CalendarNode {
-    fn fetch<'a>(
-        &self,
-        user: &'a User,
-        path: &'a [&str],
-        create: bool,
-    ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
-        if path.len() == 0 {
-            let node = Box::new(self.clone()) as Box<dyn DavNode>;
-            return async { Ok(node) }.boxed();
-        }
-
-        let col = self.col.clone();
-        let calname = self.calname.clone();
-        async move {
-            match (col.index().await.idx_by_filename.get(path[0]), create) {
-                (Some(blob_id), _) => {
-                    let child = Box::new(EventNode {
-                        col: col.clone(),
-                        calname,
-                        filename: path[0].to_string(),
-                        blob_id: *blob_id,
-                    });
-                    child.fetch(user, &path[1..], create).await
-                }
-                (None, true) => {
-                    let child = Box::new(CreateEventNode {
-                        col: col.clone(),
-                        calname,
-                        filename: path[0].to_string(),
-                    });
-                    child.fetch(user, &path[1..], create).await
-                }
-                _ => Err(anyhow!("Not found")),
-            }
-        }
-        .boxed()
+impl DavStoredCollection for CalendarNode {
+    fn collection(&self) -> &Collection {
+        &self.col
     }
 
-    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
-        let col = self.col.clone();
-        let calname = self.calname.clone();
+    fn collection_mut(&mut self) -> &mut Collection {
+        &mut self.col
+    }
 
-        async move {
-            col.index()
-                .await
-                .idx_by_filename
-                .iter()
-                .map(|(filename, blob_id)| {
-                    Box::new(EventNode {
-                        col: col.clone(),
-                        calname: calname.clone(),
-                        filename: filename.to_string(),
-                        blob_id: *blob_id,
-                    }) as Box<dyn DavNode>
-                })
-                .collect()
-        }
-        .boxed()
+    fn display_name(&self) -> String {
+        format!("{} calendar", self.calname)
     }
 
     fn path(&self, user: &User) -> String {
         format!("/{}/calendar/{}/", user.username, self.calname)
     }
 
-    fn supported_properties(&self, _user: &User) -> dav::PropName<All> {
-        dav::PropName(vec![
-            dav::PropertyRequest::DisplayName,
-            dav::PropertyRequest::ResourceType,
-            dav::PropertyRequest::GetContentType,
+    fn content_type(&self) -> &str {
+        //dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
+        //@FIXME seems wrong but seems to be what Thunderbird expects...
+        "text/calendar"
+    }
+    
+    fn mk_child_node(&self, filename: &str) -> Box<dyn DavNode> {
+        Box::new(DavObjectNode(CalendarEventNode {
+            col: self.col.clone(),
+            calname: self.calname.clone(),
+            filename: filename.to_string(),
+        }))
+    }
+
+    fn additional_resource_types(&self) -> Vec<dav::ResourceType<All>> {
+        vec![
+            dav::ResourceType::Extension(all::ResourceType::Cal(
+                cal::ResourceType::Calendar,
+            )),
+        ]
+    }
+
+    fn additional_supported_properties(&self) -> Vec<dav::PropertyRequest<All>> {
+        vec![
             dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
                 cal::PropertyRequest::SupportedCalendarComponentSet,
             )),
-            dav::PropertyRequest::Extension(all::PropertyRequest::Sync(
-                sync::PropertyRequest::SyncToken,
-            )),
-            dav::PropertyRequest::Extension(all::PropertyRequest::Vers(
-                vers::PropertyRequest::SupportedReportSet,
-            )),
-        ])
-    }
-    fn properties(&self, _user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
-        let calname = self.calname.to_string();
-        let col = self.col.clone();
-
-        futures::stream::iter(prop.0)
-            .then(move |n| {
-                let calname = calname.clone();
-                let mut col = col.clone();
-
-                async move {
-                    let prop = match n {
-                        dav::PropertyRequest::DisplayName => {
-                            dav::Property::DisplayName(format!("{} calendar", calname))
-                        }
-                        dav::PropertyRequest::ResourceType => dav::Property::ResourceType(vec![
-                            dav::ResourceType::Collection,
-                            dav::ResourceType::Extension(all::ResourceType::Cal(
-                                cal::ResourceType::Calendar,
-                            )),
-                        ]),
-                        //dav::PropertyRequest::GetContentType => dav::AnyProperty::Value(dav::Property::GetContentType("httpd/unix-directory".into())),
-                        //@FIXME seems wrong but seems to be what Thunderbird expects...
-                        dav::PropertyRequest::GetContentType => {
-                            dav::Property::GetContentType("text/calendar".into())
-                        }
-                        dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
-                            cal::PropertyRequest::SupportedCalendarComponentSet,
-                        )) => dav::Property::Extension(all::Property::Cal(
-                            cal::Property::SupportedCalendarComponentSet(vec![
-                                cal::CompSupport(cal::Component::VEvent),
-                                cal::CompSupport(cal::Component::VTodo),
-                                cal::CompSupport(cal::Component::VJournal),
-                            ]),
-                        )),
-                        dav::PropertyRequest::Extension(all::PropertyRequest::Sync(
-                            sync::PropertyRequest::SyncToken,
-                        )) => match col.token().await {
-                            Ok(token) => dav::Property::Extension(all::Property::Sync(
-                                sync::Property::SyncToken(sync::SyncToken(format!(
-                                    "{}{}",
-                                    BASE_TOKEN_URI, token
-                                ))),
-                            )),
-                            _ => return Err(n.clone()),
-                        },
-                        dav::PropertyRequest::Extension(all::PropertyRequest::Vers(
-                            vers::PropertyRequest::SupportedReportSet,
-                        )) => dav::Property::Extension(all::Property::Vers(
-                            vers::Property::SupportedReportSet(vec![
-                                vers::SupportedReport(vers::ReportName::Extension(
-                                    all::ReportTypeName::Cal(cal::ReportTypeName::Multiget),
-                                )),
-                                vers::SupportedReport(vers::ReportName::Extension(
-                                    all::ReportTypeName::Cal(cal::ReportTypeName::Query),
-                                )),
-                                vers::SupportedReport(vers::ReportName::Extension(
-                                    all::ReportTypeName::Sync(sync::ReportTypeName::SyncCollection),
-                                )),
-                            ]),
-                        )),
-                        v => return Err(v),
-                    };
-                    Ok(prop)
-                }
-            })
-            .boxed()
+        ]            
     }
 
-    fn put<'a>(
-        &'a mut self,
-        _policy: PutPolicy,
-        _stream: Content<'a>,
-    ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
-        futures::future::err(std::io::Error::from(std::io::ErrorKind::Unsupported)).boxed()
-    }
-
-    fn content<'a>(&self) -> Content<'a> {
-        futures::stream::once(futures::future::err(std::io::Error::from(
-            std::io::ErrorKind::Unsupported,
-        )))
-        .boxed()
-    }
-
-    fn content_type(&self) -> &str {
-        "text/plain"
-    }
-
-    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
-        async { None }.boxed()
-    }
-
-    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
-        async { Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)) }.boxed()
-    }
-    fn diff<'a>(
-        &self,
-        sync_token: Option<Token>,
-    ) -> BoxFuture<
-        'a,
-        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
-    > {
-        let mut col = self.col.clone();
-        let calname = self.calname.clone();
+    fn additional_property<'a>(&'a mut self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult> {
         async move {
-            let sync_token = match sync_token {
-                Some(v) => v,
-                None => {
-                    let token = col
-                        .token()
-                        .await
-                        .or(Err(std::io::Error::from(std::io::ErrorKind::Interrupted)))?;
-                    let ok_nodes = col
-                        .index()
-                        .await
-                        .idx_by_filename
-                        .iter()
-                        .map(|(filename, blob_id)| {
-                            Box::new(EventNode {
-                                col: col.clone(),
-                                calname: calname.clone(),
-                                filename: filename.to_string(),
-                                blob_id: *blob_id,
-                            }) as Box<dyn DavNode>
-                        })
-                        .collect();
-
-                    return Ok((token, ok_nodes, vec![]));
-                }
-            };
-            let (new_token, listed_changes) = match col.diff(sync_token).await {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::info!(err=?e, "token resolution failed, maybe a forgotten token");
-                    return Err(std::io::Error::from(std::io::ErrorKind::NotFound));
-                }
-            };
-
-            let mut ok_nodes: Vec<Box<dyn DavNode>> = vec![];
-            let mut rm_nodes: Vec<dav::Href> = vec![];
-            for change in listed_changes.into_iter() {
-                match change {
-                    SyncChange::Ok((filename, blob_id)) => {
-                        let child = Box::new(EventNode {
-                            col: col.clone(),
-                            calname: calname.clone(),
-                            filename,
-                            blob_id,
-                        });
-                        ok_nodes.push(child);
-                    }
-                    SyncChange::NotFound(filename) => {
-                        rm_nodes.push(dav::Href(filename));
-                    }
-                }
+            match prop {
+                dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
+                    cal::PropertyRequest::SupportedCalendarComponentSet,
+                )) => Ok(dav::Property::Extension(all::Property::Cal(
+                    cal::Property::SupportedCalendarComponentSet(vec![
+                        cal::CompSupport(cal::Component::VEvent),
+                        cal::CompSupport(cal::Component::VTodo),
+                        cal::CompSupport(cal::Component::VJournal),
+                    ]),
+                ))),
+                _ => Err(prop.clone()),
             }
-
-            Ok((new_token, ok_nodes, rm_nodes))
-        }
-        .boxed()
+        }.boxed()
     }
-    fn dav_header(&self) -> String {
-        "1, access-control, calendar-access".into()
+
+    fn additional_supported_reports(&self) -> Vec<vers::SupportedReport<All>> {
+        vec![
+            vers::SupportedReport(vers::ReportName::Extension(
+                all::ReportTypeName::Cal(cal::ReportTypeName::Multiget),
+            )),
+            vers::SupportedReport(vers::ReportName::Extension(
+                all::ReportTypeName::Cal(cal::ReportTypeName::Query),
+            )),
+        ]
+    }
+
+    fn additional_dav_headers(&self) -> Vec<String> {
+        vec!["calendar-access".to_string()]
     }
 }
 
+/// A calendar event, which may or may not exist in storage. It is a single object.
 #[derive(Clone)]
-pub(crate) struct EventNode {
+pub(crate) struct CalendarEventNode {
     col: Collection,
     calname: String,
     filename: String,
-    blob_id: BlobId,
 }
 
-impl DavNode for EventNode {
-    fn fetch<'a>(
-        &self,
-        _user: &'a User,
-        path: &'a [&str],
-        _create: bool,
-    ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
-        if path.len() == 0 {
-            let node = Box::new(self.clone()) as Box<dyn DavNode>;
-            return async { Ok(node) }.boxed();
-        }
-
-        async {
-            Err(anyhow!(
-                "Not supported: can't create a child on an event node"
-            ))
-        }
-        .boxed()
+impl DavObject for CalendarEventNode {
+    fn collection(&self) -> &Collection {
+        &self.col
     }
 
-    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
-        async { vec![] }.boxed()
+    fn collection_mut(&mut self) -> &mut Collection {
+        &mut self.col
+    }
+
+    fn filename(&self) -> &str {
+        &self.filename
     }
 
     fn path(&self, user: &User) -> String {
@@ -694,306 +375,70 @@ impl DavNode for EventNode {
             "/{}/calendar/{}/{}",
             user.username, self.calname, self.filename
         )
-    }
-
-    fn supported_properties(&self, _user: &User) -> dav::PropName<All> {
-        dav::PropName(vec![
-            dav::PropertyRequest::DisplayName,
-            dav::PropertyRequest::ResourceType,
-            dav::PropertyRequest::GetEtag,
-            dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
-                cal::PropertyRequest::CalendarData(cal::CalendarDataRequest::default()),
-            )),
-        ])
-    }
-    fn properties(&self, _user: &User, prop: dav::PropName<All>) -> PropertyStream<'static> {
-        let this = self.clone();
-
-        futures::stream::iter(prop.0)
-            .then(move |n| {
-                let this = this.clone();
-
-                async move {
-                    let prop = match &n {
-                        dav::PropertyRequest::DisplayName => {
-                            dav::Property::DisplayName(format!("{} event", this.filename))
-                        }
-                        dav::PropertyRequest::ResourceType => dav::Property::ResourceType(vec![]),
-                        dav::PropertyRequest::GetContentType => {
-                            dav::Property::GetContentType("text/calendar".into())
-                        }
-                        dav::PropertyRequest::GetEtag => {
-                            let etag = this.etag().await.ok_or(n.clone())?;
-                            dav::Property::GetEtag(etag)
-                        }
-                        dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
-                                cal::PropertyRequest::CalendarData(req),
-                                )) => {
-                            let ics = String::from_utf8(
-                                this.col.get(this.blob_id).await.or(Err(n.clone()))?,
-                                )
-                                .or(Err(n.clone()))?;
-
-                            let new_ics = match &req.comp {
-                                None => ics,
-                                Some(prune_comp) => {
-                                    // parse content
-                                    let ics = match icalendar::parser::read_calendar(&ics) {
-                                        Ok(v) => v,
-                                        Err(e) => {
-                                            tracing::warn!(err=?e, "Unable to parse ICS in calendar-query");
-                                            return Err(n.clone())
-                                        }
-                                    };
-
-                                    // build a fake vcal component for caldav compat
-                                    let fake_vcal_component = icalendar::parser::Component {
-                                        name: cal::Component::VCalendar.as_str().into(),
-                                        properties: ics.properties,
-                                        components: ics.components,
-                                    };
-
-                                    // rebuild component
-                                    let new_comp = match aero_ical::prune::component(&fake_vcal_component, prune_comp) {
-                                        Some(v) => v,
-                                        None => return Err(n.clone()),
-                                    };
-
-                                    // reserialize
-                                    format!("{}", icalendar::parser::Calendar { properties: new_comp.properties, components: new_comp.components })
-                                },
-                            };
-
-
-
-                            dav::Property::Extension(all::Property::Cal(
-                                cal::Property::CalendarData(cal::CalendarDataPayload {
-                                    mime: Default::default(),
-                                    payload: new_ics,
-                                }),
-                            ))
-                        }
-                        _ => return Err(n),
-                    };
-                    Ok(prop)
-                }
-            })
-            .boxed()
-    }
-
-    fn put<'a>(
-        &'a mut self,
-        policy: PutPolicy,
-        stream: Content<'a>,
-    ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
-        async {
-            let existing_etag = self
-                .etag()
-                .await
-                .ok_or(std::io::Error::new(std::io::ErrorKind::Other, "Etag error"))?;
-
-            match policy {
-                PutPolicy::CreateOnly => {
-                    return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists))
-                }
-                PutPolicy::ReplaceEtag(etag) if etag != existing_etag.as_str() => {
-                    return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists))
-                }
-                _ => (),
-            };
-
-            //@FIXME for now, our storage interface does not allow streaming,
-            // so we load everything in memory
-            let mut evt = Vec::new();
-            let mut reader = stream.into_async_read();
-            reader
-                .read_to_end(&mut evt)
-                .await
-                .or(Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe)))?;
-            let (_token, (_, etag)) = self
-                .col
-                .put(self.filename.as_str(), evt.as_ref())
-                .await
-                .or(Err(std::io::ErrorKind::Interrupted))?;
-            self.col
-                .sync()
-                .await
-                .or(Err(std::io::ErrorKind::ConnectionReset))?;
-            Ok(etag)
-        }
-        .boxed()
-    }
-
-    fn content<'a>(&self) -> Content<'a> {
-        //@FIXME for now, our storage interface does not allow streaming,
-        // so we load everything in memory
-        let calendar = self.col.clone();
-        let blob_id = self.blob_id.clone();
-        let calblob = async move {
-            let raw_ics = calendar
-                .get(blob_id)
-                .await
-                .or(Err(std::io::Error::from(std::io::ErrorKind::Interrupted)))?;
-
-            Ok(hyper::body::Bytes::from(raw_ics))
-        };
-        futures::stream::once(Box::pin(calblob)).boxed()
     }
 
     fn content_type(&self) -> &str {
         "text/calendar"
     }
 
-    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
-        let calendar = self.col.clone();
+    fn additional_supported_properties(&self) -> Vec<dav::PropertyRequest<All>> {
+        vec![
+            dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
+                cal::PropertyRequest::CalendarData(cal::CalendarDataRequest::default()),
+            )),
+        ]
+    }
 
+    fn additional_property<'a>(&'a mut self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult> {
+        let this = self.clone();
         async move {
-            calendar
-                .index()
-                .await
-                .table
-                .get(&self.blob_id)
-                .map(|(_, etag)| etag.to_string())
-        }
-        .boxed()
-    }
+            match prop {
+                dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
+                    cal::PropertyRequest::CalendarData(req),
+                )) => {
+                    let blob_id = this.blob_id().ok_or(prop.clone())?;
+                    let bytes = this.col.get(blob_id).await.or(Err(prop.clone()))?;
+                    let ics = String::from_utf8(bytes).or(Err(prop.clone()))?;
 
-    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
-        let mut calendar = self.col.clone();
-        let blob_id = self.blob_id.clone();
+                    let new_ics = match &req.comp {
+                        None => ics,
+                        Some(prune_comp) => {
+                            // parse content
+                            let ics = match icalendar::parser::read_calendar(&ics) {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    tracing::warn!(err=?e, "Unable to parse ICS in calendar-query");
+                                    return Err::<_, dav::PropertyRequest<_>>(prop.clone())
+                                }
+                            };
 
-        async move {
-            let _token = match calendar.delete(blob_id).await {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::error!(err=?e, "delete event node");
-                    return Err(std::io::Error::from(std::io::ErrorKind::Interrupted));
-                }
-            };
-            calendar
-                .sync()
-                .await
-                .or(Err(std::io::ErrorKind::ConnectionReset))?;
-            Ok(())
-        }
-        .boxed()
-    }
-    fn diff<'a>(
-        &self,
-        _sync_token: Option<Token>,
-    ) -> BoxFuture<
-        'a,
-        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
-    > {
-        async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
-    }
+                            // build a fake vcal component for caldav compat
+                            let fake_vcal_component = icalendar::parser::Component {
+                                name: cal::Component::VCalendar.as_str().into(),
+                                properties: ics.properties,
+                                components: ics.components,
+                            };
 
-    fn dav_header(&self) -> String {
-        "1, access-control".into()
-    }
-}
+                            // rebuild component
+                            let new_comp = match aero_ical::prune::component(&fake_vcal_component, prune_comp) {
+                                Some(v) => v,
+                                None => return Err(prop.clone()),
+                            };
 
-#[derive(Clone)]
-pub(crate) struct CreateEventNode {
-    col: Collection,
-    calname: String,
-    filename: String,
-}
-impl DavNode for CreateEventNode {
-    fn fetch<'a>(
-        &self,
-        _user: &'a User,
-        path: &'a [&str],
-        _create: bool,
-    ) -> BoxFuture<'a, Result<Box<dyn DavNode>>> {
-        if path.len() == 0 {
-            let node = Box::new(self.clone()) as Box<dyn DavNode>;
-            return async { Ok(node) }.boxed();
-        }
+                            // reserialize
+                            format!("{}", icalendar::parser::Calendar { properties: new_comp.properties, components: new_comp.components })
+                        },
+                    };
 
-        async {
-            Err(anyhow!(
-                "Not supported: can't create a child on an event node"
-            ))
-        }
-        .boxed()
-    }
-
-    fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<Box<dyn DavNode>>> {
-        async { vec![] }.boxed()
-    }
-
-    fn path(&self, user: &User) -> String {
-        format!(
-            "/{}/calendar/{}/{}",
-            user.username, self.calname, self.filename
-        )
-    }
-
-    fn supported_properties(&self, _user: &User) -> dav::PropName<All> {
-        dav::PropName(vec![])
-    }
-
-    fn properties(&self, _user: &User, _prop: dav::PropName<All>) -> PropertyStream<'static> {
-        futures::stream::iter(vec![]).boxed()
-    }
-
-    fn put<'a>(
-        &'a mut self,
-        _policy: PutPolicy,
-        stream: Content<'a>,
-    ) -> BoxFuture<'a, std::result::Result<Etag, std::io::Error>> {
-        //@NOTE: policy might not be needed here: whatever we put, there is no known entries here
-
-        async {
-            //@FIXME for now, our storage interface does not allow for streaming
-            let mut evt = Vec::new();
-            let mut reader = stream.into_async_read();
-            reader.read_to_end(&mut evt).await.unwrap();
-            let (_token, (_, etag)) = self
-                .col
-                .put(self.filename.as_str(), evt.as_ref())
-                .await
-                .or(Err(std::io::ErrorKind::Interrupted))?;
-            self.col
-                .sync()
-                .await
-                .or(Err(std::io::ErrorKind::ConnectionReset))?;
-            Ok(etag)
-        }
-        .boxed()
-    }
-
-    fn content<'a>(&self) -> Content<'a> {
-        futures::stream::once(futures::future::err(std::io::Error::from(
-            std::io::ErrorKind::Unsupported,
-        )))
-        .boxed()
-    }
-
-    fn content_type(&self) -> &str {
-        "text/plain"
-    }
-
-    fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
-        async { None }.boxed()
-    }
-
-    fn delete(&self) -> BoxFuture<'_, std::result::Result<(), std::io::Error>> {
-        // Nothing to delete
-        async { Ok(()) }.boxed()
-    }
-    fn diff<'a>(
-        &self,
-        _sync_token: Option<Token>,
-    ) -> BoxFuture<
-        'a,
-        std::result::Result<(Token, Vec<Box<dyn DavNode>>, Vec<dav::Href>), std::io::Error>,
-    > {
-        async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) }.boxed()
-    }
-
-    fn dav_header(&self) -> String {
-        "1, access-control".into()
+                    Ok(dav::Property::Extension(all::Property::Cal(
+                        cal::Property::CalendarData(cal::CalendarDataPayload {
+                            mime: Default::default(),
+                            payload: new_ics,
+                        }),
+                    )))
+                },
+                _ => Err(prop.clone()),
+            }
+        }.boxed()
     }
 }
