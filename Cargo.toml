@@ -95,6 +95,9 @@ aws-sdk-s3 = "1"
 aws-smithy-runtime = "1"
 aws-smithy-runtime-api = "1"
 
+# observability
+prometheus = "0.14"
+
 [patch.crates-io]
 imap-types = { git = "https://github.com/superboum/imap-codec", branch = "custom/aerogramme" }
 imap-codec = { git = "https://github.com/superboum/imap-codec", branch = "custom/aerogramme" }
