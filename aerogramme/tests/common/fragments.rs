@@ -91,6 +91,7 @@ pub enum StoreMod {
 pub enum FetchKind {
     Rfc822,
     Rfc822Size,
+    HeaderFields(Vec<String>),
 }
 
 pub enum FetchMod {
@@ -337,6 +338,7 @@ pub fn fetch(
     let kind_str = match kind {
         FetchKind::Rfc822 => "RFC822",
         FetchKind::Rfc822Size => "RFC822.SIZE",
+        FetchKind::HeaderFields(fields) => &format!("BODY[HEADER.FIELDS ({})]", fields.join(" ")),
     };
 
     let mod_str = match modifier {

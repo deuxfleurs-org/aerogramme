@@ -56,6 +56,25 @@ fn rfc3501_imap4rev1_base() {
         let orig_email = std::str::from_utf8(EMAIL1)?;
         assert!(srv_msg.contains(orig_email));
 
+        // fetch BODY[HEADER.FIELDS (...)]
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::HeaderFields(vec![
+                "DATE".to_string(),
+                "TO".to_string(),
+            ]),
+            FetchMod::None,
+        )
+        .context("fetch selected headers of message")?;
+        let reference =
+            std::str::from_utf8(EMAIL1)?
+            .lines()
+            .filter(|s| s.starts_with("Date") || s.starts_with("To"))
+            .collect::<Vec<_>>()
+            .join("\r\n");
+        assert!(srv_msg.contains(&reference));
+        
         copy(imap_socket, Selection::FirstId, Mailbox::Archive)
             .context("copy message to the archive mailbox")?;
         let append_res = append(imap_socket, Email::Basic).context("insert email in INBOX")?;
