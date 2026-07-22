@@ -89,7 +89,7 @@ rpassword = "7"
 ldap3 = { version = "0.12", default-features = false, features = ["tls-rustls", "tls-rustls-ring"] }
 
 # storage
-k2v-client = { git = "https://git.deuxfleurs.fr/Deuxfleurs/garage.git", rev = "a06909922e0659ab9c215ccf7bc9199de827e25a" }
+k2v-client = { git = "https://git.deuxfleurs.fr/Deuxfleurs/garage.git"}
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-s3 = "1"
 aws-smithy-runtime = "1"
