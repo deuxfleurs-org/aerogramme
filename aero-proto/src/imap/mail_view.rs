@@ -206,8 +206,14 @@ impl<'a> MailView<'a> {
             seen = SeenFlag::MustAdd;
         }
 
-        // Process message
-        let (text, origin) = match mime_view::body_ext(self.content.as_msg()?, section, partial)? {
+        // Process message.
+        let (text, origin) = match mime_view::body_ext(
+            // NOTE: use `as_partial` and not `as_msg`, as `body_ext` may only
+            // need to read headers, depending on `section`.
+            self.content.as_partial()?,
+            section,
+            partial,
+        )? {
             mime_view::BodySection::Full(body) => (body, None),
             mime_view::BodySection::Slice { body, origin_octet } => (body, Some(origin_octet)),
         };
@@ -272,7 +278,7 @@ impl<'a> FetchedMail<'a> {
         match self {
             FetchedMail::Full(msg) => Ok(&msg),
             FetchedMail::Partial(msg) => Ok(&msg),
-            _ => bail!("The message or itst headers must be fetched"),
+            _ => bail!("The message or its headers must be fetched"),
         }
     }
 
