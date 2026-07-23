@@ -8,6 +8,7 @@ members = [
   "aero-dav/fuzz",
   "aero-collections",
   "aero-proto",
+  "metrics",
   "aerogramme",
 ]
 
@@ -22,6 +23,7 @@ aero-dav = { version = "0.4.0", path = "aero-dav" }
 aero-ical = { version = "0.4.0", path = "aero-ical" }
 aero-collections = { version = "0.4.0", path = "aero-collections" }
 aero-proto = { version = "0.4.0", path = "aero-proto" }
+metrics = { version = "0.4.0", path = "metrics" }
 aerogramme = { version = "0.4.0", path = "aerogramme" }
 
 # async runtime
@@ -97,6 +99,7 @@ aws-smithy-runtime-api = "1"
 
 # observability
 prometheus = "0.14"
+prometheus-hyper = "0.2.1"
 
 [patch.crates-io]
 imap-types = { git = "https://github.com/superboum/imap-codec", branch = "custom/aerogramme" }

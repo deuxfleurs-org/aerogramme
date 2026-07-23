@@ -18,6 +18,10 @@ pub struct Instance {
 }
 impl Instance {
     pub fn new(login_provider: ArcLoginProvider, cap: ServerCapability) -> Self {
+        println!("COUCOUCOUCOU je suis dans new Session");
+        println!("{} et {}", (*INSTANCES_CREATED).get(), (*INSTANCES_CURRENT).get());
+        INSTANCES_CREATED.inc();
+        INSTANCES_CURRENT.inc();
         let client_cap = ClientCapability::new(&cap);
         Self {
             login_provider,
@@ -176,5 +180,11 @@ impl Instance {
             flow::State::Idle(_, _, _, _, n) => ResponseOrIdle::StartIdle(n.clone()),
             _ => ResponseOrIdle::Response(resp),
         }*/
+    }
+}
+
+impl Drop for Instance {
+    fn drop(&mut self) {
+        INSTANCES_CURRENT.dec();
     }
 }
