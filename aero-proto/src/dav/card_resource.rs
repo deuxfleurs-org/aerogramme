@@ -114,7 +114,7 @@ impl DavNode for AddressbookListNode {
     }
 
     fn dav_header(&self) -> String {
-        "1, access-control, addressbook".into()
+        "1, 3, access-control, addressbook".into()
     }
 
     fn content_type(&self) -> &str {

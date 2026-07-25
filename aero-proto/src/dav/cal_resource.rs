@@ -103,7 +103,7 @@ impl DavNode for CalendarListNode {
     }
 
     fn dav_header(&self) -> String {
-        "1, access-control, calendar-access".into()
+        "1, 3, access-control, calendar-access".into()
     }
 
     fn content_type(&self) -> &str {

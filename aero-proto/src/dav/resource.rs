@@ -209,6 +209,6 @@ impl DavNode for HomeNode {
     }
 
     fn dav_header(&self) -> String {
-        "1, access-control, calendar-access, addressbook".into()
+        "1, 3, access-control, calendar-access, addressbook".into()
     }
 }

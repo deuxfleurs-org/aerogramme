@@ -359,7 +359,7 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
     }
 
     fn dav_header(&self) -> String {
-        let mut parts = vec!["1, access-control".to_string()];
+        let mut parts = vec!["1, 3, access-control".to_string()];
         parts.extend(self.0.additional_dav_headers());
         parts.join(", ")
     }
@@ -647,7 +647,7 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
     }
     
     fn dav_header(&self) -> String {
-        let mut parts = vec!["1, access-control".to_string()];
+        let mut parts = vec!["1, 3, access-control".to_string()];
         parts.extend(self.0.additional_dav_headers());
         parts.join(", ")
     }
