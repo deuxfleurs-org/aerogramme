@@ -407,6 +407,10 @@ impl DavObject for AddressbookObject {
             }
         }.boxed()
     }
+
+    fn additional_dav_headers(&self) -> Vec<String> {
+        vec!["addressbook".to_string()]
+    }
 }
 
 fn selector_to_propfind(s: Option<card::AddressbookSelector<All>>) -> dav::PropFind<All> {

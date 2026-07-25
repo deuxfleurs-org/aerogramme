@@ -420,6 +420,10 @@ impl DavObject for CalendarEventNode {
             }
         }.boxed()
     }
+
+    fn additional_dav_headers(&self) -> Vec<String> {
+        vec!["calendar-access".to_string()]
+    }
 }
 
 fn selector_to_propfind(s: Option<cal::CalendarSelector<All>>) -> dav::PropFind<All> {

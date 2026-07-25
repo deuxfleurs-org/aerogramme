@@ -267,6 +267,9 @@ pub(crate) trait DavObject: Send + Sync + Clone + 'static {
     /// Handler for reports.
     fn report<'a>(&'a mut self, user: &'a User, report: vers::Report<All>) -> BoxFuture<'a, IOResult<ReportResponse>>;
 
+    /// Additional Dav headers to advertise.
+    fn additional_dav_headers(&self) -> Vec<String>;
+
     /// Helper to get the id of the object contents in the store.
     /// Returns `None` if the object does not exist in the store.
     fn blob_id(&self) -> Option<BlobId> {
@@ -355,9 +358,10 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
         }.boxed()
     }
 
-    // TODO: shouldn't this be extensible?
     fn dav_header(&self) -> String {
-        "1, access-control".into()
+        let mut parts = vec!["1, access-control".to_string()];
+        parts.extend(self.0.additional_dav_headers());
+        parts.join(", ")
     }
 
     fn content_type(&self) -> &str {
