@@ -711,14 +711,15 @@ fn rfc4791_webdav_caldav() {
         assert_eq!(calendar_home_set, "/alice/calendar/");
 
         // Check calendar access support
-        let _resp = http
+        let resp = http
             .request(
                 reqwest::Method::from_bytes(b"OPTIONS")?,
                 "http://localhost:8087/alice/calendar/",
             )
             .send()?;
-        //@FIXME not yet supported. returns DAV: 1 ; expects DAV: 1 calendar-access
-        // Not used by any client I know, so not implementing it now.
+        assert_eq!(resp.status(), 200);
+        let dav_header = resp.headers().get("DAV").map(|v| v.to_str().unwrap()).unwrap();
+        assert!(dav_header.contains("calendar-access"));
 
         // --- REPORT calendar-multiget ---
         let cal_query = r#"<?xml version="1.0" encoding="utf-8" ?>
