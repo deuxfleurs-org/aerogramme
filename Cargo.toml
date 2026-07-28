@@ -64,7 +64,8 @@ imap-flow = { git = "https://github.com/duesee/imap-next.git", rev = "dce759a853
 
 # dav protocols
 icalendar = "0.16"
-ical_vcard = "0.4.1"
+# ical_vcard = "0.4.1"
+ical_vcard = { git = "https://codeberg.org/armael/ical_vcard.git", branch = "lf-line-ending" }
 
 # http & web
 http = "1.3"

@@ -2358,8 +2358,7 @@ dependencies = [
 [[package]]
 name = "ical_vcard"
 version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a7126db14d2b69f768daae07f898d86bede8fddc4bb9344f68ade52599d0f99"
+source = "git+https://codeberg.org/armael/ical_vcard.git?branch=lf-line-ending#84e31be319dc1a6d1a46bf1223c50555bbeea522"
 
 [[package]]
 name = "icalendar"
