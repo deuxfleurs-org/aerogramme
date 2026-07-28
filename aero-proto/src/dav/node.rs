@@ -15,7 +15,7 @@ use aero_dav::synctypes as sync;
 use aero_dav::versioningtypes as vers;
 
 use crate::dav::codec::SyncTokenUri;
-use crate::dav::multistatus::multistatus;
+use crate::dav::multistatus;
 
 pub(crate) type IOResult<T> = std::result::Result<T, std::io::Error>;
 pub(crate) type Content<'a> = BoxStream<'a, IOResult<Bytes>>;
@@ -689,17 +689,18 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
                                 return Err(e),
                         },
                     };
-                    let extension = Some(all::Multistatus::Sync(sync::Multistatus {
+                    let extension = all::Multistatus::Sync(sync::Multistatus {
                         sync_token: sync::SyncToken(SyncTokenUri(new_token).to_string()),
-                    }));
+                    });
                     
-                    Ok(ReportResponse::Ok(multistatus(
-                        user,
-                        ok_node,
-                        not_found,
-                        dav::PropFind::Prop(sync_col.prop),
-                        extension
-                    ).await))
+                    Ok(ReportResponse::Ok(
+                        multistatus::Builder::new()
+                            .with_propfind_nodes(user, dav::PropFind::Prop(sync_col.prop), ok_node)
+                            .await
+                            .with_not_found(not_found)
+                            .with_extension(extension)
+                            .build()
+                    ))
                 },
                 _ => Err(unsupported())
             }

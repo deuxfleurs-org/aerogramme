@@ -16,7 +16,7 @@ use aero_dav::realization::{self as all, All};
 use aero_dav::versioningtypes as vers;
 
 use crate::dav::codec::Path;
-use crate::dav::multistatus::multistatus;
+use crate::dav::multistatus;
 use crate::dav::node::{
     ChildNode,
     DavNode,
@@ -226,13 +226,12 @@ impl DavStoredCollection for AddressbookNode {
                         }
                     }
 
-                    Ok(ReportResponse::Ok(multistatus(
-                        user,
-                        ok_node,
-                        not_found,
-                        selector_to_propfind(m.selector.clone()),
-                        None,
-                    ).await))
+                    Ok(ReportResponse::Ok(
+                        multistatus::Builder::new()
+                            .with_propfind_nodes(user, selector_to_propfind(m.selector.clone()), ok_node)
+                            .await
+                            .with_not_found(not_found)
+                            .build()))
                 },
 
                 vers::Report::Extension(all::ReportType::Card(card::ReportType::Query(q))) => {
@@ -245,13 +244,11 @@ impl DavStoredCollection for AddressbookNode {
                         .collect();
                     
                     let ok_node = apply_filter(children_nodes, &q.filter).try_collect().await?;
-                    Ok(ReportResponse::Ok(multistatus(
-                        user,
-                        ok_node,
-                        vec![],
-                        selector_to_propfind(q.selector.clone()),
-                        None,
-                    ).await))
+                    Ok(ReportResponse::Ok(
+                        multistatus::Builder::new()
+                            .with_propfind_nodes(user, selector_to_propfind(q.selector.clone()), ok_node)
+                            .await
+                            .build()))
                 },
                 
                 _ => Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
@@ -380,28 +377,28 @@ impl DavObject for AddressbookObject {
                             not_found.push(h)
                         }
                     }
-                    Ok(ReportResponse::Ok(multistatus(
-                        user,
-                        ok_node,
-                        not_found,
-                        selector_to_propfind(m.selector.clone()),
-                        None,
-                    ).await))
+                    Ok(ReportResponse::Ok(
+                        multistatus::Builder::new()
+                            .with_propfind_nodes(user, selector_to_propfind(m.selector.clone()), ok_node)
+                            .await
+                            .with_not_found(not_found)
+                            .build()))
                 },
 
                 vers::Report::Extension(all::ReportType::Card(card::ReportType::Query(q))) => {
                     let nodes = vec![Box::new(DavObjectNode(self.clone())) as Box<dyn DavNode>];
-
-                    let ok_node = apply_filter(nodes, &q.filter).try_collect().await?;
-                    Ok(ReportResponse::Ok(multistatus(
-                        user,
-                        ok_node,
-                        vec![],
-                        selector_to_propfind(q.selector.clone()),
-                        None,
-                    ).await))
+                    
+                    let ok_node = apply_filter(nodes, &q.filter)
+                        .try_collect()
+                        .await?;
+                    // TODO: handle limit on number of results
+                    Ok(ReportResponse::Ok(
+                        multistatus::Builder::new()
+                            .with_propfind_nodes(user, selector_to_propfind(q.selector.clone()), ok_node)
+                            .await
+                            .build()))
                 },
-                
+
                 _ => Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
             }
         }.boxed()
