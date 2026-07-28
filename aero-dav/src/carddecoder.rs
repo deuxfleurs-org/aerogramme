@@ -241,13 +241,6 @@ impl QRead<Violation> for Violation {
         {
             xml.close().await?;
             Ok(Self::SupportedCollation)
-        } else if xml
-            .maybe_open(DAV_URN, "number-of-matches-within-limits")
-            .await?
-            .is_some()
-        {
-            xml.close().await?;
-            Ok(Self::NumberOfMatchesWithinLimits)
         } else {
             Err(ParsingError::Recoverable)
         }
@@ -599,7 +592,8 @@ impl QRead<CardProp> for CardProp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::realization::Addressbook;
+    use crate::realization::{Addressbook, All, Error};
+    use crate::acltypes as acl;
     use crate::xml::Node;
     use pretty_assertions::assert_eq;
     
@@ -1037,7 +1031,7 @@ mod tests {
     // §8.6.5, response
     #[tokio::test]
     async fn rfc_addressbook_query_res_8_6_5() {
-        let expected = dav::Multistatus::<Addressbook> {
+        let expected = dav::Multistatus::<All> {
             extension: None,
             responses: vec![
                 dav::Response {
@@ -1046,7 +1040,9 @@ mod tests {
                         dav::Status(http::status::StatusCode::INSUFFICIENT_STORAGE),
                     ),
                     error: Some(dav::Error(vec![
-                        dav::Violation::Extension(Violation::NumberOfMatchesWithinLimits),
+                        dav::Violation::Extension(
+                            Error::Acl(acl::Violation::NumberOfMatchesWithinLimits)
+                        ),
                     ])),
                     responsedescription: Some(dav::ResponseDescription(
                         "\n         Only two matching records were returned\n       ".into()
@@ -1126,7 +1122,7 @@ mod tests {
    </D:multistatus>
 "#;
 
-        let got = deserialize::<dav::Multistatus<Addressbook>>(src).await;
+        let got = deserialize::<dav::Multistatus<All>>(src).await;
         assert_eq!(got, expected);
     }
 

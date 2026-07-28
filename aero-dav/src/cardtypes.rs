@@ -355,14 +355,6 @@ pub enum Violation {
         prop_filters: Vec<PropFilter>,
         param_filters: Vec<ParamFilter>,
     },
-
-    ///@FIXME should not be here but in RFC3744
-    /// (DAV:number-of-matches-within-limits): The number of matching
-    /// principals must fall within server-specific, predefined limits.
-    /// For example, this condition might be triggered if a search
-    /// specification would cause the return of an extremely large number
-    /// of responses.
-    NumberOfMatchesWithinLimits,
 }
 
 /// Name:  addressbook-query

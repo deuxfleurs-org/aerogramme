@@ -60,6 +60,18 @@ pub enum ResourceType {
     Principal,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum Violation {
+    /// (DAV:number-of-matches-within-limits): The number of matching
+    /// principals must fall within server-specific, predefined limits.
+    /// For example, this condition might be triggered if a search
+    /// specification would cause the return of an extremely large number
+    /// of responses.
+    NumberOfMatchesWithinLimits,
+    
+    // TODO: not a complete list
+}
+
 /// Privileges
 ///
 /// Ability to perform a given method on a resource MUST be controlled by

@@ -785,13 +785,6 @@ pub enum Violation {
         param: Vec<ParamFilter>,
     },
 
-    /// (DAV:number-of-matches-within-limits): The number of matching
-    /// calendar object resources must fall within server-specific,
-    /// predefined limits.  For example, this condition might be triggered
-    /// if a search specification would cause the return of an extremely
-    /// large number of responses.
-    NumberOfMatchesWithinLimits,
-
     // TODO: CALDAV:supported-collation
 }
 

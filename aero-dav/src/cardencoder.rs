@@ -141,10 +141,6 @@ impl QWrite for Violation {
                 }
                 xml.q.write_event_async(Event::End(end)).await
             }
-            Self::NumberOfMatchesWithinLimits => {
-                let empty_tag = xml.create_dav_element("number-of-matches-within-limits");
-                xml.q.write_event_async(Event::Empty(empty_tag)).await
-            }
         }
     }
 }
@@ -447,7 +443,8 @@ impl QWrite for CardProp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::realization::Addressbook;
+    use crate::realization::{Addressbook, All, Error};
+    use crate::acltypes as acl;
     use crate::coretypes as dav;
     use crate::xml::WithDefault;
     use tokio::io::AsyncWriteExt;
@@ -861,7 +858,7 @@ mod tests {
     // §8.6.5, response
     #[tokio::test]
     async fn rfc_addressbook_query_res_8_6_5() {
-        let got = dav::Multistatus::<Addressbook> {
+        let got = dav::Multistatus::<All> {
             extension: None,
             responses: vec![
                 dav::Response {
@@ -870,7 +867,9 @@ mod tests {
                         dav::Status(http::status::StatusCode::INSUFFICIENT_STORAGE),
                     ),
                     error: Some(dav::Error(vec![
-                        dav::Violation::Extension(Violation::NumberOfMatchesWithinLimits),
+                        dav::Violation::Extension(Error::Acl(
+                            acl::Violation::NumberOfMatchesWithinLimits
+                        )),
                     ])),
                     responsedescription: Some(dav::ResponseDescription(
                         "\n         Only two matching records were returned\n       ".into()

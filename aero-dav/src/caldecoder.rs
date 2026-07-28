@@ -231,13 +231,6 @@ impl QRead<Violation> for Violation {
             }
             xml.close().await?;
             Ok(Self::SupportedFilter { comp, prop, param })
-        } else if xml
-            .maybe_open(CAL_URN, "number-of-matches-within-limits")
-            .await?
-            .is_some()
-        {
-            xml.close().await?;
-            Ok(Self::NumberOfMatchesWithinLimits)
         } else {
             Err(ParsingError::Recoverable)
         }

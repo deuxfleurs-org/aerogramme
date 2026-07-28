@@ -35,6 +35,21 @@ impl QRead<Property> for Property {
     }
 }
 
+impl QRead<Violation> for Violation {
+    async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
+        if xml
+            .maybe_open(DAV_URN, "number-of-matches-within-limits")
+            .await?
+            .is_some()
+        {
+            xml.close().await?;
+            Ok(Self::NumberOfMatchesWithinLimits)
+        } else {
+            Err(ParsingError::Recoverable)
+        }
+    }
+}
+
 impl QRead<PropertyRequest> for PropertyRequest {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
         if xml.maybe_open(DAV_URN, "owner").await?.is_some() {

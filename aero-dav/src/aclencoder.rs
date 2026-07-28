@@ -32,6 +32,14 @@ impl QWrite for Property {
     }
 }
 
+impl QWrite for Violation {
+    async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
+        match self {
+            Self::NumberOfMatchesWithinLimits => xml.create_dav_atom("number-of-matches-within-limits").await,
+        }
+    }
+}
+
 impl QWrite for PropertyRequest {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
