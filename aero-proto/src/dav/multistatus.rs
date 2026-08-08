@@ -115,7 +115,6 @@ impl Builder {
         self
     }
 
-    #[allow(dead_code)]
     pub fn with_limit_reached(mut self, href: dav::Href) -> Self {
         self.inner.responses.push(dav::Response {
             status_or_propstat: dav::StatusOrPropstat::Status(

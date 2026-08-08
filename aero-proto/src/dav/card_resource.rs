@@ -242,15 +242,18 @@ impl DavStoredCollection for AddressbookNode {
                         .keys()
                         .map(|name| self.mk_child_node(name))
                         .collect();
-                    
-                    let ok_node = apply_filter(children_nodes, &q.filter).try_collect().await?;
-                    Ok(ReportResponse::Ok(
-                        multistatus::Builder::new()
-                            .with_propfind_nodes(user, selector_to_propfind(q.selector.clone()), ok_node)
-                            .await
-                            .build()))
+
+                    let (ok_node, limit_reached) =
+                        apply_limit(apply_filter(children_nodes, &q.filter), &q.limit).await?;
+                    let mut status = multistatus::Builder::new()
+                        .with_propfind_nodes(user, selector_to_propfind(q.selector.clone()), ok_node)
+                        .await;
+                    if limit_reached {
+                        status = status.with_limit_reached(dav::Href(self.path(user)))
+                    }
+                    Ok(ReportResponse::Ok(status.build()))
                 },
-                
+
                 _ => Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
             }
         }.boxed()
@@ -387,16 +390,17 @@ impl DavObject for AddressbookObject {
 
                 vers::Report::Extension(all::ReportType::Card(card::ReportType::Query(q))) => {
                     let nodes = vec![Box::new(DavObjectNode(self.clone())) as Box<dyn DavNode>];
-                    
-                    let ok_node = apply_filter(nodes, &q.filter)
-                        .try_collect()
-                        .await?;
-                    // TODO: handle limit on number of results
-                    Ok(ReportResponse::Ok(
-                        multistatus::Builder::new()
-                            .with_propfind_nodes(user, selector_to_propfind(q.selector.clone()), ok_node)
-                            .await
-                            .build()))
+
+                    let (ok_node, limit_reached) =
+                        apply_limit(apply_filter(nodes, &q.filter), &q.limit).await?;
+
+                    let mut status = multistatus::Builder::new()
+                        .with_propfind_nodes(user, selector_to_propfind(q.selector.clone()), ok_node)
+                        .await;
+                    if limit_reached {
+                        status = status.with_limit_reached(dav::Href(self.path(user)))
+                    }
+                    Ok(ReportResponse::Ok(status.build()))
                 },
 
                 _ => Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
@@ -417,7 +421,7 @@ fn selector_to_propfind(s: Option<card::AddressbookSelector<All>>) -> dav::PropF
 fn apply_filter<'a>(
     nodes: Vec<Box<dyn DavNode>>,
     filter: &'a card::Filter,
-) -> impl Stream<Item = std::result::Result<Box<dyn DavNode>, std::io::Error>> + 'a {
+) -> impl Stream<Item = std::result::Result<Box<dyn DavNode>, std::io::Error>> + Unpin + 'a {
     futures::stream::iter(nodes).filter_map(move |single_node| async move {
         // Get vCard
         let chunks: Vec<_> = match single_node.content().try_collect().await {
@@ -435,5 +439,23 @@ fn apply_filter<'a>(
         } else {
             None
         }
-    })
+    }).boxed()
+}
+
+// returns (items within limit, limit_reached?)
+async fn apply_limit(
+    mut items: impl Stream<Item = std::result::Result<Box<dyn DavNode>, std::io::Error>> + Unpin,
+    limit: &Option<card::Limit>,
+) -> std::result::Result<(Vec<Box<dyn DavNode>>, bool), std::io::Error> {
+    let mut items_keep = vec![];
+    while let Some(item_res) = items.next().await {
+        let item = item_res?;
+        match limit {
+            Some(card::Limit { nresults }) if *nresults <= items_keep.len() as u64 =>
+                return Ok((items_keep, true)),
+            _ =>
+                items_keep.push(item),
+        }
+    }
+    Ok((items_keep, false))
 }
