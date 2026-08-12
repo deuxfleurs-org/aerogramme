@@ -35,7 +35,7 @@ impl Instance {
         }
     }
 
-    pub fn idle_init(&mut self, tag: Tag<'static>) -> ResponseOrIdle {
+    fn idle_init(&mut self, tag: Tag<'static>) -> ResponseOrIdle {
         // Build transition
         //@FIXME the notifier should be hidden inside the state and thus not part of the transition!
         let transition = flow::Transition::Idle(tag.clone(), tokio::sync::Notify::new());
@@ -69,7 +69,7 @@ impl Instance {
         }
     }
 
-    pub async fn idle_poll(&mut self) -> ResponseOrIdle {
+    async fn idle_poll(&mut self) -> ResponseOrIdle {
         match self.idle_poll_happy().await {
             Ok(r) => r,
             Err(e) => {
@@ -79,7 +79,7 @@ impl Instance {
         }
     }
 
-    pub async fn idle_poll_happy(&mut self) -> Result<ResponseOrIdle> {
+    async fn idle_poll_happy(&mut self) -> Result<ResponseOrIdle> {
         let (mbx, tag, stop) = match &mut self.state {
             flow::State::Idle(_, ref mut mbx, _, tag, stop) => (mbx, tag.clone(), stop.clone()),
             _ => bail!("Invalid session state, can't idle"),
@@ -100,7 +100,7 @@ impl Instance {
         }
     }
 
-    pub async fn command(&mut self, cmd: Command<'static>) -> ResponseOrIdle {
+    async fn command(&mut self, cmd: Command<'static>) -> ResponseOrIdle {
         // Command behavior is modulated by the state.
         // To prevent state error, we handle the same command in separate code paths.
         let (resp, tr) = match &mut self.state {
@@ -170,6 +170,7 @@ impl Instance {
                 .bad()
                 .unwrap());
         }
+
         ResponseOrIdle::Response(resp)
 
         /*match &self.state {
