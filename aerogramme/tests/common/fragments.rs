@@ -104,6 +104,7 @@ pub enum SearchKind<'a> {
     Header(&'a str, &'a str),
     Text(&'a str),
     ModSeq(u64),
+    UidRange(u64, u64),
 }
 
 pub enum StatusKind {
@@ -400,8 +401,13 @@ pub fn search(imap: &mut TcpStream, sk: SearchKind) -> Result<String> {
         SearchKind::Header(k, v) => format!("HEADER \"{}\" \"{}\"", k, v),
         SearchKind::Text(x) => format!("TEXT \"{}\"", x),
         SearchKind::ModSeq(x) => format!("MODSEQ {}", x),
+        SearchKind::UidRange(lo, hi) => format!("{}:{}", lo, hi),
     };
-    imap.write(format!("55 SEARCH {}\r\n", sk_str).as_bytes())?;
+    let prefix = match sk {
+        SearchKind::UidRange(_, _) => "UID ",
+        _ => "",
+    };
+    imap.write(format!("55 {}SEARCH {}\r\n", prefix, sk_str).as_bytes())?;
     let mut buffer: [u8; 1500] = [0; 1500];
     let read = read_lines(imap, &mut buffer, Some(&b"55 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
