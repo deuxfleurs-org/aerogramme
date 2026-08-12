@@ -26,8 +26,11 @@ pub(crate) fn noop_nothing(tag: Tag<'static>) -> Result<(Response<'static>, flow
     ))
 }
 
-pub(crate) fn logout() -> Result<(Response<'static>, flow::Transition)> {
-    Ok((Response::bye()?, flow::Transition::Logout))
+pub(crate) fn logout<'a>(tag: Tag<'a>) -> Result<(Response<'a>, flow::Transition)> {
+    Ok((
+        Response::build().tag(tag).message("Logout completed").ok()?,
+        flow::Transition::Logout,
+    ))
 }
 
 pub(crate) fn not_implemented<'a>(

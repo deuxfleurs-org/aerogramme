@@ -74,7 +74,8 @@ impl Instance {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!(err=?e, "something bad happened in idle");
-                ResponseOrIdle::Response(Response::bye().unwrap())
+                self.state.apply(flow::Transition::Logout).unwrap();
+                ResponseOrIdle::Response(Response::build().message("error during idle").bad().unwrap())
             }
         }
     }
@@ -140,20 +141,22 @@ impl Instance {
                 .map(|r| (r, flow::Transition::None)),
         }
         .unwrap_or_else(|err| {
-            if let Some(e) = err.downcast_ref::<SyncError>() {
-                tracing::debug!("command raised SyncError {e}, disconnecting client");
-                (Response::bye().unwrap(), flow::Transition::Logout)
-            } else {
-                tracing::error!("Command error {:?} occured while processing {:?}", err, cmd);
-                (
-                    Response::build()
-                        .to_req(&cmd)
-                        .message("Internal error while processing command")
-                        .bad()
-                        .unwrap(),
-                    flow::Transition::None,
-                )
-            }
+            let transition =  
+                if let Some(e) = err.downcast_ref::<SyncError>() {
+                    tracing::debug!("command raised SyncError {e}, disconnecting client");
+                    flow::Transition::Logout
+                } else {
+                    tracing::error!("Command error {:?} occured while processing {:?}", err, cmd);
+                    flow::Transition::None
+                };
+            (
+                Response::build()
+                    .to_req(&cmd)
+                    .message("Internal error while processing command")
+                    .bad()
+                    .unwrap(),
+                transition,
+            )
         });
 
         if let Err(e) = self.state.apply(tr) {
