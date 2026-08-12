@@ -101,6 +101,7 @@ pub enum FetchMod {
 }
 
 pub enum SearchKind<'a> {
+    Header(&'a str, &'a str),
     Text(&'a str),
     ModSeq(u64),
 }
@@ -396,6 +397,7 @@ pub fn append(imap: &mut TcpStream, content: Email) -> Result<String> {
 
 pub fn search(imap: &mut TcpStream, sk: SearchKind) -> Result<String> {
     let sk_str = match sk {
+        SearchKind::Header(k, v) => format!("HEADER \"{}\" \"{}\"", k, v),
         SearchKind::Text(x) => format!("TEXT \"{}\"", x),
         SearchKind::ModSeq(x) => format!("MODSEQ {}", x),
     };

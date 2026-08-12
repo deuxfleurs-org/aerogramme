@@ -110,7 +110,16 @@ impl<'a> MailView<'a> {
             Err(_) => return false, // XXX hack?
         };
         mime_view::raw_kv_headers(&msg).iter().any(|(k, v)| {
-            k.eq_ignore_ascii_case(hdr) && v.windows(pattern.len()).any(|win| win == pattern)
+            k.eq_ignore_ascii_case(hdr) && (
+                // If the string to search is zero-length, this matches all
+                // messages that have a header field with the specified
+                // field-name regardless of the contents.
+                //
+                // NOTE: `v.windows(0)` panics so we need to check this case
+                // explicitly
+                pattern.is_empty() ||
+                    v.windows(pattern.len()).any(|win| win == pattern)
+            )
         })
     }
 
