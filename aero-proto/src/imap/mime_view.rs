@@ -104,7 +104,7 @@ pub fn raw_kv_headers<'a>(msg: &'a Message<'a>) -> Vec<(Cow<'a, [u8]>, &'a [u8])
 ///
 /// Used for recursive logic on MIME. Represents a generic MIME entity.
 /// See SelectedMime for inspection.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum NodeMime<'a> {
     Message(&'a Message<'a>),
     AnyPart(&'a AnyPart<'a>),
@@ -347,6 +347,7 @@ impl<'a> NodeMime<'a> {
 ///  - Then we must process it as desired
 /// The given struct mixes both work, so
 /// we separate this work here.
+#[derive(Debug)]
 enum SubsettedSection<'a> {
     EntireMessage,
     Part,
@@ -495,6 +496,7 @@ impl<'a> NodeBin<'a> {
 
 // ---------------------------
 
+#[derive(Debug)]
 struct ExtractedFull<'a>(Cow<'a, [u8]>);
 impl<'a> ExtractedFull<'a> {
     /// It is possible to fetch a substring of the designated text.
