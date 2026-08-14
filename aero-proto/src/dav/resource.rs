@@ -29,8 +29,6 @@ use crate::dav::node::{
 use crate::dav::cal_resource::CalendarListNode;
 use crate::dav::card_resource::AddressbookListNode;
 
-// FIXME: must advertise support of webdav 3 for carddav (cf dav_header)
-
 /// The root of the webdav filesystem
 #[derive(Clone)]
 pub(crate) struct RootNode {}
