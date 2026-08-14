@@ -68,6 +68,8 @@ pub(crate) trait DavNode: Send {
     // --- node properties
 
     /// Get the path
+    //@FIXME: should return a aero-proto::dav::codec::Path instead as we use it for some logic that
+    // requires a (safe) Path
     fn path(&self, user: &User) -> String;
     /// Get the supported WebDAV properties
     fn supported_properties(&self, user: &User) -> dav::PropName<All>;
