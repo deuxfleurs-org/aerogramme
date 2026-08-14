@@ -62,8 +62,7 @@ pub struct MailboxView {
 
 impl MailboxView {
     /// Creates a new IMAP view into a mailbox.
-    pub async fn new(mut mailbox: Mailbox, is_condstore: bool) -> Result<Self> {
-        mailbox.sync().await?;
+    pub async fn new(mailbox: Mailbox, is_condstore: bool) -> Result<Self> {
         let known_state = mailbox.current_uid_index();
         Ok(Self {
             mailbox,
