@@ -355,14 +355,6 @@ pub enum Violation {
         prop_filters: Vec<PropFilter>,
         param_filters: Vec<ParamFilter>,
     },
-
-    ///@FIXME should not be here but in RFC3744
-    /// (DAV:number-of-matches-within-limits): The number of matching
-    /// principals must fall within server-specific, predefined limits.
-    /// For example, this condition might be triggered if a search
-    /// specification would cause the return of an extremely large number
-    /// of responses.
-    NumberOfMatchesWithinLimits,
 }
 
 /// Name:  addressbook-query
@@ -515,11 +507,10 @@ pub struct AddressbookMultiget<E: Extension> {
 ///                       version CDATA "3.0">
 /// <!-- content-type value: a MIME media type -->
 /// <!-- version value: a version string -->
-// TODO: handle default values
 #[derive(Debug, PartialEq, Clone)]
 pub struct AddressDataType {
-    pub content_type: String,
-    pub version: String,
+    pub content_type: WithDefault<ContentType>,
+    pub version: WithDefault<Version>,
 }
 
 /// Some of the reports defined in this section do text matches of
@@ -561,26 +552,27 @@ pub struct AddressDataType {
 #[derive(Debug, PartialEq, Clone)]
 pub struct SupportedCollation(pub Collation);
 
-#[derive(Default, Debug, PartialEq, Clone)]
+#[derive(Default, Debug, PartialEq, Clone, Copy)]
 pub enum Collation {
     #[default]
     UnicodeCaseMap,
     AsciiCaseMap,
-    Unknown(String),
 }
 impl Collation {
     pub fn as_str<'a>(&'a self) -> &'a str {
         match self {
             Self::UnicodeCaseMap => "i;unicode-casemap",
             Self::AsciiCaseMap => "i;ascii-casemap",
-            Self::Unknown(c) => c.as_str(),
         }
     }
-    pub fn new(v: String) -> Self {
-        match v.as_str() {
-            "i;unicode-casemap" => Self::UnicodeCaseMap,
-            "i;ascii-casemap" => Self::AsciiCaseMap,
-            _ => Self::Unknown(v),
+    pub fn from_str(s: &str) -> Result<Self, ()> {
+        match s {
+             // if the client specifies the "default" collation identifier (as
+             // defined in [RFC4790], Section 3.1), the server MUST default to
+             // using "i;unicode-casemap" as the collation.
+            "default" | "i;unicode-casemap" => Ok(Self::UnicodeCaseMap),
+            "i;ascii-casemap" => Ok(Self::AsciiCaseMap),
+            _ => Err(()),
         }
     }
 }
@@ -611,7 +603,7 @@ pub struct Filter {
     pub test: WithDefault<FilterTest>,
 }
 
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Clone, Copy, Default)]
 pub enum FilterTest {
     #[default]
     AnyOf,
@@ -753,7 +745,7 @@ pub struct TextMatch {
     pub match_type: WithDefault<TextMatchType>,
     pub text: String,
 }
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Clone, Copy, Default)]
 pub enum TextMatchType {
     Equals,
     #[default]
@@ -1026,6 +1018,33 @@ impl Default for Version {
 #[derive(Debug, PartialEq, Clone)]
 pub struct PropertyParameterName(pub String);
 
-/// A vCard property name (e.g. "NICKNAME")
+/// A vCard property name (e.g. "NICKNAME").
+/// Can also include a "group" prefix, e.g. "X-ABC.NICKNAME".
 #[derive(Debug, PartialEq, Clone)]
-pub struct PropertyName(pub String);
+pub struct PropertyName {
+    pub group: Option<String>, 
+    pub name: String,
+}
+
+impl std::str::FromStr for PropertyName {
+    type Err = ();
+    // FIXME this only splits on '.' and does not try to validate
+    // that the input is using proper property name syntax.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.split_once(".") {
+            None => Ok(PropertyName { group: None, name: s.to_string() }),
+            Some((group, name)) => Ok(PropertyName {
+                group: Some(group.to_string()),
+                name: name.to_string(),
+            })
+        }
+    }
+}
+impl std::fmt::Display for PropertyName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.group {
+            None => write!(f, "{}", self.name),
+            Some(g) => write!(f, "{}.{}", g, self.name),
+        }
+    }
+}

@@ -1,0 +1,33 @@
+[package]
+name = "smtp-message"
+version = "0.5.0"
+authors = [
+  # Léo authored this crate as part of Kannader, a SMTP server project.
+  # We forked his code to vendor it in Aerogramme.
+  # Find the original project at: https://github.com/Ekleog/kannader
+  "Léo Gaspard <leo@gaspard.io>"
+]
+license = "MIT OR Apache-2.0"
+categories = ["email", "network-programming", "parser-implementations"]
+keywords = ["parser", "builder", "smtp", "email"]
+description = "Line-oriented parser and builder for SMTP protocol messages"
+edition = "2018"
+
+[features]
+fuzz-targets = []
+
+[dependencies]
+auto_enums.workspace = true
+futures.workspace = true
+idna.workspace = true
+lazy_static.workspace = true
+nom.workspace = true
+pin-project.workspace = true
+serde.workspace = true
+regex-automata.workspace = true
+
+[dev-dependencies]
+quickcheck.workspace = true
+quickcheck_macros.workspace = true
+itertools.workspace = true
+maplit.workspace = true

@@ -92,6 +92,7 @@ pub enum FetchKind {
     Rfc822,
     Rfc822Size,
     HeaderFields(Vec<String>),
+    BodyBracket,
 }
 
 pub enum FetchMod {
@@ -339,6 +340,7 @@ pub fn fetch(
         FetchKind::Rfc822 => "RFC822",
         FetchKind::Rfc822Size => "RFC822.SIZE",
         FetchKind::HeaderFields(fields) => &format!("BODY[HEADER.FIELDS ({})]", fields.join(" ")),
+        FetchKind::BodyBracket => "BODY[]",
     };
 
     let mod_str = match modifier {

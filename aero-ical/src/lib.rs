@@ -3,6 +3,7 @@
 /// However, for many reason, it's not satisfying:
 /// the goal will be to rewrite it in the end so it better
 /// integrates into Aerogramme
+pub mod collation;
 pub mod parser;
 pub mod prune;
 pub mod query;

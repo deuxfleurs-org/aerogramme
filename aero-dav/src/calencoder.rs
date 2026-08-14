@@ -3,7 +3,7 @@ use quick_xml::Error as QError;
 
 use super::caltypes::*;
 use super::extension::Extension;
-use super::xml::{IWrite, Node, QWrite, Writer};
+use super::xml::{IWrite, QWrite, Writer};
 
 // ==================== Calendar Types Serialization =========================
 
@@ -318,7 +318,6 @@ impl QWrite for Violation {
                 }
                 xml.q.write_event_async(Event::End(end)).await
             }
-            Self::NumberOfMatchesWithinLimits => atom("number-of-matches-within-limits").await,
         }
     }
 }

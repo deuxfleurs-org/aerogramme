@@ -241,3 +241,66 @@ X-ABC-GUID:E1CX5Dr-0007ym-Hz@example.com
 END:VEVENT
 END:VCALENDAR
 "#;
+
+pub static VCARD_RFC1: &[u8] = b"BEGIN:VCARD
+VERSION:3.0
+FN:Cyrus Daboo
+N:Daboo;Cyrus
+ADR;TYPE=POSTAL:;2822 Email HQ;Suite 2821;RFCVille;PA;15213;USA
+EMAIL;TYPE=INTERNET,PREF:cyrus@example.com
+NICKNAME:me
+NOTE:Example VCard.
+ORG:Self Employed
+TEL;TYPE=WORK,VOICE:412 605 0499
+TEL;TYPE=FAX:412 605 0705
+URL:http://www.example.com
+UID:1234-5678-9000-1
+END:VCARD
+";
+
+pub static VCARD_RFC1_FILTERED: &[u8] = b"BEGIN:VCARD
+VERSION:3.0
+FN:Cyrus Daboo
+EMAIL;TYPE=INTERNET,PREF:cyrus@example.com
+NICKNAME:me
+UID:1234-5678-9000-1
+END:VCARD
+";
+
+pub static VCARD_RFC2: &[u8] = b"BEGIN:VCARD
+VERSION:3.0
+FN:Oliver Daboo
+N:Daboo;Oliver
+EMAIL:oliver@example.com
+NICKNAME:oliver
+ORG:Other
+UID:34222-23222@example.com
+END:VCARD
+";
+
+pub static VCARD_RFC2_FILTERED: &[u8] = b"BEGIN:VCARD
+VERSION:3.0
+FN:Oliver Daboo
+EMAIL:oliver@example.com
+NICKNAME:oliver
+UID:34222-23222@example.com
+END:VCARD
+";
+
+pub static VCARD_RFC3: &[u8] = b"BEGIN:VCARD
+VERSION:3.0
+NICKNAME:david
+FN:David Boo
+EMAIL:daboo@example.com
+UID:34222-232@example.com
+END:VCARD
+";
+
+pub static VCARD_RFC3_FILTERED: &[u8] = b"BEGIN:VCARD
+VERSION:3.0
+NICKNAME:david
+FN:David Boo
+EMAIL:daboo@example.com
+UID:34222-232@example.com
+END:VCARD
+";

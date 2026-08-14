@@ -1,0 +1,25 @@
+[package]
+name = "smtp-server-fuzz"
+version = "0.0.1"
+authors = ["Automatically generated"]
+license = "MIT OR Apache-2.0"
+edition = "2018"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+async-trait = "0.1.30"
+duplexify = "1.1.0"
+futures = "0.3.4"
+futures-test = "0.3.5"
+libfuzzer-sys = "0.3.2"
+
+smtp-message = { path = "../../smtp-message" }
+smtp-server = { path = ".." }
+
+[[bin]]
+name = "fuzz_interact"
+path = "fuzz_targets/fuzz_interact.rs"
+test = false

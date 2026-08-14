@@ -13,8 +13,11 @@ pub const CAL_URN: &[u8] = b"urn:ietf:params:xml:ns:caldav";
 pub const CARD_URN: &[u8] = b"urn:ietf:params:xml:ns:carddav";
 
 // Async traits
-pub trait IWrite = AsyncWrite + Unpin + Send;
-pub trait IRead = AsyncBufRead + Unpin;
+pub trait IWrite: AsyncWrite + Unpin + Send {}
+impl<T> IWrite for T where T: AsyncWrite + Unpin + Send {}
+
+pub trait IRead: AsyncBufRead + Unpin {}
+impl<T> IRead for T where T: AsyncBufRead + Unpin {}
 
 // Serialization/Deserialization traits
 pub trait QWrite {
@@ -28,7 +31,8 @@ pub trait QRead<T> {
 }
 
 // The representation of an XML node in Rust
-pub trait Node<T> = QRead<T> + QWrite + std::fmt::Debug + PartialEq + Clone + Sync;
+pub trait Node<T>: QRead<T> + QWrite + std::fmt::Debug + PartialEq + Clone + Sync {}
+impl<U, T> Node<T> for U where U: QRead<T> + QWrite + std::fmt::Debug + PartialEq + Clone + Sync {}
 
 // Indicates whether a value was obtained from the default value of an attribute
 // or was specified explicitly
@@ -84,7 +88,7 @@ impl<T: IWrite> Writer<T> {
         self.create_ns_element("C", name)
     }
     pub fn create_card_element(&mut self, name: &str) -> BytesStart<'static> {
-        self.create_ns_element("C", name)
+        self.create_ns_element("CD", name)
     }
 
     fn create_ns_element(&mut self, ns: &str, name: &str) -> BytesStart<'static> {
@@ -98,6 +102,11 @@ impl<T: IWrite> Writer<T> {
             self.ns_to_apply.clear()
         }
         start
+    }
+
+    pub async fn create_dav_atom(&mut self, name: &str) -> quick_xml::Result<()> {
+        let elt = self.create_dav_element(name);
+        self.q.write_event_async(Event::Empty(elt)).await
     }
 }
 

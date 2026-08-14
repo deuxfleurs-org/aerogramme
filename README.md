@@ -21,9 +21,11 @@ A resilient & standards-compliant open-source IMAP server with built-in encrypti
   - ✅ 0.1 Better emails parsing.
   - ✅ 0.2 IMAP4 support.
   - ✅ 0.3 CalDAV support.
-  - ⌛0.4 CardDAV support.
-  - ⌛0.5 Internals rework.
-  - ⌛0.6 Public beta.
+  - ✅ 0.4 Improve low-level synchronization correctness (bayou)
+  - ✅ 0.5 CardDAV support.
+  - ⌛0.6 Webmail.
+  - ⌛0.7 Polish phase.
+  - ⌛0.8 Public beta.
 
 ## Sponsors and funding
 

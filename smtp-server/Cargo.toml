@@ -1,0 +1,29 @@
+[package]
+name = "smtp-server"
+version = "0.5.0"
+authors = [
+  # Léo authored this crate as part of Kannader, a SMTP server project.
+  # We forked his code to vendor it in Aerogramme.
+  # Find the original project at: https://github.com/Ekleog/kannader
+  "Léo Gaspard <leo@gaspard.io>"
+]
+license = "MIT OR Apache-2.0"
+categories = ["email", "network-programming"]
+keywords = ["smtp", "server", "asynchronous", "email"]
+description = "Asynchronous SMTP server library"
+edition = "2018"
+
+[dependencies]
+# internal
+smtp-message.workspace = true
+smtp-server-types.workspace = true
+
+# external
+async-trait.workspace = true
+chrono.workspace = true
+duplexify.workspace = true
+futures.workspace = true
+smol.workspace = true
+
+[dev-dependencies]
+piper.workspace = true
