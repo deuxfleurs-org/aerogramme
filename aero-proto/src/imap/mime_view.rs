@@ -163,6 +163,14 @@ impl<'a> NodeMime<'a> {
             SubsettedSection::HeaderFieldsNot(fields) => self.header_fields(fields, true),
             SubsettedSection::Part => self.part(),
             SubsettedSection::Mime => self.mime(),
+            SubsettedSection::EntireMessage => self.entire_message(),
+        }
+    }
+
+    fn entire_message(&self) -> Result<ExtractedFull<'a>> {
+        match self {
+            NodeMime::Message(m) => Ok(ExtractedFull(m.raw.unwrap().into())),
+            NodeMime::AnyPart(_) => anyhow::bail!("Tried to select an entire message on a MIME part. This logic is only intended to be run on empty body_ext sections (BODY[] or BODY.PEEK[])"),
         }
     }
 
@@ -340,6 +348,7 @@ impl<'a> NodeMime<'a> {
 /// The given struct mixes both work, so
 /// we separate this work here.
 enum SubsettedSection<'a> {
+    EntireMessage,
     Part,
     Header,
     HeaderFields(&'a Vec1<AString<'a>>),
@@ -360,7 +369,7 @@ impl<'a> SubsettedSection<'a> {
             }
             Some(FetchSection::Mime(part)) => (Self::Mime, Some(part)),
             Some(FetchSection::Part(part)) => (Self::Part, Some(part)),
-            None => (Self::Part, None),
+            None => (Self::EntireMessage, None),
         }
     }
 }
