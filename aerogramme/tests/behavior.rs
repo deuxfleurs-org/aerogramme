@@ -25,6 +25,7 @@ fn main() {
 
     // Non-regression testing
     noreg_imap_append_in_current_mailbox();
+    noreg_imap_fetch_body_empty_brackets();
 
     println!("✅ SUCCESS 🌟🚀🥳🙏🥹");
 }
@@ -1703,6 +1704,45 @@ fn noreg_imap_append_in_current_mailbox() {
             imap_socket,
             Selection::FirstId,
             FetchKind::Rfc822,
+            FetchMod::None,
+        )
+        .context("message is still present")?;
+        let orig_email = std::str::from_utf8(EMAIL2)?;
+        assert!(srv_msg.contains(orig_email));
+
+        Ok(())
+    })
+    .expect("test fully run");
+}
+
+fn noreg_imap_fetch_body_empty_brackets() {
+    /*
+     * We refactored our whole email querying logic around Aerogramme 0.4.0
+     * and a regression was introduced where FETCH x (BODY[]) or FETCH x (BODY.PEEK[])
+     * stopped returning the whole email content (as RFC822) and started returning only the email
+     * body. Here, the name "body" should not be understood as the IMF/MIME body. Instead, you
+     * should understand that the email is the data/body and that the IMAP server also tracks
+     * metadata (computed or not) like the flags and the email structure. So, yes, basically
+     * BODY[] here means the email content, including its headers. Naming is hard.
+     */
+    println!("🧪 noreg_imap_fetch_body_empty_brackets");
+    common::aerogramme_provider_daemon_dev(|imap_socket, _lmtp_socket, _dav_socket| {
+        // 1. Setup test
+        connect(imap_socket).context("server says hello")?;
+        capability(imap_socket, Extension::None).context("check server capabilities")?;
+        login(imap_socket, Account::Alice).context("login test")?;
+        let select_res =
+            select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
+        assert!(select_res.contains("* 0 EXISTS"));
+
+        // 2. Run commands that must refresh the mailbox view
+        append(imap_socket, Email::Basic).context("insert email in INBOX")?;
+
+        // 3. If the mailbox view is correctly refreshed, FETCH should work
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::BodyBracket,
             FetchMod::None,
         )
         .context("message is still present")?;
