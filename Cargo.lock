@@ -2369,7 +2369,7 @@ dependencies = [
 [[package]]
 name = "ical_vcard"
 version = "0.4.1"
-source = "git+https://codeberg.org/armael/ical_vcard.git?branch=lf-line-ending#84e31be319dc1a6d1a46bf1223c50555bbeea522"
+source = "git+https://codeberg.org/darkfire/ical_vcard.git?rev=0618a7f96ee065ea877d4519fef6ba367bf392a0#0618a7f96ee065ea877d4519fef6ba367bf392a0"
 
 [[package]]
 name = "icalendar"
