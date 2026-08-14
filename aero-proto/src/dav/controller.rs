@@ -14,7 +14,7 @@ use aero_dav::versioningtypes as vers;
 
 use crate::dav::codec;
 use crate::dav::codec::{depth, deserialize, serialize, text_body, text_body_owned};
-use crate::dav::multistatus::multistatus;
+use crate::dav::multistatus;
 use crate::dav::node::{DavNode, ReportResponse};
 use crate::dav::resource::RootNode;
 
@@ -95,7 +95,7 @@ impl Controller {
         match self.node.report(&self.user, req_report).await? {
             ReportResponse::Ok(multistatus) => serialize(
                 // 207 Multi-Status
-                hyper::StatusCode::from_u16(207)?,
+                hyper::StatusCode::MULTI_STATUS,
                 multistatus,
             ),
             ReportResponse::Err((status, msg)) => 
@@ -138,12 +138,12 @@ impl Controller {
         }
         nodes.push(self.node);
 
-        // `not_found` is used to indicate nodes that were requested but not found.
-        // This cannot happen with this function.
-        let not_found = vec![];
         serialize(
             status,
-            multistatus(&self.user, nodes, not_found, propfind, None).await,
+            multistatus::Builder::new()
+                .with_propfind_nodes(&self.user, propfind, nodes)
+                .await
+                .build()
         )
     }
 

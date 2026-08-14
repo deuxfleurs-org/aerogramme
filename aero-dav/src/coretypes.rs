@@ -438,10 +438,16 @@ pub enum PropertyUpdateItem<E: Extension> {
 /// values.
 ///
 /// <!ELEMENT propfind ( propname | (allprop, include?) | prop ) >
+///
+/// ---
+///
+/// It is not clear from the definitions, but (somewhere else in the RFC):
+/// "an empty propfind [...] element is illegal".
 #[derive(Debug, PartialEq, Clone)]
 pub enum PropFind<E: Extension> {
     PropName,
     AllProp(Option<Include<E>>),
+    /// must be non-empty
     Prop(PropName<E>),
 }
 

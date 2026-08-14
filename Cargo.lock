@@ -94,6 +94,7 @@ dependencies = [
  "aero-ical",
  "aero-sasl",
  "aero-user",
+ "aero-vcard",
  "anyhow",
  "async-trait",
  "base64 0.22.1",
@@ -159,6 +160,17 @@ dependencies = [
  "toml",
  "tracing",
  "zstd",
+]
+
+[[package]]
+name = "aero-vcard"
+version = "0.4.0"
+dependencies = [
+ "aero-dav",
+ "ical_vcard",
+ "tracing",
+ "unicode-case-mapping",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -2344,6 +2356,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "ical_vcard"
+version = "0.4.1"
+source = "git+https://codeberg.org/armael/ical_vcard.git?branch=lf-line-ending#84e31be319dc1a6d1a46bf1223c50555bbeea522"
+
+[[package]]
 name = "icalendar"
 version = "0.16.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4441,6 +4458,12 @@ name = "unicode-bidi"
 version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c1cb5db39152898a79168971543b1cb5020dff7fe43c8dc468b0885f5e29df5"
+
+[[package]]
+name = "unicode-case-mapping"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e9026503b74f3207a4c04e6bf4ea735daa8edf6c0bbfa044cae597bb947a9db"
 
 [[package]]
 name = "unicode-ident"

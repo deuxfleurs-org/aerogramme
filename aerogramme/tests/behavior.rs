@@ -21,6 +21,7 @@ fn main() {
     rfc5397_webdav_principal();
     rfc4791_webdav_caldav();
     rfc6578_webdav_sync();
+    rfc6352_webdav_carddav();
 
     // Non-regression testing
     noreg_imap_append_in_current_mailbox();
@@ -386,6 +387,7 @@ fn rfc5819_imapext_liststatus() {
 
 use aero_dav::acltypes as acl;
 use aero_dav::caltypes as cal;
+use aero_dav::cardtypes as card;
 use aero_dav::realization::{self, All};
 use aero_dav::synctypes as sync;
 use aero_dav::coretypes as dav;
@@ -711,14 +713,15 @@ fn rfc4791_webdav_caldav() {
         assert_eq!(calendar_home_set, "/alice/calendar/");
 
         // Check calendar access support
-        let _resp = http
+        let resp = http
             .request(
                 reqwest::Method::from_bytes(b"OPTIONS")?,
                 "http://localhost:8087/alice/calendar/",
             )
             .send()?;
-        //@FIXME not yet supported. returns DAV: 1 ; expects DAV: 1 calendar-access
-        // Not used by any client I know, so not implementing it now.
+        assert_eq!(resp.status(), 200);
+        let dav_header = resp.headers().get("DAV").map(|v| v.to_str().unwrap()).unwrap();
+        assert!(dav_header.contains("calendar-access"));
 
         // --- REPORT calendar-multiget ---
         let cal_query = r#"<?xml version="1.0" encoding="utf-8" ?>
@@ -1315,7 +1318,365 @@ fn rfc6578_webdav_sync() {
     .expect("test fully run")
 }
 
-#[allow(dead_code)]
+fn rfc6352_webdav_carddav() {
+    println!("🧪 rfc6352_webdav_carddav");
+    common::aerogramme_provider_daemon_dev(|_imap, _lmtp, http| {
+        // --- AUTODISCOVERY ---
+        // Check addressbook discovery from principal
+        let propfind_req = r#"<?xml version="1.0" encoding="utf-8" ?>
+        <D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+            <D:prop><C:addressbook-home-set/></D:prop>
+        </D:propfind>"#;
+        let body = http
+            .request(
+                reqwest::Method::from_bytes(b"PROPFIND")?,
+                "http://localhost:8087/alice/",
+            )
+            .body(propfind_req)
+            .send()?
+            .text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        let principal_propstats = multistatus
+            .responses
+            .iter()
+            .find_map(|v| match &v.status_or_propstat {
+                dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/alice/" => {
+                    Some(x)
+                }
+                _ => None,
+            })
+            .expect("propstats for root must exist");
+        let principal_success = principal_propstats
+            .iter()
+            .find(|p| p.status.0.as_u16() == 200)
+            .expect("current-user-principal must exist");
+        let addressbook_home_set = principal_success
+            .prop
+            .0
+            .iter()
+            .find_map(|v| match v {
+                dav::AnyProperty::Value(dav::Property::Extension(realization::Property::Card(
+                    card::Property::AddressbookHomeSet(dav::Href(x)),
+                ))) => Some(x),
+                _ => None,
+            })
+            .expect("request returns a addressbook home set");
+        assert_eq!(addressbook_home_set, "/alice/addressbook/");
+        
+        // Check addressbook access support with OPTIONS
+        let resp = http
+            .request(
+                reqwest::Method::from_bytes(b"OPTIONS")?,
+                "http://localhost:8087/alice/addressbook/",
+            )
+            .send()?;
+        assert_eq!(resp.status(), 200);
+        let dav_header = resp.headers().get("DAV").map(|v| v.to_str().unwrap()).unwrap();
+        assert!(dav_header.contains("addressbook"));
+        // carddav requires ACL support
+        assert!(dav_header.contains("access-control"));
+        // carddav requires webdav class 3 support
+        assert!(dav_header.contains("3"));
+
+        // Check current-user-privilege-set on the addressbook (required by Thunderbird)
+        let propfind_req = r#"<?xml version="1.0" encoding="utf-8" ?>
+        <D:propfind xmlns:D="DAV:">
+            <D:prop><D:current-user-privilege-set/></D:prop>
+        </D:propfind>"#;
+        let body = http
+            .request(
+                reqwest::Method::from_bytes(b"PROPFIND")?,
+                "http://localhost:8087/alice/addressbook/Personal",
+            )
+            .body(propfind_req)
+            .send()?
+            .text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        let propstats = multistatus
+            .responses
+            .iter()
+            .find_map(|v| match &v.status_or_propstat {
+                dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/alice/addressbook/Personal/" => {
+                    Some(x)
+                }
+                _ => None,
+            })
+            .expect("propstats for target must exist");
+        let prop_success = propstats.iter().find(|p| p.status.0.as_u16() == 200).expect("some propstats must be 200");
+        prop_success.prop.0.iter().for_each(|p| match p {
+            dav::AnyProperty::Value(dav::Property::Extension(realization::Property::Acl(
+                acl::Property::CurrentUserPrivilegeSet(acl::PrivilegeSet(v))))) =>
+                assert!(v.contains(&acl::Privilege::All)),
+            _ => (),
+        });
+
+        // --- INSERT DATA
+        // Add entries
+        let resp = http
+            .put("http://localhost:8087/alice/addressbook/Personal/rfc1.vcf")
+            .header("If-None-Match", "*")
+            .body(VCARD_RFC1)
+            .send()?;
+        let obj1_etag = resp.headers().get("etag").expect("etag must be set");
+        assert_eq!(resp.status(), 201);
+        let resp = http
+            .put("http://localhost:8087/alice/addressbook/Personal/rfc2.vcf")
+            .header("If-None-Match", "*")
+            .body(VCARD_RFC2)
+            .send()?;
+        let obj2_etag = resp.headers().get("etag").expect("etag must be set");
+        assert_eq!(resp.status(), 201);
+     let resp = http
+            .put("http://localhost:8087/alice/addressbook/Personal/rfc3.vcf")
+            .header("If-None-Match", "*")
+            .body(VCARD_RFC3)
+            .send()?;
+        let obj3_etag = resp.headers().get("etag").expect("etag must be set");
+        assert_eq!(resp.status(), 201);
+
+        // A generic function to check a <address-data/> query result
+        let check_card =
+            |multistatus: &dav::Multistatus<All>,
+            (ref_path, ref_etag, ref_vcard): (&str, Option<&str>, Option<&[u8]>)| {
+                let obj_stats = multistatus
+                    .responses
+                    .iter()
+                    .find_map(|v| match &v.status_or_propstat {
+                        dav::StatusOrPropstat::PropStat(dav::Href(p), x)
+                            if p.as_str() == ref_path =>
+                        {
+                            Some(x)
+                        }
+                        _ => None,
+                    })
+                    .expect("propstats must exist");
+                let obj_success = obj_stats
+                    .iter()
+                    .find(|p| p.status.0.as_u16() == 200)
+                    .expect("some propstats must be 200");
+                let etag = obj_success.prop.0.iter().find_map(|p| match p {
+                    dav::AnyProperty::Value(dav::Property::GetEtag(x)) => Some(x.as_str()),
+                    _ => None,
+                });
+                assert_eq!(etag, ref_etag);
+                let address_data = obj_success.prop.0.iter().find_map(|p| match p {
+                    dav::AnyProperty::Value(dav::Property::Extension(
+                        realization::Property::Card(card::Property::AddressData(x)),
+                    )) => Some(x.payload.as_bytes()),
+                    _ => None,
+                });
+                assert_eq!(address_data, ref_vcard);
+            };
+
+        // --- REPORT multistatus, partial retrieval
+        // retrieve on NICKNAME 
+        let card_query = r#"<?xml version="1.0" encoding="utf-8" ?>
+   <C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+     <D:prop>
+       <D:getetag/>
+       <C:address-data>
+         <C:prop name="VERSION"/>
+         <C:prop name="UID"/>
+         <C:prop name="NICKNAME"/>
+         <C:prop name="EMAIL"/>
+         <C:prop name="FN"/>
+       </C:address-data>
+     </D:prop>
+     <C:filter>
+       <C:prop-filter name="NICKNAME">
+         <C:text-match collation="i;unicode-casemap"
+                       match-type="equals"
+         >me</C:text-match>
+       </C:prop-filter>
+     </C:filter>
+   </C:addressbook-query>"#;
+        let resp = http
+            .request(reqwest::Method::from_bytes(b"REPORT")?,
+                     "http://localhost:8087/alice/addressbook/Personal/",
+            )
+            .body(card_query)
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let body = resp.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        check_card(
+            &multistatus,
+            ("/alice/addressbook/Personal/rfc1.vcf",
+             Some(obj1_etag.to_str().unwrap()),
+             Some(VCARD_RFC1_FILTERED)),
+        );
+
+        // retrieve on FN or EMAIL
+        let card_query = r#"<?xml version="1.0" encoding="utf-8" ?>
+   <C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+     <D:prop>
+       <D:getetag/>
+       <C:address-data>
+         <C:prop name="VERSION"/>
+         <C:prop name="UID"/>
+         <C:prop name="NICKNAME"/>
+         <C:prop name="EMAIL"/>
+         <C:prop name="FN"/>
+       </C:address-data>
+     </D:prop>
+     <C:filter>
+       <C:prop-filter name="FN">
+         <C:text-match collation="i;unicode-casemap"
+                       match-type="contains"
+         >daboo</C:text-match>
+       </C:prop-filter>
+       <C:prop-filter name="EMAIL">
+         <C:text-match collation="i;unicode-casemap"
+                       match-type="contains"
+         >daboo</C:text-match>
+       </C:prop-filter>
+     </C:filter>
+   </C:addressbook-query>"#;
+        let resp = http
+            .request(reqwest::Method::from_bytes(b"REPORT")?,
+                     "http://localhost:8087/alice/addressbook/Personal/",
+            )
+            .body(card_query)
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let body = resp.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        check_card(
+            &multistatus,
+            ("/alice/addressbook/Personal/rfc1.vcf",
+             Some(obj1_etag.to_str().unwrap()),
+             Some(VCARD_RFC1_FILTERED)),
+        );
+        check_card(
+            &multistatus,
+            ("/alice/addressbook/Personal/rfc2.vcf",
+             Some(obj2_etag.to_str().unwrap()),
+             Some(VCARD_RFC2_FILTERED)),
+        );
+        check_card(
+            &multistatus,
+            ("/alice/addressbook/Personal/rfc3.vcf",
+             Some(obj3_etag.to_str().unwrap()),
+             Some(VCARD_RFC3_FILTERED)),
+        );
+
+        // --- REPORT multistatus; truncated results
+        let card_query = r#"<?xml version="1.0" encoding="utf-8" ?>
+   <C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+     <D:prop>
+       <D:getetag/>
+     </D:prop>
+     <C:filter test="anyof">
+       <C:prop-filter name="FN">
+         <C:text-match collation="i;unicode-casemap"
+                       match-type="contains"
+         >daboo</C:text-match>
+       </C:prop-filter>
+     </C:filter>
+     <C:limit>
+       <C:nresults>1</C:nresults>
+     </C:limit>
+   </C:addressbook-query>"#;
+        let resp = http
+            .request(reqwest::Method::from_bytes(b"REPORT")?,
+                     "http://localhost:8087/alice/addressbook/Personal/",
+            )
+            .body(card_query)
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let body = resp.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        assert_eq!(multistatus.responses.len(), 2);
+        assert!(
+            multistatus.responses.iter().find(|resp| {
+                resp.error.as_ref().is_some_and(|e| {
+                    e.0 == vec![dav::Violation::Extension(
+                        realization::Error::Acl(acl::Violation::NumberOfMatchesWithinLimits)
+                    )]
+                })
+            }).is_some()
+        );
+
+        let card_query = r#"<?xml version="1.0" encoding="utf-8" ?>
+   <C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+     <D:prop>
+       <D:getetag/>
+     </D:prop>
+     <C:filter test="anyof">
+       <C:prop-filter name="FN">
+         <C:text-match collation="i;unicode-casemap"
+                       match-type="contains"
+         >daboo</C:text-match>
+       </C:prop-filter>
+     </C:filter>
+     <C:limit>
+       <C:nresults>2</C:nresults>
+     </C:limit>
+   </C:addressbook-query>"#;
+        let resp = http
+            .request(reqwest::Method::from_bytes(b"REPORT")?,
+                     "http://localhost:8087/alice/addressbook/Personal/",
+            )
+            .body(card_query)
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let body = resp.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        assert_eq!(multistatus.responses.len(), 2);
+        assert!(
+            multistatus.responses.iter().find(|resp| {
+                resp.error.as_ref().is_some_and(|e| {
+                    e.0 == vec![dav::Violation::Extension(
+                        realization::Error::Acl(acl::Violation::NumberOfMatchesWithinLimits)
+                    )]
+                })
+            }).is_none()
+        );
+
+        // --- REPORT multiget
+        let card_query = r#"<?xml version="1.0" encoding="utf-8" ?>
+   <C:addressbook-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+     <D:prop>
+       <D:getetag/>
+       <C:address-data>
+         <C:prop name="VERSION"/>
+         <C:prop name="UID"/>
+         <C:prop name="NICKNAME"/>
+         <C:prop name="EMAIL"/>
+         <C:prop name="FN"/>
+       </C:address-data>
+     </D:prop>
+     <D:href>/alice/addressbook/Personal/rfc1.vcf</D:href>
+     <D:href>/alice/addressbook/Personal/rfc2.vcf</D:href>
+   </C:addressbook-multiget>"#;
+        let resp = http
+            .request(reqwest::Method::from_bytes(b"REPORT")?,
+                     "http://localhost:8087/alice/addressbook/Personal/",
+            )
+            .body(card_query)
+            .send()?;
+        assert_eq!(resp.status(), 207);
+        let body = resp.text()?;
+        let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
+        assert_eq!(multistatus.responses.len(), 2);
+        check_card(
+            &multistatus,
+            ("/alice/addressbook/Personal/rfc1.vcf",
+             Some(obj1_etag.to_str().unwrap()),
+             Some(VCARD_RFC1_FILTERED)),
+        );
+        check_card(
+            &multistatus,
+            ("/alice/addressbook/Personal/rfc2.vcf",
+             Some(obj2_etag.to_str().unwrap()),
+             Some(VCARD_RFC2_FILTERED)),
+        );
+        
+        Ok(())
+    })
+    .expect("test fully run")
+}
+
 fn noreg_imap_append_in_current_mailbox() {
     /*
      * We detected this bug when applying one of our testing Python script to Aerogramme.

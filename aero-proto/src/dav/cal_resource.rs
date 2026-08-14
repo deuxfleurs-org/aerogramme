@@ -16,7 +16,7 @@ use aero_dav::versioningtypes as vers;
 use aero_ical::query::is_component_match;
 
 use crate::dav::codec::Path;
-use crate::dav::multistatus::multistatus;
+use crate::dav::multistatus;
 use crate::dav::node::{
     ChildNode,
     DavNode,
@@ -103,7 +103,7 @@ impl DavNode for CalendarListNode {
     }
 
     fn dav_header(&self) -> String {
-        "1, access-control, calendar-access".into()
+        "1, 3, access-control, calendar-access".into()
     }
 
     fn content_type(&self) -> &str {
@@ -161,6 +161,9 @@ impl DavStoredCollection for CalendarNode {
             dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
                 cal::PropertyRequest::SupportedCalendarComponentSet,
             )),
+            dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
+                cal::PropertyRequest::SupportedCollationSet,
+            )),
         ]            
     }
 
@@ -175,6 +178,14 @@ impl DavStoredCollection for CalendarNode {
                         cal::CompSupport(cal::Component::VTodo),
                         cal::CompSupport(cal::Component::VJournal),
                     ]),
+                ))),
+                dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
+                    cal::PropertyRequest::SupportedCollationSet,
+                )) => Ok(dav::Property::Extension(all::Property::Cal(
+                    cal::Property::SupportedCollationSet(vec![
+                        cal::SupportedCollation(cal::Collation::AsciiCaseMap),
+                        cal::SupportedCollation(cal::Collation::Octet),
+                    ])
                 ))),
                 _ => Err(prop.clone()),
             }
@@ -198,46 +209,30 @@ impl DavStoredCollection for CalendarNode {
                 vers::Report::Extension(all::ReportType::Cal(cal::ReportType::Multiget(m))) => {
                     // Multiget is really like a propfind where Depth: 0|1|Infinity is replaced by an arbitrary
                     // list of URLs
-
-                    // Getting the list of nodes
                     let (mut ok_node, mut not_found) = (Vec::new(), Vec::new());
                     let self_path = self.path(user);
-                    let self_path = match Path::new(self_path.as_str()) {
-                        Ok(Path::Abs(p)) => p,
-                        _ => unreachable!()
-                    };
+                    let self_path = Path::new(self_path.as_str()).unwrap();
                     for h in m.href.iter().cloned() {
-                        match Path::new(h.0.as_str()) {
-                            Ok(Path::Abs(p)) => {
-                                // `p` needs to point to an object inside of the collection
-                                if let Some(&[name]) = p.strip_prefix(self_path.as_slice()) {
-                                    if self.col.index().idx_by_filename.contains_key(name) {
-                                        ok_node.push(self.mk_child_node(name));
-                                        continue
-                                    }
-                                }
-                                // TODO: maybe this should be Forbidden instead of Not Found?
-                                not_found.push(h)
-                            }, 
-                            Ok(Path::Rel(p)) => {
-                                if p.len() == 1 && self.col.index().idx_by_filename.contains_key(p[0]) {
-                                    ok_node.push(self.mk_child_node(p[0]));
-                                } else {
-                                    not_found.push(h)
-                                }
-                            },
-                            Err(_) =>
+                        let filename = Path::new(h.0.as_str())
+                            .ok()
+                            .and_then(|p| p.relativize(&self_path))
+                            .and_then(|p| p.as_single_name());
+                        
+                        match filename {
+                            Some(name) if self.col.index().idx_by_filename.contains_key(name) =>
+                                ok_node.push(self.mk_child_node(name)),
+                            _ =>
                                 not_found.push(h),
-                        };
+                        }
                     }
 
-                    Ok(ReportResponse::Ok(multistatus(
-                        user,
-                        ok_node,
-                        not_found,
-                        selector_to_propfind(m.selector.clone()),
-                        None,
-                    ).await))
+                    Ok(ReportResponse::Ok(
+                        multistatus::Builder::new()
+                            .with_propfind_nodes(user, selector_to_propfind(m.selector.clone()), ok_node)
+                            .await
+                            .with_not_found(not_found)
+                            .build()
+                    ))
                 },
 
                 vers::Report::Extension(all::ReportType::Cal(cal::ReportType::Query(q))) => {
@@ -250,13 +245,12 @@ impl DavStoredCollection for CalendarNode {
                         .collect();
                     
                     let ok_node = apply_filter(children_nodes, &q.filter).try_collect().await?;
-                    Ok(ReportResponse::Ok(multistatus(
-                        user,
-                        ok_node,
-                        vec![],
-                        selector_to_propfind(q.selector.clone()),
-                        None,
-                    ).await))
+                    Ok(ReportResponse::Ok(
+                        multistatus::Builder::new()
+                            .with_propfind_nodes(user, selector_to_propfind(q.selector.clone()), ok_node)
+                            .await
+                            .build()
+                    ))
                 },
                 
                 _ => Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
@@ -302,13 +296,25 @@ impl DavObject for CalendarEventNode {
     }
 
     fn additional_supported_properties(&self) -> Vec<dav::PropertyRequest<All>> {
-        vec![]
+        vec![
+            dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
+                cal::PropertyRequest::SupportedCollationSet,
+            )),
+        ]
     }
 
     fn additional_property<'a>(&'a mut self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult> {
         let this = self.clone();
         async move {
             match prop {
+                dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
+                    cal::PropertyRequest::SupportedCollationSet,
+                )) => Ok(dav::Property::Extension(all::Property::Cal(
+                    cal::Property::SupportedCollationSet(vec![
+                        cal::SupportedCollation(cal::Collation::AsciiCaseMap),
+                        cal::SupportedCollation(cal::Collation::Octet),
+                    ])
+                ))),
                 // This is not a "real" property (it cannot be queried by
                 // PROPFIND), but is queried internally by calendar reports.
                 dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
@@ -377,47 +383,46 @@ impl DavObject for CalendarEventNode {
                 vers::Report::Extension(all::ReportType::Cal(cal::ReportType::Multiget(m))) => {
                     // On a single object, multiget must contain a single URL pointing to this object
                     let self_path = self.path(user);
-                    let self_path = match Path::new(self_path.as_str()) {
-                        Ok(Path::Abs(p)) => p,
-                        _ => unreachable!()
-                    };
+                    let self_path = Path::new(self_path.as_str()).unwrap();
                     let self_node = Box::new(DavObjectNode(self.clone())) as Box<dyn DavNode>;
                     let (mut ok_node, mut not_found) = (Vec::new(), Vec::new());
                     for h in m.href.into_iter() {
-                        match Path::new(h.0.as_str()) {
-                            Ok(Path::Abs(p)) if p == self_path =>
-                                ok_node.push(self_node.clone_node()),
-                            Ok(Path::Rel(p)) if p.is_empty() =>
-                                ok_node.push(self_node.clone_node()),
-                            _ =>
-                                not_found.push(h),
-                        };
+                        if Path::new(h.0.as_str())
+                            .is_ok_and(|p| p.relativize(&self_path).is_some_and(|p| p.is_empty()))
+                        {
+                            ok_node.push(self_node.clone_node())
+                        } else {
+                            not_found.push(h)
+                        }
                     }
-                    Ok(ReportResponse::Ok(multistatus(
-                        user,
-                        ok_node,
-                        not_found,
-                        selector_to_propfind(m.selector.clone()),
-                        None,
-                    ).await))
+                    Ok(ReportResponse::Ok(
+                        multistatus::Builder::new()
+                            .with_propfind_nodes(user, selector_to_propfind(m.selector.clone()), ok_node)
+                            .await
+                            .with_not_found(not_found)
+                            .build()
+                    ))
                 },
 
                 vers::Report::Extension(all::ReportType::Cal(cal::ReportType::Query(q))) => {
                     let nodes = vec![Box::new(DavObjectNode(self.clone())) as Box<dyn DavNode>];
 
                     let ok_node = apply_filter(nodes, &q.filter).try_collect().await?;
-                    Ok(ReportResponse::Ok(multistatus(
-                        user,
-                        ok_node,
-                        vec![],
-                        selector_to_propfind(q.selector.clone()),
-                        None,
-                    ).await))
+                    Ok(ReportResponse::Ok(
+                        multistatus::Builder::new()
+                            .with_propfind_nodes(user, selector_to_propfind(q.selector.clone()), ok_node)
+                            .await
+                            .build()
+                    ))
                 },
                 
                 _ => Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
             }
         }.boxed()
+    }
+
+    fn additional_dav_headers(&self) -> Vec<String> {
+        vec!["calendar-access".to_string()]
     }
 }
 

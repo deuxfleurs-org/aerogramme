@@ -3,9 +3,11 @@
 //! /                                 root
 //! ├── alice                         homedir for user "alice"
 //! │   └── calendar                  calendar namespace
-//! │       └── Personal              default calendar collection
-//! │           └── event1.ics        calendar event
-//! │           └── ...
+//! │   │   └── Personal              default calendar collection
+//! │   │       └── event1.ics        calendar event
+//! │   │       └── ...
+//! │   └── addressbook               addressbook namespace
+//! │       └── Personal              default addressbook collection
 //! ├── bob                           homedir for user "bob"
 //! │   └── ...
 
@@ -14,6 +16,7 @@ use futures::{future::BoxFuture, future::FutureExt};
 use aero_collections::user::User;
 use aero_dav::acltypes as acl;
 use aero_dav::caltypes as cal;
+use aero_dav::cardtypes as card;
 use aero_dav::realization::{self as all, All};
 use aero_dav::coretypes as dav;
 
@@ -24,6 +27,9 @@ use crate::dav::node::{
     PropertyResult,
 };
 use crate::dav::cal_resource::CalendarListNode;
+use crate::dav::card_resource::AddressbookListNode;
+
+// FIXME: must advertise support of webdav 3 for carddav (cf dav_header)
 
 /// The root of the webdav filesystem
 #[derive(Clone)]
@@ -106,15 +112,24 @@ impl DavNode for HomeNode {
     }
 
     fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<String>> {
-        async { vec!["calendar".to_string()] }.boxed()
+        async { vec!["calendar".to_string(), "addressbook".to_string()] }.boxed()
     }
 
     fn child_node<'a>(&self, user: &'a User, name: &str) -> BoxFuture<'a, IOResult<ChildNode>> {
         if name == "calendar" {
             async move {
-                let callist = CalendarListNode::new(user).await
+                let callist = CalendarListNode::new(user)
+                    .await
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::Interrupted, e))?; 
                 let node = Box::new(callist) as Box<dyn DavNode>;
+                Ok(ChildNode::Existing(node))
+            }.boxed()
+        } else if name == "addressbook" { 
+            async move {
+                let cardlist = AddressbookListNode::new(user)
+                    .await
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Interrupted, e))?;
+                let node = Box::new(cardlist) as Box<dyn DavNode>;
                 Ok(ChildNode::Existing(node))
             }.boxed()
         } else {
@@ -131,8 +146,14 @@ impl DavNode for HomeNode {
             dav::PropertyRequest::DisplayName,
             dav::PropertyRequest::ResourceType,
             dav::PropertyRequest::GetContentType,
+            dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
+                acl::PropertyRequest::CurrentUserPrivilegeSet,
+            )),
             dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
                 cal::PropertyRequest::CalendarHomeSet,
+            )),
+            dav::PropertyRequest::Extension(all::PropertyRequest::Card(
+                card::PropertyRequest::AddressbookHomeSet,
             )),
         ])
     }
@@ -149,6 +170,13 @@ impl DavNode for HomeNode {
                             acl::ResourceType::Principal,
                         )),
                     ])),
+                    dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
+                        acl::PropertyRequest::CurrentUserPrivilegeSet,
+                    )) =>
+                        Ok(dav::Property::Extension(all::Property::Acl(
+                            acl::Property::CurrentUserPrivilegeSet(
+                                acl::PrivilegeSet(vec![acl::Privilege::All]))
+                        ))),
                     dav::PropertyRequest::GetContentType =>
                         Ok(dav::Property::GetContentType("httpd/unix-directory".into())),
                     dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
@@ -158,6 +186,14 @@ impl DavNode for HomeNode {
                             //@FIXME we are hardcoding the calendar path, instead we would want to use
                             //objects
                             format!("/{}/calendar/", user.username),
+                        )),
+                    ))),
+                    dav::PropertyRequest::Extension(all::PropertyRequest::Card(
+                        card::PropertyRequest::AddressbookHomeSet,
+                    )) => Ok(dav::Property::Extension(all::Property::Card(
+                        card::Property::AddressbookHomeSet(dav::Href(
+                            //@FIXME same as above?
+                            format!("/{}/addressbook/", user.username),
                         )),
                     ))),
                     v => Err(v),
@@ -173,6 +209,6 @@ impl DavNode for HomeNode {
     }
 
     fn dav_header(&self) -> String {
-        "1, access-control, calendar-access".into()
+        "1, 3, access-control, calendar-access, addressbook".into()
     }
 }

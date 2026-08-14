@@ -69,7 +69,7 @@ impl Extension for Addressbook {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Acl {}
 impl Extension for Acl {
-    type Error = Disabled;
+    type Error = acl::Violation;
     type Property = acl::Property;
     type PropertyRequest = acl::PropertyRequest;
     type ResourceType = acl::ResourceType;
@@ -82,13 +82,45 @@ impl Extension for Acl {
 #[derive(Debug, PartialEq, Clone)]
 pub struct All {}
 impl Extension for All {
-    type Error = cal::Violation;
+    type Error = Error;
     type Property = Property<All>;
     type PropertyRequest = PropertyRequest;
     type ResourceType = ResourceType;
     type ReportType = ReportType<All>;
     type ReportTypeName = ReportTypeName;
     type Multistatus = Multistatus;
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Error {
+    Acl(acl::Violation),
+    Cal(cal::Violation),
+    Card(card::Violation),
+}
+impl xml::QRead<Error> for Error {
+    async fn qread(xml: &mut xml::Reader<impl xml::IRead>) -> Result<Self, error::ParsingError> {
+        match acl::Violation::qread(xml).await {
+            Err(error::ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(Error::Acl),
+        }
+        match cal::Violation::qread(xml).await {
+            Err(error::ParsingError::Recoverable) => (),
+            otherwise => return otherwise.map(Error::Cal),
+        }
+        card::Violation::qread(xml).await.map(Error::Card)
+    }
+}
+impl xml::QWrite for Error {
+    async fn qwrite( 
+      &self,
+        xml: &mut xml::Writer<impl xml::IWrite>,
+    ) -> Result<(), quick_xml::Error> {
+        match self {
+            Self::Acl(e) => e.qwrite(xml).await,
+            Self::Cal(e) => e.qwrite(xml).await,
+            Self::Card(e) => e.qwrite(xml).await,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]

@@ -40,7 +40,9 @@ impl<E: Extension> QRead<PropFind<E>> for PropFind<E> {
             xml.maybe_read::<PropName<E>>(&mut maybe_prop, &mut dirty)
                 .await?;
             if let Some(prop) = maybe_prop {
-                break PropFind::Prop(prop);
+                if !prop.0.is_empty() {
+                    break PropFind::Prop(prop);
+                }
             }
 
             // not found, skipping

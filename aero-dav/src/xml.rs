@@ -84,7 +84,7 @@ impl<T: IWrite> Writer<T> {
         self.create_ns_element("C", name)
     }
     pub fn create_card_element(&mut self, name: &str) -> BytesStart<'static> {
-        self.create_ns_element("C", name)
+        self.create_ns_element("CD", name)
     }
 
     fn create_ns_element(&mut self, ns: &str, name: &str) -> BytesStart<'static> {
@@ -98,6 +98,11 @@ impl<T: IWrite> Writer<T> {
             self.ns_to_apply.clear()
         }
         start
+    }
+
+    pub async fn create_dav_atom(&mut self, name: &str) -> quick_xml::Result<()> {
+        let elt = self.create_dav_element(name);
+        self.q.write_event_async(Event::Empty(elt)).await
     }
 }
 

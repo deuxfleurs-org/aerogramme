@@ -9,12 +9,13 @@ use aero_collections::{
 };
 use aero_collections::user::User;
 use aero_dav::realization::{self as all, All};
+use aero_dav::acltypes as acl;
 use aero_dav::coretypes as dav;
 use aero_dav::synctypes as sync;
 use aero_dav::versioningtypes as vers;
 
 use crate::dav::codec::SyncTokenUri;
-use crate::dav::multistatus::multistatus;
+use crate::dav::multistatus;
 
 pub(crate) type IOResult<T> = std::result::Result<T, std::io::Error>;
 pub(crate) type Content<'a> = BoxStream<'a, IOResult<Bytes>>;
@@ -266,6 +267,9 @@ pub(crate) trait DavObject: Send + Sync + Clone + 'static {
     /// Handler for reports.
     fn report<'a>(&'a mut self, user: &'a User, report: vers::Report<All>) -> BoxFuture<'a, IOResult<ReportResponse>>;
 
+    /// Additional Dav headers to advertise.
+    fn additional_dav_headers(&self) -> Vec<String>;
+
     /// Helper to get the id of the object contents in the store.
     /// Returns `None` if the object does not exist in the store.
     fn blob_id(&self) -> Option<BlobId> {
@@ -306,6 +310,9 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
                 dav::PropertyRequest::Extension(all::PropertyRequest::Vers(
                     vers::PropertyRequest::SupportedReportSet,
                 )),
+                dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
+                    acl::PropertyRequest::CurrentUserPrivilegeSet,
+                )),
             ]);
             props.extend_from_slice(&self.0.additional_supported_properties());
         }
@@ -335,6 +342,14 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
                         Ok(dav::Property::Extension(all::Property::Vers(
                             vers::Property::SupportedReportSet(self.0.supported_reports())
                         ))),
+                    dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
+                        acl::PropertyRequest::CurrentUserPrivilegeSet,
+                    )) =>
+                        Ok(dav::Property::Extension(all::Property::Acl(
+                            acl::Property::CurrentUserPrivilegeSet(
+                                acl::PrivilegeSet(vec![acl::Privilege::All])
+                            )
+                        ))),
                     _ => Err(n),
                 };
                 v.push(res)
@@ -344,7 +359,9 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
     }
 
     fn dav_header(&self) -> String {
-        "1, access-control".into()
+        let mut parts = vec!["1, 3, access-control".to_string()];
+        parts.extend(self.0.additional_dav_headers());
+        parts.join(", ")
     }
 
     fn content_type(&self) -> &str {
@@ -476,8 +493,9 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
 /// a Bayou DAV store.
 ///
 /// `DavStoredCollection` implements `DavNode`, implementing base WebDAV
-/// behavior, including WebDAV Sync, which can be further extended by
-/// implementors of `DavStoredCollection` through the `additional_*` methods.
+/// behavior, including WebDAV Sync and (very limited) Acl. Its behavior can be
+/// further extended by implementors of `DavStoredCollection` through the
+/// `additional_*` methods.
 pub(crate) trait DavStoredCollection: Send + Sync + Clone + 'static {
     /// Access to the underlying collection store
     fn collection(&self) -> &Collection;
@@ -563,6 +581,9 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
             dav::PropertyRequest::Extension(all::PropertyRequest::Vers(
                 vers::PropertyRequest::SupportedReportSet,
             )),
+            dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
+                acl::PropertyRequest::CurrentUserPrivilegeSet,
+            )),
         ];
         props.extend_from_slice(&self.0.additional_supported_properties());
         dav::PropName(props)
@@ -609,6 +630,14 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
                             vers::Property::SupportedReportSet(reports)
                         )))
                     },
+                    dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
+                        acl::PropertyRequest::CurrentUserPrivilegeSet,
+                    )) =>
+                        Ok(dav::Property::Extension(all::Property::Acl(
+                            acl::Property::CurrentUserPrivilegeSet(
+                                acl::PrivilegeSet(vec![acl::Privilege::All])
+                            )
+                        ))),
                     v => Err(v),
                 };
                 v.push(res)
@@ -618,7 +647,7 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
     }
     
     fn dav_header(&self) -> String {
-        let mut parts = vec!["1, access-control".to_string()];
+        let mut parts = vec!["1, 3, access-control".to_string()];
         parts.extend(self.0.additional_dav_headers());
         parts.join(", ")
     }
@@ -664,17 +693,18 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
                                 return Err(e),
                         },
                     };
-                    let extension = Some(all::Multistatus::Sync(sync::Multistatus {
+                    let extension = all::Multistatus::Sync(sync::Multistatus {
                         sync_token: sync::SyncToken(SyncTokenUri(new_token).to_string()),
-                    }));
+                    });
                     
-                    Ok(ReportResponse::Ok(multistatus(
-                        user,
-                        ok_node,
-                        not_found,
-                        dav::PropFind::Prop(sync_col.prop),
-                        extension
-                    ).await))
+                    Ok(ReportResponse::Ok(
+                        multistatus::Builder::new()
+                            .with_propfind_nodes(user, dav::PropFind::Prop(sync_col.prop), ok_node)
+                            .await
+                            .with_not_found(not_found)
+                            .with_extension(extension)
+                            .build()
+                    ))
                 },
                 _ => Err(unsupported())
             }

@@ -318,7 +318,6 @@ impl QWrite for Violation {
                 }
                 xml.q.write_event_async(Event::End(end)).await
             }
-            Self::NumberOfMatchesWithinLimits => atom("number-of-matches-within-limits").await,
         }
     }
 }

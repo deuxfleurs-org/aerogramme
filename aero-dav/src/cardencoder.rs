@@ -141,10 +141,6 @@ impl QWrite for Violation {
                 }
                 xml.q.write_event_async(Event::End(end)).await
             }
-            Self::NumberOfMatchesWithinLimits => {
-                let empty_tag = xml.create_dav_element("number-of-matches-within-limits");
-                xml.q.write_event_async(Event::Empty(empty_tag)).await
-            }
         }
     }
 }
@@ -251,8 +247,12 @@ impl<E: Extension> QWrite for AddressbookMultiget<E> {
 impl QWrite for AddressDataType {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut typ = xml.create_card_element("address-data-type");
-        typ.push_attribute(("content-type", self.content_type.as_str()));
-        typ.push_attribute(("version", self.version.as_str()));
+        if let Some(content_type) = self.content_type.as_explicit() {
+            typ.push_attribute(("content-type", content_type.0.as_str()))
+        };
+        if let Some(version) = self.version.as_explicit() {
+            typ.push_attribute(("version", version.0.as_str()));
+        }
         xml.q.write_event_async(Event::Empty(typ)).await
     }
 }
@@ -311,7 +311,7 @@ impl QWrite for Filter {
 impl QWrite for PropFilter {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut start = xml.create_card_element("prop-filter");
-        start.push_attribute(("name", self.name.0.as_str()));
+        start.push_attribute(("name", self.name.to_string().as_str()));
         if let Some(test) = self.test.as_explicit() {
             start.push_attribute(("test", test.as_str()));
         }
@@ -432,7 +432,7 @@ impl QWrite for PropKind {
 impl QWrite for CardProp {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         let mut empty = xml.create_card_element("prop");
-        empty.push_attribute(("name", self.name.0.as_str()));
+        empty.push_attribute(("name", self.name.to_string().as_str()));
         if let Some(nv) = self.novalue.as_explicit() {
             empty.push_attribute(("novalue", nv.as_str()))
         }
@@ -443,7 +443,8 @@ impl QWrite for CardProp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::realization::Addressbook;
+    use crate::realization::{Addressbook, All, Error};
+    use crate::acltypes as acl;
     use crate::coretypes as dav;
     use crate::xml::WithDefault;
     use tokio::io::AsyncWriteExt;
@@ -455,7 +456,7 @@ mod tests {
         let q = quick_xml::writer::Writer::new_with_indent(&mut tokio_buffer, b' ', 4);
         let ns_to_apply = vec![
             ("xmlns:D".into(), "DAV:".into()),
-            ("xmlns:C".into(), "urn:ietf:params:xml:ns:carddav".into()),
+            ("xmlns:CD".into(), "urn:ietf:params:xml:ns:carddav".into()),
         ];
         let mut writer = Writer { q, ns_to_apply };
 
@@ -470,9 +471,9 @@ mod tests {
     async fn rfc_principal_address() {
         let got = Property::PrincipalAddress(dav::Href("/system/cyrus.vcf".to_string()));
 
-        let expected = r#"<C:principal-address xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+        let expected = r#"<CD:principal-address xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
     <D:href>/system/cyrus.vcf</D:href>
-</C:principal-address>"#;
+</CD:principal-address>"#;
         
         let ser = serialize(&got).await;
 
@@ -483,15 +484,13 @@ mod tests {
     async fn rfc_supported_collation_set() {
         let got = Property::SupportedCollationSet(vec![
             SupportedCollation(Collation::AsciiCaseMap),
-            SupportedCollation(Collation::Unknown("i;octet".to_string())),
             SupportedCollation(Collation::UnicodeCaseMap),
         ]);
 
-        let expected = r#"<C:supported-collation-set xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
-    <C:supported-collation>i;ascii-casemap</C:supported-collation>
-    <C:supported-collation>i;octet</C:supported-collation>
-    <C:supported-collation>i;unicode-casemap</C:supported-collation>
-</C:supported-collation-set>"#;
+        let expected = r#"<CD:supported-collation-set xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
+    <CD:supported-collation>i;ascii-casemap</CD:supported-collation>
+    <CD:supported-collation>i;unicode-casemap</CD:supported-collation>
+</CD:supported-collation-set>"#;
 
         let ser = serialize(&got).await;
 
@@ -510,23 +509,23 @@ mod tests {
                         version: Default::default(),
                         prop_kind: Some(PropKind::Prop(vec![
                             CardProp {
-                                name: PropertyName("VERSION".into()),
+                                name: PropertyName { group: None, name: "VERSION".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("UID".into()),
+                                name: PropertyName { group: None, name: "UID".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("NICKNAME".into()),
+                                name: PropertyName { group: None, name: "NICKNAME".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("EMAIL".into()),
+                                name: PropertyName { group: None, name: "EMAIL".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("FN".into()),
+                                name: PropertyName { group: None, name: "FN".into() },
                                 novalue: Default::default(),
                             },
                         ])),
@@ -535,7 +534,7 @@ mod tests {
             ]))),
             filter: Filter {
                 prop_filters: vec![PropFilter {
-                    name: PropertyName("NICKNAME".to_string()),
+                    name: PropertyName { group: None, name: "NICKNAME".to_string() },
                     test: Default::default(),
                     rules: PropFilterRules::Match {
                         text_match: vec![TextMatch {
@@ -552,23 +551,23 @@ mod tests {
             limit: None,
         };
 
-        let expected = r#"<C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+        let expected = r#"<CD:addressbook-query xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
     <D:prop>
         <D:getetag/>
-        <C:address-data>
-            <C:prop name="VERSION"/>
-            <C:prop name="UID"/>
-            <C:prop name="NICKNAME"/>
-            <C:prop name="EMAIL"/>
-            <C:prop name="FN"/>
-        </C:address-data>
+        <CD:address-data>
+            <CD:prop name="VERSION"/>
+            <CD:prop name="UID"/>
+            <CD:prop name="NICKNAME"/>
+            <CD:prop name="EMAIL"/>
+            <CD:prop name="FN"/>
+        </CD:address-data>
     </D:prop>
-    <C:filter>
-        <C:prop-filter name="NICKNAME">
-            <C:text-match collation="i;unicode-casemap" match-type="equals">me</C:text-match>
-        </C:prop-filter>
-    </C:filter>
-</C:addressbook-query>"#;
+    <CD:filter>
+        <CD:prop-filter name="NICKNAME">
+            <CD:text-match collation="i;unicode-casemap" match-type="equals">me</CD:text-match>
+        </CD:prop-filter>
+    </CD:filter>
+</CD:addressbook-query>"#;
         
         let ser = serialize(&got).await;
 
@@ -610,13 +609,13 @@ mod tests {
             responsedescription: None,
         };
         
-        let expected = r#"<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+        let expected = r#"<D:multistatus xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
     <D:response>
         <D:href>/home/bernard/addressbook/v102.vcf</D:href>
         <D:propstat>
             <D:prop>
                 <D:getetag>&quot;23ba4d-ff11fb&quot;</D:getetag>
-                <C:address-data>BEGIN:VCARD</C:address-data>
+                <CD:address-data>BEGIN:VCARD</CD:address-data>
             </D:prop>
             <D:status>HTTP/1.1 200 OK</D:status>
         </D:propstat>
@@ -640,23 +639,23 @@ mod tests {
                         version: Default::default(),
                         prop_kind: Some(PropKind::Prop(vec![
                             CardProp {
-                                name: PropertyName("VERSION".into()),
+                                name: PropertyName { group: None, name: "VERSION".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("UID".into()),
+                                name: PropertyName { group: None, name: "UID".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("NICKNAME".into()),
+                                name: PropertyName { group: None, name: "NICKNAME".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("EMAIL".into()),
+                                name: PropertyName { group: None, name: "EMAIL".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("FN".into()),
+                                name: PropertyName { group: None, name: "FN".into() },
                                 novalue: Default::default(),
                             },
                         ])),
@@ -666,7 +665,7 @@ mod tests {
             filter: Filter {
                 prop_filters: vec![
                     PropFilter {
-                        name: PropertyName("FN".to_string()),
+                        name: PropertyName { group: None, name: "FN".to_string() },
                         test: Default::default(),
                         rules: PropFilterRules::Match {
                             text_match: vec![TextMatch {
@@ -679,7 +678,7 @@ mod tests {
                         },
                     },
                     PropFilter {
-                        name: PropertyName("EMAIL".to_string()),
+                        name: PropertyName { group: None, name: "EMAIL".to_string() },
                         test: Default::default(),
                         rules: PropFilterRules::Match {
                             text_match: vec![TextMatch {
@@ -697,26 +696,26 @@ mod tests {
             limit: None,
         };
 
-        let expected = r#"<C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+        let expected = r#"<CD:addressbook-query xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
     <D:prop>
         <D:getetag/>
-        <C:address-data>
-            <C:prop name="VERSION"/>
-            <C:prop name="UID"/>
-            <C:prop name="NICKNAME"/>
-            <C:prop name="EMAIL"/>
-            <C:prop name="FN"/>
-        </C:address-data>
+        <CD:address-data>
+            <CD:prop name="VERSION"/>
+            <CD:prop name="UID"/>
+            <CD:prop name="NICKNAME"/>
+            <CD:prop name="EMAIL"/>
+            <CD:prop name="FN"/>
+        </CD:address-data>
     </D:prop>
-    <C:filter test="anyof">
-        <C:prop-filter name="FN">
-            <C:text-match collation="i;unicode-casemap" match-type="contains">daboo</C:text-match>
-        </C:prop-filter>
-        <C:prop-filter name="EMAIL">
-            <C:text-match collation="i;unicode-casemap" match-type="contains">daboo</C:text-match>
-        </C:prop-filter>
-    </C:filter>
-</C:addressbook-query>"#;
+    <CD:filter test="anyof">
+        <CD:prop-filter name="FN">
+            <CD:text-match collation="i;unicode-casemap" match-type="contains">daboo</CD:text-match>
+        </CD:prop-filter>
+        <CD:prop-filter name="EMAIL">
+            <CD:text-match collation="i;unicode-casemap" match-type="contains">daboo</CD:text-match>
+        </CD:prop-filter>
+    </CD:filter>
+</CD:addressbook-query>"#;
         
         let ser = serialize(&got).await;
 
@@ -783,13 +782,13 @@ mod tests {
             responsedescription: None,
         };
         
-        let expected = r#"<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+        let expected = r#"<D:multistatus xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
     <D:response>
         <D:href>/home/bernard/addressbook/v102.vcf</D:href>
         <D:propstat>
             <D:prop>
                 <D:getetag>&quot;23ba4d-ff11fb&quot;</D:getetag>
-                <C:address-data>BEGIN:VCARD</C:address-data>
+                <CD:address-data>BEGIN:VCARD</CD:address-data>
             </D:prop>
             <D:status>HTTP/1.1 200 OK</D:status>
         </D:propstat>
@@ -799,7 +798,7 @@ mod tests {
         <D:propstat>
             <D:prop>
                 <D:getetag>&quot;23ba4d-ff11fc&quot;</D:getetag>
-                <C:address-data>BEGIN:VCARD</C:address-data>
+                <CD:address-data>BEGIN:VCARD</CD:address-data>
             </D:prop>
             <D:status>HTTP/1.1 200 OK</D:status>
         </D:propstat>
@@ -820,7 +819,7 @@ mod tests {
             filter: Filter {
                 prop_filters: vec![
                     PropFilter {
-                        name: PropertyName("FN".to_string()),
+                        name: PropertyName { group: None, name: "FN".to_string() },
                         test: Default::default(),
                         rules: PropFilterRules::Match {
                             text_match: vec![TextMatch {
@@ -838,19 +837,19 @@ mod tests {
             limit: Some(Limit { nresults: 2 }),
         };
 
-        let expected = r#"<C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+        let expected = r#"<CD:addressbook-query xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
     <D:prop>
         <D:getetag/>
     </D:prop>
-    <C:filter test="anyof">
-        <C:prop-filter name="FN">
-            <C:text-match collation="i;unicode-casemap" match-type="contains">daboo</C:text-match>
-        </C:prop-filter>
-    </C:filter>
-    <C:limit>
-        <C:nresults>2</C:nresults>
-    </C:limit>
-</C:addressbook-query>"#;
+    <CD:filter test="anyof">
+        <CD:prop-filter name="FN">
+            <CD:text-match collation="i;unicode-casemap" match-type="contains">daboo</CD:text-match>
+        </CD:prop-filter>
+    </CD:filter>
+    <CD:limit>
+        <CD:nresults>2</CD:nresults>
+    </CD:limit>
+</CD:addressbook-query>"#;
         
         let ser = serialize(&got).await;
         assert_eq!(ser, expected)
@@ -859,7 +858,7 @@ mod tests {
     // §8.6.5, response
     #[tokio::test]
     async fn rfc_addressbook_query_res_8_6_5() {
-        let got = dav::Multistatus::<Addressbook> {
+        let got = dav::Multistatus::<All> {
             extension: None,
             responses: vec![
                 dav::Response {
@@ -868,7 +867,9 @@ mod tests {
                         dav::Status(http::status::StatusCode::INSUFFICIENT_STORAGE),
                     ),
                     error: Some(dav::Error(vec![
-                        dav::Violation::Extension(Violation::NumberOfMatchesWithinLimits),
+                        dav::Violation::Extension(Error::Acl(
+                            acl::Violation::NumberOfMatchesWithinLimits
+                        )),
                     ])),
                     responsedescription: Some(dav::ResponseDescription(
                         "\n         Only two matching records were returned\n       ".into()
@@ -915,7 +916,7 @@ mod tests {
             responsedescription: None,
         };
         
-        let expected = r#"<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+        let expected = r#"<D:multistatus xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
     <D:response>
         <D:href>/home/bernard/addressbook/</D:href>
         <D:status>HTTP/1.1 507 Insufficient Storage</D:status>
@@ -962,23 +963,23 @@ mod tests {
                         version: Default::default(),
                         prop_kind: Some(PropKind::Prop(vec![
                             CardProp {
-                                name: PropertyName("VERSION".into()),
+                                name: PropertyName { group: None, name: "VERSION".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("UID".into()),
+                                name: PropertyName { group: None, name: "UID".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("NICKNAME".into()),
+                                name: PropertyName { group: None, name: "NICKNAME".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("EMAIL".into()),
+                                name: PropertyName { group: None, name: "EMAIL".into() },
                                 novalue: Default::default(),
                             },
                             CardProp {
-                                name: PropertyName("FN".into()),
+                                name: PropertyName { group: None, name: "FN".into() },
                                 novalue: Default::default(),
                             },
                         ])),
@@ -991,20 +992,20 @@ mod tests {
             ],
         };
 
-        let expected = r#"<C:addressbook-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+        let expected = r#"<CD:addressbook-multiget xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
     <D:prop>
         <D:getetag/>
-        <C:address-data>
-            <C:prop name="VERSION"/>
-            <C:prop name="UID"/>
-            <C:prop name="NICKNAME"/>
-            <C:prop name="EMAIL"/>
-            <C:prop name="FN"/>
-        </C:address-data>
+        <CD:address-data>
+            <CD:prop name="VERSION"/>
+            <CD:prop name="UID"/>
+            <CD:prop name="NICKNAME"/>
+            <CD:prop name="EMAIL"/>
+            <CD:prop name="FN"/>
+        </CD:address-data>
     </D:prop>
     <D:href>/home/bernard/addressbook/vcf102.vcf</D:href>
     <D:href>/home/bernard/addressbook/vcf1.vcf</D:href>
-</C:addressbook-multiget>"#;
+</CD:addressbook-multiget>"#;
         
         let ser = serialize(&got).await;
         assert_eq!(ser, expected)
@@ -1054,13 +1055,13 @@ mod tests {
             responsedescription: None,
         };
         
-        let expected = r#"<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+        let expected = r#"<D:multistatus xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
     <D:response>
         <D:href>/home/bernard/addressbook/vcf102.vcf</D:href>
         <D:propstat>
             <D:prop>
                 <D:getetag>&quot;23ba4d-ff11fb&quot;</D:getetag>
-                <C:address-data>BEGIN:VCARD</C:address-data>
+                <CD:address-data>BEGIN:VCARD</CD:address-data>
             </D:prop>
             <D:status>HTTP/1.1 200 OK</D:status>
         </D:propstat>
@@ -1094,14 +1095,14 @@ mod tests {
             ],
         };
 
-        let expected = r#"<C:addressbook-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+        let expected = r#"<CD:addressbook-multiget xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
     <D:prop>
         <D:getetag/>
-        <C:address-data content-type="text/vcard" version="4.0">
-        </C:address-data>
+        <CD:address-data content-type="text/vcard" version="4.0">
+        </CD:address-data>
     </D:prop>
     <D:href>/home/bernard/addressbook/vcf3.vcf</D:href>
-</C:addressbook-multiget>"#;
+</CD:addressbook-multiget>"#;
         
         let ser = serialize(&got).await;
         assert_eq!(ser, expected)
@@ -1132,12 +1133,12 @@ mod tests {
             responsedescription: None,
         };
         
-        let expected = r#"<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+        let expected = r#"<D:multistatus xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
     <D:response>
         <D:href>/home/bernard/addressbook/vcf3.vcf</D:href>
         <D:status>HTTP/1.1 415 Unsupported Media Type</D:status>
         <D:error>
-            <C:supported-address-data-conversion/>
+            <CD:supported-address-data-conversion/>
         </D:error>
         <D:responsedescription>Unable to convert from vCard v3.0
        to vCard v4.0</D:responsedescription>
