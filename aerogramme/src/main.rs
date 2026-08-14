@@ -1,15 +1,17 @@
 mod server;
 
-use std::io::Read;
-use std::path::PathBuf;
+use std::{io::Read, net::SocketAddr, path::PathBuf, sync::Arc};
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use nix::{sys::signal, unistd::Pid};
 
+use prometheus_hyper::Server as PrometheusServer;
+
 use crate::server::Server;
 use aero_user::config::*;
 use aero_user::login::{static_provider::*, *};
+use metrics::{REGISTRY};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -150,6 +152,23 @@ fn tracer() {
     tracing_subscriber::fmt::init();
 }
 
+async fn serve_metrics() {
+    // Launch HTTP metric server in background, it handles its own errors
+    let _jh = tokio::spawn(async move {
+        if let Err(e) = PrometheusServer::run(
+            Arc::clone(&REGISTRY),
+            SocketAddr::from(([0; 4], 8080)),
+            std::future::pending(),
+        )
+        .await
+        {
+            eprintln!("Prometheus server error: {e}");
+        }
+    });
+}
+
+
+
 #[tokio::main]
 async fn main() -> Result<()> {
     if std::env::var("RUST_LOG").is_err() {
@@ -164,6 +183,7 @@ async fn main() -> Result<()> {
     }));
 
     tracer();
+    serve_metrics().await;
 
     // Set a default rustls implementation
     // Try ring first, fall back to aws_lc_rs
