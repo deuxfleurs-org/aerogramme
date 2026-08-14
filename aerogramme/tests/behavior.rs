@@ -7,6 +7,7 @@ use crate::common::fragments::*;
 fn main() {
     // IMAP
     rfc3501_imap4rev1_base();
+    rfc3501_imap4rev1_fetch_body_mime();
     rfc6851_imapext_move();
     rfc4551_imapext_condstore();
     rfc2177_imapext_idle();
@@ -25,7 +26,6 @@ fn main() {
 
     // Non-regression testing
     noreg_imap_append_in_current_mailbox();
-    noreg_imap_fetch_body_empty_brackets();
 
     println!("✅ SUCCESS 🌟🚀🥳🙏🥹");
 }
@@ -54,7 +54,7 @@ fn rfc3501_imap4rev1_base() {
             FetchKind::Rfc822,
             FetchMod::None,
         )
-        .context("fetch rfc822 message, should be our first message")?;
+            .context("fetch rfc822 message, should be our first message")?;
         let orig_email = std::str::from_utf8(EMAIL1)?;
         assert!(srv_msg.contains(orig_email));
 
@@ -62,13 +62,13 @@ fn rfc3501_imap4rev1_base() {
         let srv_msg = fetch(
             imap_socket,
             Selection::FirstId,
-            FetchKind::HeaderFields(vec![
+            FetchKind::Body(Some(FetchBodySection::HeaderFields(vec![
                 "DATE".to_string(),
                 "TO".to_string(),
-            ]),
+            ]))),
             FetchMod::None,
         )
-        .context("fetch selected headers of message")?;
+            .context("fetch selected headers of message")?;
         let reference =
             std::str::from_utf8(EMAIL1)?
             .lines()
@@ -93,14 +93,46 @@ fn rfc3501_imap4rev1_base() {
             StoreAction::AddFlags,
             StoreMod::None,
         )
-        .context("should add delete flag to the email")?;
+            .context("should add delete flag to the email")?;
+
         expunge(imap_socket).context("expunge emails")?;
         rename_mailbox(imap_socket, Mailbox::Archive, Mailbox::Drafts)
             .context("Archive mailbox is renamed Drafts")?;
         delete_mailbox(imap_socket, Mailbox::Drafts).context("Drafts mailbox is deleted")?;
         Ok(())
     })
-    .expect("test fully run");
+        .expect("test fully run");
+}
+
+// FETCH BODY tests from imaptest's fetch-body-mime test
+fn rfc3501_imap4rev1_fetch_body_mime() {
+    println!("🧪 rfc3501_imap4rev1_fetch_body_mime");
+    common::aerogramme_provider_daemon_dev(|imap_socket, _lmtp_socket, _dav_socket| {
+        connect(imap_socket).context("server says hello")?;
+        login(imap_socket, Account::Alice).context("login test")?;
+        let select_res =
+            select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
+        assert!(select_res.contains("* 0 EXISTS"));
+
+        let append_res = append(imap_socket, Email::Multipart2).context("append email")?;
+        assert!(append_res.contains("* 1 EXISTS"));
+
+        // FETCH BODY[] must return the entire message:
+        //
+        // > If BODY[] is specified (the section specification is omitted), the
+        // > FETCH is requesting the [RFC5322] expression of the entire message.
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Body(None),
+            FetchMod::None,
+        )
+            .context("fetch BODY[]")?;
+        assert!(srv_msg.contains(str::from_utf8(EMAIL3)?));
+
+        Ok(())
+    })
+        .expect("test fully run");
 }
 
 fn rfc3691_imapext_unselect() {
@@ -1708,45 +1740,6 @@ fn noreg_imap_append_in_current_mailbox() {
             imap_socket,
             Selection::FirstId,
             FetchKind::Rfc822,
-            FetchMod::None,
-        )
-        .context("message is still present")?;
-        let orig_email = std::str::from_utf8(EMAIL2)?;
-        assert!(srv_msg.contains(orig_email));
-
-        Ok(())
-    })
-    .expect("test fully run");
-}
-
-fn noreg_imap_fetch_body_empty_brackets() {
-    /*
-     * We refactored our whole email querying logic around Aerogramme 0.4.0
-     * and a regression was introduced where FETCH x (BODY[]) or FETCH x (BODY.PEEK[])
-     * stopped returning the whole email content (as RFC822) and started returning only the email
-     * body. Here, the name "body" should not be understood as the IMF/MIME body. Instead, you
-     * should understand that the email is the data/body and that the IMAP server also tracks
-     * metadata (computed or not) like the flags and the email structure. So, yes, basically
-     * BODY[] here means the email content, including its headers. Naming is hard.
-     */
-    println!("🧪 noreg_imap_fetch_body_empty_brackets");
-    common::aerogramme_provider_daemon_dev(|imap_socket, _lmtp_socket, _dav_socket| {
-        // 1. Setup test
-        connect(imap_socket).context("server says hello")?;
-        capability(imap_socket, Extension::None).context("check server capabilities")?;
-        login(imap_socket, Account::Alice).context("login test")?;
-        let select_res =
-            select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
-        assert!(select_res.contains("* 0 EXISTS"));
-
-        // 2. Run commands that must refresh the mailbox view
-        append(imap_socket, Email::Basic).context("insert email in INBOX")?;
-
-        // 3. If the mailbox view is correctly refreshed, FETCH should work
-        let srv_msg = fetch(
-            imap_socket,
-            Selection::FirstId,
-            FetchKind::BodyBracket,
             FetchMod::None,
         )
         .context("message is still present")?;
