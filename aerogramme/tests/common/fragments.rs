@@ -95,8 +95,40 @@ pub enum FetchKind {
     Body(Option<FetchBodySection>),
 }
 
-pub enum FetchBodySection {
+pub struct FetchBodySection {
+    pub part_no: Vec<u64>,
+    pub part_spec: Option<PartSpec>,
+}
+
+impl ToString for FetchBodySection {
+    fn to_string(&self) -> String {
+        let no = self.part_no.iter().map(u64::to_string).collect::<Vec<_>>().join(".");
+        match &self.part_spec {
+            None => no,
+            Some(spec) =>
+                if no.is_empty() {
+                    spec.to_string()
+                } else {
+                    format!("{}.{}", no, spec.to_string())
+                }
+        }
+    }
+}
+
+pub enum PartSpec {
     HeaderFields(Vec<String>),
+    Mime,
+}
+
+impl ToString for PartSpec {
+    fn to_string(&self) -> String {
+        match self {
+            PartSpec::HeaderFields(fields) => 
+                format!("HEADER.FIELDS ({})", fields.join(" ")),
+            PartSpec::Mime =>
+                "MIME".to_string(),
+        }
+    }
 }
 
 pub enum FetchMod {
@@ -348,11 +380,7 @@ pub fn fetch(
         FetchKind::Rfc822Size => "RFC822.SIZE",
         FetchKind::Body(None) => "BODY[]",
         FetchKind::Body(Some(section)) => {
-            let section = match section {
-                FetchBodySection::HeaderFields(fields) =>
-                    format!("HEADER.FIELDS ({})", fields.join(" ")),
-            };
-            &format!("BODY[{}]", section)
+            &format!("BODY[{}]", section.to_string())
         },
     };
 

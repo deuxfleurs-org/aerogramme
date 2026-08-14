@@ -192,11 +192,12 @@ impl<'a> NodeMime<'a> {
     /// this part.
     fn mime(&self) -> Result<ExtractedFull<'a>> {
         // TODO: check
-        let res = raw_kv_to_bytes(
+        let mut res = raw_kv_to_bytes(
             self.mime_headers()
                 .into_iter()
                 .map(|(f, body)| (f.raw_name(), body)),
         );
+        res.extend(b"\r\n");
         Ok(ExtractedFull(res.into()))
     }
 

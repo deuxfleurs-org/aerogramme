@@ -62,10 +62,13 @@ fn rfc3501_imap4rev1_base() {
         let srv_msg = fetch(
             imap_socket,
             Selection::FirstId,
-            FetchKind::Body(Some(FetchBodySection::HeaderFields(vec![
-                "DATE".to_string(),
-                "TO".to_string(),
-            ]))),
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![],
+                part_spec: Some(PartSpec::HeaderFields(vec![
+                    "DATE".to_string(),
+                    "TO".to_string(),
+                ])),
+            })),
             FetchMod::None,
         )
             .context("fetch selected headers of message")?;
@@ -117,10 +120,10 @@ fn rfc3501_imap4rev1_fetch_body_mime() {
         let append_res = append(imap_socket, Email::Multipart2).context("append email")?;
         assert!(append_res.contains("* 1 EXISTS"));
 
-        // FETCH BODY[] must return the entire message:
+        // FETCH BODY[] returns the entire message.
         //
-        // > If BODY[] is specified (the section specification is omitted), the
-        // > FETCH is requesting the [RFC5322] expression of the entire message.
+        // "If BODY[] is specified (the section specification is omitted), the
+        // FETCH is requesting the [RFC5322] expression of the entire message."
         let srv_msg = fetch(
             imap_socket,
             Selection::FirstId,
@@ -130,6 +133,28 @@ fn rfc3501_imap4rev1_fetch_body_mime() {
             .context("fetch BODY[]")?;
         assert!(srv_msg.contains(str::from_utf8(EMAIL3)?));
 
+        // FETCH BODY[MIME] returns MIME headers
+        //
+        // Note the final \r\n: according to the RFC, "Subsetting [header
+        // fields] does not exclude the [RFC5322] delimiting blank line between
+        // the header and the body; the blank line is included in all header
+        // fetches, except in the case of a message that has no body and no
+        // blank line."
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![1],
+                part_spec: Some(PartSpec::Mime),
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[1.MIME]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal respectively
+        assert!(srv_msg.contains("}\r\nContent-Type: text/x-myown; charset=us-ascii\r\n\r\n)"));
+
+
+        
         Ok(())
     })
         .expect("test fully run");
