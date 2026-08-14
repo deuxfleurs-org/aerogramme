@@ -1,6 +1,6 @@
 use super::extension::Extension;
 use super::coretypes::*;
-use super::xml::{IWrite, Node, QWrite, Writer};
+use super::xml::{IWrite, QWrite, Writer};
 use quick_xml::events::{BytesText, Event};
 use quick_xml::Error as QError;
 

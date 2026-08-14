@@ -13,8 +13,11 @@ pub const CAL_URN: &[u8] = b"urn:ietf:params:xml:ns:caldav";
 pub const CARD_URN: &[u8] = b"urn:ietf:params:xml:ns:carddav";
 
 // Async traits
-pub trait IWrite = AsyncWrite + Unpin + Send;
-pub trait IRead = AsyncBufRead + Unpin;
+pub trait IWrite: AsyncWrite + Unpin + Send {}
+impl<T> IWrite for T where T: AsyncWrite + Unpin + Send {}
+
+pub trait IRead: AsyncBufRead + Unpin {}
+impl<T> IRead for T where T: AsyncBufRead + Unpin {}
 
 // Serialization/Deserialization traits
 pub trait QWrite {
@@ -28,7 +31,8 @@ pub trait QRead<T> {
 }
 
 // The representation of an XML node in Rust
-pub trait Node<T> = QRead<T> + QWrite + std::fmt::Debug + PartialEq + Clone + Sync;
+pub trait Node<T>: QRead<T> + QWrite + std::fmt::Debug + PartialEq + Clone + Sync {}
+impl<U, T> Node<T> for U where U: QRead<T> + QWrite + std::fmt::Debug + PartialEq + Clone + Sync {}
 
 // Indicates whether a value was obtained from the default value of an attribute
 // or was specified explicitly

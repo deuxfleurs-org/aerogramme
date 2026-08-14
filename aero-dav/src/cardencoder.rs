@@ -3,7 +3,7 @@ use quick_xml::Error as QError;
 
 use super::cardtypes::*;
 use super::extension::Extension;
-use super::xml::{IWrite, Node, QWrite, Writer};
+use super::xml::{IWrite, QWrite, Writer};
 
 // ---------------------- DAV::resourcetype ----------------------------------
 impl QWrite for ResourceType {

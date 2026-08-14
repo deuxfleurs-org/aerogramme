@@ -9,6 +9,9 @@ members = [
   "aero-sasl",
   "aero-user",
   "aero-vcard",
+  "smtp-message",
+  "smtp-server",
+  "smtp-server-types",
   "aero-dav/fuzz",
   "aerogramme",
 ]
@@ -16,22 +19,29 @@ members = [
 default-members = ["aerogramme"]
 
 [workspace.dependencies]
-# internal crates
-aero-bayou = { version = "0.4.0", path = "aero-bayou" }
-aero-collections = { version = "0.4.0", path = "aero-collections" }
-aero-dav = { version = "0.4.0", path = "aero-dav" }
-aero-ical = { version = "0.4.0", path = "aero-ical" }
-aero-proto = { version = "0.4.0", path = "aero-proto" }
-aero-sasl = { version = "0.4.0", path = "aero-sasl" }
-aero-user = { version = "0.4.0", path = "aero-user" }
-aero-vcard = { version = "0.4.0", path = "aero-vcard" }
-aerogramme = { version = "0.4.0", path = "aerogramme" }
+# internal vendored/forked crates
+smtp-message = { version = "0.5.0", path = "smtp-message" }
+smtp-server = { version = "0.5.0", path = "smtp-server" }
+smtp-server-types = { version = "0.5.0", path = "smtp-server-types" }
+
+# internal core crates
+aero-bayou = { version = "0.5.0", path = "aero-bayou" }
+aero-collections = { version = "0.5.0", path = "aero-collections" }
+aero-dav = { version = "0.5.0", path = "aero-dav" }
+aero-ical = { version = "0.5.0", path = "aero-ical" }
+aero-proto = { version = "0.5.0", path = "aero-proto" }
+aero-sasl = { version = "0.5.0", path = "aero-sasl" }
+aero-user = { version = "0.5.0", path = "aero-user" }
+aero-vcard = { version = "0.5.0", path = "aero-vcard" }
+aerogramme = { version = "0.5.0", path = "aerogramme" }
 
 # async runtime
+smol = "1" # Used by Kannader imported crates; maybe we'll want to rewrite to tokio.
+piper = "0.1" # Used by Kannader imported crates; maybe we'll want to rewrite code using it with a tokio primitive
 tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "io-util", "net", "time", "macros", "sync", "signal", "fs"] }
 tokio-util = { version = "0.7", features = [ "compat" ]  }
 tokio-stream = { version = "0.1" }
-futures = "0.3"
+futures = { version = "0.3", features = ["write-all-vectored"] }
 
 # debug
 log = "0.4"
@@ -41,15 +51,22 @@ tracing = "0.1"
 thiserror = "1"
 
 # language extensions
+auto_enums = "0.8"
 lazy_static = "1"
 duplexify = "1"
 im = "15"
 anyhow = "1"
 async-trait = "0.1"
-chrono = { version = "0.4", default-features = false, features = ["alloc"] }
+pin-project = "1"
+maplit = "1"
+itertools = "0.15"
+chrono = { version = "0.4", features = ["alloc"] }
+
+# text encoding
 # TODO: replace with std::char::to_titlecase when it becomes stable
 unicode-case-mapping = "1.0.0"
 unicode-normalization = "0.1.25"
+idna = "1"
 
 # process related
 nix = { version = "0.30", features = ["signal"] }
@@ -57,8 +74,6 @@ clap = { version = "3", features = ["derive", "env"] }
 
 # email protocols
 eml-codec = "0.4.0"
-smtp-message = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
-smtp-server = { git = "http://github.com/Alexis211/kannader", branch = "feature/lmtp" }
 imap-codec = { version = "2.0.0", features = ["bounded-static", "ext_condstore_qresync"] }
 imap-flow = { git = "https://github.com/duesee/imap-next.git", rev = "dce759a8531f317e8d7311fb032b366db6698e38" }
 
@@ -75,7 +90,8 @@ hyper-util = { version = "0.1", features = ["full"] }
 reqwest = { version = "0.12", features = [ "blocking" ]} # for testing purposes only
 
 # serialization, compression & parsing
-serde = "1.0"
+regex-automata = "0.1" # can't upgrade past 0.1 without rewriting code
+serde = { version = "1.0", features = [ "serde_derive" ] }
 rmp-serde = "1.3"
 toml = "0.9"
 base64 = "0.22"
@@ -97,11 +113,15 @@ rpassword = "7"
 ldap3 = { version = "0.12", default-features = false, features = ["tls-rustls", "tls-rustls-ring"] }
 
 # storage
-k2v-client = { git = "https://git.deuxfleurs.fr/Deuxfleurs/garage.git", rev = "a06909922e0659ab9c215ccf7bc9199de827e25a" }
+k2v-client = { git = "https://git.deuxfleurs.fr/Deuxfleurs/garage.git", branch = "main-v2" }
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-s3 = "1"
 aws-smithy-runtime = "1"
 aws-smithy-runtime-api = "1"
+
+# testing
+quickcheck = "1"
+quickcheck_macros = "1"
 
 [patch.crates-io]
 imap-types = { git = "https://github.com/superboum/imap-codec", branch = "custom/aerogramme" }

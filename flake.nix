@@ -25,7 +25,7 @@
   };
 
   outputs = { self, albatros, nixpkgs, cargo2nix, rust-overlay, flake-utils }:
-    flake-utils.lib.eachDefaultSystem(system:
+   flake-utils.lib.eachDefaultSystem(system:
       let
         ###
         #
@@ -39,12 +39,15 @@
           ];
         };
 
+        # @FIXME instead we should parse rust-toolchain.toml and extract version from toolchain.channel
+        # we should parse it and fail if channels is not major.minor.patch.
+        rust_version = "1.97.1";
+
         crossTargets = [
           rec { llvm = "x86_64-unknown-linux-musl"; rust = llvm; go = "amd64"; }
           rec { llvm = "aarch64-unknown-linux-musl"; rust = llvm; go = "arm64"; }
           { llvm = "armv6l-unknown-linux-musleabihf"; rust = "arm-unknown-linux-musleabihf"; go = "arm"; }
         ];
-
 
         ###
         #
@@ -110,7 +113,7 @@ EOF
             packageFun = import ./Cargo.nix;
             target = triple.rust;
             release = true;
-            rustChannel = "nightly";
+            rustChannel = rust_version;
             packageOverrides = pkgs: pkgs.rustBuilder.overrides.all ++ [
               (pkgs.rustBuilder.rustLib.makeOverride {
                 name = "smtp-message";
@@ -243,7 +246,7 @@ ${alba} container push -t aerogramme:${version} docker/ "docker://docker.io/dxfl
           buildInputs = [
             pkgs.openssl
             pkgs.pkg-config
-	    pkgs.rust-bin.nightly.latest.default
+	    pkgs.rust-bin.stable.${rust_version}.default
 	    cargo2nix.packages.${system}.cargo2nix
           ];
         };

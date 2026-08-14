@@ -1,6 +1,6 @@
 [package]
 name = "aero-sasl"
-version = "0.4.0"
+version = "0.5.0"
 authors = [
   "Alex Auvolat <alex@adnab.me>", 
   "Quentin Dufour <quentin@dufour.io>",
