@@ -92,6 +92,8 @@ pub enum StoreMod {
 pub enum FetchKind {
     Rfc822,
     Rfc822Size,
+    Rfc822Header,
+    Rfc822Text,
     Body(Option<FetchBodySection>),
 }
 
@@ -381,6 +383,8 @@ pub fn fetch(
     let kind_str = match kind {
         FetchKind::Rfc822 => "RFC822",
         FetchKind::Rfc822Size => "RFC822.SIZE",
+        FetchKind::Rfc822Header => "RFC822.HEADER",
+        FetchKind::Rfc822Text => "RFC822.TEXT",
         FetchKind::Body(None) => "BODY[]",
         FetchKind::Body(Some(section)) => {
             &format!("BODY[{}]", section.to_string())
@@ -413,7 +417,7 @@ pub fn copy(imap: &mut TcpStream, selection: Selection, to: Mailbox) -> Result<S
     Ok(srv_msg.to_string())
 }
 
-pub fn append(imap: &mut TcpStream, content: Email) -> Result<String> {
+fn append_internal(imap: &mut TcpStream, content: Email, seen: bool) -> Result<String> {
     let mut buffer: [u8; 6000] = [0; 6000];
 
     let ref_mail = match content {
@@ -422,7 +426,8 @@ pub fn append(imap: &mut TcpStream, content: Email) -> Result<String> {
         Email::Multipart2 => EMAIL3,
     };
 
-    let append_cmd = format!("47 append inbox (\\Seen) {{{}}}\r\n", ref_mail.len());
+    let flags = if seen { "(\\Seen)" } else { "()" };
+    let append_cmd = format!("47 append inbox {} {{{}}}\r\n", flags, ref_mail.len());
     println!("append cmd: {}", append_cmd);
     imap.write(append_cmd.as_bytes())?;
 
@@ -439,6 +444,14 @@ pub fn append(imap: &mut TcpStream, content: Email) -> Result<String> {
     Ok(srv_msg.to_string())
 }
 
+pub fn append(imap: &mut TcpStream, content: Email) -> Result<String> {
+    append_internal(imap, content, true)
+}
+
+pub fn append_not_seen(imap: &mut TcpStream, content: Email) -> Result<String> {
+    append_internal(imap, content, false)
+}
+    
 pub fn search(imap: &mut TcpStream, sk: SearchKind) -> Result<String> {
     let sk_str = match sk {
         SearchKind::Header(k, v) => format!("HEADER \"{}\" \"{}\"", k, v),

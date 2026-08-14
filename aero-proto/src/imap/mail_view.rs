@@ -61,7 +61,12 @@ impl<'a> MailView<'a> {
                 MessageDataItemName::Flags => Ok(self.flags()),
                 MessageDataItemName::Rfc822Size => self.rfc_822_size(),
                 MessageDataItemName::Rfc822Header => self.rfc_822_header(),
-                MessageDataItemName::Rfc822Text => self.rfc_822_text(),
+                MessageDataItemName::Rfc822Text => {
+                    if self.is_not_yet_seen() {
+                        seen = SeenFlag::MustAdd;
+                    }
+                    self.rfc_822_text()
+                },
                 MessageDataItemName::Rfc822 => {
                     if self.is_not_yet_seen() {
                         seen = SeenFlag::MustAdd;
@@ -211,7 +216,6 @@ impl<'a> MailView<'a> {
         let mut seen = SeenFlag::DoNothing;
         if !peek && self.is_not_yet_seen() {
             // Add \Seen flag
-            //self.mailbox.add_flags(uuid, &[seen_flag]).await?;
             seen = SeenFlag::MustAdd;
         }
 
@@ -262,6 +266,7 @@ impl<'a> MailView<'a> {
     }
 }
 
+#[derive(Debug)]
 pub enum SeenFlag {
     DoNothing,
     MustAdd,

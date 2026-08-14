@@ -8,6 +8,7 @@ fn main() {
     // IMAP
     rfc3501_imap4rev1_base();
     rfc3501_imap4rev1_fetch_body_mime();
+    rfc3501_imap4rev1_fetch_seen();
     rfc6851_imapext_move();
     rfc4551_imapext_condstore();
     rfc2177_imapext_idle();
@@ -338,6 +339,56 @@ Subject: submsg\r
             .context("fetch BODY[2.2.MIME]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
         assert!(srv_msg.contains("}\r\nContent-Type: text/plain\r\n\r\n)"));
+
+        Ok(())
+    })
+        .expect("test fully run");
+}
+
+fn rfc3501_imap4rev1_fetch_seen() {
+    println!("🧪 rfc3501_imap4rev1_fetch_seen");
+    common::aerogramme_provider_daemon_dev(|imap_socket, _lmtp_socket, _dav_socket| {
+        connect(imap_socket).context("server says hello")?;
+        login(imap_socket, Account::Alice).context("login test")?;
+        let select_res =
+            select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
+        assert!(select_res.contains("* 0 EXISTS"));
+
+        let append_res = append_not_seen(imap_socket, Email::Basic).context("append email")?;
+        assert!(append_res.contains("* 1 EXISTS"));
+
+        // FETCH RFC822.HEADER does not set \Seen (it is equivalent to BODY.PEEK[HEADER])
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Rfc822Header,
+            FetchMod::None,
+        )
+            .context("fetch RFC822.HEADER")?;
+        assert!(!srv_msg.to_ascii_lowercase().contains("\\seen"));
+
+        // FETCH RFC822.TEXT sets \Seen (it is equivalent to BODY[TEXT])
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Rfc822Text,
+            FetchMod::None,
+        )
+            .context("fetch RFC822.TEXT")?;
+        assert!(srv_msg.to_ascii_lowercase().contains("\\seen"));
+
+        let append_res = append_not_seen(imap_socket, Email::Basic).context("append email")?;
+        assert!(append_res.contains("* 2 EXISTS"));
+
+        // FETCH BODY[] sets \Seen
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::SecondId,
+            FetchKind::Body(None),
+            FetchMod::None,
+        )
+            .context("fetch BODY[]")?;
+        assert!(srv_msg.to_ascii_lowercase().contains("\\seen"));
 
         Ok(())
     })
