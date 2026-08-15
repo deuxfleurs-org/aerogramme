@@ -175,8 +175,12 @@ impl<'a> NodeMime<'a> {
     }
 
     /// The TEXT part specifier refers to the text body of the message, omitting the [RFC-2822] header.
+    ///
+    /// This should be understood to behave as HEADER: on a part, requires the
+    /// part to contain an encapsulated message, and return its body.
     fn text(&self) -> Result<ExtractedFull<'a>> {
-        Ok(ExtractedFull(self.mime_body().raw_body().unwrap().into()))
+        let msg = self.entire_or_encapsulated_message()?;
+        Ok(ExtractedFull(msg.mime_body.raw_body().unwrap().into()))
     }
 
     /// The HEADER [...] part specifiers refer to the [RFC-2822] header of the message or of

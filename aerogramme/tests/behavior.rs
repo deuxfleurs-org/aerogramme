@@ -264,7 +264,20 @@ Subject: submsg\r
         assert!(srv_msg.contains("}\r\nRoot MIME prologue"));
         assert!(srv_msg.contains("Root MIME epilogue\n)"));
 
-
+        // FETCH BODY[TEXT] on a part returns the text body of its encapsulated message
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![2],
+                part_spec: Some(PartSpec::Text),
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[2.TEXT]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal respectively
+        assert!(srv_msg.contains("}\r\nSub MIME prologue"));
+        assert!(srv_msg.contains("Sub MIME epilogue\n)"));
         
         Ok(())
     })
