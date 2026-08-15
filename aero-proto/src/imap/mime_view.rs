@@ -132,9 +132,6 @@ impl<'a> NodeMime<'a> {
                     next.rec_subset(&path[1..])
                 },
                 MimeBody::Msg(x) => {
-                    if path[0].get() != 1 {
-                        bail!("Unable to resolve subpath {:?}, current message has only 1 part", path);
-                    }
                     let next = Self::Message(&x.child);
                     next.rec_subset(path)
                 },
@@ -216,7 +213,6 @@ impl<'a> NodeMime<'a> {
     }
 
     fn part(&self) -> Result<ExtractedFull<'a>> {
-        // TODO: check
         Ok(ExtractedFull(self.mime_body().raw_body().unwrap().into()))
     }
 

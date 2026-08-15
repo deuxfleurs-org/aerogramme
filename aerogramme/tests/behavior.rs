@@ -293,7 +293,11 @@ Subject: submsg\r
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
         assert!(srv_msg.contains("}\r\nContent-Type: text/html\r\n\r\n)"));
 
-        // FETCH BODY: nested subparts
+        // FETCH BODY: subparts inside of an embedded message.
+        //
+        // Part 2 is an embedded message, which it iself multipart. Part 2.1
+        // thus refers to the first part of the embedded message in part 2 of
+        // the toplevel message.
         let srv_msg = fetch(
             imap_socket,
             Selection::FirstId,
@@ -307,6 +311,34 @@ Subject: submsg\r
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
         assert!(srv_msg.contains("}\r\n<p>Hello world</p>\n)"));
         
+        // FETCH BODY: subparts inside of an embedded message (2)
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![2, 2],
+                part_spec: None,
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[2.2]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal respectively
+        assert!(srv_msg.contains("}\r\nHello another world\n)"));
+
+        // FETCH BODY: subparts inside of an embedded message + MIME
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![2, 2],
+                part_spec: Some(PartSpec::Mime),
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[2.2.MIME]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal respectively
+        assert!(srv_msg.contains("}\r\nContent-Type: text/plain\r\n\r\n)"));
+
         Ok(())
     })
         .expect("test fully run");
