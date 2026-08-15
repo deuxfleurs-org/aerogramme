@@ -184,6 +184,8 @@ impl<'a> NodeMime<'a> {
     /// ```raw
     /// HEADER     ([RFC-2822] header of the message)
     /// ```
+    /// The blank line is always included as part of the header data, except in
+    /// the case of a message that has no body and no blank line.
     fn header(&self) -> Result<ExtractedFull<'a>> {
         Ok(ExtractedFull(self.raw_headers().unwrap().into()))
     }
@@ -191,13 +193,11 @@ impl<'a> NodeMime<'a> {
     /// The MIME part specifier refers to the [MIME-IMB] header for
     /// this part.
     fn mime(&self) -> Result<ExtractedFull<'a>> {
-        // TODO: check
-        let mut res = raw_kv_to_bytes(
+        let res = raw_kv_to_bytes(
             self.mime_headers()
                 .into_iter()
                 .map(|(f, body)| (f.raw_name(), body)),
         );
-        res.extend(b"\r\n");
         Ok(ExtractedFull(res.into()))
     }
 
@@ -585,17 +585,31 @@ fn nol(input: &[u8]) -> u32 {
         .unwrap_or(0)
 }
 
+/// Formats a subset of header fields.
+///
+/// The result must include the final separating blank line between headers and
+/// body:
+/// 
+/// Note also that the [RFC5322] delimiting blank line between the header and
+/// the body is not affected by header-line subsetting; the blank line is always
+/// included as part of the header data, except in the case of a message that
+/// has no body and no blank line.
 fn raw_kv_to_bytes<'a, I>(kv: I) -> Vec<u8>
 where
     I: Iterator<Item = (header::FieldName<'a>, RawInput<'a>)>,
 {
-    kv.fold(vec![], |mut acc, (k, v)| {
+    let mut res = kv.fold(vec![], |mut acc, (k, v)| {
         acc.extend(k.bytes());
         acc.extend(b":");
         acc.extend(v.unwrap());
         acc.extend(b"\r\n");
         acc
-    })
+    });
+    // FIXME: for now we always add the separating blank line, even if there was
+    // none in the original message (eml_codec does not currently expose in its
+    // AST the separating blank line between headers & body).
+    res.extend(b"\r\n");
+    res
 }
 
 fn mime_atom_to_istring<'a>(a: &MIMEAtom<'a>) -> IString<'static> {

@@ -118,6 +118,7 @@ impl ToString for FetchBodySection {
 pub enum PartSpec {
     HeaderFields(Vec<String>),
     Mime,
+    Header,
 }
 
 impl ToString for PartSpec {
@@ -125,8 +126,8 @@ impl ToString for PartSpec {
         match self {
             PartSpec::HeaderFields(fields) => 
                 format!("HEADER.FIELDS ({})", fields.join(" ")),
-            PartSpec::Mime =>
-                "MIME".to_string(),
+            PartSpec::Mime => "MIME".to_string(),
+            PartSpec::Header => "HEADER".to_string(),
         }
     }
 }

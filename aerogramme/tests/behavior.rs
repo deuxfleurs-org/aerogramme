@@ -167,8 +167,49 @@ fn rfc3501_imap4rev1_fetch_body_mime() {
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
         assert!(srv_msg.contains("}\r\nContent-Type: text/x-myown; charset=us-ascii\r\n\r\n)"));
 
-        
-        
+        // FETCH BODY[HEADER] returns all headers
+        //
+        // Note the final blank line here as well.
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![],
+                part_spec: Some(PartSpec::Header),
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[HEADER]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal respectively
+        assert!(srv_msg.contains("}\r\nFrom: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: multipart/mixed; boundary=\"foo
+ bar\"
+
+)"));
+
+        // FETCH BODY[HEADER.FIELDS (...)] returns selected headers
+        //
+        // Note the final blank line here as well.
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![],
+                part_spec: Some(PartSpec::HeaderFields(vec![
+                    "Date".to_string(), "Mime-Version".to_string()
+                ])),
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[HEADER.FIELDS (DATE MIME-VERSION)]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal respectively
+        assert!(srv_msg.contains("}\r\nDate: Sat, 24 Mar 2007 23:00:00 +0200\r
+MIME-Version: 1.0\r
+\r
+)"));
+
         Ok(())
     })
         .expect("test fully run");
