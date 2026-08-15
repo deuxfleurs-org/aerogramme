@@ -133,6 +133,20 @@ fn rfc3501_imap4rev1_fetch_body_mime() {
             .context("fetch BODY[]")?;
         assert!(srv_msg.contains(str::from_utf8(EMAIL3)?));
 
+        // FETCH BODY[1] returns the first part
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![1],
+                part_spec: None,
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[1]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal respectively
+        assert!(srv_msg.contains("}\r\nhello\n)"));
+
         // FETCH BODY[MIME] returns MIME headers
         //
         // Note the final \r\n: according to the RFC, "Subsetting [header
@@ -153,7 +167,7 @@ fn rfc3501_imap4rev1_fetch_body_mime() {
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
         assert!(srv_msg.contains("}\r\nContent-Type: text/x-myown; charset=us-ascii\r\n\r\n)"));
 
-
+        
         
         Ok(())
     })
