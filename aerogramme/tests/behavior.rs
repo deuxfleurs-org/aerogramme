@@ -210,6 +210,47 @@ MIME-Version: 1.0\r
 \r
 )"));
 
+        // FETCH BODY[HEADER] on a part that contains an encapsulated message
+        // returns the header of the encapsulated message.
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![2],
+                part_spec: Some(PartSpec::Header),
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[2.HEADER]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal respectively
+        assert!(srv_msg.contains("}\r\nFrom: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/alternative; boundary=\"sub1\"
+
+)"));
+
+        // FETCH BODY[HEADER.FIELDS] on a part also targets the encapsulated message
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![2],
+                part_spec: Some(PartSpec::HeaderFields(vec![
+                    "Subject".to_string(), "From".to_string()
+                ])),
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[2.HEADER]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal respectively
+        assert!(srv_msg.contains("}\r\nFrom: sub@domain.org\r
+Subject: submsg\r
+\r
+)"));
+
+        
+        
         Ok(())
     })
         .expect("test fully run");

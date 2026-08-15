@@ -93,11 +93,11 @@ pub fn bodystructure<'a>(msg: &Message<'a>, is_ext: bool) -> Result<BodyStructur
 }
 
 pub fn raw_kv_headers<'a>(msg: &'a Message<'a>) -> Vec<(Cow<'a, [u8]>, &'a [u8])> {
-    NodeMime::Message(msg)
-        .raw_kv_headers()
+    msg
+        .field_list()
         .into_iter()
-        .map(|(k, v)| (k.0, v.unwrap()))
-        .collect::<Vec<_>>()
+        .map(|f| (f.raw_name().0, f.raw_body().unwrap()))
+        .collect()
 }
 
 /// NodeMime
@@ -184,10 +184,20 @@ impl<'a> NodeMime<'a> {
     /// ```raw
     /// HEADER     ([RFC-2822] header of the message)
     /// ```
+    /// 
+    /// Note: consequently, the behavior of HEADER on a part that does not
+    /// contain an encapsulated message is undefined. We return an error.
+    ///
     /// The blank line is always included as part of the header data, except in
     /// the case of a message that has no body and no blank line.
     fn header(&self) -> Result<ExtractedFull<'a>> {
-        Ok(ExtractedFull(self.raw_headers().unwrap().into()))
+        Ok(ExtractedFull(
+            self
+                .entire_or_encapsulated_message()?
+                .raw_headers
+                .unwrap()
+                .into()
+        ))
     }
 
     /// The MIME part specifier refers to the [MIME-IMB] header for
@@ -230,10 +240,16 @@ impl<'a> NodeMime<'a> {
             .collect::<HashSet<_>>();
 
         // Filter headers
+        let msg = self.entire_or_encapsulated_message()?;
         let res = raw_kv_to_bytes(
-            self.raw_kv_headers()
+            msg
+                .field_list()
                 .into_iter()
-                .filter(|(k, _)| index.contains(&k.bytes().to_ascii_lowercase()) ^ invert),
+                .filter_map(|f| {
+                    let name = f.raw_name();
+                    let keep = index.contains(&name.bytes().to_ascii_lowercase()) ^ invert;
+                    keep.then_some((name, f.raw_body()))
+                })
         );
 
         Ok(ExtractedFull(res.into()))
@@ -291,25 +307,14 @@ impl<'a> NodeMime<'a> {
         }
     }
 
-    fn raw_headers(&self) -> &'a RawInput<'a> {
+    fn entire_or_encapsulated_message(&self) -> Result<&'a Message<'a>> {
         match self {
-            NodeMime::Message(m) => &m.raw_headers,
-            NodeMime::AnyPart(p) => &p.raw_headers,
-        }
-    }
-
-    fn raw_kv_headers(&self) -> Vec<(header::FieldName<'a>, RawInput<'a>)> {
-        match self {
-            NodeMime::Message(m) => m
-                .field_list()
-                .into_iter()
-                .map(|f| (f.raw_name(), f.raw_body()))
-                .collect(),
-            NodeMime::AnyPart(p) => p
-                .field_list()
-                .into_iter()
-                .map(|f| (f.raw_name(), f.raw_body()))
-                .collect(),
+            Self::Message(msg) => Ok(*msg),
+            Self::AnyPart(part) => part
+                .mime_body
+                .as_message()
+                .ok_or(anyhow!("Tried to fetch the encapsulated message of a part of a different type"))
+                .map(|mime_msg| &*mime_msg.child)
         }
     }
 
