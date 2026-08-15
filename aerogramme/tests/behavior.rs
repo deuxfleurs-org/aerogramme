@@ -279,6 +279,34 @@ Subject: submsg\r
         assert!(srv_msg.contains("}\r\nSub MIME prologue"));
         assert!(srv_msg.contains("Sub MIME epilogue\n)"));
         
+        // FETCH BODY: nested subparts + MIME
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![2, 1],
+                part_spec: Some(PartSpec::Mime),
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[2.1.MIME]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal respectively
+        assert!(srv_msg.contains("}\r\nContent-Type: text/html\r\n\r\n)"));
+
+        // FETCH BODY: nested subparts
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![2, 1],
+                part_spec: None,
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[2.1]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal respectively
+        assert!(srv_msg.contains("}\r\n<p>Hello world</p>\n)"));
+        
         Ok(())
     })
         .expect("test fully run");
