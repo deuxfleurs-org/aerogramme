@@ -249,7 +249,22 @@ Subject: submsg\r
 \r
 )"));
 
-        
+        // FETCH BODY[TEXT] returns the non-header text body of the message
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![],
+                part_spec: Some(PartSpec::Text),
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[TEXT]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal respectively
+        assert!(srv_msg.contains("}\r\nRoot MIME prologue"));
+        assert!(srv_msg.contains("Root MIME epilogue\n)"));
+
+
         
         Ok(())
     })
