@@ -61,12 +61,13 @@ pub enum Flag {
 pub enum Email {
     Basic,
     Multipart,
-    Multipart2,
+    Other(&'static [u8]),
 }
 
 pub enum Selection {
     FirstId,
     SecondId,
+    Id(u64),
     All,
 }
 
@@ -319,7 +320,7 @@ pub fn lmtp_deliver_email(lmtp: &mut TcpStream, email_type: Email) -> Result<()>
     let email = match email_type {
         Email::Basic => EMAIL2,
         Email::Multipart => EMAIL1,
-        Email::Multipart2 => EMAIL3,
+        Email::Other(eml) => eml,
     };
     lmtp.write(&b"MAIL FROM:<bob@example.tld>\r\n"[..])?;
     let _read = read_lines(lmtp, &mut buffer, Some(&b"250 2.0.0"[..]))?;
@@ -377,6 +378,7 @@ pub fn fetch(
     let sel_str = match selection {
         Selection::FirstId => "1",
         Selection::SecondId => "2",
+        Selection::Id(n) => &n.to_string(),
         Selection::All => "1:*",
     };
 
@@ -423,7 +425,7 @@ fn append_internal(imap: &mut TcpStream, content: Email, seen: bool) -> Result<S
     let ref_mail = match content {
         Email::Multipart => EMAIL1,
         Email::Basic => EMAIL2,
-        Email::Multipart2 => EMAIL3,
+        Email::Other(eml) => eml,
     };
 
     let flags = if seen { "(\\Seen)" } else { "()" };
@@ -482,6 +484,7 @@ pub fn store(
     let seq = match sel {
         Selection::FirstId => "1",
         Selection::SecondId => "2",
+        Selection::Id(n) => &n.to_string(),
         Selection::All => "1:*",
     };
 
@@ -524,6 +527,7 @@ pub fn uid_expunge(imap: &mut TcpStream, sel: Selection) -> Result<String> {
     let selstr = match sel {
         FirstId => "1",
         SecondId => "2",
+        Id(n) => &n.to_string(),
         All => "1:*",
     };
     imap.write(format!("61 UID EXPUNGE {}\r\n", selstr).as_bytes())?;

@@ -8,6 +8,7 @@ fn main() {
     // IMAP
     rfc3501_imap4rev1_base();
     rfc3501_imap4rev1_fetch_body_mime();
+    rfc3501_imap4rev1_fetch_body_rfc822();
     rfc3501_imap4rev1_fetch_seen();
     rfc6851_imapext_move();
     rfc4551_imapext_condstore();
@@ -118,7 +119,46 @@ fn rfc3501_imap4rev1_fetch_body_mime() {
             select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
         assert!(select_res.contains("* 0 EXISTS"));
 
-        let append_res = append(imap_socket, Email::Multipart2).context("append email")?;
+        // from imaptest's fetch-body-mime 
+        let email = br#"From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: multipart/mixed; boundary="foo
+ bar"
+
+Root MIME prologue
+
+--foo bar
+Content-Type: text/x-myown; charset=us-ascii
+
+hello
+
+--foo bar
+Content-Type: message/rfc822
+
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/alternative; boundary="sub1"
+
+Sub MIME prologue
+--sub1
+Content-Type: text/html
+
+<p>Hello world</p>
+
+--sub1
+Content-Type: text/plain
+
+Hello another world
+
+--sub1--
+Sub MIME epilogue
+
+--foo bar--
+Root MIME epilogue
+"#;
+        let append_res = append(imap_socket, Email::Other(email)).context("append email")?;
         assert!(append_res.contains("* 1 EXISTS"));
 
         // FETCH BODY[] returns the entire message.
@@ -132,7 +172,7 @@ fn rfc3501_imap4rev1_fetch_body_mime() {
             FetchMod::None,
         )
             .context("fetch BODY[]")?;
-        assert!(srv_msg.contains(str::from_utf8(EMAIL3)?));
+        assert!(srv_msg.contains(str::from_utf8(email)?));
 
         // FETCH BODY[1] returns the first part
         let srv_msg = fetch(
@@ -343,6 +383,312 @@ Subject: submsg\r
         Ok(())
     })
         .expect("test fully run");
+}
+
+// FETCH BODY tests involving message/rfc822 embedded messages.
+// These tests were inspired from imaptest's fetch-body-message-rfc822 message test.
+// All testcases below have been checked against dovecot and match its answers.
+fn rfc3501_imap4rev1_fetch_body_rfc822() {
+    println!("🧪 rfc3501_imap4rev1_fetch_body_rfc822");
+    common::aerogramme_provider_daemon_dev(|imap_socket, _lmtp_socket, _dav_socket| {
+        connect(imap_socket).context("server says hello")?;
+        login(imap_socket, Account::Alice).context("login test")?;
+        let select_res =
+            select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
+        assert!(select_res.contains("* 0 EXISTS"));
+
+        // ---- An email with a basic embedded message
+
+        let email = b"From user@domain  Fri Feb 22 17:06:23 2008
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: message/rfc822
+
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+
+Hello world
+";
+        let append_res = append(imap_socket, Email::Other(email)).context("append email")?;
+        assert!(append_res.contains("* 1 EXISTS"));
+
+        // FETCH BODY[1] returns the embedded message (sub@domain.org)
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![1],
+                part_spec: None,
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[1]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal
+        assert!(srv_msg.contains("}\r\nFrom: sub@domain.org"));
+        assert!(srv_msg.contains("Hello world\n)"));
+
+        // FETCH BODY[1.1] returns the body of thee embedded message (!)
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![1, 1],
+                part_spec: None,
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[1.1]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal
+        assert!(srv_msg.contains("}\r\nHello world\n)"));
+
+        // FETCH BODY[1.HEADR] returns the embedded message header
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::FirstId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![1],
+                part_spec: Some(PartSpec::Header),
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[1.HEADER]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal
+        assert!(srv_msg.contains("}\r\nFrom: sub@domain.org"));
+        assert!(srv_msg.contains("Subject: submsg\n\n)"));
+        
+        // ---- An email with nested basic embedded messages
+
+        let email = b"From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: message/rfc822
+
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Mime-Version: 1.0
+Content-Type: message/rfc822
+
+From: subsub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Mime-Version: 1.0
+Subject: subsubmsg
+
+Hello world
+";
+        let append_res = append(imap_socket, Email::Other(email)).context("append email")?;
+        assert!(append_res.contains("* 2 EXISTS"));
+
+        // FETCH BODY[1] returns the first embedded message (sub@domain.org)
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::SecondId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![1],
+                part_spec: None,
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[1]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal
+        assert!(srv_msg.contains("}\r\nFrom: sub@domain.org"));
+        assert!(srv_msg.contains("Hello world\n)"));
+
+        // FETCH BODY[1.text] returns the second embedded message (subsub@domain.org)
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::SecondId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![1],
+                part_spec: Some(PartSpec::Text),
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[1.TEXT]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal
+        assert!(srv_msg.contains("}\r\nFrom: subsub@domain.org"));
+        assert!(srv_msg.contains("Hello world\n)"));
+
+        // same result with FETCH BODY[1.1]
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::SecondId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![1, 1],
+                part_spec: None,
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[1.1]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal
+        assert!(srv_msg.contains("}\r\nFrom: subsub@domain.org"));
+        assert!(srv_msg.contains("Hello world\n)"));
+
+        // FETCH BODY[1.1.TEXT] returns the final body (Hello world)
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::SecondId,
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![1, 1],
+                part_spec: Some(PartSpec::Text),
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[1.1.TEXT]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal
+        assert!(srv_msg.contains("}\r\nHello world\n)"));
+
+        // ---- An email with a multipart embedded message
+
+        let email = b"From user@domain  Fri Feb 22 17:06:23 2008
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: message/rfc822
+
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Mime-Version: 1.0
+Content-Type: multipart/mixed; boundary=\"foo\"
+
+--foo
+Content-Type: text/plain
+
+Hello world 1
+--foo
+Content-Type: text/plain
+
+Hello world 2
+--foo--";
+        let append_res = append(imap_socket, Email::Other(email)).context("append email")?;
+        assert!(append_res.contains("* 3 EXISTS"));
+        
+        // FETCH BODY[1] returns the embedded message (sub@domain.org)
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::Id(3),
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![1],
+                part_spec: None,
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[1]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal
+        assert!(srv_msg.contains("}\r\nFrom: sub@domain.org"));
+        assert!(srv_msg.contains("--foo--)"));
+        
+        // FETCH BODY[1.1] returns the first part of the embedded message
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::Id(3),
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![1, 1],
+                part_spec: None,
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[1.1]")?;
+        assert!(srv_msg.contains("\"Hello world 1\""));
+
+        // ---- An email with a (basic) message embedded in a multipart
+
+        let email = b"From user@domain  Fri Feb 22 17:06:23 2008
+From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: multipart/mixed; boundary=\"foo\"
+
+--foo
+Content-Type: message/rfc822
+
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Mime-Version: 1.0
+Content-Type: message/rfc822
+
+Hello world
+--foo--";
+        let append_res = append(imap_socket, Email::Other(email)).context("append email")?;
+        assert!(append_res.contains("* 4 EXISTS"));
+
+        // FETCH BODY[1] returns the embedded message
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::Id(4),
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![1],
+                part_spec: None,
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[1]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal
+        assert!(srv_msg.contains("}\r\nFrom: sub@domain.org"));
+        assert!(srv_msg.contains("Hello world)"));
+
+        // ---- An email with a multipart message embedded in a multipart
+
+        let email = b"From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: multipart/mixed; boundary=\"outer\"
+
+--outer
+Content-Type: message/rfc822
+
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Mime-Version: 1.0
+Content-Type: multipart/mixed; boundary=\"foo\"
+
+--foo
+Content-Type: text/plain
+
+Hello world 1
+--foo
+Content-Type: text/plain
+
+Hello world 2
+--foo--
+epilogue
+--outer--";
+
+        let append_res = append(imap_socket, Email::Other(email)).context("append email")?;
+        assert!(append_res.contains("* 5 EXISTS"));
+
+        // FETCH BODY[1] returns the embedded message
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::Id(5),
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![1],
+                part_spec: None,
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[1]")?;
+        // '}\r\n' and ')' delimit the start and end of the payload literal
+        assert!(srv_msg.contains("}\r\nFrom: sub@domain.org"));
+        assert!(srv_msg.contains("epilogue)"));
+        
+        // FETCH BODY[1.1] returns the first part of the embedded message (Hello world 1)
+        let srv_msg = fetch(
+            imap_socket,
+            Selection::Id(5),
+            FetchKind::Body(Some(FetchBodySection {
+                part_no: vec![1, 1],
+                part_spec: None,
+            })),
+            FetchMod::None,
+        )
+            .context("fetch BODY[1.1]")?;
+        assert!(srv_msg.contains("\"Hello world 1\""));
+        
+        Ok(())
+    })
+    .expect("test fully run");
 }
 
 fn rfc3501_imap4rev1_fetch_seen() {
