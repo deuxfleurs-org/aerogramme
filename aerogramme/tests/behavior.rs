@@ -60,7 +60,7 @@ fn rfc3501_imap4rev1_base() {
         let orig_email = std::str::from_utf8(EMAIL1)?;
         assert!(srv_msg.contains(orig_email));
 
-        // fetch BODY[HEADER.FIELDS (...)]
+        // fetch BODY[HEADER.FIELDS (DATE TO)]
         let srv_msg = fetch(
             imap_socket,
             Selection::FirstId,
@@ -130,6 +130,7 @@ Root MIME prologue
 
 --foo bar
 Content-Type: text/x-myown; charset=us-ascii
+X-Mime: foobar
 
 hello
 
@@ -188,7 +189,7 @@ Root MIME epilogue
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
         assert!(srv_msg.contains("}\r\nhello\n)"));
 
-        // FETCH BODY[MIME] returns MIME headers
+        // FETCH BODY[1.MIME] returns all headers of a MIME part
         //
         // Note the final \r\n: according to the RFC, "Subsetting [header
         // fields] does not exclude the [RFC5322] delimiting blank line between
@@ -206,9 +207,9 @@ Root MIME epilogue
         )
             .context("fetch BODY[1.MIME]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
-        assert!(srv_msg.contains("}\r\nContent-Type: text/x-myown; charset=us-ascii\r\n\r\n)"));
+        assert!(srv_msg.contains("}\r\nContent-Type: text/x-myown; charset=us-ascii\r\nX-Mime: foobar\r\n\r\n)"));
 
-        // FETCH BODY[HEADER] returns all headers
+        // FETCH BODY[HEADER] returns all headers of a full message
         //
         // Note the final blank line here as well.
         let srv_msg = fetch(
@@ -230,7 +231,7 @@ Content-Type: multipart/mixed; boundary=\"foo
 
 )"));
 
-        // FETCH BODY[HEADER.FIELDS (...)] returns selected headers
+        // FETCH BODY[HEADER.FIELDS (Date Mime-Version)] returns selected headers
         //
         // Note the final blank line here as well.
         let srv_msg = fetch(
@@ -251,7 +252,7 @@ MIME-Version: 1.0\r
 \r
 )"));
 
-        // FETCH BODY[HEADER] on a part that contains an encapsulated message
+        // FETCH BODY[2.HEADER] on a part that contains an encapsulated message
         // returns the header of the encapsulated message.
         let srv_msg = fetch(
             imap_socket,
@@ -271,7 +272,8 @@ Content-Type: multipart/alternative; boundary=\"sub1\"
 
 )"));
 
-        // FETCH BODY[HEADER.FIELDS] on a part also targets the encapsulated message
+        // FETCH BODY[2.HEADER.FIELDS (Subject From)] on a part also targets the
+        // encapsulated message
         let srv_msg = fetch(
             imap_socket,
             Selection::FirstId,
@@ -283,7 +285,7 @@ Content-Type: multipart/alternative; boundary=\"sub1\"
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[2.HEADER]")?;
+            .context("fetch BODY[2.HEADER.FIELDS (Subject From)]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
         assert!(srv_msg.contains("}\r\nFrom: sub@domain.org\r
 Subject: submsg\r
@@ -305,7 +307,7 @@ Subject: submsg\r
         assert!(srv_msg.contains("}\r\nRoot MIME prologue"));
         assert!(srv_msg.contains("Root MIME epilogue\n)"));
 
-        // FETCH BODY[TEXT] on a part returns the text body of its encapsulated message
+        // FETCH BODY[2.TEXT] on a part returns the text body of its encapsulated message
         let srv_msg = fetch(
             imap_socket,
             Selection::FirstId,

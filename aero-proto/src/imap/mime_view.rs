@@ -14,9 +14,9 @@ use imap_codec::imap_types::fetch::{Part as FetchPart, Section as FetchSection};
 
 use eml_codec::{
     header,
-    message::{field::MessageField, Message},
+    message::Message,
     mime,
-    part::{composite, discrete, field::EntityField, AnyPart, MimeBody},
+    part::{composite, discrete, AnyPart, MimeBody},
     raw_input::RawInput,
     text::misc_token::MIMEWord,
     text::words::MIMEAtom,
@@ -198,7 +198,7 @@ impl<'a> NodeMimeSub<'a> {
     /// ```
     /// 
     /// Note: consequently, the behavior of HEADER on a part that does not
-    /// contain an encapsulated message is undefined. We return an error.
+    /// represents a full message is undefined. We return an error.
     ///
     /// The blank line is always included as part of the header data, except in
     /// the case of a message that has no body and no blank line.
@@ -214,18 +214,18 @@ impl<'a> NodeMimeSub<'a> {
 
     /// The MIME part specifier refers to the [MIME-IMB] header for
     /// this part.
+    ///
+    /// Note: this only applies to MIME parts; we return an error otherwise.
+    /// It returns all headers of the part.
     fn mime(&self) -> Result<ExtractedFull<'a>> {
-        let mime_headers = match self {
-            Self::NodeMime(m) => m.mime_headers(),
-            Self::DiscreteBody(_) =>
-                bail!("Tried to fetch MIME headers of a discrete email body"),
-        };
-        let res = raw_kv_to_bytes(
-            mime_headers
+        let headers = match self {
+            Self::NodeMime(NodeMime::AnyPart(p)) => p
+                .field_list()
                 .into_iter()
-                .map(|(f, body)| (f.raw_name(), body)),
-        );
-        Ok(ExtractedFull(res.into()))
+                .map(|f| (f.raw_name(), f.raw_body())),
+            _ => bail!("Tried to use the MIME part selector on a non-MIME part"),
+        };
+        Ok(ExtractedFull(raw_kv_to_bytes(headers).into()))
     }
 
     /// The "full contents" of the currently selected part; corresponds to the
@@ -387,33 +387,6 @@ impl<'a> NodeMime<'a> {
         match self {
             NodeMime::Message(m) => &m.mime_body,
             NodeMime::AnyPart(p) => &p.mime_body,
-        }
-    }
-
-    fn mime_headers(&self) -> Vec<(mime::field::Field<'a>, RawInput<'a>)> {
-        match self {
-            NodeMime::Message(m) => m
-                .field_list()
-                .into_iter()
-                .filter_map(|f| {
-                    if let MessageField::MIME { f, raw_body } = f {
-                        Some((f, raw_body))
-                    } else {
-                        None
-                    }
-                })
-                .collect(),
-            NodeMime::AnyPart(p) => p
-                .field_list()
-                .into_iter()
-                .filter_map(|f| {
-                    if let EntityField::MIME { f, raw_body } = f {
-                        Some((f, raw_body))
-                    } else {
-                        None
-                    }
-                })
-                .collect(),
         }
     }
 }
