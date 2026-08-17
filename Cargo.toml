@@ -73,7 +73,7 @@ nix = { version = "0.30", features = ["signal"] }
 clap = { version = "3", features = ["derive", "env"] }
 
 # email protocols
-eml-codec = "0.4.0"
+eml-codec = "0.4.1"
 imap-codec = { version = "2.0.0", features = ["bounded-static", "ext_condstore_qresync"] }
 imap-flow = { git = "https://github.com/duesee/imap-next.git", rev = "dce759a8531f317e8d7311fb032b366db6698e38" }
 
