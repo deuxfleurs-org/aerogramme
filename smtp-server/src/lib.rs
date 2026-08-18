@@ -1,4 +1,3 @@
-#![cfg_attr(test, feature(negative_impls))]
 #![type_length_limit = "200000000"]
 
 pub mod protocol;
@@ -1291,7 +1290,6 @@ mod tests {
     }
 
     struct MinBoundsIo;
-    impl !Sync for MinBoundsIo {}
     impl AsyncRead for MinBoundsIo {
         fn poll_read(
             self: std::pin::Pin<&mut Self>,

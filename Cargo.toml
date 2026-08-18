@@ -75,14 +75,13 @@ nix = { version = "0.30", features = ["signal"] }
 clap = { version = "3", features = ["derive", "env"] }
 
 # email protocols
-eml-codec = "0.4.0"
+eml-codec = "0.4.1"
 imap-codec = { version = "2.0.0", features = ["bounded-static", "ext_condstore_qresync"] }
 imap-flow = { git = "https://github.com/duesee/imap-next.git", rev = "dce759a8531f317e8d7311fb032b366db6698e38" }
 
 # dav protocols
 icalendar = "0.16"
-# TODO: update to a released version that includes this revision when there is one
-ical_vcard = { git = "https://codeberg.org/darkfire/ical_vcard.git", rev = "0618a7f96ee065ea877d4519fef6ba367bf392a0" }
+ical_vcard = "0.5.0"
 
 # http & web
 http = "1.3"

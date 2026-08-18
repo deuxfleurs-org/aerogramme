@@ -166,7 +166,7 @@ where
     S: AsRef<str>,
 {
     #[inline]
-    pub fn as_io_slices(&self) -> impl Iterator<Item = IoSlice> {
+    pub fn as_io_slices(&self) -> impl Iterator<Item = IoSlice<'_>> {
         iter::once(match self {
             MaybeUtf8::Ascii(s) => IoSlice::new(s.as_ref().as_ref()),
             MaybeUtf8::Utf8(s) => IoSlice::new(s.as_ref().as_ref()),
@@ -282,23 +282,24 @@ macro_rules! parse_hostname {
                     // The below unsafe is OK, thanks to our regex
                     // never disabling the `u` flag and thus
                     // validating that the match is proper utf-8
-                    let raw = unsafe { str::from_utf8_unchecked(b) };
+                    let raw_str = unsafe { str::from_utf8_unchecked(b) };
 
                     // TODO: looks like idna exposes only an
                     // allocating method for validating an IDNA domain
                     // name. Maybe it'd be possible to get them to
                     // expose a validation-only function? Or maybe
                     // not.
-                    let punycode = idna::Config::default()
-                        .use_std3_ascii_rules(true)
-                        .verify_dns_length(true)
-                        .check_hyphens(true)
-                        .to_ascii(raw)
-                        .ok()?;
+                    let punycode = idna::uts46::Uts46::new()
+                        .to_ascii(
+                            b,
+                            idna::uts46::AsciiDenyList::STD3,
+                            idna::uts46::Hyphens::CheckFirstLast,
+                            idna::uts46::DnsLength::VerifyAllowRootDot,
+                        ).ok()?;
 
                     Some(Hostname::Utf8Domain {
-                        raw: raw.into(),
-                        punycode,
+                        raw: raw_str.into(),
+                        punycode: punycode.into(),
                     })
                 },
             ),
@@ -343,7 +344,7 @@ where
     S: AsRef<str>,
 {
     #[inline]
-    pub fn as_io_slices(&self) -> impl Iterator<Item = IoSlice> {
+    pub fn as_io_slices(&self) -> impl Iterator<Item = IoSlice<'_>> {
         iter::once(IoSlice::new(self.raw().as_ref().as_ref()))
     }
 
@@ -503,7 +504,7 @@ where
     S: AsRef<str>,
 {
     #[inline]
-    pub fn as_io_slices(&self) -> impl Iterator<Item = IoSlice> {
+    pub fn as_io_slices(&self) -> impl Iterator<Item = IoSlice<'_>> {
         iter::once(IoSlice::new(self.raw().as_ref().as_ref()))
     }
 }
@@ -655,7 +656,7 @@ where
 {
     #[inline]
     #[auto_enum]
-    pub fn as_io_slices(&self) -> impl Iterator<Item = IoSlice> {
+    pub fn as_io_slices(&self) -> impl Iterator<Item = IoSlice<'_>> {
         #[auto_enum(Iterator)]
         let hostname = match self.hostname {
             Some(ref hostname) => iter::once(IoSlice::new(b"@")).chain(hostname.as_io_slices()),
@@ -733,7 +734,7 @@ where
     S: AsRef<str>,
 {
     #[inline]
-    pub fn as_io_slices(&self) -> impl Iterator<Item = IoSlice> {
+    pub fn as_io_slices(&self) -> impl Iterator<Item = IoSlice<'_>> {
         self.domains.iter().enumerate().flat_map(|(i, d)| {
             iter::once(match i {
                 0 => IoSlice::new(b"@"),
