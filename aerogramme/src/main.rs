@@ -1,6 +1,6 @@
 mod server;
 
-use std::{io::Read, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{io::Read, net::SocketAddr, path::PathBuf, sync::Arc, net::Ipv6Addr, net::IpAddr};
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -153,11 +153,12 @@ fn tracer() {
 }
 
 async fn serve_metrics() {
+    let bind_addr = SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)), 8080);
     // Launch HTTP metric server in background, it handles its own errors
     let _jh = tokio::spawn(async move {
         if let Err(e) = PrometheusServer::run(
             Arc::clone(&REGISTRY),
-            SocketAddr::from(([0; 4], 8080)),
+            bind_addr,
             std::future::pending(),
         )
         .await
@@ -165,6 +166,8 @@ async fn serve_metrics() {
             eprintln!("Prometheus server error: {e}");
         }
     });
+    tracing::info!("Metric server available at {:#}", bind_addr);
+
 }
 
 
@@ -194,7 +197,6 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
     let any_config = if args.dev {
-        use std::net::*;
         AnyConfig::Provider(ProviderConfig {
             pid: None,
             imap: None,
