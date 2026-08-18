@@ -21,8 +21,6 @@ pub struct Instance {
 }
 impl Instance {
     pub fn new(login_provider: ArcLoginProvider, cap: ServerCapability) -> Self {
-        println!("COUCOUCOUCOU je suis dans new Session");
-        println!("{} et {}", (*INSTANCES_CREATED).get(), (*INSTANCES_CURRENT).get());
         INSTANCES_CREATED.inc();
         INSTANCES_CURRENT.inc();
         let client_cap = ClientCapability::new(&cap);
