@@ -11,7 +11,6 @@ use prometheus_hyper::Server as PrometheusServer;
 use crate::server::Server;
 use aero_user::config::*;
 use aero_user::login::{static_provider::*, *};
-use metrics::{REGISTRY};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -154,10 +153,9 @@ fn tracer() {
 
 async fn serve_metrics() {
     let bind_addr = SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)), 8080);
-    // Launch HTTP metric server in background, it handles its own errors
     let _jh = tokio::spawn(async move {
         if let Err(e) = PrometheusServer::run(
-            Arc::clone(&REGISTRY),
+            Arc::clone(&metrics::REGISTRY),
             bind_addr,
             std::future::pending(),
         )
@@ -186,6 +184,11 @@ async fn main() -> Result<()> {
     }));
 
     tracer();
+    
+    // Register all metrics at launch
+    metrics::register_all()?;
+
+    // Launch HTTP metric server in background, it handles its own errors
     serve_metrics().await;
 
     // Set a default rustls implementation
