@@ -37,7 +37,7 @@ pub async fn dispatch<'a>(
         CommandBody::Capability => {
             anystate::capability(ctx.req.tag.clone(), ctx.server_capabilities)
         }
-        CommandBody::Logout => anystate::logout(),
+        CommandBody::Logout => anystate::logout(ctx.req.tag.clone()),
 
         // Specific to this state (7 commands + NOOP)
         CommandBody::Close => match ctx.perm {

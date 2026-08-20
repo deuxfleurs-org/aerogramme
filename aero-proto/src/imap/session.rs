@@ -35,7 +35,7 @@ impl Instance {
         }
     }
 
-    pub fn idle_init(&mut self, tag: Tag<'static>) -> ResponseOrIdle {
+    fn idle_init(&mut self, tag: Tag<'static>) -> ResponseOrIdle {
         // Build transition
         //@FIXME the notifier should be hidden inside the state and thus not part of the transition!
         let transition = flow::Transition::Idle(tag.clone(), tokio::sync::Notify::new());
@@ -69,17 +69,18 @@ impl Instance {
         }
     }
 
-    pub async fn idle_poll(&mut self) -> ResponseOrIdle {
+    async fn idle_poll(&mut self) -> ResponseOrIdle {
         match self.idle_poll_happy().await {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!(err=?e, "something bad happened in idle");
-                ResponseOrIdle::Response(Response::bye().unwrap())
+                self.state.apply(flow::Transition::Logout).unwrap();
+                ResponseOrIdle::Response(Response::build().message("error during idle").bad().unwrap())
             }
         }
     }
 
-    pub async fn idle_poll_happy(&mut self) -> Result<ResponseOrIdle> {
+    async fn idle_poll_happy(&mut self) -> Result<ResponseOrIdle> {
         let (mbx, tag, stop) = match &mut self.state {
             flow::State::Idle(_, ref mut mbx, _, tag, stop) => (mbx, tag.clone(), stop.clone()),
             _ => bail!("Invalid session state, can't idle"),
@@ -100,7 +101,7 @@ impl Instance {
         }
     }
 
-    pub async fn command(&mut self, cmd: Command<'static>) -> ResponseOrIdle {
+    async fn command(&mut self, cmd: Command<'static>) -> ResponseOrIdle {
         // Command behavior is modulated by the state.
         // To prevent state error, we handle the same command in separate code paths.
         let (resp, tr) = match &mut self.state {
@@ -140,20 +141,22 @@ impl Instance {
                 .map(|r| (r, flow::Transition::None)),
         }
         .unwrap_or_else(|err| {
-            if let Some(e) = err.downcast_ref::<SyncError>() {
-                tracing::debug!("command raised SyncError {e}, disconnecting client");
-                (Response::bye().unwrap(), flow::Transition::Logout)
-            } else {
-                tracing::error!("Command error {:?} occured while processing {:?}", err, cmd);
-                (
-                    Response::build()
-                        .to_req(&cmd)
-                        .message("Internal error while processing command")
-                        .bad()
-                        .unwrap(),
-                    flow::Transition::None,
-                )
-            }
+            let transition =  
+                if let Some(e) = err.downcast_ref::<SyncError>() {
+                    tracing::debug!("command raised SyncError {e}, disconnecting client");
+                    flow::Transition::Logout
+                } else {
+                    tracing::error!("Command error {:?} occured while processing {:?}", err, cmd);
+                    flow::Transition::None
+                };
+            (
+                Response::build()
+                    .to_req(&cmd)
+                    .message("Internal error while processing command")
+                    .bad()
+                    .unwrap(),
+                transition,
+            )
         });
 
         if let Err(e) = self.state.apply(tr) {
@@ -170,6 +173,7 @@ impl Instance {
                 .bad()
                 .unwrap());
         }
+
         ResponseOrIdle::Response(resp)
 
         /*match &self.state {

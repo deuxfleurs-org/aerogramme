@@ -56,8 +56,12 @@ impl UidIndexForImap for UidIndex {
             None => return vec![],
         };
         let (uid_largest, _, _) = self.table.get(uuid_largest).unwrap();
+        // NOTE: sequence_seq may describe an arbitrarily large range of
+        // integers, so we must not iterate over all of it...
         sequence_seq
             .iter(*uid_largest)
+            // TODO: could this be done automatically by SequenceSet::iter?
+            .take_while(|uid| uid <= uid_largest)
             .filter_map(|uid| {
                 let &uuid = self.idx_by_uid.get(&uid)?;
                 let &(uid, modseq, ref flags) = self.table.get(&uuid)?;
@@ -80,6 +84,7 @@ impl UidIndexForImap for UidIndex {
         };
         sequence_seq
             .iter(seqid_largest)
+            .take_while(|seqid| *seqid <= seqid_largest)
             .filter_map(|seqid| {
                 let &uuid = self.idx_by_seqid.get(seqid)?;
                 let &(uid, modseq, ref flags) = self.table.get(&uuid)?;

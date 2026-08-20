@@ -82,6 +82,10 @@ fn rfc3501_imap4rev1_base() {
         let append_res = append(imap_socket, Email::Basic).context("insert email in INBOX")?;
         assert!(append_res.contains("* 2 EXISTS"));
         search(imap_socket, SearchKind::Text("OoOoO")).expect("search should return something");
+        search(imap_socket, SearchKind::Header("To", "alice")).expect("search should return something");
+        search(imap_socket, SearchKind::Header("To", "")).expect("search should return something");
+        search(imap_socket, SearchKind::UidRange(1, 4294967295)).expect("search should return something");
+        search(imap_socket, SearchKind::UidRange(100, 4294967295)).expect("search should return something");
         store(
             imap_socket,
             Selection::FirstId,

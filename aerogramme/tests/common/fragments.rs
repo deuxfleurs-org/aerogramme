@@ -101,8 +101,10 @@ pub enum FetchMod {
 }
 
 pub enum SearchKind<'a> {
+    Header(&'a str, &'a str),
     Text(&'a str),
     ModSeq(u64),
+    UidRange(u64, u64),
 }
 
 pub enum StatusKind {
@@ -396,10 +398,16 @@ pub fn append(imap: &mut TcpStream, content: Email) -> Result<String> {
 
 pub fn search(imap: &mut TcpStream, sk: SearchKind) -> Result<String> {
     let sk_str = match sk {
+        SearchKind::Header(k, v) => format!("HEADER \"{}\" \"{}\"", k, v),
         SearchKind::Text(x) => format!("TEXT \"{}\"", x),
         SearchKind::ModSeq(x) => format!("MODSEQ {}", x),
+        SearchKind::UidRange(lo, hi) => format!("{}:{}", lo, hi),
     };
-    imap.write(format!("55 SEARCH {}\r\n", sk_str).as_bytes())?;
+    let prefix = match sk {
+        SearchKind::UidRange(_, _) => "UID ",
+        _ => "",
+    };
+    imap.write(format!("55 {}SEARCH {}\r\n", prefix, sk_str).as_bytes())?;
     let mut buffer: [u8; 1500] = [0; 1500];
     let read = read_lines(imap, &mut buffer, Some(&b"55 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
@@ -568,7 +576,7 @@ pub fn stop_idle(imap: &mut TcpStream) -> Result<String> {
 pub fn logout(imap: &mut TcpStream) -> Result<()> {
     imap.write(&b"99 logout\r\n"[..])?;
     let mut buffer: [u8; 1500] = [0; 1500];
-    let read = read_lines(imap, &mut buffer, None)?;
-    assert_eq!(&read[..5], &b"* BYE"[..]);
+    let read = read_lines(imap, &mut buffer, Some(&b"* BYE"[..]))?;
+    assert_eq!(&read[..5], &b"99 OK"[..]);
     Ok(())
 }

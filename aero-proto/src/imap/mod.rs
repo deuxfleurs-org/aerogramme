@@ -17,7 +17,7 @@ use std::net::SocketAddr;
 
 use anyhow::{anyhow, bail, Result};
 use futures::stream::{FuturesUnordered, StreamExt};
-use imap_codec::imap_types::response::{Code, CommandContinuationRequest, Response, Status};
+use imap_codec::imap_types::response::{Code, CommandContinuationRequest, Response as ImapResponse, Status};
 use imap_codec::imap_types::{core::Text, response::Greeting};
 use imap_flow::server::{ServerFlow, ServerFlowEvent, ServerFlowOptions};
 use imap_flow::stream::AnyStream;
@@ -32,7 +32,7 @@ use aero_user::login::ArcLoginProvider;
 
 use crate::imap::capability::ServerCapability;
 use crate::imap::request::Request;
-use crate::imap::response::{Body, ResponseOrIdle};
+use crate::imap::response::{Body, ResponseOrIdle, Response};
 use crate::imap::session::Instance;
 
 /// Server is a thin wrapper to register our Services in BàL
@@ -215,11 +215,20 @@ impl NetLoop {
     ) -> () {
         let mut session = Instance::new(ctx.login_provider, ctx.server_capabilities);
         loop {
+            // Automatically seend BYE and disconnect as soon as we enter LOGOUT
+            // state. This way the previous command that switched to LOGOUT
+            // state could send its response independently of the BYE untagged
+            // status.
+            if let flow::State::Logout = session.state {
+                tracing::debug!(sock=%ctx.addr, "entered LOGOUT state, sending BYE");
+                let _ = resp_tx.send(ResponseOrIdle::Response(Response::bye().unwrap()));
+                break
+            }
+
             let cmd = match cmd_rx.recv().await {
                 None => break,
                 Some(cmd_recv) => cmd_recv,
             };
-
             tracing::debug!(cmd=?cmd, sock=%ctx.addr, "command");
             let response = session.request(cmd).await;
             tracing::debug!(cmd=?response, sock=%ctx.addr, "response");
@@ -243,7 +252,7 @@ impl NetLoop {
                 srv_evt = self.server.progress() =>  match srv_evt? {
                     ServerFlowEvent::ResponseSent { handle: _handle, response } => {
                         match response {
-                            Response::Status(Status::Bye(_)) => return Ok(()),
+                            ImapResponse::Status(Status::Bye(_)) => return Ok(()),
                             _ => tracing::trace!("sent to {} content {:?}", self.ctx.addr, response),
                         }
                     },
