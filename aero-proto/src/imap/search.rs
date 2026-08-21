@@ -420,7 +420,7 @@ fn is_keep_flag(sk: &SearchKey, midx: &MailIndex) -> bool {
         Recent => midx.is_flag_set("\\Recent"),
         Seen => midx.is_flag_set("\\Seen"),
         Unanswered => {
-            let is_answered = midx.is_flag_set("\\Recent");
+            let is_answered = midx.is_flag_set("\\Answered");
             !is_answered
         }
         Undeleted => {
