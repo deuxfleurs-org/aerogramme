@@ -744,6 +744,7 @@ fn rfc3501_imap4rev1_fetch_seen() {
         .expect("test fully run");
 }
 
+// Extra testcases for SEARCH
 fn rfc3501_imap4rev1_search() {
     println!("🧪 rfc3501_imap4rev1_search");
     common::aerogramme_provider_daemon_dev(|imap_socket, _lmtp_socket, _dav_socket| {
@@ -764,6 +765,22 @@ fn rfc3501_imap4rev1_search() {
             .context("SEARCH HEADER")?;
         assert!(srv_msg.to_ascii_lowercase().contains("search 1"));
 
+        // SEARCH ranges "x:y" can specify bounds in any order, i.e. 2:1 is equivalent to 1:2
+        let srv_msg = search(
+            imap_socket,
+            SearchKind::UidRange(2, 1),
+        )
+            .context("SEARCH 2:1")?;
+        assert!(srv_msg.to_ascii_lowercase().contains("search 1"));
+
+        // SEARCH specifies '*' to refer to the largest available UID or SEQID
+        let srv_msg = search(
+            imap_socket,
+            SearchKind::UidRangeNumAsterisk(2),
+        )
+            .context("SEARCH 2:*")?;
+        assert!(srv_msg.to_ascii_lowercase().contains("search 1"));
+        
         Ok(())
     })
         .expect("test fully run");
