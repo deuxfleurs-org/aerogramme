@@ -280,7 +280,7 @@ impl<'a> Criteria<'a> {
                 .imf()
                 .map(|imf| imf.naive_date().ok())
                 .flatten()
-                .map(|msg_naive| &msg_naive > search_naive.as_ref())
+                .map(|msg_naive| &msg_naive >= search_naive.as_ref())
                 .unwrap_or(false),
 
             // Filter on the full content of the email
