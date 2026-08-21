@@ -20,6 +20,7 @@ impl SeqType {
     }
 }
 
+#[derive(Debug)]
 pub struct Criteria<'a>(pub &'a SearchKey<'a>);
 impl<'a> Criteria<'a> {
     /// Returns a set of email identifiers that is greater or equal
@@ -57,9 +58,11 @@ impl<'a> Criteria<'a> {
                 }
             }
             SearchKey::And(search_list) => {
-                tracing::debug!(
-                    "using AND in a search request is slow: no intersection is performed"
-                );
+                if search_list.as_ref().len() > 1 {
+                    tracing::debug!(
+                        "using AND in a search request is slow: no intersection is performed"
+                    );
+                }
                 // As we perform no intersection, we don't care if we mix uid or id.
                 // We only keep the smallest range, being it ID or UID, depending of
                 // which one has the less items. This is an approximation as UID ranges
@@ -343,6 +346,7 @@ fn approx_sequence_size(seq: &Sequence) -> u64 {
 
 // --- Partial decision things ----
 
+#[derive(Debug)]
 enum PartialDecision {
     Keep,
     Discard,
