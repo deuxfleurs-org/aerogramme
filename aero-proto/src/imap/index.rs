@@ -1,4 +1,4 @@
-use std::num::NonZeroU64;
+use std::num::{NonZeroU32, NonZeroU64};
 
 use imap_codec::imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
 
@@ -51,17 +51,21 @@ pub trait UidIndexForImap {
 
 impl UidIndexForImap for UidIndex {
     fn fetch_by_uid(&self, sequence_seq: &SequenceSet) -> Vec<MailIndex> {
-        let uuid_largest = match self.idx_by_seqid.largest() {
+        let largest_uuid = match self.idx_by_seqid.largest() {
             Some((_, uuid)) => uuid,
             None => return vec![],
         };
-        let (uid_largest, _, _) = self.table.get(uuid_largest).unwrap();
+        let &(largest_uid, _, _) = self.table.get(largest_uuid).unwrap();
+        let largest_seqid = match self.idx_by_seqid.largest() {
+            Some((seqid, _)) => seqid,
+            None => return vec![],
+        };
         // NOTE: sequence_seq may describe an arbitrarily large range of
         // integers, so we must not iterate over all of it...
         sequence_seq
-            .iter(*uid_largest)
+            .iter(largest_uid)
             // TODO: could this be done automatically by SequenceSet::iter?
-            .take_while(|uid| uid <= uid_largest)
+            .take_while(|uid| *uid <= largest_uid)
             .filter_map(|uid| {
                 let &uuid = self.idx_by_uid.get(&uid)?;
                 let &(uid, modseq, ref flags) = self.table.get(&uuid)?;
@@ -72,19 +76,26 @@ impl UidIndexForImap for UidIndex {
                     uuid,
                     modseq,
                     flags: flags.clone(),
+                    largest_seqid,
+                    largest_uid,
                 })
             })
             .collect()
     }
 
     fn fetch_by_seqid(&self, sequence_seq: &SequenceSet) -> Vec<MailIndex> {
-        let seqid_largest = match self.idx_by_seqid.largest() {
+        let largest_uuid = match self.idx_by_seqid.largest() {
+            Some((_, uuid)) => uuid,
+            None => return vec![],
+        };
+        let &(largest_uid, _, _) = self.table.get(largest_uuid).unwrap();
+        let largest_seqid = match self.idx_by_seqid.largest() {
             Some((seqid, _)) => seqid,
             None => return vec![],
         };
         sequence_seq
-            .iter(seqid_largest)
-            .take_while(|seqid| *seqid <= seqid_largest)
+            .iter(largest_seqid)
+            .take_while(|seqid| *seqid <= largest_seqid)
             .filter_map(|seqid| {
                 let &uuid = self.idx_by_seqid.get(seqid)?;
                 let &(uid, modseq, ref flags) = self.table.get(&uuid)?;
@@ -94,6 +105,8 @@ impl UidIndexForImap for UidIndex {
                     uuid,
                     modseq,
                     flags: flags.clone(),
+                    largest_seqid,
+                    largest_uid,
                 })
             })
             .collect()
@@ -108,47 +121,48 @@ pub struct MailIndex {
     pub uuid: UniqueIdent,
     pub modseq: ModSeq,
     pub flags: Vec<String>,
+    // the `largest_*` fields are required to compare a MailIndex against '*'
+    // (SeqOrUid::Asterisk), which refers to "the largest seqid/uid currently in
+    // use"
+    pub largest_seqid: ImapSeqid,
+    pub largest_uid: ImapUid,
 }
 
 impl MailIndex {
     // The following functions are used to implement the SEARCH command
     pub fn is_in_sequence_seqid(&self, seq: &Sequence) -> bool {
-        match seq {
-            Sequence::Single(SeqOrUid::Asterisk) => true,
-            Sequence::Single(SeqOrUid::Value(target)) => target == &self.seqid,
-            Sequence::Range(SeqOrUid::Asterisk, SeqOrUid::Value(x))
-            | Sequence::Range(SeqOrUid::Value(x), SeqOrUid::Asterisk) => x <= &self.seqid,
-            Sequence::Range(SeqOrUid::Value(x1), SeqOrUid::Value(x2)) => {
-                if x1 < x2 {
-                    x1 <= &self.seqid && &self.seqid <= x2
-                } else {
-                    x1 >= &self.seqid && &self.seqid >= x2
-                }
-            }
-            Sequence::Range(SeqOrUid::Asterisk, SeqOrUid::Asterisk) => true,
-        }
+        let (lo, hi) = range_of_sequence(seq, self.largest_seqid);
+        lo <= self.seqid && self.seqid <= hi
     }
 
     pub fn is_in_sequence_uid(&self, seq: &Sequence) -> bool {
-        match seq {
-            Sequence::Single(SeqOrUid::Asterisk) => true,
-            Sequence::Single(SeqOrUid::Value(target)) => target == &self.uid,
-            Sequence::Range(SeqOrUid::Asterisk, SeqOrUid::Value(x))
-            | Sequence::Range(SeqOrUid::Value(x), SeqOrUid::Asterisk) => x <= &self.uid,
-            Sequence::Range(SeqOrUid::Value(x1), SeqOrUid::Value(x2)) => {
-                if x1 < x2 {
-                    x1 <= &self.uid && &self.uid <= x2
-                } else {
-                    x1 >= &self.uid && &self.uid >= x2
-                }
-            }
-            Sequence::Range(SeqOrUid::Asterisk, SeqOrUid::Asterisk) => true,
-        }
+        let (lo, hi) = range_of_sequence(seq, self.largest_uid);
+        lo <= self.uid && self.uid <= hi
     }
 
     pub fn is_flag_set(&self, flag: &str) -> bool {
         self.flags
             .iter()
             .any(|candidate| candidate.as_str() == flag)
+    }
+}
+
+// Converts a Sequence into an equivalent inclusive range [x;y]
+fn range_of_sequence(seq: &Sequence, largest: NonZeroU32) -> (NonZeroU32, NonZeroU32) {
+    let (x, y) = match seq {
+        Sequence::Single(s) => (num_of_seqoruid(*s, largest), num_of_seqoruid(*s, largest)),
+        Sequence::Range(x, y) => (num_of_seqoruid(*x, largest), num_of_seqoruid(*y, largest)),
+    };
+    if x <= y {
+        (x, y)
+    } else {
+        (y, x)
+    }
+}
+
+fn num_of_seqoruid(s: SeqOrUid, largest: NonZeroU32) -> NonZeroU32 {
+    match s {
+        SeqOrUid::Asterisk => largest,
+        SeqOrUid::Value(n) => n,
     }
 }

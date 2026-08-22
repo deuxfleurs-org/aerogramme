@@ -10,6 +10,7 @@ fn main() {
     rfc3501_imap4rev1_fetch_body_mime();
     rfc3501_imap4rev1_fetch_body_rfc822();
     rfc3501_imap4rev1_fetch_seen();
+    rfc3501_imap4rev1_search();
     rfc6851_imapext_move();
     rfc4551_imapext_condstore();
     rfc2177_imapext_idle();
@@ -738,6 +739,48 @@ fn rfc3501_imap4rev1_fetch_seen() {
             .context("fetch BODY[]")?;
         assert!(srv_msg.to_ascii_lowercase().contains("\\seen"));
 
+        Ok(())
+    })
+        .expect("test fully run");
+}
+
+// Extra testcases for SEARCH
+fn rfc3501_imap4rev1_search() {
+    println!("🧪 rfc3501_imap4rev1_search");
+    common::aerogramme_provider_daemon_dev(|imap_socket, _lmtp_socket, _dav_socket| {
+        connect(imap_socket).context("server says hello")?;
+        login(imap_socket, Account::Alice).context("login test")?;
+        let select_res =
+            select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
+        assert!(select_res.contains("* 0 EXISTS"));
+
+        let append_res = append_not_seen(imap_socket, Email::Basic).context("append email")?;
+        assert!(append_res.contains("* 1 EXISTS"));
+
+        // SEARCH matching "should be case insensitive for characters within the ASCII range"
+        let srv_msg = search(
+            imap_socket,
+            SearchKind::Header("subject", "TEST"),
+        )
+            .context("SEARCH HEADER")?;
+        assert!(srv_msg.to_ascii_lowercase().contains("search 1"));
+
+        // SEARCH ranges "x:y" can specify bounds in any order, i.e. 2:1 is equivalent to 1:2
+        let srv_msg = search(
+            imap_socket,
+            SearchKind::UidRange(2, 1),
+        )
+            .context("SEARCH 2:1")?;
+        assert!(srv_msg.to_ascii_lowercase().contains("search 1"));
+
+        // SEARCH specifies '*' to refer to the largest available UID or SEQID
+        let srv_msg = search(
+            imap_socket,
+            SearchKind::UidRangeNumAsterisk(2),
+        )
+            .context("SEARCH 2:*")?;
+        assert!(srv_msg.to_ascii_lowercase().contains("search 1"));
+        
         Ok(())
     })
         .expect("test fully run");

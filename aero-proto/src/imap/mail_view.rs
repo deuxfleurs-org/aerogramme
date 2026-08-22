@@ -123,7 +123,7 @@ impl<'a> MailView<'a> {
                 // NOTE: `v.windows(0)` panics so we need to check this case
                 // explicitly
                 pattern.is_empty() ||
-                    v.windows(pattern.len()).any(|win| win == pattern)
+                    v.windows(pattern.len()).any(|win| win.eq_ignore_ascii_case(pattern))
             )
         })
     }

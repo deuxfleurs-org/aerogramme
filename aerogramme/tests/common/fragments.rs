@@ -147,6 +147,7 @@ pub enum SearchKind<'a> {
     Text(&'a str),
     ModSeq(u64),
     UidRange(u64, u64),
+    UidRangeNumAsterisk(u64),
 }
 
 pub enum StatusKind {
@@ -460,6 +461,7 @@ pub fn search(imap: &mut TcpStream, sk: SearchKind) -> Result<String> {
         SearchKind::Text(x) => format!("TEXT \"{}\"", x),
         SearchKind::ModSeq(x) => format!("MODSEQ {}", x),
         SearchKind::UidRange(lo, hi) => format!("{}:{}", lo, hi),
+        SearchKind::UidRangeNumAsterisk(lo) => format!("{}:*", lo),
     };
     let prefix = match sk {
         SearchKind::UidRange(_, _) => "UID ",
