@@ -32,11 +32,21 @@ pub enum BodySection<'a> {
     },
 }
 
+/// `NodeMime` represents a generic email entity; it can be a whole message or a
+/// MIME part. It is used for recursively visiting an email AST, and is used
+/// both to implement FETCH BODY[<section>] and FETCH BODYSTRUCTURE.
+#[derive(Clone, Copy, Debug)]
+enum NodeMime<'a> {
+    Message(&'a Message<'a>),
+    AnyPart(&'a AnyPart<'a>),
+}
+
 /// Logic for BODY[<section>]<<partial>>
-/// Works in 3 times:
-///  1. Find the section (RootMime::subset)
-///  2. Apply the extraction logic (SelectedMime::extract), like TEXT, HEADERS, etc.
-///  3. Keep only the given subset provided by partial
+/// Works in 3 steps:
+///  1. Find the email subpart selected by the section's part numbers
+///  2. Apply the extraction logic corresponding to the section's non-numeric
+///  part specifier, if any (like TEXT, HEADER, etc.)
+///  3. Keep only the given byte range specified by partial
 ///
 /// Example of message sections:
 ///
@@ -66,108 +76,109 @@ pub fn body_ext<'a>(
     section: &'a Option<FetchSection<'a>>,
     partial: &'a Option<(u32, NonZeroU32)>,
 ) -> Result<BodySection<'a>> {
-    let root_mime = NodeMime::Message(msg);
+    let root_mime = NodeMimeSub::from_message(msg);
     let (extractor, path) = SubsettedSection::from(section);
+    // Step 1: select subpart
     let sub_mime = root_mime.subset(path)?;
+    // Step 2: extract part specifier
     let extracted_full = sub_mime.extract(&extractor)?;
-    Ok(extracted_full.to_body_section(partial))
+    // Step 3: apply partial byte range
+    let extracted_partial = extracted_full.to_body_section(partial); 
+    Ok(extracted_partial)
 }
 
-/// Logic for BODY and BODYSTRUCTURE
-///
-/// ```raw
-/// b fetch 29878:29879 (BODY)
-/// * 29878 FETCH (BODY (("text" "plain" ("charset" "utf-8") NIL NIL "quoted-printable" 3264 82)("text" "html" ("charset" "utf-8") NIL NIL "quoted-printable" 31834 643) "alternative"))
-/// * 29879 FETCH (BODY ("text" "html" ("charset" "us-ascii") NIL NIL "7bit" 4107 131))
-///                                   ^^^^^^^^^^^^^^^^^^^^^^ ^^^ ^^^ ^^^^^^ ^^^^ ^^^
-///                                   |                      |   |   |      |    | number of lines
-///                                   |                      |   |   |      | size
-///                                   |                      |   |   | content transfer encoding
-///                                   |                      |   | description
-///                                   |                      | id
-///                                   | parameter list
-/// b OK Fetch completed (0.001 + 0.000 secs).
-/// ```
-pub fn bodystructure<'a>(msg: &Message<'a>, is_ext: bool) -> Result<BodyStructure<'static>> {
-    NodeMime::Message(msg).structure(is_ext)
+/// The subset selected by `NodeMime::subset`. This is either a `NodeMime` or a
+/// discrete message body.
+#[derive(Clone, Debug)]
+enum NodeMimeSub<'a> {
+    NodeMime(NodeMime<'a>),
+    DiscreteBody(DiscreteBody<'a>),
 }
 
-pub fn raw_kv_headers<'a>(msg: &'a Message<'a>) -> Vec<(Cow<'a, [u8]>, &'a [u8])> {
-    msg
-        .field_list()
-        .into_iter()
-        .map(|f| (f.raw_name().0, f.raw_body().unwrap()))
-        .collect()
+/// A discrete email body (i.e. text)
+#[derive(Clone, Debug)]
+enum DiscreteBody<'a> {
+    Text(&'a discrete::Text<'a>),
+    Binary(&'a discrete::Binary<'a>),
 }
 
-/// NodeMime
-///
-/// Used for recursive logic on MIME. Represents a generic MIME entity.
-/// See SelectedMime for inspection.
-#[derive(Clone, Copy, Debug)]
-enum NodeMime<'a> {
-    Message(&'a Message<'a>),
-    AnyPart(&'a AnyPart<'a>),
-}
-impl<'a> NodeMime<'a> {
-    /// A MIME object is a tree of elements.
-    /// The path indicates which element must be picked.
-    /// This function returns the picked element as the new view
-    fn subset(self, path: Option<&'a FetchPart>) -> Result<NodeMime<'a>> {
+impl<'a> NodeMimeSub<'a> {
+    fn from_message(msg: &'a Message<'a>) -> Self {
+        Self::NodeMime(NodeMime::Message(msg))
+    }
+
+    /// Returns the sub-part selected by `path` (a sequence of part numbers).
+    fn subset(self, path: Option<&'a FetchPart>) -> Result<NodeMimeSub<'a>> {
         match path {
             None => Ok(self),
             Some(v) => self.rec_subset(v.0.as_ref()),
         }
     }
 
-    fn rec_subset(self, path: &'a [NonZeroU32]) -> Result<NodeMime<'a>> {
+    fn rec_subset(self, path: &'a [NonZeroU32]) -> Result<NodeMimeSub<'a>> {
         if path.is_empty() {
             Ok(self)
         } else {
-            match self.mime_body() {
-                MimeBody::Mult(x) => {
-                    let next = Self::AnyPart(x.children
+            let node_mime = match &self {
+                NodeMimeSub::DiscreteBody(_) =>
+                    bail!("tried to access a subpart on an atomic part (text or binary). Unresolved subpath {:?}",
+                          path),
+                NodeMimeSub::NodeMime(m) =>
+                    m
+            };
+
+            match (&node_mime, node_mime.mime_body()) {
+                (_, MimeBody::Mult(x)) => {
+                    // If this contains a multipart, select a part and explore it recursively.
+                    let next = Self::NodeMime(NodeMime::AnyPart(x.children
                         .get(path[0].get() as usize - 1)
-                        .ok_or(anyhow!("Unable to resolve subpath {:?}, current multipart has only {} elements", path, x.children.len()))?);
+                        .ok_or(anyhow!("Unable to resolve subpath {:?}, current multipart has only {} elements", path, x.children.len()))?));
                     next.rec_subset(&path[1..])
                 },
-                MimeBody::Msg(x) => {
-                    let next = Self::Message(&x.child);
-                    next.rec_subset(path)
+                (node_mime, mime_body) => {
+                    // Otherwise, there is only a single child to this node
+                    let next = match mime_body {
+                        MimeBody::Msg(msg) => Self::NodeMime(NodeMime::Message(&msg.child)),
+                        MimeBody::Txt(txt) => Self::DiscreteBody(DiscreteBody::Text(txt)),
+                        MimeBody::Bin(bin) => Self::DiscreteBody(DiscreteBody::Binary(bin)),
+                        MimeBody::Mult(_) => unreachable!("already handled in earlier match case"),
+                    };
+                    // Recursion through through `next` depends on the type of
+                    // the current node...
+                    match node_mime {
+                        NodeMime::Message(_) => {
+                            // Non-multipart full messages behave as containing
+                            // a single part with their contents.
+                            //
+                            // "Every message has at least one part number. Messages
+                            // that do not use MIME, and MIME messages that are not
+                            // multipart and have no encapsulated message within them,
+                            // only have a part 1."
+                            if path[0].get() > 1 {
+                                bail!("Tried to access subpart {} of a message which has only one part", path[0].get())
+                            }
+                            next.rec_subset(&path[1..])
+                        },
+                        NodeMime::AnyPart(_) => {
+                            // Non-multipart MIME parts behave as their underlying
+                            // contents, without an indirection.
+                            next.rec_subset(path)
+                        },
+                    }
                 },
-                _ => bail!("You tried to access a subpart on an atomic part (text or binary). Unresolved subpath {:?}", path),
             }
         }
     }
 
-    fn structure(&self, is_ext: bool) -> Result<BodyStructure<'static>> {
-        match &self.mime_body() {
-            MimeBody::Txt(x) => NodeTxt(self, x).structure(is_ext),
-            MimeBody::Bin(x) => NodeBin(self, x).structure(is_ext),
-            MimeBody::Mult(x) => NodeMult(self, x).structure(is_ext),
-            MimeBody::Msg(x) => NodeMsg(self, x).structure(is_ext),
-        }
-    }
-
-    /// The subsetted fetch section basically tells us the
-    /// extraction logic to apply on our selected MIME.
-    /// This function acts as a router for these logic.
+    /// Extract the information specified by a (non-numeric) part specifier: TEXT, HEADER, etc.
     fn extract(&self, extractor: &SubsettedSection<'a>) -> Result<ExtractedFull<'a>> {
         match extractor {
             SubsettedSection::Text => self.text(),
             SubsettedSection::Header => self.header(),
             SubsettedSection::HeaderFields(fields) => self.header_fields(fields, false),
             SubsettedSection::HeaderFieldsNot(fields) => self.header_fields(fields, true),
-            SubsettedSection::Part => self.part(),
+            SubsettedSection::This => self.this(),
             SubsettedSection::Mime => self.mime(),
-            SubsettedSection::EntireMessage => self.entire_message(),
-        }
-    }
-
-    fn entire_message(&self) -> Result<ExtractedFull<'a>> {
-        match self {
-            NodeMime::Message(m) => Ok(ExtractedFull(m.raw.unwrap().into())),
-            NodeMime::AnyPart(_) => anyhow::bail!("Tried to select an entire message on a MIME part. This logic is only intended to be run on empty body_ext sections (BODY[] or BODY.PEEK[])"),
         }
     }
 
@@ -204,16 +215,30 @@ impl<'a> NodeMime<'a> {
     /// The MIME part specifier refers to the [MIME-IMB] header for
     /// this part.
     fn mime(&self) -> Result<ExtractedFull<'a>> {
+        let mime_headers = match self {
+            Self::NodeMime(m) => m.mime_headers(),
+            Self::DiscreteBody(_) =>
+                bail!("Tried to fetch MIME headers of a discrete email body"),
+        };
         let res = raw_kv_to_bytes(
-            self.mime_headers()
+            mime_headers
                 .into_iter()
                 .map(|(f, body)| (f.raw_name(), body)),
         );
         Ok(ExtractedFull(res.into()))
     }
 
-    fn part(&self) -> Result<ExtractedFull<'a>> {
-        Ok(ExtractedFull(self.mime_body().raw_body().unwrap().into()))
+    /// The "full contents" of the currently selected part; corresponds to the
+    /// empty extractor. Notably, on MIME parts, this returns the body of the
+    /// part, excluding its MIME headers.
+    fn this(&self) -> Result<ExtractedFull<'a>> {
+        let raw = match self {
+            Self::NodeMime(NodeMime::Message(m)) => m.raw.unwrap(),
+            Self::NodeMime(NodeMime::AnyPart(p)) => p.mime_body.raw_body().unwrap(),
+            Self::DiscreteBody(DiscreteBody::Binary(b)) => b.raw_body.unwrap(),
+            Self::DiscreteBody(DiscreteBody::Text(b)) => b.raw_body.unwrap(),
+        };
+        Ok(ExtractedFull(raw.into()))
     }
 
     /// The [...] HEADER.FIELDS, and HEADER.FIELDS.NOT part
@@ -253,6 +278,59 @@ impl<'a> NodeMime<'a> {
         );
 
         Ok(ExtractedFull(res.into()))
+    }
+
+    /// If `self` represents a full message or an encapsulated full message,
+    /// return it. Otherwise raise an error.
+    fn entire_or_encapsulated_message(&self) -> Result<&'a Message<'a>> {
+        match self {
+            Self::NodeMime(NodeMime::Message(msg)) => Ok(*msg),
+            Self::NodeMime(NodeMime::AnyPart(part)) => part
+                .mime_body
+                .as_message()
+                .ok_or(anyhow!("Tried to fetch the encapsulated message of a part of a different type"))
+                .map(|mime_msg| &*mime_msg.child),
+            Self::DiscreteBody(_) =>
+                bail!("Tried to use a discrete body as a full message")
+        }
+    }
+}
+
+/// Logic for BODY and BODYSTRUCTURE
+///
+/// ```raw
+/// b fetch 29878:29879 (BODY)
+/// * 29878 FETCH (BODY (("text" "plain" ("charset" "utf-8") NIL NIL "quoted-printable" 3264 82)("text" "html" ("charset" "utf-8") NIL NIL "quoted-printable" 31834 643) "alternative"))
+/// * 29879 FETCH (BODY ("text" "html" ("charset" "us-ascii") NIL NIL "7bit" 4107 131))
+///                                   ^^^^^^^^^^^^^^^^^^^^^^ ^^^ ^^^ ^^^^^^ ^^^^ ^^^
+///                                   |                      |   |   |      |    | number of lines
+///                                   |                      |   |   |      | size
+///                                   |                      |   |   | content transfer encoding
+///                                   |                      |   | description
+///                                   |                      | id
+///                                   | parameter list
+/// b OK Fetch completed (0.001 + 0.000 secs).
+/// ```
+pub fn bodystructure<'a>(msg: &Message<'a>, is_ext: bool) -> Result<BodyStructure<'static>> {
+    NodeMime::Message(msg).structure(is_ext)
+}
+
+pub fn raw_kv_headers<'a>(msg: &'a Message<'a>) -> Vec<(Cow<'a, [u8]>, &'a [u8])> {
+    msg
+        .field_list()
+        .into_iter()
+        .map(|f| (f.raw_name().0, f.raw_body().unwrap()))
+        .collect()
+}
+
+impl<'a> NodeMime<'a> {
+    fn structure(&self, is_ext: bool) -> Result<BodyStructure<'static>> {
+        match &self.mime_body() {
+            MimeBody::Txt(x) => NodeTxt(self, x).structure(is_ext),
+            MimeBody::Bin(x) => NodeBin(self, x).structure(is_ext),
+            MimeBody::Mult(x) => NodeMult(self, x).structure(is_ext),
+            MimeBody::Msg(x) => NodeMsg(self, x).structure(is_ext),
+        }
     }
 
     /// Basic fields of a MIME entity, common to all entity types
@@ -299,22 +377,16 @@ impl<'a> NodeMime<'a> {
             size: u32::try_from(sz)?,
         })
     }
+}
 
+//----------------------------------------------------------
+// Auxiliary functions
+
+impl<'a> NodeMime<'a> {
     fn mime_body(&self) -> &'a MimeBody<'a> {
         match self {
             NodeMime::Message(m) => &m.mime_body,
             NodeMime::AnyPart(p) => &p.mime_body,
-        }
-    }
-
-    fn entire_or_encapsulated_message(&self) -> Result<&'a Message<'a>> {
-        match self {
-            Self::Message(msg) => Ok(*msg),
-            Self::AnyPart(part) => part
-                .mime_body
-                .as_message()
-                .ok_or(anyhow!("Tried to fetch the encapsulated message of a part of a different type"))
-                .map(|mime_msg| &*mime_msg.child)
         }
     }
 
@@ -355,8 +427,7 @@ impl<'a> NodeMime<'a> {
 /// we separate this work here.
 #[derive(Debug)]
 enum SubsettedSection<'a> {
-    EntireMessage,
-    Part,
+    This,
     Header,
     HeaderFields(&'a Vec1<AString<'a>>),
     HeaderFieldsNot(&'a Vec1<AString<'a>>),
@@ -375,8 +446,8 @@ impl<'a> SubsettedSection<'a> {
                 (Self::HeaderFieldsNot(fields), maybe_part.as_ref())
             }
             Some(FetchSection::Mime(part)) => (Self::Mime, Some(part)),
-            Some(FetchSection::Part(part)) => (Self::Part, Some(part)),
-            None => (Self::EntireMessage, None),
+            Some(FetchSection::Part(part)) => (Self::This, Some(part)),
+            None => (Self::This, None),
         }
     }
 }
