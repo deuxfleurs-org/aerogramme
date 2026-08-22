@@ -213,7 +213,7 @@ impl<'a> AuthenticatedContext<'a> {
                         .to_req(self.req)
                         .message("LIST complete")
                         .data(Data::List {
-                            items: vec![],
+                            items: vec![FlagNameAttribute::Noselect],
                             delimiter: Some(mbx_hier_delim),
                             mailbox: "".try_into().unwrap(),
                         })
