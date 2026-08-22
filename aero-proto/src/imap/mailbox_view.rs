@@ -5,7 +5,7 @@ use anyhow::{anyhow, Error, Result};
 
 use futures::stream::{StreamExt, TryStreamExt};
 
-use imap_codec::imap_types::core::Charset;
+use imap_codec::imap_types::core::{Charset, Vec1};
 use imap_codec::imap_types::fetch::MessageDataItem;
 use imap_codec::imap_types::flag::{Flag, FlagFetch, FlagPerm, StoreResponse, StoreType};
 use imap_codec::imap_types::response::{Code, CodeOther, Data, Status};
@@ -472,6 +472,12 @@ impl MailboxView {
             if matches!(seen, SeenFlag::MustAdd) {
                 let seen_flag = Flag::Seen.to_string();
                 self.mailbox.add_flags(midx.uuid, &[seen_flag]).await?;
+                res.push(Body::Data(Data::Fetch {
+                    seq: midx.seqid,
+                    items: Vec1::from(MessageDataItem::Flags(vec![
+                        FlagFetch::Flag(Flag::Seen),
+                    ])),
+                }));
             }
             // Add "body" to the final result that will be sent to the client
             res.push(body);
