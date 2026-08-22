@@ -93,18 +93,18 @@ pub fn bodystructure<'a>(msg: &Message<'a>, is_ext: bool) -> Result<BodyStructur
 }
 
 pub fn raw_kv_headers<'a>(msg: &'a Message<'a>) -> Vec<(Cow<'a, [u8]>, &'a [u8])> {
-    NodeMime::Message(msg)
-        .raw_kv_headers()
+    msg
+        .field_list()
         .into_iter()
-        .map(|(k, v)| (k.0, v.unwrap()))
-        .collect::<Vec<_>>()
+        .map(|f| (f.raw_name().0, f.raw_body().unwrap()))
+        .collect()
 }
 
 /// NodeMime
 ///
 /// Used for recursive logic on MIME. Represents a generic MIME entity.
 /// See SelectedMime for inspection.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum NodeMime<'a> {
     Message(&'a Message<'a>),
     AnyPart(&'a AnyPart<'a>),
@@ -132,9 +132,6 @@ impl<'a> NodeMime<'a> {
                     next.rec_subset(&path[1..])
                 },
                 MimeBody::Msg(x) => {
-                    if path[0].get() != 1 {
-                        bail!("Unable to resolve subpath {:?}, current message has only 1 part", path);
-                    }
                     let next = Self::Message(&x.child);
                     next.rec_subset(path)
                 },
@@ -175,8 +172,12 @@ impl<'a> NodeMime<'a> {
     }
 
     /// The TEXT part specifier refers to the text body of the message, omitting the [RFC-2822] header.
+    ///
+    /// This should be understood to behave as HEADER: on a part, requires the
+    /// part to contain an encapsulated message, and return its body.
     fn text(&self) -> Result<ExtractedFull<'a>> {
-        Ok(ExtractedFull(self.mime_body().raw_body().unwrap().into()))
+        let msg = self.entire_or_encapsulated_message()?;
+        Ok(ExtractedFull(msg.mime_body.raw_body().unwrap().into()))
     }
 
     /// The HEADER [...] part specifiers refer to the [RFC-2822] header of the message or of
@@ -184,14 +185,25 @@ impl<'a> NodeMime<'a> {
     /// ```raw
     /// HEADER     ([RFC-2822] header of the message)
     /// ```
+    /// 
+    /// Note: consequently, the behavior of HEADER on a part that does not
+    /// contain an encapsulated message is undefined. We return an error.
+    ///
+    /// The blank line is always included as part of the header data, except in
+    /// the case of a message that has no body and no blank line.
     fn header(&self) -> Result<ExtractedFull<'a>> {
-        Ok(ExtractedFull(self.raw_headers().unwrap().into()))
+        Ok(ExtractedFull(
+            self
+                .entire_or_encapsulated_message()?
+                .raw_headers
+                .unwrap()
+                .into()
+        ))
     }
 
     /// The MIME part specifier refers to the [MIME-IMB] header for
     /// this part.
     fn mime(&self) -> Result<ExtractedFull<'a>> {
-        // TODO: check
         let res = raw_kv_to_bytes(
             self.mime_headers()
                 .into_iter()
@@ -201,7 +213,6 @@ impl<'a> NodeMime<'a> {
     }
 
     fn part(&self) -> Result<ExtractedFull<'a>> {
-        // TODO: check
         Ok(ExtractedFull(self.mime_body().raw_body().unwrap().into()))
     }
 
@@ -229,10 +240,16 @@ impl<'a> NodeMime<'a> {
             .collect::<HashSet<_>>();
 
         // Filter headers
+        let msg = self.entire_or_encapsulated_message()?;
         let res = raw_kv_to_bytes(
-            self.raw_kv_headers()
+            msg
+                .field_list()
                 .into_iter()
-                .filter(|(k, _)| index.contains(&k.bytes().to_ascii_lowercase()) ^ invert),
+                .filter_map(|f| {
+                    let name = f.raw_name();
+                    let keep = index.contains(&name.bytes().to_ascii_lowercase()) ^ invert;
+                    keep.then_some((name, f.raw_body()))
+                })
         );
 
         Ok(ExtractedFull(res.into()))
@@ -290,25 +307,14 @@ impl<'a> NodeMime<'a> {
         }
     }
 
-    fn raw_headers(&self) -> &'a RawInput<'a> {
+    fn entire_or_encapsulated_message(&self) -> Result<&'a Message<'a>> {
         match self {
-            NodeMime::Message(m) => &m.raw_headers,
-            NodeMime::AnyPart(p) => &p.raw_headers,
-        }
-    }
-
-    fn raw_kv_headers(&self) -> Vec<(header::FieldName<'a>, RawInput<'a>)> {
-        match self {
-            NodeMime::Message(m) => m
-                .field_list()
-                .into_iter()
-                .map(|f| (f.raw_name(), f.raw_body()))
-                .collect(),
-            NodeMime::AnyPart(p) => p
-                .field_list()
-                .into_iter()
-                .map(|f| (f.raw_name(), f.raw_body()))
-                .collect(),
+            Self::Message(msg) => Ok(*msg),
+            Self::AnyPart(part) => part
+                .mime_body
+                .as_message()
+                .ok_or(anyhow!("Tried to fetch the encapsulated message of a part of a different type"))
+                .map(|mime_msg| &*mime_msg.child)
         }
     }
 
@@ -347,6 +353,7 @@ impl<'a> NodeMime<'a> {
 ///  - Then we must process it as desired
 /// The given struct mixes both work, so
 /// we separate this work here.
+#[derive(Debug)]
 enum SubsettedSection<'a> {
     EntireMessage,
     Part,
@@ -495,6 +502,7 @@ impl<'a> NodeBin<'a> {
 
 // ---------------------------
 
+#[derive(Debug)]
 struct ExtractedFull<'a>(Cow<'a, [u8]>);
 impl<'a> ExtractedFull<'a> {
     /// It is possible to fetch a substring of the designated text.
@@ -582,17 +590,31 @@ fn nol(input: &[u8]) -> u32 {
         .unwrap_or(0)
 }
 
+/// Formats a subset of header fields.
+///
+/// The result must include the final separating blank line between headers and
+/// body:
+/// 
+/// Note also that the [RFC5322] delimiting blank line between the header and
+/// the body is not affected by header-line subsetting; the blank line is always
+/// included as part of the header data, except in the case of a message that
+/// has no body and no blank line.
 fn raw_kv_to_bytes<'a, I>(kv: I) -> Vec<u8>
 where
     I: Iterator<Item = (header::FieldName<'a>, RawInput<'a>)>,
 {
-    kv.fold(vec![], |mut acc, (k, v)| {
+    let mut res = kv.fold(vec![], |mut acc, (k, v)| {
         acc.extend(k.bytes());
         acc.extend(b":");
         acc.extend(v.unwrap());
         acc.extend(b"\r\n");
         acc
-    })
+    });
+    // FIXME: for now we always add the separating blank line, even if there was
+    // none in the original message (eml_codec does not currently expose in its
+    // AST the separating blank line between headers & body).
+    res.extend(b"\r\n");
+    res
 }
 
 fn mime_atom_to_istring<'a>(a: &MIMEAtom<'a>) -> IString<'static> {

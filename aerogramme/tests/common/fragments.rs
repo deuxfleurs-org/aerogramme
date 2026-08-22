@@ -61,6 +61,7 @@ pub enum Flag {
 pub enum Email {
     Basic,
     Multipart,
+    Multipart2,
 }
 
 pub enum Selection {
@@ -91,8 +92,46 @@ pub enum StoreMod {
 pub enum FetchKind {
     Rfc822,
     Rfc822Size,
+    Body(Option<FetchBodySection>),
+}
+
+pub struct FetchBodySection {
+    pub part_no: Vec<u64>,
+    pub part_spec: Option<PartSpec>,
+}
+
+impl ToString for FetchBodySection {
+    fn to_string(&self) -> String {
+        let no = self.part_no.iter().map(u64::to_string).collect::<Vec<_>>().join(".");
+        match &self.part_spec {
+            None => no,
+            Some(spec) =>
+                if no.is_empty() {
+                    spec.to_string()
+                } else {
+                    format!("{}.{}", no, spec.to_string())
+                }
+        }
+    }
+}
+
+pub enum PartSpec {
     HeaderFields(Vec<String>),
-    BodyBracket,
+    Mime,
+    Header,
+    Text,
+}
+
+impl ToString for PartSpec {
+    fn to_string(&self) -> String {
+        match self {
+            PartSpec::HeaderFields(fields) => 
+                format!("HEADER.FIELDS ({})", fields.join(" ")),
+            PartSpec::Mime => "MIME".to_string(),
+            PartSpec::Header => "HEADER".to_string(),
+            PartSpec::Text => "TEXT".to_string(),
+        }
+    }
 }
 
 pub enum FetchMod {
@@ -278,6 +317,7 @@ pub fn lmtp_deliver_email(lmtp: &mut TcpStream, email_type: Email) -> Result<()>
     let email = match email_type {
         Email::Basic => EMAIL2,
         Email::Multipart => EMAIL1,
+        Email::Multipart2 => EMAIL3,
     };
     lmtp.write(&b"MAIL FROM:<bob@example.tld>\r\n"[..])?;
     let _read = read_lines(lmtp, &mut buffer, Some(&b"250 2.0.0"[..]))?;
@@ -341,8 +381,10 @@ pub fn fetch(
     let kind_str = match kind {
         FetchKind::Rfc822 => "RFC822",
         FetchKind::Rfc822Size => "RFC822.SIZE",
-        FetchKind::HeaderFields(fields) => &format!("BODY[HEADER.FIELDS ({})]", fields.join(" ")),
-        FetchKind::BodyBracket => "BODY[]",
+        FetchKind::Body(None) => "BODY[]",
+        FetchKind::Body(Some(section)) => {
+            &format!("BODY[{}]", section.to_string())
+        },
     };
 
     let mod_str = match modifier {
@@ -377,6 +419,7 @@ pub fn append(imap: &mut TcpStream, content: Email) -> Result<String> {
     let ref_mail = match content {
         Email::Multipart => EMAIL1,
         Email::Basic => EMAIL2,
+        Email::Multipart2 => EMAIL3,
     };
 
     let append_cmd = format!("47 append inbox (\\Seen) {{{}}}\r\n", ref_mail.len());

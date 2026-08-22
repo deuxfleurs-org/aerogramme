@@ -53,6 +53,46 @@ Subject: Test\r
 Hello world!\r
 ";
 
+// from imaptest's fetch-body-mime 
+pub static EMAIL3: &[u8] = br#"From: user@domain.org
+Date: Sat, 24 Mar 2007 23:00:00 +0200
+Mime-Version: 1.0
+Content-Type: multipart/mixed; boundary="foo
+ bar"
+
+Root MIME prologue
+
+--foo bar
+Content-Type: text/x-myown; charset=us-ascii
+
+hello
+
+--foo bar
+Content-Type: message/rfc822
+
+From: sub@domain.org
+Date: Sun, 12 Aug 2012 12:34:56 +0300
+Subject: submsg
+Content-Type: multipart/alternative; boundary="sub1"
+
+Sub MIME prologue
+--sub1
+Content-Type: text/html
+
+<p>Hello world</p>
+
+--sub1
+Content-Type: text/plain
+
+Hello another world
+
+--sub1--
+Sub MIME epilogue
+
+--foo bar--
+Root MIME epilogue
+"#;
+
 pub static ICAL_RFC1: &[u8] = b"BEGIN:VCALENDAR
 PRODID:-//Example Corp.//CalDAV Client//EN
 VERSION:2.0
