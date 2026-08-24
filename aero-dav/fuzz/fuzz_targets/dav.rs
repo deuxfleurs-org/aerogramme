@@ -4,7 +4,7 @@ use libfuzzer_sys::arbitrary;
 use libfuzzer_sys::arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
 
-use aero_dav::{realization, types, xml};
+use aero_dav::{coretypes, realization, xml};
 use quick_xml::reader::NsReader;
 use tokio::io::AsyncWriteExt;
 use tokio::runtime::Runtime;
@@ -171,7 +171,7 @@ async fn serialize(elem: &impl xml::QWrite) -> Vec<u8> {
     return buffer;
 }
 
-type Object = types::Multistatus<realization::Core, types::PropValue<realization::Core>>;
+type Object = coretypes::Multistatus<realization::Core>;
 
 fuzz_target!(|nodes: XmlNode| {
     let gen = format!(
