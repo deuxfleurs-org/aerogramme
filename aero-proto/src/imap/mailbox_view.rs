@@ -164,6 +164,16 @@ impl MailboxView {
             data.push(self.uidvalidity_status()?);
             data.push(self.uidnext_status()?);
         } else {
+            // - if new flags are used in the mailbox, send an update.
+            // 
+            // NOTE: do this *before* we send flag updates (the next bullet)
+            // that may use these new flags
+            let old_flags = old_snapshot.idx_by_flag.flags().collect::<HashSet<_>>();
+            let new_flags = new_snapshot.idx_by_flag.flags().collect::<HashSet<_>>();
+            if new_flags.difference(&old_flags).nth(0).is_some() {
+                data.push(self.known_flags_status()?)
+            }
+
             // - if flags changed for existing mails, tell client
             for (i, (_uid, uuid)) in new_snapshot.idx_by_uid.iter().enumerate() {
                 if params.silence.contains(uuid) {
@@ -667,28 +677,10 @@ impl MailboxView {
     /// the flags that are in `known_state` + default flags
     fn flags_status(&self) -> Result<Vec<Body<'static>>> {
         let mut body = vec![];
-
-        // 1. Collecting all the possible flags in the mailbox
-        // 1.a Fetch them from our index
-        let mut known_flags: Vec<Flag> = self
-            .known_state
-            .idx_by_flag
-            .flags()
-            .filter_map(|f| match flags::from_str(f) {
-                Some(FlagFetch::Flag(fl)) => Some(fl),
-                _ => None,
-            })
-            .collect();
-        // 1.b Merge it with our default flags list
-        for f in DEFAULT_FLAGS.iter() {
-            if !known_flags.contains(f) {
-                known_flags.push(f.clone());
-            }
-        }
-        // 1.c Create the IMAP message
-        body.push(Body::Data(Data::Flags(known_flags.clone())));
-
-        // 2. Returning flags that are persisted
+        // 1. Add status for all known flags in the mailbox
+        body.push(self.known_flags_status()?);
+        
+        // 2. Return flags that are persisted
         // 2.a Always advertise our default flags
         let mut permanent = DEFAULT_FLAGS
             .iter()
@@ -707,6 +699,34 @@ impl MailboxView {
 
         // Done!
         Ok(body)
+    }
+
+    fn known_flags(&self) -> HashSet<Flag<'_>> {
+        // 1. Fetch them from our index
+        let mut known_flags: HashSet<Flag> = self
+            .known_state
+            .idx_by_flag
+            .flags()
+            .filter_map(|f| match flags::from_str(f) {
+                Some(FlagFetch::Flag(fl)) => Some(fl),
+                // Skip \Recent
+                // TODO: ensure that \Recent is never written by a client in the
+                // mailbox flags
+                _ => None,
+            })
+            .collect();
+        // 2. Merge it with our default flags list
+        for f in DEFAULT_FLAGS.iter() {
+            known_flags.insert(f.clone());
+        }
+        known_flags
+    }
+    
+    // Status describing all flags used in the mailbox
+    fn known_flags_status(&self) -> Result<Body<'static>> {
+        use imap_codec::imap_types::bounded_static::IntoBoundedStatic;
+        let fs = self.known_flags().into_iter().map(|f| f.into_static());
+        Ok(Body::Data(Data::Flags(fs.collect())))
     }
 
     pub(crate) fn unseen_count(&self) -> usize {

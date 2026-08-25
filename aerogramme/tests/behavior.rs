@@ -935,7 +935,7 @@ fn rfc4551_imapext_condstore() {
         assert!(store_res.contains("[MODIFIED 2]"));
         assert!(store_res.contains("* 1 FETCH (FLAGS (\\Important) MODSEQ (3))"));
         assert!(!store_res.contains("* 2 FETCH"));
-        assert_eq!(store_res.lines().count(), 2);
+        assert_eq!(store_res.lines().count(), 3);
 
         // RFC 3.1.4.  FETCH and UID FETCH Commands
         let fetch_res = fetch(
@@ -946,7 +946,7 @@ fn rfc4551_imapext_condstore() {
         )?;
         assert!(fetch_res.contains("* 1 FETCH (RFC822.SIZE 81 MODSEQ (3))"));
         assert!(!fetch_res.contains("* 2 FETCH"));
-        assert_eq!(store_res.lines().count(), 2);
+        assert_eq!(fetch_res.lines().count(), 2);
 
         // RFC 3.1.5.  MODSEQ Search Criterion in SEARCH
         let search_res = search(imap_socket, SearchKind::ModSeq(3))?;
