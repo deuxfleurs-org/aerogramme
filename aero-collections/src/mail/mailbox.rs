@@ -126,6 +126,11 @@ impl Mailbox {
         self.mbox.set_flags(id, flags).await
     }
 
+    /// Set all current emails as not "recent" anymore
+    pub async fn bump_recent(&mut self) -> Result<()> {
+        self.mbox.bump_recent().await
+    }
+
     /// Insert an email into the mailbox
     pub async fn append<'a>(
         &mut self,
@@ -307,6 +312,18 @@ impl MailboxInternal {
     async fn set_flags(&mut self, ident: UniqueIdent, flags: &Flags) -> Result<()> {
         let set_flag_op = self.uid_index.state().op_flag_set(ident, flags.clone());
         self.uid_index.push(set_flag_op).await
+    }
+
+    async fn bump_recent(&mut self) -> Result<()> {
+        let state = self.uid_index.state();
+        // NOTE this function is called often (after each IMAP command), it is
+        // important that it does not push a log operation each time...
+        if state.recent_from != state.uidnext() {
+            let bump_op = self.uid_index.state().op_bump_recent();
+            self.uid_index.push(bump_op).await
+        } else {
+            Ok(())
+        }
     }
 
     async fn append(&mut self, raw_mail: &[u8], flags: &Flags) -> Result<(ImapUid, ModSeq)> {

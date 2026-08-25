@@ -37,6 +37,8 @@ pub struct UidIndex {
     // "Public" Counters
     pub uidvalidity: ImapUidvalidity,
     pub highestmodseq: ModSeq,
+    // Emails with an UID greater or equal than `recent_from` are "recent".
+    pub recent_from: ImapUid,
 
     // "Internal" Counters
 
@@ -117,6 +119,7 @@ pub enum UidIndexOp {
     FlagAdd(UniqueIdent, ModSeq, Flags),
     FlagDel(UniqueIdent, ModSeq, Flags),
     FlagSet(UniqueIdent, ModSeq, Flags),
+    BumpRecent,
 }
 
 impl UidIndex {
@@ -146,6 +149,11 @@ impl UidIndex {
     #[must_use]
     pub fn op_flag_set(&self, ident: UniqueIdent, flags: Flags) -> UidIndexOp {
         UidIndexOp::FlagSet(ident, self.internalmodseq, flags)
+    }
+
+    #[must_use]
+    pub fn op_bump_recent(&self) -> UidIndexOp {
+        UidIndexOp::BumpRecent
     }
 
     pub fn uidnext(&self) -> ImapUid {
@@ -229,6 +237,7 @@ impl Default for UidIndex {
 
             uidvalidity: NonZeroU32::new(1).unwrap(),
             highestmodseq: NonZeroU64::new(1).unwrap(),
+            recent_from: NonZeroU32::new(1).unwrap(),
 
             internalseq: NonZeroU32::new(1).unwrap(),
             internalmodseq: NonZeroU64::new(1).unwrap(),
@@ -341,6 +350,10 @@ impl BayouState for UidIndex {
                     new.internalmodseq = NonZeroU64::new(new.internalmodseq.get() + 1).unwrap();
                 }
             }
+
+            UidIndexOp::BumpRecent => {
+                new.recent_from = new.uidnext();
+            }
         }
         new
     }
@@ -392,6 +405,7 @@ struct UidIndexSerializedRepr {
 
     uidvalidity: ImapUidvalidity,
     highestmodseq: ModSeq,
+    recent_from: ImapUid,
 
     internalseq: ImapUid,
     internalmodseq: ModSeq,
@@ -406,7 +420,7 @@ impl<'de> Deserialize<'de> for UidIndex {
         let mut uidindex = UidIndex {
             uidvalidity: val.uidvalidity,
             highestmodseq: val.highestmodseq,
-
+            recent_from: val.recent_from,
             internalseq: val.internalseq,
             internalmodseq: val.internalmodseq,
             ..UidIndex::default()
@@ -434,6 +448,7 @@ impl Serialize for UidIndex {
             mails,
             uidvalidity: self.uidvalidity,
             highestmodseq: self.highestmodseq,
+            recent_from: self.recent_from,
             internalseq: self.internalseq,
             internalmodseq: self.internalmodseq,
         };
