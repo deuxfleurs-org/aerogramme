@@ -19,7 +19,7 @@ use aero_collections::unique_ident::UniqueIdent;
 
 use crate::imap::attributes::AttributesProxy;
 use crate::imap::flags;
-use crate::imap::index::UidIndexForImap;
+use crate::imap::index::{FetchBy, UidIndexForImap};
 use crate::imap::mail_view::{MailView, SeenFlag};
 use crate::imap::response::{Body, SyncError};
 use crate::imap::search;
@@ -259,7 +259,11 @@ impl MailboxView {
         let flags = flags.iter().map(|x| x.to_string()).collect();
 
         let (editable, in_conflict) =
-            state.fetch_unchanged_since(sequence_set, unchanged_since, *is_uid_store);
+            state.fetch_unchanged_since(
+                sequence_set,
+                unchanged_since,
+                FetchBy::from_bool(*is_uid_store),
+            );
 
         for mi in editable.iter() {
             match kind {
@@ -330,7 +334,7 @@ impl MailboxView {
 
         let deleted_flag = Flag::Deleted.to_string();
         let msgs = state
-            .fetch_by_uid(&seq)
+            .fetch(&seq, FetchBy::Uid)
             .into_iter()
             .filter(|midx| midx.flags.iter().any(|x| *x == deleted_flag))
             .map(|midx| midx.uuid);
@@ -355,7 +359,7 @@ impl MailboxView {
             self.checked_sync_no_update().await?
         }
         let state = self.mailbox.current_uid_index();
-        let mails = state.fetch(sequence_set, *is_uid_copy);
+        let mails = state.fetch(sequence_set, FetchBy::from_bool(*is_uid_copy));
 
         let mut new_uuids = vec![];
         for mi in mails.iter() {
@@ -389,7 +393,7 @@ impl MailboxView {
             self.checked_sync_no_update().await?
         };
         let state = self.mailbox.current_uid_index();
-        let mails = state.fetch(sequence_set, *is_uid_move);
+        let mails = state.fetch(sequence_set, FetchBy::from_bool(*is_uid_move));
 
         let mut new_uuids = vec![];
         for mi in mails.iter() {
@@ -443,7 +447,11 @@ impl MailboxView {
         };
         tracing::debug!("Query scope {:?}", query_scope);
         let state = self.mailbox.current_uid_index();
-        let mail_idx_list = state.fetch_changed_since(sequence_set, changed_since, *is_uid_fetch);
+        let mail_idx_list = state.fetch_changed_since(
+            sequence_set,
+            changed_since,
+            FetchBy::from_bool(*is_uid_fetch),
+        );
 
         // Fetch the emails
         let uuids = mail_idx_list
@@ -505,7 +513,7 @@ impl MailboxView {
         let state = self.mailbox.current_uid_index();
 
         // 2. Get the selection
-        let selection = state.fetch(&seq_set, seq_type.is_uid());
+        let selection = state.fetch(&seq_set, FetchBy::from_bool(seq_type.is_uid()));
 
         // 3. Filter the selection based on the ID / UID / Flags
         let (kept_idx, to_fetch) = crit.filter_on_idx(&selection);

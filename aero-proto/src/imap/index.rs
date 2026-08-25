@@ -11,25 +11,28 @@ use aero_collections::unique_ident::UniqueIdent;
 // UidIndex maintains the relevant indexes, but it does not depend on IMAP crates.
 // These helpers allow querying UidIndex based on IMAP types like SequenceSet.
 
+pub enum FetchBy {
+    Uid,
+    SeqId,
+}
+
+impl FetchBy {
+    pub fn from_bool(is_uid: bool) -> Self {
+        if is_uid { FetchBy::Uid } else { FetchBy::SeqId }
+    }
+}
+
 // Extension trait that adds extra methods to UidIndex.
 pub trait UidIndexForImap {
-    fn fetch_by_uid(&self, sequence_set: &SequenceSet) -> Vec<MailIndex>;
-    fn fetch_by_seqid(&self, sequence_set: &SequenceSet) -> Vec<MailIndex>;
-
-    fn fetch(&self, sequence_set: &SequenceSet, by_uid: bool) -> Vec<MailIndex> {
-        match by_uid {
-            true => self.fetch_by_uid(sequence_set),
-            false => self.fetch_by_seqid(sequence_set),
-        }
-    }
+    fn fetch(&self, sequence_set: &SequenceSet, by: FetchBy) -> Vec<MailIndex>;
 
     fn fetch_changed_since(
         &self,
         sequence_set: &SequenceSet,
         maybe_modseq: Option<NonZeroU64>,
-        by_uid: bool,
+        by: FetchBy,
     ) -> Vec<MailIndex> {
-        let raw = self.fetch(sequence_set, by_uid);
+        let raw = self.fetch(sequence_set, by);
         match maybe_modseq {
             Some(pit) => raw.into_iter().filter(|midx| midx.modseq > pit).collect(),
             None => raw,
@@ -40,9 +43,9 @@ pub trait UidIndexForImap {
         &self,
         sequence_set: &SequenceSet,
         maybe_modseq: Option<NonZeroU64>,
-        by_uid: bool,
+        by: FetchBy,
     ) -> (Vec<MailIndex>, Vec<MailIndex>) {
-        let raw = self.fetch(sequence_set, by_uid);
+        let raw = self.fetch(sequence_set, by);
         match maybe_modseq {
             Some(pit) => raw.into_iter().partition(|midx| midx.modseq <= pit),
             None => (raw, vec![]),
@@ -51,7 +54,7 @@ pub trait UidIndexForImap {
 }
 
 impl UidIndexForImap for UidIndex {
-    fn fetch_by_uid(&self, sequence_seq: &SequenceSet) -> Vec<MailIndex> {
+    fn fetch(&self, sequence_seq: &SequenceSet, by: FetchBy) -> Vec<MailIndex> {
         let largest_uuid = match self.idx_by_seqid.largest() {
             Some((_, uuid)) => uuid,
             None => return vec![],
@@ -60,46 +63,27 @@ impl UidIndexForImap for UidIndex {
         let largest_seqid = match self.idx_by_seqid.largest() {
             Some((seqid, _)) => seqid,
             None => return vec![],
+        };
+        let largest_id = match by {
+            FetchBy::Uid => largest_uid,
+            FetchBy::SeqId => largest_seqid,
         };
         // NOTE: sequence_seq may describe an arbitrarily large range of
         // integers, so we must not iterate over all of it...
         sequence_seq
-            .iter(largest_uid)
+            .iter(largest_id)
             // TODO: could this be done automatically by SequenceSet::iter?
-            .take_while(|uid| *uid <= largest_uid)
-            .filter_map(|uid| {
-                let &uuid = self.idx_by_uid.get(&uid)?;
+            .take_while(|id| *id <= largest_id)
+            .filter_map(|id| {
+                let &uuid = match by {
+                    FetchBy::Uid => self.idx_by_uid.get(&id)?,
+                    FetchBy::SeqId => self.idx_by_seqid.get(id)?,
+                };
                 let &(uid, modseq, ref flags) = self.table.get(&uuid)?;
-                let &seqid = self.idx_seqid_of_uuid.get(&uuid)?;
-                Some(MailIndex {
-                    seqid,
-                    uid,
-                    uuid,
-                    modseq,
-                    flags: flags.clone(),
-                    largest_seqid,
-                    largest_uid,
-                })
-            })
-            .collect()
-    }
-
-    fn fetch_by_seqid(&self, sequence_seq: &SequenceSet) -> Vec<MailIndex> {
-        let largest_uuid = match self.idx_by_seqid.largest() {
-            Some((_, uuid)) => uuid,
-            None => return vec![],
-        };
-        let &(largest_uid, _, _) = self.table.get(largest_uuid).unwrap();
-        let largest_seqid = match self.idx_by_seqid.largest() {
-            Some((seqid, _)) => seqid,
-            None => return vec![],
-        };
-        sequence_seq
-            .iter(largest_seqid)
-            .take_while(|seqid| *seqid <= largest_seqid)
-            .filter_map(|seqid| {
-                let &uuid = self.idx_by_seqid.get(seqid)?;
-                let &(uid, modseq, ref flags) = self.table.get(&uuid)?;
+                let seqid = match by {
+                    FetchBy::Uid => *self.idx_seqid_of_uuid.get(&uuid)?,
+                    FetchBy::SeqId => id,
+                };
                 Some(MailIndex {
                     seqid,
                     uid,
