@@ -44,13 +44,22 @@ pub struct WithDefault<T: Default> {
 
 impl<T: Default> WithDefault<T> {
     pub fn new(v: T) -> Self {
-        Self { v, is_default: false }
+        Self {
+            v,
+            is_default: false,
+        }
     }
 
     pub fn from_opt(opt: Option<T>) -> Self {
         match opt {
-            Some(v) => Self { v, is_default: false },
-            None => Self { v: T::default(), is_default: true },
+            Some(v) => Self {
+                v,
+                is_default: false,
+            },
+            None => Self {
+                v: T::default(),
+                is_default: true,
+            },
         }
     }
 

@@ -111,8 +111,8 @@ impl xml::QRead<Error> for Error {
     }
 }
 impl xml::QWrite for Error {
-    async fn qwrite( 
-      &self,
+    async fn qwrite(
+        &self,
         xml: &mut xml::Writer<impl xml::IWrite>,
     ) -> Result<(), quick_xml::Error> {
         match self {

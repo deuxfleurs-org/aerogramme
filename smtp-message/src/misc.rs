@@ -843,26 +843,44 @@ mod tests {
     fn hostname_valid() {
         let tests: &[(&[u8], &[u8], Hostname<&str>)] = &[
             (b"foo--bar>", b"", Hostname::AsciiDomain { raw: "foo--bar" }),
-            (b"foo.bar.baz>", b"", Hostname::AsciiDomain {
-                raw: "foo.bar.baz",
-            }),
+            (
+                b"foo.bar.baz>",
+                b"",
+                Hostname::AsciiDomain { raw: "foo.bar.baz" },
+            ),
             (b"1.2.3.4>", b"", Hostname::AsciiDomain { raw: "1.2.3.4" }),
-            (b"[123.255.37.2]>", b"", Hostname::Ipv4 {
-                raw: "[123.255.37.2]",
-                ip: "123.255.37.2".parse().unwrap(),
-            }),
-            (b"[IPv6:0::ffff:8.7.6.5]>", b"", Hostname::Ipv6 {
-                raw: "[IPv6:0::ffff:8.7.6.5]",
-                ip: "0::ffff:8.7.6.5".parse().unwrap(),
-            }),
-            ("élégance.fr>".as_bytes(), b"", Hostname::Utf8Domain {
-                raw: "élégance.fr",
-                punycode: "xn--lgance-9uab.fr".into(),
-            }),
-            ("papier-maché.fr>".as_bytes(), b"", Hostname::Utf8Domain {
-                raw: "papier-maché.fr",
-                punycode: "xn--papier-mach-lbb.fr".into(),
-            }),
+            (
+                b"[123.255.37.2]>",
+                b"",
+                Hostname::Ipv4 {
+                    raw: "[123.255.37.2]",
+                    ip: "123.255.37.2".parse().unwrap(),
+                },
+            ),
+            (
+                b"[IPv6:0::ffff:8.7.6.5]>",
+                b"",
+                Hostname::Ipv6 {
+                    raw: "[IPv6:0::ffff:8.7.6.5]",
+                    ip: "0::ffff:8.7.6.5".parse().unwrap(),
+                },
+            ),
+            (
+                "élégance.fr>".as_bytes(),
+                b"",
+                Hostname::Utf8Domain {
+                    raw: "élégance.fr",
+                    punycode: "xn--lgance-9uab.fr".into(),
+                },
+            ),
+            (
+                "papier-maché.fr>".as_bytes(),
+                b"",
+                Hostname::Utf8Domain {
+                    raw: "papier-maché.fr",
+                    punycode: "xn--papier-mach-lbb.fr".into(),
+                },
+            ),
         ];
         for (inp, rem, out) in tests {
             // Test parse_until
@@ -912,10 +930,10 @@ mod tests {
     #[test]
     fn hostname_invalid() {
         let tests: &[&[u8]] = &[
-            b"-foo.bar>",                 // No sub-domain starting with a dash
-            b"\xFF>",                     // No invalid utf-8
+            b"-foo.bar>",               // No sub-domain starting with a dash
+            b"\xFF>",                   // No invalid utf-8
             "élégance.-fr>".as_bytes(), // No dashes in utf-8 either
-            b"foo.bar!>",                 // For parse: reject when there is trailing data
+            b"foo.bar!>",               // For parse: reject when there is trailing data
         ];
         for inp in tests {
             // Test parse_until
@@ -937,9 +955,11 @@ mod tests {
         let tests: &[(&[u8], &[u8], Localpart<&str>)] = &[
             (b"helloooo@", b"", Localpart::Ascii { raw: "helloooo" }),
             (b"test.ing>", b"", Localpart::Ascii { raw: "test.ing" }),
-            (br#""hello"@"#, b"", Localpart::QuotedAscii {
-                raw: r#""hello""#,
-            }),
+            (
+                br#""hello"@"#,
+                b"",
+                Localpart::QuotedAscii { raw: r#""hello""# },
+            ),
             (
                 br#""hello world. This |$ a g#eat place to experiment !">"#,
                 b"",
@@ -1007,26 +1027,42 @@ mod tests {
     #[test]
     fn email_valid() {
         let tests: &[(&[u8], &[u8], Email<&str>)] = &[
-            (b"t+e-s.t_i+n-g@foo.bar.baz>", b"", Email {
-                localpart: Localpart::Ascii {
-                    raw: "t+e-s.t_i+n-g",
+            (
+                b"t+e-s.t_i+n-g@foo.bar.baz>",
+                b"",
+                Email {
+                    localpart: Localpart::Ascii {
+                        raw: "t+e-s.t_i+n-g",
+                    },
+                    hostname: Some(Hostname::AsciiDomain { raw: "foo.bar.baz" }),
                 },
-                hostname: Some(Hostname::AsciiDomain { raw: "foo.bar.baz" }),
-            }),
-            (br#""quoted\"example"@example.org>"#, b"", Email {
-                localpart: Localpart::QuotedAscii {
-                    raw: r#""quoted\"example""#,
+            ),
+            (
+                br#""quoted\"example"@example.org>"#,
+                b"",
+                Email {
+                    localpart: Localpart::QuotedAscii {
+                        raw: r#""quoted\"example""#,
+                    },
+                    hostname: Some(Hostname::AsciiDomain { raw: "example.org" }),
                 },
-                hostname: Some(Hostname::AsciiDomain { raw: "example.org" }),
-            }),
-            (b"postmaster>", b"", Email {
-                localpart: Localpart::Ascii { raw: "postmaster" },
-                hostname: None,
-            }),
-            (b"test>", b"", Email {
-                localpart: Localpart::Ascii { raw: "test" },
-                hostname: None,
-            }),
+            ),
+            (
+                b"postmaster>",
+                b"",
+                Email {
+                    localpart: Localpart::Ascii { raw: "postmaster" },
+                    hostname: None,
+                },
+            ),
+            (
+                b"test>",
+                b"",
+                Email {
+                    localpart: Localpart::Ascii { raw: "test" },
+                    hostname: None,
+                },
+            ),
             (
                 r#""quoted\"example"@exámple.org>"#.as_bytes(),
                 b"",
@@ -1040,10 +1076,14 @@ mod tests {
                     }),
                 },
             ),
-            ("tést>".as_bytes(), b"", Email {
-                localpart: Localpart::Utf8 { raw: "tést" },
-                hostname: None,
-            }),
+            (
+                "tést>".as_bytes(),
+                b"",
+                Email {
+                    localpart: Localpart::Utf8 { raw: "tést" },
+                    hostname: None,
+                },
+            ),
         ];
         for (inp, rem, out) in tests {
             println!("Test: {:?}", show_bytes(inp));
@@ -1091,10 +1131,13 @@ mod tests {
             (
                 b"foo.bar@baz.quux>",
                 b">",
-                (None, Email {
-                    localpart: Localpart::Ascii { raw: "foo.bar" },
-                    hostname: Some(Hostname::AsciiDomain { raw: "baz.quux" }),
-                }),
+                (
+                    None,
+                    Email {
+                        localpart: Localpart::Ascii { raw: "foo.bar" },
+                        hostname: Some(Hostname::AsciiDomain { raw: "baz.quux" }),
+                    },
+                ),
             ),
         ];
         for (inp, rem, out) in tests {
@@ -1143,24 +1186,33 @@ mod tests {
             ),
             (
                 b"<foo@bar.baz> ",
-                (None, Email {
-                    localpart: Localpart::Ascii { raw: "foo" },
-                    hostname: Some(Hostname::AsciiDomain { raw: "bar.baz" }),
-                }),
+                (
+                    None,
+                    Email {
+                        localpart: Localpart::Ascii { raw: "foo" },
+                        hostname: Some(Hostname::AsciiDomain { raw: "bar.baz" }),
+                    },
+                ),
             ),
             (
                 b"foo@bar.baz ",
-                (None, Email {
-                    localpart: Localpart::Ascii { raw: "foo" },
-                    hostname: Some(Hostname::AsciiDomain { raw: "bar.baz" }),
-                }),
+                (
+                    None,
+                    Email {
+                        localpart: Localpart::Ascii { raw: "foo" },
+                        hostname: Some(Hostname::AsciiDomain { raw: "bar.baz" }),
+                    },
+                ),
             ),
             (
                 b"foobar ",
-                (None, Email {
-                    localpart: Localpart::Ascii { raw: "foobar" },
-                    hostname: None,
-                }),
+                (
+                    None,
+                    Email {
+                        localpart: Localpart::Ascii { raw: "foobar" },
+                        hostname: None,
+                    },
+                ),
             ),
         ];
         for (inp, out) in tests {

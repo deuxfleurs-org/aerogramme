@@ -510,136 +510,205 @@ mod tests {
         let tests: &[(&[u8], Command<&str>)] = &[
             (b"DATA \t  \t \r\n", Command::Data),
             (b"daTa\r\n", Command::Data),
-            (b"eHlO \t hello.world \t \r\n", Command::Ehlo {
-                hostname: Hostname::AsciiDomain { raw: "hello.world" },
-            }),
-            (b"EHLO hello.world\r\n", Command::Ehlo {
-                hostname: Hostname::AsciiDomain { raw: "hello.world" },
-            }),
-            (b"EXpN \t hello.world \t \r\n", Command::Expn {
-                name: MaybeUtf8::Ascii("\t hello.world \t "),
-            }),
-            (b"hElO\t hello.world \t \r\n", Command::Helo {
-                hostname: Hostname::AsciiDomain { raw: "hello.world" },
-            }),
-            (b"HELO hello.world\r\n", Command::Helo {
-                hostname: Hostname::AsciiDomain { raw: "hello.world" },
-            }),
-            (b"help \t hello.world \t \r\n", Command::Help {
-                subject: MaybeUtf8::Ascii("\t hello.world \t "),
-            }),
-            (b"HELP\r\n", Command::Help {
-                subject: MaybeUtf8::Ascii(""),
-            }),
-            (b"hElP \r\n", Command::Help {
-                subject: MaybeUtf8::Ascii(""),
-            }),
-            (b"lHlO \t hello.world \t \r\n", Command::Lhlo {
-                hostname: Hostname::AsciiDomain { raw: "hello.world" },
-            }),
-            (b"LHLO hello.world\r\n", Command::Lhlo {
-                hostname: Hostname::AsciiDomain { raw: "hello.world" },
-            }),
-            (b"Mail FROM:<@one,@two:foo@bar.baz>\r\n", Command::Mail {
-                path: Some(Path {
-                    domains: vec![
-                        Hostname::AsciiDomain { raw: "one" },
-                        Hostname::AsciiDomain { raw: "two" },
-                    ],
-                }),
-                email: Some(Email {
-                    localpart: Localpart::Ascii { raw: "foo" },
-                    hostname: Some(Hostname::AsciiDomain { raw: "bar.baz" }),
-                }),
-                params: Parameters(vec![]),
-            }),
-            (b"MaiL FrOm: quux@example.net  \t \r\n", Command::Mail {
-                path: None,
-                email: Some(Email {
-                    localpart: Localpart::Ascii { raw: "quux" },
-                    hostname: Some(Hostname::AsciiDomain { raw: "example.net" }),
-                }),
-                params: Parameters(vec![]),
-            }),
-            (b"MaiL FrOm: quux@example.net\r\n", Command::Mail {
-                path: None,
-                email: Some(Email {
-                    localpart: Localpart::Ascii { raw: "quux" },
-                    hostname: Some(Hostname::AsciiDomain { raw: "example.net" }),
-                }),
-                params: Parameters(vec![]),
-            }),
-            (b"mail FROM:<>\r\n", Command::Mail {
-                path: None,
-                email: None,
-                params: Parameters(vec![]),
-            }),
-            (b"MAIL FROM:<> hello=world foo\r\n", Command::Mail {
-                path: None,
-                email: None,
-                params: Parameters(vec![
-                    (
-                        ParameterName::Other("hello"),
-                        Some(MaybeUtf8::Ascii("world")),
-                    ),
-                    (ParameterName::Other("foo"), None),
-                ]),
-            }),
-            (b"NOOP \t hello.world \t \r\n", Command::Noop {
-                string: MaybeUtf8::Ascii("\t hello.world \t "),
-            }),
-            (b"nOoP\r\n", Command::Noop {
-                string: MaybeUtf8::Ascii(""),
-            }),
-            (b"noop \r\n", Command::Noop {
-                string: MaybeUtf8::Ascii(""),
-            }),
+            (
+                b"eHlO \t hello.world \t \r\n",
+                Command::Ehlo {
+                    hostname: Hostname::AsciiDomain { raw: "hello.world" },
+                },
+            ),
+            (
+                b"EHLO hello.world\r\n",
+                Command::Ehlo {
+                    hostname: Hostname::AsciiDomain { raw: "hello.world" },
+                },
+            ),
+            (
+                b"EXpN \t hello.world \t \r\n",
+                Command::Expn {
+                    name: MaybeUtf8::Ascii("\t hello.world \t "),
+                },
+            ),
+            (
+                b"hElO\t hello.world \t \r\n",
+                Command::Helo {
+                    hostname: Hostname::AsciiDomain { raw: "hello.world" },
+                },
+            ),
+            (
+                b"HELO hello.world\r\n",
+                Command::Helo {
+                    hostname: Hostname::AsciiDomain { raw: "hello.world" },
+                },
+            ),
+            (
+                b"help \t hello.world \t \r\n",
+                Command::Help {
+                    subject: MaybeUtf8::Ascii("\t hello.world \t "),
+                },
+            ),
+            (
+                b"HELP\r\n",
+                Command::Help {
+                    subject: MaybeUtf8::Ascii(""),
+                },
+            ),
+            (
+                b"hElP \r\n",
+                Command::Help {
+                    subject: MaybeUtf8::Ascii(""),
+                },
+            ),
+            (
+                b"lHlO \t hello.world \t \r\n",
+                Command::Lhlo {
+                    hostname: Hostname::AsciiDomain { raw: "hello.world" },
+                },
+            ),
+            (
+                b"LHLO hello.world\r\n",
+                Command::Lhlo {
+                    hostname: Hostname::AsciiDomain { raw: "hello.world" },
+                },
+            ),
+            (
+                b"Mail FROM:<@one,@two:foo@bar.baz>\r\n",
+                Command::Mail {
+                    path: Some(Path {
+                        domains: vec![
+                            Hostname::AsciiDomain { raw: "one" },
+                            Hostname::AsciiDomain { raw: "two" },
+                        ],
+                    }),
+                    email: Some(Email {
+                        localpart: Localpart::Ascii { raw: "foo" },
+                        hostname: Some(Hostname::AsciiDomain { raw: "bar.baz" }),
+                    }),
+                    params: Parameters(vec![]),
+                },
+            ),
+            (
+                b"MaiL FrOm: quux@example.net  \t \r\n",
+                Command::Mail {
+                    path: None,
+                    email: Some(Email {
+                        localpart: Localpart::Ascii { raw: "quux" },
+                        hostname: Some(Hostname::AsciiDomain { raw: "example.net" }),
+                    }),
+                    params: Parameters(vec![]),
+                },
+            ),
+            (
+                b"MaiL FrOm: quux@example.net\r\n",
+                Command::Mail {
+                    path: None,
+                    email: Some(Email {
+                        localpart: Localpart::Ascii { raw: "quux" },
+                        hostname: Some(Hostname::AsciiDomain { raw: "example.net" }),
+                    }),
+                    params: Parameters(vec![]),
+                },
+            ),
+            (
+                b"mail FROM:<>\r\n",
+                Command::Mail {
+                    path: None,
+                    email: None,
+                    params: Parameters(vec![]),
+                },
+            ),
+            (
+                b"MAIL FROM:<> hello=world foo\r\n",
+                Command::Mail {
+                    path: None,
+                    email: None,
+                    params: Parameters(vec![
+                        (
+                            ParameterName::Other("hello"),
+                            Some(MaybeUtf8::Ascii("world")),
+                        ),
+                        (ParameterName::Other("foo"), None),
+                    ]),
+                },
+            ),
+            (
+                b"NOOP \t hello.world \t \r\n",
+                Command::Noop {
+                    string: MaybeUtf8::Ascii("\t hello.world \t "),
+                },
+            ),
+            (
+                b"nOoP\r\n",
+                Command::Noop {
+                    string: MaybeUtf8::Ascii(""),
+                },
+            ),
+            (
+                b"noop \r\n",
+                Command::Noop {
+                    string: MaybeUtf8::Ascii(""),
+                },
+            ),
             (b"QUIT \t  \t \r\n", Command::Quit),
             (b"quit\r\n", Command::Quit),
-            (b"RCPT TO:<@one,@two:foo@bar.baz>\r\n", Command::Rcpt {
-                path: Some(Path {
-                    domains: vec![
-                        Hostname::AsciiDomain { raw: "one" },
-                        Hostname::AsciiDomain { raw: "two" },
-                    ],
-                }),
-                email: Email {
-                    localpart: Localpart::Ascii { raw: "foo" },
-                    hostname: Some(Hostname::AsciiDomain { raw: "bar.baz" }),
+            (
+                b"RCPT TO:<@one,@two:foo@bar.baz>\r\n",
+                Command::Rcpt {
+                    path: Some(Path {
+                        domains: vec![
+                            Hostname::AsciiDomain { raw: "one" },
+                            Hostname::AsciiDomain { raw: "two" },
+                        ],
+                    }),
+                    email: Email {
+                        localpart: Localpart::Ascii { raw: "foo" },
+                        hostname: Some(Hostname::AsciiDomain { raw: "bar.baz" }),
+                    },
+                    params: Parameters(vec![]),
                 },
-                params: Parameters(vec![]),
-            }),
-            (b"Rcpt tO: quux@example.net  \t \r\n", Command::Rcpt {
-                path: None,
-                email: Email {
-                    localpart: Localpart::Ascii { raw: "quux" },
-                    hostname: Some(Hostname::AsciiDomain { raw: "example.net" }),
+            ),
+            (
+                b"Rcpt tO: quux@example.net  \t \r\n",
+                Command::Rcpt {
+                    path: None,
+                    email: Email {
+                        localpart: Localpart::Ascii { raw: "quux" },
+                        hostname: Some(Hostname::AsciiDomain { raw: "example.net" }),
+                    },
+                    params: Parameters(vec![]),
                 },
-                params: Parameters(vec![]),
-            }),
-            (b"rcpt TO:<Postmaster>\r\n", Command::Rcpt {
-                path: None,
-                email: Email {
-                    localpart: Localpart::Ascii { raw: "Postmaster" },
-                    hostname: None,
+            ),
+            (
+                b"rcpt TO:<Postmaster>\r\n",
+                Command::Rcpt {
+                    path: None,
+                    email: Email {
+                        localpart: Localpart::Ascii { raw: "Postmaster" },
+                        hostname: None,
+                    },
+                    params: Parameters(vec![]),
                 },
-                params: Parameters(vec![]),
-            }),
-            (b"RcPt TO: \t poStmaster\r\n", Command::Rcpt {
-                path: None,
-                email: Email {
-                    localpart: Localpart::Ascii { raw: "poStmaster" },
-                    hostname: None,
+            ),
+            (
+                b"RcPt TO: \t poStmaster\r\n",
+                Command::Rcpt {
+                    path: None,
+                    email: Email {
+                        localpart: Localpart::Ascii { raw: "poStmaster" },
+                        hostname: None,
+                    },
+                    params: Parameters(vec![]),
                 },
-                params: Parameters(vec![]),
-            }),
+            ),
             (b"RSET \t  \t \r\n", Command::Rset),
             (b"rSet\r\n", Command::Rset),
             (b"STARTTLS \t  \t \r\n", Command::Starttls),
             (b"starttls\r\n", Command::Starttls),
-            (b"VrFY \t hello.world \t \r\n", Command::Vrfy {
-                name: MaybeUtf8::Ascii("\t hello.world \t "),
-            }),
+            (
+                b"VrFY \t hello.world \t \r\n",
+                Command::Vrfy {
+                    name: MaybeUtf8::Ascii("\t hello.world \t "),
+                },
+            ),
         ];
         for (inp, out) in tests {
             println!("Test: {:?}", show_bytes(inp));

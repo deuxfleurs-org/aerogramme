@@ -36,7 +36,7 @@ impl IdentList {
     pub fn new() -> Self {
         Self(BTreeMap::new())
     }
-    
+
     pub async fn load_from_storage(
         creds: &Credentials,
         pk: &str,
@@ -51,8 +51,7 @@ impl IdentList {
 
                 for v in row_vals {
                     if let storage::Alternative::Value(vbytes) = v {
-                        let list2 =
-                            open_deserialize::<IdentList>(&vbytes, &creds.keys.master)?;
+                        let list2 = open_deserialize::<IdentList>(&vbytes, &creds.keys.master)?;
                         list.merge(list2);
                     }
                 }
@@ -84,7 +83,7 @@ impl IdentList {
             }
         }
     }
-    
+
     /// Get a list of all ident names.
     pub fn names(&self) -> Vec<String> {
         self.0
@@ -110,7 +109,7 @@ impl IdentList {
             .map(|IdentListEntry { id_lww: (_, ident) }| *ident)
             .flatten()
     }
-   
+
     /// Ensures name `name` maps to ident `id`.
     /// If it already mapped to that, returns false.
     /// If a change had to be done, returns true.

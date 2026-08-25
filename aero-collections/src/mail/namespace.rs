@@ -120,7 +120,7 @@ impl MailboxNs {
         // under this name in the hierarchy. Server implementations that do not
         // require this declaration MUST ignore the declaration."
         if name.ends_with(MAILBOX_HIERARCHY_DELIMITER) {
-            return Ok(())
+            return Ok(());
         }
 
         let (mut list, ct) = self.load_mailbox_list().await?;
@@ -196,11 +196,9 @@ impl MailboxNs {
     // ---- internal mailbox list management ----
 
     async fn load_mailbox_list(&self) -> Result<(IdentList, Option<storage::RowRef>)> {
-        let (mut list, row) = IdentList::load_from_storage(
-            &self.inner.creds,
-            MAILBOX_LIST_PK,
-            MAILBOX_LIST_SK,
-        ).await?;
+        let (mut list, row) =
+            IdentList::load_from_storage(&self.inner.creds, MAILBOX_LIST_PK, MAILBOX_LIST_SK)
+                .await?;
 
         let is_default_mbx_missing = [DRAFTS, ARCHIVE, SENT, TRASH]
             .iter()
@@ -247,12 +245,9 @@ impl MailboxNs {
         Ok(saved)
     }
 
-    async fn save_mailbox_list(
-        &self,
-        list: &IdentList,
-        ct: Option<storage::RowRef>,
-    ) -> Result<()> {
-        list.store_to_storage(&self.inner.creds, MAILBOX_LIST_PK, MAILBOX_LIST_SK, ct).await
+    async fn save_mailbox_list(&self, list: &IdentList, ct: Option<storage::RowRef>) -> Result<()> {
+        list.store_to_storage(&self.inner.creds, MAILBOX_LIST_PK, MAILBOX_LIST_SK, ct)
+            .await
     }
 }
 
@@ -260,13 +255,12 @@ impl MailboxNsInner {
     pub(crate) async fn open_by_id(&self, id: UniqueIdent) -> Result<Mailbox> {
         if let Some(mut mb) = {
             let cache = self.mailboxes.lock().unwrap();
-            cache.get(&id)
-                 .and_then(|mbox_weak| mbox_weak.upgrade())
+            cache.get(&id).and_then(|mbox_weak| mbox_weak.upgrade())
         } {
             // Sync now after getting the mbox out of cache to get a recent mbox
             // state
             mb.sync().await?;
-            return Ok(mb)
+            return Ok(mb);
         }
 
         // The idea here is that:

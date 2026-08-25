@@ -21,33 +21,32 @@ lazy_static::lazy_static! {
 }
 
 pub struct MetricServer {
-  bind_addr: SocketAddr,
-  registry: Arc<Registry>,
-  
+    bind_addr: SocketAddr,
+    registry: Arc<Registry>,
 }
 
 impl MetricServer {
-  pub fn new(config: PrometheusEndpointConfig) -> Result<Self> {
-    let registry = Registry::new();
+    pub fn new(config: PrometheusEndpointConfig) -> Result<Self> {
+        let registry = Registry::new();
 
-    // Register all the metrics
-    registry.register(Box::new(INSTANCES_CREATED.clone()))?;
-    registry.register(Box::new(INSTANCES_CURRENT.clone()))?;
+        // Register all the metrics
+        registry.register(Box::new(INSTANCES_CREATED.clone()))?;
+        registry.register(Box::new(INSTANCES_CURRENT.clone()))?;
 
-    Ok(Self {
-      bind_addr: config.bind_addr,
-      registry: Arc::new(registry),
-    })
-  }
+        Ok(Self {
+            bind_addr: config.bind_addr,
+            registry: Arc::new(registry),
+        })
+    }
 
-  pub async fn run(self: Self, mut must_exit: watch::Receiver<bool>) -> Result<()> {
-    tracing::info!("Metric server available at {:#}", self.bind_addr);
-    PrometheusServer::run(
-        self.registry,
-        self.bind_addr,
-        must_exit.changed().map(|_| ()),
-    ).await?;
-    Ok(())
-  }
+    pub async fn run(self: Self, mut must_exit: watch::Receiver<bool>) -> Result<()> {
+        tracing::info!("Metric server available at {:#}", self.bind_addr);
+        PrometheusServer::run(
+            self.registry,
+            self.bind_addr,
+            must_exit.changed().map(|_| ()),
+        )
+        .await?;
+        Ok(())
+    }
 }
-

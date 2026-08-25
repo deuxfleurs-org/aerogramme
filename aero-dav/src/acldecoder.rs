@@ -1,8 +1,8 @@
 use quick_xml::events::Event;
 
 use super::acltypes::*;
-use super::error::ParsingError;
 use super::coretypes as dav;
+use super::error::ParsingError;
 use super::xml::{IRead, QRead, Reader, DAV_URN};
 
 impl QRead<Property> for Property {
@@ -28,7 +28,7 @@ impl QRead<Property> for Property {
         {
             let privilegeset = xml.find().await?;
             xml.close().await?;
-            return Ok(Self::CurrentUserPrivilegeSet(privilegeset))
+            return Ok(Self::CurrentUserPrivilegeSet(privilegeset));
         }
 
         Err(ParsingError::Recoverable)
@@ -115,7 +115,11 @@ impl QRead<Privilege> for Privilege {
             xml.close().await?;
             return Ok(Self::ReadAcl);
         }
-        if xml.maybe_open(DAV_URN, "read-current-user-privilege-set").await?.is_some() {
+        if xml
+            .maybe_open(DAV_URN, "read-current-user-privilege-set")
+            .await?
+            .is_some()
+        {
             xml.close().await?;
             return Ok(Self::ReadCurrentUserPrivilegeSet);
         }
@@ -141,11 +145,7 @@ impl QRead<Privilege> for Privilege {
 
 impl QRead<PrivilegeSet> for PrivilegeSet {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        if xml
-            .maybe_open_start(DAV_URN, "privilege")
-            .await?
-            .is_some()
-        {
+        if xml.maybe_open_start(DAV_URN, "privilege").await?.is_some() {
             let mut privileges = Vec::new();
             loop {
                 let mut dirty = false;
@@ -157,7 +157,7 @@ impl QRead<PrivilegeSet> for PrivilegeSet {
                     };
                 }
             }
-           
+
             xml.close().await?;
             return Ok(Self(privileges));
         }

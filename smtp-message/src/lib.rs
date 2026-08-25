@@ -114,11 +114,10 @@ pub mod fuzz {
                 .allow_invalid_utf8(true)
                 .build(r#"\r\n\.[^.]"#)
                 .unwrap();
-            assert!(
-                reg.find(&wire)
-                    .map(|(start, _)| start == wire.len() - 5)
-                    .unwrap_or(true)
-            );
+            assert!(reg
+                .find(&wire)
+                .map(|(start, _)| start == wire.len() - 5)
+                .unwrap_or(true));
         }
 
         // println!("Reading from the wire");

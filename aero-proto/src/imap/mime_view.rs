@@ -83,7 +83,7 @@ pub fn body_ext<'a>(
     // Step 2: extract part specifier
     let extracted_full = sub_mime.extract(&extractor)?;
     // Step 3: apply partial byte range
-    let extracted_partial = extracted_full.to_body_section(partial); 
+    let extracted_partial = extracted_full.to_body_section(partial);
     Ok(extracted_partial)
 }
 
@@ -134,7 +134,7 @@ impl<'a> NodeMimeSub<'a> {
                         .get(path[0].get() as usize - 1)
                         .ok_or(anyhow!("Unable to resolve subpath {:?}, current multipart has only {} elements", path, x.children.len()))?));
                     next.rec_subset(&path[1..])
-                },
+                }
                 (node_mime, mime_body) => {
                     // Otherwise, there is only a single child to this node
                     let next = match mime_body {
@@ -158,14 +158,14 @@ impl<'a> NodeMimeSub<'a> {
                                 bail!("Tried to access subpart {} of a message which has only one part", path[0].get())
                             }
                             next.rec_subset(&path[1..])
-                        },
+                        }
                         NodeMime::AnyPart(_) => {
                             // Non-multipart MIME parts behave as their underlying
                             // contents, without an indirection.
                             next.rec_subset(path)
-                        },
+                        }
                     }
-                },
+                }
             }
         }
     }
@@ -196,7 +196,7 @@ impl<'a> NodeMimeSub<'a> {
     /// ```raw
     /// HEADER     ([RFC-2822] header of the message)
     /// ```
-    /// 
+    ///
     /// Note: consequently, the behavior of HEADER on a part that does not
     /// represents a full message is undefined. We return an error.
     ///
@@ -204,11 +204,10 @@ impl<'a> NodeMimeSub<'a> {
     /// the case of a message that has no body and no blank line.
     fn header(&self) -> Result<ExtractedFull<'a>> {
         Ok(ExtractedFull(
-            self
-                .entire_or_encapsulated_message()?
+            self.entire_or_encapsulated_message()?
                 .raw_headers
                 .unwrap()
-                .into()
+                .into(),
         ))
     }
 
@@ -266,16 +265,11 @@ impl<'a> NodeMimeSub<'a> {
 
         // Filter headers
         let msg = self.entire_or_encapsulated_message()?;
-        let res = raw_kv_to_bytes(
-            msg
-                .field_list()
-                .into_iter()
-                .filter_map(|f| {
-                    let name = f.raw_name();
-                    let keep = index.contains(&name.bytes().to_ascii_lowercase()) ^ invert;
-                    keep.then_some((name, f.raw_body()))
-                })
-        );
+        let res = raw_kv_to_bytes(msg.field_list().into_iter().filter_map(|f| {
+            let name = f.raw_name();
+            let keep = index.contains(&name.bytes().to_ascii_lowercase()) ^ invert;
+            keep.then_some((name, f.raw_body()))
+        }));
 
         Ok(ExtractedFull(res.into()))
     }
@@ -288,10 +282,11 @@ impl<'a> NodeMimeSub<'a> {
             Self::NodeMime(NodeMime::AnyPart(part)) => part
                 .mime_body
                 .as_message()
-                .ok_or(anyhow!("Tried to fetch the encapsulated message of a part of a different type"))
+                .ok_or(anyhow!(
+                    "Tried to fetch the encapsulated message of a part of a different type"
+                ))
                 .map(|mime_msg| &*mime_msg.child),
-            Self::DiscreteBody(_) =>
-                bail!("Tried to use a discrete body as a full message")
+            Self::DiscreteBody(_) => bail!("Tried to use a discrete body as a full message"),
         }
     }
 }
@@ -316,8 +311,7 @@ pub fn bodystructure<'a>(msg: &Message<'a>, is_ext: bool) -> Result<BodyStructur
 }
 
 pub fn raw_kv_headers<'a>(msg: &'a Message<'a>) -> Vec<(Cow<'a, [u8]>, &'a [u8])> {
-    msg
-        .field_list()
+    msg.field_list()
         .into_iter()
         .map(|f| (f.raw_name().0, f.raw_body().unwrap()))
         .collect()
@@ -638,7 +632,7 @@ fn nol(input: &[u8]) -> u32 {
 ///
 /// The result must include the final separating blank line between headers and
 /// body:
-/// 
+///
 /// Note also that the [RFC5322] delimiting blank line between the header and
 /// the body is not affected by header-line subsetting; the blank line is always
 /// included as part of the header data, except in the case of a message that

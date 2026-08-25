@@ -1,16 +1,16 @@
-use futures::io::AsyncReadExt;
 use futures::future::{BoxFuture, FutureExt};
+use futures::io::AsyncReadExt;
 use futures::stream::{BoxStream, StreamExt, TryStreamExt};
 use hyper::body::Bytes;
 
+use aero_collections::user::User;
 use aero_collections::{
     dav::collection::Collection,
     dav::davindex::{BlobId, Etag, SyncChange, Token},
 };
-use aero_collections::user::User;
-use aero_dav::realization::{self as all, All};
 use aero_dav::acltypes as acl;
 use aero_dav::coretypes as dav;
+use aero_dav::realization::{self as all, All};
 use aero_dav::synctypes as sync;
 use aero_dav::versioningtypes as vers;
 
@@ -19,8 +19,7 @@ use crate::dav::multistatus;
 
 pub(crate) type IOResult<T> = std::result::Result<T, std::io::Error>;
 pub(crate) type Content<'a> = BoxStream<'a, IOResult<Bytes>>;
-pub(crate) type PropertyResult =
-    std::result::Result<dav::Property<All>, dav::PropertyRequest<All>>;
+pub(crate) type PropertyResult = std::result::Result<dav::Property<All>, dav::PropertyRequest<All>>;
 
 pub(crate) enum PutPolicy {
     OverwriteAll,
@@ -40,7 +39,7 @@ pub(crate) enum ChildNode {
 /// practice, all the ones we implement return a Multistatus in case of success.
 pub(crate) enum ReportResponse {
     Ok(dav::Multistatus<All>),
-    Err((hyper::StatusCode, String))
+    Err((hyper::StatusCode, String)),
 }
 
 /// A DAV node should implement the following methods
@@ -74,7 +73,11 @@ pub(crate) trait DavNode: Send {
     /// Get the supported WebDAV properties
     fn supported_properties(&self, user: &User) -> dav::PropName<All>;
     /// Get the values for the given properties
-    fn properties<'a>(&'a mut self, user: &'a User, prop: dav::PropName<All>) -> BoxFuture<'a, Vec<PropertyResult>>;
+    fn properties<'a>(
+        &'a mut self,
+        user: &'a User,
+        prop: dav::PropName<All>,
+    ) -> BoxFuture<'a, Vec<PropertyResult>>;
     /// Get the value of the DAV header to return
     fn dav_header(&self) -> String;
     /// Content type of the element
@@ -106,7 +109,11 @@ pub(crate) trait DavNode: Send {
     /// NOTE: to handle reports it is not enough to define `report`, the
     /// property vers::Property::SupportedReportSet must be set to the list of
     /// supported report types (in `supported_properties` and `property`).
-    fn report<'a>(&'a mut self, _user: &'a User, _report: vers::Report<All>) -> BoxFuture<'a, IOResult<ReportResponse>> {
+    fn report<'a>(
+        &'a mut self,
+        _user: &'a User,
+        _report: vers::Report<All>,
+    ) -> BoxFuture<'a, IOResult<ReportResponse>> {
         async { Err(unsupported()) }.boxed()
     }
 
@@ -123,9 +130,10 @@ pub(crate) trait DavNode: Send {
                 }
             }
             Ok(res)
-        }.boxed()
+        }
+        .boxed()
     }
-    
+
     /// Recursively fetch a child (progress inside the filesystem hierarchy)
     fn fetch<'a>(
         &self,
@@ -143,15 +151,19 @@ pub(crate) trait DavNode: Send {
             let child = match this.child_node(user, path[0]).await? {
                 ChildNode::Existing(n) => n,
                 ChildNode::Creating(n) if create => n,
-                ChildNode::Creating(_) => return Err(std::io::Error::from(std::io::ErrorKind::NotFound)),
-                ChildNode::CannotCreate =>
+                ChildNode::Creating(_) => {
+                    return Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+                }
+                ChildNode::CannotCreate => {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::Unsupported,
                         "can't create child on this node",
-                    )),
+                    ))
+                }
             };
             child.fetch(user, &path[1..], create).await
-        }.boxed()
+        }
+        .boxed()
     }
 
     /// Utility function to get a propname response from a node
@@ -261,13 +273,20 @@ pub(crate) trait DavObject: Send + Sync + Clone + 'static {
     fn additional_supported_properties(&self) -> Vec<dav::PropertyRequest<All>>;
 
     /// Getter for the value of properties listed by `additional_supported_properties`.
-    fn additional_property<'a>(&'a mut self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult>;
+    fn additional_property<'a>(
+        &'a mut self,
+        prop: &'a dav::PropertyRequest<All>,
+    ) -> BoxFuture<'a, PropertyResult>;
 
     /// Supported report types.
     fn supported_reports(&self) -> Vec<vers::SupportedReport<All>>;
 
     /// Handler for reports.
-    fn report<'a>(&'a mut self, user: &'a User, report: vers::Report<All>) -> BoxFuture<'a, IOResult<ReportResponse>>;
+    fn report<'a>(
+        &'a mut self,
+        user: &'a User,
+        report: vers::Report<All>,
+    ) -> BoxFuture<'a, IOResult<ReportResponse>>;
 
     /// Additional Dav headers to advertise.
     fn additional_dav_headers(&self) -> Vec<String>;
@@ -286,8 +305,7 @@ pub(crate) trait DavObject: Send + Sync + Clone + 'static {
 #[derive(Clone)]
 pub(crate) struct DavObjectNode<T>(pub T);
 
-impl<T: DavObject> DavNode for DavObjectNode<T>
-{
+impl<T: DavObject> DavNode for DavObjectNode<T> {
     fn clone_node(&self) -> Box<dyn DavNode> {
         Box::new(self.clone())
     }
@@ -320,44 +338,51 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
         }
         dav::PropName(props)
     }
-    fn properties<'a>(&'a mut self, _user: &'a User, prop: dav::PropName<All>) -> BoxFuture<'a, Vec<PropertyResult>> {
+    fn properties<'a>(
+        &'a mut self,
+        _user: &'a User,
+        prop: dav::PropName<All>,
+    ) -> BoxFuture<'a, Vec<PropertyResult>> {
         async move {
             let mut v = vec![];
             for n in prop.0 {
                 if let Ok(prop) = self.0.additional_property(&n).await {
                     v.push(Ok(prop));
-                    continue
+                    continue;
                 }
 
                 let res = match &n {
-                    dav::PropertyRequest::DisplayName =>
-                        Ok(dav::Property::DisplayName(format!("{}", self.0.filename()))),
-                    dav::PropertyRequest::ResourceType =>
-                        Ok(dav::Property::ResourceType(vec![])),
-                    dav::PropertyRequest::GetContentType =>
-                        Ok(dav::Property::GetContentType(self.content_type().to_string())),
-                    dav::PropertyRequest::GetEtag =>
-                        self.etag().await.ok_or(n.clone()).map(dav::Property::GetEtag),
+                    dav::PropertyRequest::DisplayName => {
+                        Ok(dav::Property::DisplayName(format!("{}", self.0.filename())))
+                    }
+                    dav::PropertyRequest::ResourceType => Ok(dav::Property::ResourceType(vec![])),
+                    dav::PropertyRequest::GetContentType => Ok(dav::Property::GetContentType(
+                        self.content_type().to_string(),
+                    )),
+                    dav::PropertyRequest::GetEtag => self
+                        .etag()
+                        .await
+                        .ok_or(n.clone())
+                        .map(dav::Property::GetEtag),
                     dav::PropertyRequest::Extension(all::PropertyRequest::Vers(
                         vers::PropertyRequest::SupportedReportSet,
-                    )) =>
-                        Ok(dav::Property::Extension(all::Property::Vers(
-                            vers::Property::SupportedReportSet(self.0.supported_reports())
-                        ))),
+                    )) => Ok(dav::Property::Extension(all::Property::Vers(
+                        vers::Property::SupportedReportSet(self.0.supported_reports()),
+                    ))),
                     dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
                         acl::PropertyRequest::CurrentUserPrivilegeSet,
-                    )) =>
-                        Ok(dav::Property::Extension(all::Property::Acl(
-                            acl::Property::CurrentUserPrivilegeSet(
-                                acl::PrivilegeSet(vec![acl::Privilege::All])
-                            )
-                        ))),
+                    )) => Ok(dav::Property::Extension(all::Property::Acl(
+                        acl::Property::CurrentUserPrivilegeSet(acl::PrivilegeSet(vec![
+                            acl::Privilege::All,
+                        ])),
+                    ))),
                     _ => Err(n),
                 };
                 v.push(res)
             }
             v
-        }.boxed()
+        }
+        .boxed()
     }
 
     fn dav_header(&self) -> String {
@@ -387,7 +412,7 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
                         .await
                         .ok_or(std::io::Error::new(std::io::ErrorKind::Other, "Etag error"))?;
                     if etag != existing_etag.as_str() {
-                        return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists))
+                        return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists));
                     }
                 }
                 _ => (),
@@ -444,12 +469,11 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
     }
 
     fn etag(&self) -> BoxFuture<'_, Option<Etag>> {
-        if let Some(blob_id) = self.0.blob_id() { 
+        if let Some(blob_id) = self.0.blob_id() {
             let col = self.0.collection().clone();
 
             async move {
-                col
-                    .index()
+                col.index()
                     .table
                     .get(&blob_id)
                     .map(|(_, etag)| etag.to_string())
@@ -464,8 +488,8 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
         let blob_id = match self.0.blob_id() {
             None => {
                 // Nothing to delete
-                return async { Ok(()) }.boxed()
-            },
+                return async { Ok(()) }.boxed();
+            }
             Some(blob_id) => blob_id,
         };
 
@@ -477,16 +501,21 @@ impl<T: DavObject> DavNode for DavObjectNode<T>
                     return Err(std::io::Error::from(std::io::ErrorKind::Interrupted));
                 }
             };
-            self.0.collection_mut()
-                  .sync()
-                  .await
-                  .or(Err(std::io::ErrorKind::ConnectionReset))?;
+            self.0
+                .collection_mut()
+                .sync()
+                .await
+                .or(Err(std::io::ErrorKind::ConnectionReset))?;
             Ok(())
         }
         .boxed()
     }
 
-    fn report<'a>(&'a mut self, user: &'a User, report: vers::Report<All>) -> BoxFuture<'a, IOResult<ReportResponse>> {
+    fn report<'a>(
+        &'a mut self,
+        user: &'a User,
+        report: vers::Report<All>,
+    ) -> BoxFuture<'a, IOResult<ReportResponse>> {
         self.0.report(user, report)
     }
 }
@@ -511,26 +540,33 @@ pub(crate) trait DavStoredCollection: Send + Sync + Clone + 'static {
 
     /// Collection content-type
     fn content_type(&self) -> &str;
-    
+
     /// Create a `DavNode` instance for an element of the collection.
     /// It is possible for `filename` not to be in the collection already
     /// (if creating a new element).
     fn mk_child_node(&self, filename: &str) -> Box<dyn DavNode>;
 
     /// Additional resource types advertised by this collection.
-    fn additional_resource_types(&self) -> Vec<dav::ResourceType<All>>; 
+    fn additional_resource_types(&self) -> Vec<dav::ResourceType<All>>;
 
     /// Additional properties supported by this collection, on top of base WebDAV properties.
     fn additional_supported_properties(&self) -> Vec<dav::PropertyRequest<All>>;
 
     /// Getter for the value of properties listed by `additional_supported_properties`.
-    fn additional_property<'a>(&'a mut self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult>;
+    fn additional_property<'a>(
+        &'a mut self,
+        prop: &'a dav::PropertyRequest<All>,
+    ) -> BoxFuture<'a, PropertyResult>;
 
     /// Additional report types advertised by this collection, on top of sync reports.
     fn additional_supported_reports(&self) -> Vec<vers::SupportedReport<All>>;
 
     /// Handler for reports declared by `additional_supported_reports`.
-    fn additional_report<'a>(&'a mut self, user: &'a User, report: &'a vers::Report<All>) -> BoxFuture<'a, IOResult<ReportResponse>>;
+    fn additional_report<'a>(
+        &'a mut self,
+        user: &'a User,
+        report: &'a vers::Report<All>,
+    ) -> BoxFuture<'a, IOResult<ReportResponse>>;
 
     /// Additional Dav headers to advertise.
     fn additional_dav_headers(&self) -> Vec<String>;
@@ -539,25 +575,30 @@ pub(crate) trait DavStoredCollection: Send + Sync + Clone + 'static {
 #[derive(Clone)]
 pub struct DavStoredCollectionNode<T>(pub T);
 
-impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
-{
+impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T> {
     fn clone_node(&self) -> Box<dyn DavNode> {
         Box::new(self.clone())
     }
 
     fn children<'a>(&self, _user: &'a User) -> BoxFuture<'a, Vec<String>> {
-        let res = self.0
-                .collection()
-                .index()
-                .idx_by_filename
-                .keys()
-                .map(|name| name.to_string())
-                .collect();
+        let res = self
+            .0
+            .collection()
+            .index()
+            .idx_by_filename
+            .keys()
+            .map(|name| name.to_string())
+            .collect();
         async move { res }.boxed()
     }
 
     fn child_node<'a>(&self, _user: &'a User, name: &str) -> BoxFuture<'a, IOResult<ChildNode>> {
-        let exists = self.0.collection().index().idx_by_filename.contains_key(name);
+        let exists = self
+            .0
+            .collection()
+            .index()
+            .idx_by_filename
+            .contains_key(name);
         let node = self.0.mk_child_node(name);
         async move {
             if exists {
@@ -565,7 +606,8 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
             } else {
                 Ok(ChildNode::Creating(node))
             }
-        }.boxed()
+        }
+        .boxed()
     }
 
     fn path(&self, user: &User) -> String {
@@ -591,63 +633,68 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
         dav::PropName(props)
     }
 
-    fn properties<'a>(&'a mut self, _user: &'a User, prop: dav::PropName<All>) -> BoxFuture<'a, Vec<PropertyResult>> {
+    fn properties<'a>(
+        &'a mut self,
+        _user: &'a User,
+        prop: dav::PropName<All>,
+    ) -> BoxFuture<'a, Vec<PropertyResult>> {
         async {
             let mut v = vec![];
             for n in prop.0 {
                 if let Ok(prop) = self.0.additional_property(&n).await {
                     v.push(Ok(prop));
-                    continue
+                    continue;
                 }
-                    
+
                 let res = match n {
-                    dav::PropertyRequest::DisplayName =>
-                        Ok(dav::Property::DisplayName(self.0.display_name().clone())),
+                    dav::PropertyRequest::DisplayName => {
+                        Ok(dav::Property::DisplayName(self.0.display_name().clone()))
+                    }
                     dav::PropertyRequest::ResourceType => {
                         let mut typ = vec![dav::ResourceType::Collection];
                         typ.extend(self.0.additional_resource_types());
                         Ok(dav::Property::ResourceType(typ))
-                    },
-                    dav::PropertyRequest::GetContentType =>
-                        Ok(dav::Property::GetContentType(self.content_type().to_string())),
+                    }
+                    dav::PropertyRequest::GetContentType => Ok(dav::Property::GetContentType(
+                        self.content_type().to_string(),
+                    )),
                     dav::PropertyRequest::Extension(all::PropertyRequest::Sync(
                         sync::PropertyRequest::SyncToken,
                     )) => match self.0.collection_mut().token().await {
                         Ok(token) => Ok(dav::Property::Extension(all::Property::Sync(
                             sync::Property::SyncToken(sync::SyncToken(
-                                SyncTokenUri(token).to_string()
-                            ))))),
+                                SyncTokenUri(token).to_string(),
+                            )),
+                        ))),
                         _ => Err(n.clone()),
                     },
                     dav::PropertyRequest::Extension(all::PropertyRequest::Vers(
                         vers::PropertyRequest::SupportedReportSet,
                     )) => {
-                        let mut reports = vec![
-                            vers::SupportedReport(vers::ReportName::Extension(
-                                all::ReportTypeName::Sync(sync::ReportTypeName::SyncCollection),
-                            )),
-                        ];
+                        let mut reports = vec![vers::SupportedReport(vers::ReportName::Extension(
+                            all::ReportTypeName::Sync(sync::ReportTypeName::SyncCollection),
+                        ))];
                         reports.extend(self.0.additional_supported_reports());
                         Ok(dav::Property::Extension(all::Property::Vers(
-                            vers::Property::SupportedReportSet(reports)
+                            vers::Property::SupportedReportSet(reports),
                         )))
-                    },
+                    }
                     dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
                         acl::PropertyRequest::CurrentUserPrivilegeSet,
-                    )) =>
-                        Ok(dav::Property::Extension(all::Property::Acl(
-                            acl::Property::CurrentUserPrivilegeSet(
-                                acl::PrivilegeSet(vec![acl::Privilege::All])
-                            )
-                        ))),
+                    )) => Ok(dav::Property::Extension(all::Property::Acl(
+                        acl::Property::CurrentUserPrivilegeSet(acl::PrivilegeSet(vec![
+                            acl::Privilege::All,
+                        ])),
+                    ))),
                     v => Err(v),
                 };
                 v.push(res)
             }
             v
-        }.boxed()
+        }
+        .boxed()
     }
-    
+
     fn dav_header(&self) -> String {
         let mut parts = vec!["1, 3, access-control".to_string()];
         parts.extend(self.0.additional_dav_headers());
@@ -658,10 +705,14 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
         self.0.content_type()
     }
 
-    fn report<'a>(&'a mut self, user: &'a User, report: vers::Report<All>) -> BoxFuture<'a, IOResult<ReportResponse>> {
+    fn report<'a>(
+        &'a mut self,
+        user: &'a User,
+        report: vers::Report<All>,
+    ) -> BoxFuture<'a, IOResult<ReportResponse>> {
         async move {
             if let Ok(res) = self.0.additional_report(user, &report).await {
-                return Ok(res)
+                return Ok(res);
             }
 
             match report {
@@ -676,7 +727,8 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
                     let token = match sync_col.sync_token {
                         sync::SyncTokenRequest::InitialSync => None,
                         sync::SyncTokenRequest::IncrementalSync(token_raw) => {
-                            let token = token_raw.parse::<SyncTokenUri>()
+                            let token = token_raw
+                                .parse::<SyncTokenUri>()
                                 .map_err(|msg| std::io::Error::new(std::io::ErrorKind::Other, msg))?
                                 .0;
                             Some(token)
@@ -686,35 +738,36 @@ impl<T: DavStoredCollection> DavNode for DavStoredCollectionNode<T>
                     let (new_token, ok_node, not_found) = match self.diff(token).await {
                         Ok(t) => t,
                         Err(e) => match e.kind() {
-                            std::io::ErrorKind::NotFound =>
+                            std::io::ErrorKind::NotFound => {
                                 return Ok(ReportResponse::Err((
                                     hyper::StatusCode::GONE,
                                     "Diff failed, token might be expired".to_string(),
-                                ))),
-                            _ =>
-                                return Err(e),
+                                )))
+                            }
+                            _ => return Err(e),
                         },
                     };
                     let extension = all::Multistatus::Sync(sync::Multistatus {
                         sync_token: sync::SyncToken(SyncTokenUri(new_token).to_string()),
                     });
-                    
+
                     Ok(ReportResponse::Ok(
                         multistatus::Builder::new()
                             .with_propfind_nodes(user, dav::PropFind::Prop(sync_col.prop), ok_node)
                             .await
                             .with_not_found(not_found)
                             .with_extension(extension)
-                            .build()
+                            .build(),
                     ))
-                },
-                _ => Err(unsupported())
+                }
+                _ => Err(unsupported()),
             }
-        }.boxed()
+        }
+        .boxed()
     }
 }
 
-impl <T: DavStoredCollection> DavStoredCollectionNode<T> {
+impl<T: DavStoredCollection> DavStoredCollectionNode<T> {
     /// Helper function, used to compute Sync reports. Computes a diff of
     /// changes since a given sync token.
     fn diff<'a>(

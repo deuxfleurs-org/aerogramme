@@ -31,7 +31,7 @@ impl Builder {
                 responses: vec![],
                 responsedescription: None,
                 extension: None,
-            }
+            },
         }
     }
 
@@ -56,10 +56,11 @@ impl Builder {
         match &propfind {
             // Request a list of names of all the properties defined on the
             // resource, by using the 'propname' element.
-            dav::PropFind::PropName =>
+            dav::PropFind::PropName => {
                 for node in nodes {
                     self.inner.responses.push(node.response_propname(user))
-                },
+                }
+            }
 
             // Request property values for those properties defined in this
             // specification (at a minimum) plus dead properties, by using the
@@ -71,7 +72,7 @@ impl Builder {
             // properties. Instead, WebDAV clients can use propname requests to
             // discover what live properties exist, and request named properties
             // when retrieving values.
-            dav::PropFind::AllProp(include) =>
+            dav::PropFind::AllProp(include) => {
                 for mut node in nodes {
                     let mut props: Vec<_> = node
                         .supported_properties(user)
@@ -85,17 +86,19 @@ impl Builder {
                     self.inner
                         .responses
                         .push(node.response_props(user, dav::PropName(props)).await)
-                },
+                }
+            }
 
             // Request particular property values, by naming the properties
             // desired within the 'prop' element (the ordering of properties in
             // here MAY be ignored by the server),
-            dav::PropFind::Prop(inner) =>
+            dav::PropFind::Prop(inner) => {
                 for mut node in nodes {
                     self.inner
                         .responses
                         .push(node.response_props(user, inner.clone()).await)
-                },
+                }
+            }
         }
         self
     }
@@ -121,11 +124,9 @@ impl Builder {
                 vec![href],
                 dav::Status(hyper::http::StatusCode::INSUFFICIENT_STORAGE),
             ),
-            error: Some(dav::Error(vec![
-                dav::Violation::Extension(
-                    all::Error::Acl(acl::Violation::NumberOfMatchesWithinLimits)
-                ),
-            ])),
+            error: Some(dav::Error(vec![dav::Violation::Extension(
+                all::Error::Acl(acl::Violation::NumberOfMatchesWithinLimits),
+            )])),
             responsedescription: None,
             location: None,
         });
@@ -134,6 +135,6 @@ impl Builder {
 
     pub fn build(self) -> dav::Multistatus<All> {
         tracing::debug!(multistatus=?self.inner, "multistatus response");
-        self.inner        
+        self.inner
     }
 }

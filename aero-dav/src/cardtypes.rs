@@ -1,5 +1,5 @@
-use super::extension::Extension;
 use super::coretypes as dav;
+use super::extension::Extension;
 use super::xml::WithDefault;
 
 /**
@@ -56,49 +56,49 @@ pub enum Property {
     ///    collection.
     ///
     /// Value:  Any text.
-    /// 
+    ///
     /// Protected:  SHOULD NOT be protected so that users can specify a
     ///    description.
-    /// 
+    ///
     /// COPY/MOVE behavior:  This property value SHOULD be preserved in COPY
     ///    and MOVE operations.
-    /// 
+    ///
     /// allprop behavior:  SHOULD NOT be returned by a PROPFIND DAV:allprop
     ///    request.
-    /// 
+    ///
     /// Description:  This property contains a description of the address
     ///    book collection that is suitable for presentation to a user.  The
     ///    xml:lang attribute can be used to add a language tag for the value
     ///    of this property.
-    /// 
+    ///
     /// Definition:
-    /// 
+    ///
     /// <!ELEMENT addressbook-description (#PCDATA)>
     /// <!-- PCDATA value: string -->
-    /// 
+    ///
     /// Example:
-    /// 
+    ///
     /// <C:addressbook-description xml:lang="fr-CA"
     ///    xmlns:C="urn:ietf:params:xml:ns:carddav"
     /// >Adresses de Oliver Daboo</C:addressbook-description>
     AddressbookDescription { lang: Option<String>, text: String },
 
     /// Name:  supported-address-data
-    /// 
+    ///
     /// Namespace:  urn:ietf:params:xml:ns:carddav
-    /// 
+    ///
     /// Purpose:  Specifies what media types are allowed for address object
     ///    resources in an address book collection.
-    /// 
+    ///
     /// Protected:  MUST be protected as it indicates the level of support
     ///    provided by the server.
-    /// 
+    ///
     /// COPY/MOVE behavior:  This property value MUST be preserved in COPY
     ///    and MOVE operations.
-    /// 
+    ///
     /// allprop behavior:  SHOULD NOT be returned by a PROPFIND DAV:allprop
     ///    request.
-    /// 
+    ///
     /// Description:  The CARDDAV:supported-address-data property is used to
     ///    specify the media type supported for the address object resources
     ///    contained in a given address book collection (e.g., vCard version
@@ -109,19 +109,19 @@ pub enum Property {
     ///    property, the server MUST only accept data with the media type
     ///    "text/vcard" and vCard version 3.0, and clients can assume that is
     ///    all the server will accept.
-    /// 
+    ///
     /// Definition:
-    /// 
+    ///
     /// <!ELEMENT supported-address-data (address-data-type+)>
-    /// 
+    ///
     /// <!ELEMENT address-data-type EMPTY>
     /// <!ATTLIST address-data-type content-type CDATA "text/vcard"
     ///                       version CDATA "3.0">
     /// <!-- content-type value: a MIME media type -->
     /// <!-- version value: a version string -->
-    /// 
+    ///
     /// Example:
-    /// 
+    ///
     /// <C:supported-address-data
     ///    xmlns:C="urn:ietf:params:xml:ns:carddav">
     ///   <C:address-data-type content-type="text/vcard" version="3.0"/>
@@ -129,24 +129,24 @@ pub enum Property {
     SupportedAddressData(Vec<AddressDataType>),
 
     /// Name:  max-resource-size
-    /// 
+    ///
     /// Namespace:  urn:ietf:params:xml:ns:carddav
-    /// 
+    ///
     /// Purpose:  Provides a numeric value indicating the maximum size in
     ///    octets of a resource that the server is willing to accept when an
     ///    address object resource is stored in an address book collection.
-    /// 
+    ///
     /// Value:  Any text representing a numeric value.
-    /// 
+    ///
     /// Protected:  MUST be protected as it indicates limits provided by the
     ///    server.
-    /// 
+    ///
     /// COPY/MOVE behavior:  This property value MUST be preserved in COPY
     ///    and MOVE operations.
-    /// 
+    ///
     /// allprop behavior:  SHOULD NOT be returned by a PROPFIND DAV:allprop
     ///    request.
-    /// 
+    ///
     /// Description:  The CARDDAV:max-resource-size is used to specify a
     ///    numeric value that represents the maximum size in octets that the
     ///    server is willing to accept when an address object resource is
@@ -156,35 +156,35 @@ pub enum Property {
     ///    (Section 6.3.2.1) being violated.  In the absence of this
     ///    property, the client can assume that the server will allow storing
     ///    a resource of any reasonable size.
-    /// 
+    ///
     /// Definition:
-    /// 
+    ///
     /// <!ELEMENT max-resource-size (#PCDATA)>
     /// <!-- PCDATA value: a numeric value (positive decimal integer) -->
-    /// 
+    ///
     /// Example:
-    /// 
+    ///
     /// <C:max-resource-size xmlns:C="urn:ietf:params:xml:ns:carddav"
     /// >102400</C:max-resource-size>
     MaxResourceSize(u64),
 
     /// Name:  addressbook-home-set
-    /// 
+    ///
     /// Namespace:  urn:ietf:params:xml:ns:carddav
-    /// 
+    ///
     /// Purpose:  Identifies the URL of any WebDAV collections that contain
     ///    address book collections owned by the associated principal
     ///    resource.
-    /// 
+    ///
     /// Protected:  MAY be protected if the server has fixed locations in
     ///    which address books are created.
-    /// 
+    ///
     /// COPY/MOVE behavior:  This property value MUST be preserved in COPY
     ///    and MOVE operations.
-    /// 
+    ///
     /// allprop behavior:  SHOULD NOT be returned by a PROPFIND DAV:allprop
     ///    request.
-    /// 
+    ///
     /// Description:  The CARDDAV:addressbook-home-set property is meant to
     ///    allow users to easily find the address book collections owned by
     ///    the principal.  Typically, users will group all the address book
@@ -192,13 +192,13 @@ pub enum Property {
     ///    property specifies the URL of collections that are either address
     ///    book collections or ordinary collections that have child or
     ///    descendant address book collections owned by the principal.
-    /// 
+    ///
     /// Definition:
-    /// 
+    ///
     /// <!ELEMENT addressbook-home-set (DAV:href*)>
-    /// 
+    ///
     /// Example:
-    /// 
+    ///
     /// <C:addressbook-home-set xmlns:D="DAV:"
     ///    xmlns:C="urn:ietf:params:xml:ns:carddav">
     ///   <D:href>/bernard/addresses/</D:href>
@@ -206,21 +206,21 @@ pub enum Property {
     AddressbookHomeSet(dav::Href),
 
     /// Name:  principal-address
-    /// 
+    ///
     /// Namespace:  urn:ietf:params:xml:ns:carddav
-    /// 
+    ///
     /// Purpose:  Identifies the URL of an address object resource that
     ///    corresponds to the user represented by the principal.
-    /// 
+    ///
     /// Protected:  MAY be protected if the server provides a fixed location
     ///    for principal addresses.
-    /// 
+    ///
     /// COPY/MOVE behavior:  This property value MUST be preserved in COPY
     ///    and MOVE operations.
-    /// 
+    ///
     /// allprop behavior:  SHOULD NOT be returned by a PROPFIND DAV:allprop
     ///    request.
-    /// 
+    ///
     /// Description:  The CARDDAV:principal-address property is meant to
     ///    allow users to easily find contact information for users
     ///    represented by principals on the system.  This property specifies
@@ -228,13 +228,13 @@ pub enum Property {
     ///    information.  The resource could be an address object resource in
     ///    an address book collection, or it could be a resource in a
     ///    "regular" collection.
-    /// 
+    ///
     /// Definition:
-    /// 
+    ///
     /// <!ELEMENT principal-address (DAV:href)>
-    /// 
+    ///
     /// Example:
-    /// 
+    ///
     /// <C:principal-address xmlns:D="DAV:"
     ///    xmlns:C="urn:ietf:params:xml:ns:carddav">
     ///    <D:href>/system/cyrus.vcf</D:href>
@@ -242,38 +242,38 @@ pub enum Property {
     PrincipalAddress(dav::Href),
 
     /// Name:  supported-collation-set
-    /// 
+    ///
     /// Namespace:  urn:ietf:params:xml:ns:carddav
-    /// 
+    ///
     /// Purpose:  Identifies the set of collations supported by the server
     ///    for text matching operations.
-    /// 
+    ///
     /// Protected:  MUST be protected as it indicates support provided by the
     ///    server.
-    /// 
+    ///
     /// COPY/MOVE behavior:  This property value MUST be preserved in COPY
     ///    and MOVE operations.
-    /// 
+    ///
     /// allprop behavior:  SHOULD NOT be returned by a PROPFIND DAV:allprop
     ///    request.
-    /// 
+    ///
     /// Description:  The CARDDAV:supported-collation-set property contains
     ///    two or more CARDDAV:supported-collation elements that specify the
     ///    identifiers of the collations supported by the server.
-    /// 
+    ///
     /// Definition:
-    /// 
+    ///
     /// <!ELEMENT supported-collation-set (
     ///       supported-collation
     ///       supported-collation
     ///       supported-collation*)>
     /// <!-- Both "i;ascii-casemap" and "i;unicode-casemap"
     ///      will be present -->
-    /// 
+    ///
     /// <!ELEMENT supported-collation (#PCDATA)>
-    /// 
+    ///
     /// Example:
-    /// 
+    ///
     /// <C:supported-collation-set
     ///   xmlns:C="urn:ietf:params:xml:ns:carddav">
     ///   <C:supported-collation>i;ascii-casemap</C:supported-collation>
@@ -348,7 +348,7 @@ pub enum Violation {
     /// unsupported vCard property or parameter, this precondition is
     /// violated.  A server SHOULD report the CARDDAV:prop-filter or
     /// CARDDAV:param-filter for which it does not provide support.
-    /// 
+    ///
     /// <!ELEMENT supported-filter (prop-filter*,
     ///                             param-filter*)>
     SupportedFilter {
@@ -567,9 +567,9 @@ impl Collation {
     }
     pub fn from_str(s: &str) -> Result<Self, ()> {
         match s {
-             // if the client specifies the "default" collation identifier (as
-             // defined in [RFC4790], Section 3.1), the server MUST default to
-             // using "i;unicode-casemap" as the collation.
+            // if the client specifies the "default" collation identifier (as
+            // defined in [RFC4790], Section 3.1), the server MUST default to
+            // using "i;unicode-casemap" as the collation.
             "default" | "i;unicode-casemap" => Ok(Self::UnicodeCaseMap),
             "i;ascii-casemap" => Ok(Self::AsciiCaseMap),
             _ => Err(()),
@@ -689,7 +689,7 @@ pub enum PropFilterRules {
     Match {
         text_match: Vec<TextMatch>,
         param_filter: Vec<ParamFilter>,
-    }
+    },
 }
 
 /// Name:  text-match
@@ -1022,7 +1022,7 @@ pub struct PropertyParameterName(pub String);
 /// Can also include a "group" prefix, e.g. "X-ABC.NICKNAME".
 #[derive(Debug, PartialEq, Clone)]
 pub struct PropertyName {
-    pub group: Option<String>, 
+    pub group: Option<String>,
     pub name: String,
 }
 
@@ -1032,11 +1032,14 @@ impl std::str::FromStr for PropertyName {
     // that the input is using proper property name syntax.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.split_once(".") {
-            None => Ok(PropertyName { group: None, name: s.to_string() }),
+            None => Ok(PropertyName {
+                group: None,
+                name: s.to_string(),
+            }),
             Some((group, name)) => Ok(PropertyName {
                 group: Some(group.to_string()),
                 name: name.to_string(),
-            })
+            }),
         }
     }
 }

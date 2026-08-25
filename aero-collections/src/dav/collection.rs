@@ -41,7 +41,7 @@ impl Collection {
             blobs_path,
         })
     }
-    
+
     // ---- DAG sync utilities
 
     /// Sync data with backing store

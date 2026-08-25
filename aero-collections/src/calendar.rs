@@ -13,6 +13,8 @@ pub struct CalendarNs {
 impl CalendarNs {
     /// Create a new calendar namespace
     pub fn new(creds: Credentials) -> Self {
-        Self { dav: DavNs::new(creds, CAL_PREFIX, &[MAIN_CAL]) }
+        Self {
+            dav: DavNs::new(creds, CAL_PREFIX, &[MAIN_CAL]),
+        }
     }
 }

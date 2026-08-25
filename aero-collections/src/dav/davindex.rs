@@ -30,7 +30,6 @@ pub struct DavIndex {
     heads: OrdSet<Token>,
 
     // ------------ Below this line, data is ephemeral, ie. not checkpointed
-    
     /// Index for queries on `table` by filename
     pub idx_by_filename: OrdMap<FileName, BlobId>,
 
@@ -122,7 +121,10 @@ impl DavIndex {
         // Missing items are *all existing graph items* from which
         // we removed *all items known by the given node*.
         // In other words, all nodes that are not in `already_known`.
-        Ok(self.idx_all_nodes.clone().relative_complement(already_known))
+        Ok(self
+            .idx_all_nodes
+            .clone()
+            .relative_complement(already_known))
     }
 
     /// Find all ancestors of a given node
@@ -195,10 +197,8 @@ impl DavIndex {
 
         // --- Update ANCESTORS
         // We register ancestors as it is required for the sync algorithm
-        self.ancestors.insert(
-            *child,
-            OrdSet::from_iter(parents.iter().cloned()),
-        );
+        self.ancestors
+            .insert(*child, OrdSet::from_iter(parents.iter().cloned()));
 
         // --- Update ORIGINS
         // If this event has no parents, it's an origin
@@ -292,7 +292,11 @@ impl Serialize for DavIndex {
         S: Serializer,
     {
         // Indexes are rebuilt on the fly, we serialize only the core database
-        let items = self.table.iter().map(|(blob_id, entry)| (blob_id.clone(), entry.clone())).collect();
+        let items = self
+            .table
+            .iter()
+            .map(|(blob_id, entry)| (blob_id.clone(), entry.clone()))
+            .collect();
 
         // We keep only the head entries from the sync graph,
         // these entries will be used to initialize it back when deserializing

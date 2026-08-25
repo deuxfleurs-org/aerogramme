@@ -1,7 +1,7 @@
 // utils
 pub mod error;
-pub mod xml;
 pub mod extension;
+pub mod xml;
 
 // webdav core
 pub mod coredecoder;

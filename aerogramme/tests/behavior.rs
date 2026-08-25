@@ -57,7 +57,7 @@ fn rfc3501_imap4rev1_base() {
             FetchKind::Rfc822,
             FetchMod::None,
         )
-            .context("fetch rfc822 message, should be our first message")?;
+        .context("fetch rfc822 message, should be our first message")?;
         let orig_email = std::str::from_utf8(EMAIL1)?;
         assert!(srv_msg.contains(orig_email));
 
@@ -74,24 +74,26 @@ fn rfc3501_imap4rev1_base() {
             })),
             FetchMod::None,
         )
-            .context("fetch selected headers of message")?;
-        let reference =
-            std::str::from_utf8(EMAIL1)?
+        .context("fetch selected headers of message")?;
+        let reference = std::str::from_utf8(EMAIL1)?
             .lines()
             .filter(|s| s.starts_with("Date") || s.starts_with("To"))
             .collect::<Vec<_>>()
             .join("\r\n");
         assert!(srv_msg.contains(&reference));
-        
+
         copy(imap_socket, Selection::FirstId, Mailbox::Archive)
             .context("copy message to the archive mailbox")?;
         let append_res = append(imap_socket, Email::Basic).context("insert email in INBOX")?;
         assert!(append_res.contains("* 2 EXISTS"));
         search(imap_socket, SearchKind::Text("OoOoO")).expect("search should return something");
-        search(imap_socket, SearchKind::Header("To", "alice")).expect("search should return something");
+        search(imap_socket, SearchKind::Header("To", "alice"))
+            .expect("search should return something");
         search(imap_socket, SearchKind::Header("To", "")).expect("search should return something");
-        search(imap_socket, SearchKind::UidRange(1, 4294967295)).expect("search should return something");
-        search(imap_socket, SearchKind::UidRange(100, 4294967295)).expect("search should return something");
+        search(imap_socket, SearchKind::UidRange(1, 4294967295))
+            .expect("search should return something");
+        search(imap_socket, SearchKind::UidRange(100, 4294967295))
+            .expect("search should return something");
         store(
             imap_socket,
             Selection::FirstId,
@@ -99,7 +101,7 @@ fn rfc3501_imap4rev1_base() {
             StoreAction::AddFlags,
             StoreMod::None,
         )
-            .context("should add delete flag to the email")?;
+        .context("should add delete flag to the email")?;
 
         expunge(imap_socket).context("expunge emails")?;
         rename_mailbox(imap_socket, Mailbox::Archive, Mailbox::Drafts)
@@ -107,7 +109,7 @@ fn rfc3501_imap4rev1_base() {
         delete_mailbox(imap_socket, Mailbox::Drafts).context("Drafts mailbox is deleted")?;
         Ok(())
     })
-        .expect("test fully run");
+    .expect("test fully run");
 }
 
 // FETCH BODY tests from imaptest's fetch-body-mime test
@@ -120,7 +122,7 @@ fn rfc3501_imap4rev1_fetch_body_mime() {
             select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
         assert!(select_res.contains("* 0 EXISTS"));
 
-        // from imaptest's fetch-body-mime 
+        // from imaptest's fetch-body-mime
         let email = br#"From: user@domain.org
 Date: Sat, 24 Mar 2007 23:00:00 +0200
 Mime-Version: 1.0
@@ -173,7 +175,7 @@ Root MIME epilogue
             FetchKind::Body(None),
             FetchMod::None,
         )
-            .context("fetch BODY[]")?;
+        .context("fetch BODY[]")?;
         assert!(srv_msg.contains(str::from_utf8(email)?));
 
         // FETCH BODY[1] returns the first part
@@ -186,7 +188,7 @@ Root MIME epilogue
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[1]")?;
+        .context("fetch BODY[1]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
         assert!(srv_msg.contains("}\r\nhello\n)"));
 
@@ -206,9 +208,11 @@ Root MIME epilogue
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[1.MIME]")?;
+        .context("fetch BODY[1.MIME]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
-        assert!(srv_msg.contains("}\r\nContent-Type: text/x-myown; charset=us-ascii\r\nX-Mime: foobar\r\n\r\n)"));
+        assert!(srv_msg.contains(
+            "}\r\nContent-Type: text/x-myown; charset=us-ascii\r\nX-Mime: foobar\r\n\r\n)"
+        ));
 
         // FETCH BODY[HEADER] returns all headers of a full message
         //
@@ -222,15 +226,17 @@ Root MIME epilogue
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[HEADER]")?;
+        .context("fetch BODY[HEADER]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
-        assert!(srv_msg.contains("}\r\nFrom: user@domain.org
+        assert!(srv_msg.contains(
+            "}\r\nFrom: user@domain.org
 Date: Sat, 24 Mar 2007 23:00:00 +0200
 Mime-Version: 1.0
 Content-Type: multipart/mixed; boundary=\"foo
  bar\"
 
-)"));
+)"
+        ));
 
         // FETCH BODY[HEADER.FIELDS (Date Mime-Version)] returns selected headers
         //
@@ -241,17 +247,20 @@ Content-Type: multipart/mixed; boundary=\"foo
             FetchKind::Body(Some(FetchBodySection {
                 part_no: vec![],
                 part_spec: Some(PartSpec::HeaderFields(vec![
-                    "Date".to_string(), "Mime-Version".to_string()
+                    "Date".to_string(),
+                    "Mime-Version".to_string(),
                 ])),
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[HEADER.FIELDS (DATE MIME-VERSION)]")?;
+        .context("fetch BODY[HEADER.FIELDS (DATE MIME-VERSION)]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
-        assert!(srv_msg.contains("}\r\nDate: Sat, 24 Mar 2007 23:00:00 +0200\r
+        assert!(srv_msg.contains(
+            "}\r\nDate: Sat, 24 Mar 2007 23:00:00 +0200\r
 MIME-Version: 1.0\r
 \r
-)"));
+)"
+        ));
 
         // FETCH BODY[2.HEADER] on a part that contains an encapsulated message
         // returns the header of the encapsulated message.
@@ -264,14 +273,16 @@ MIME-Version: 1.0\r
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[2.HEADER]")?;
+        .context("fetch BODY[2.HEADER]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
-        assert!(srv_msg.contains("}\r\nFrom: sub@domain.org
+        assert!(srv_msg.contains(
+            "}\r\nFrom: sub@domain.org
 Date: Sun, 12 Aug 2012 12:34:56 +0300
 Subject: submsg
 Content-Type: multipart/alternative; boundary=\"sub1\"
 
-)"));
+)"
+        ));
 
         // FETCH BODY[2.HEADER.FIELDS (Subject From)] on a part also targets the
         // encapsulated message
@@ -281,17 +292,20 @@ Content-Type: multipart/alternative; boundary=\"sub1\"
             FetchKind::Body(Some(FetchBodySection {
                 part_no: vec![2],
                 part_spec: Some(PartSpec::HeaderFields(vec![
-                    "Subject".to_string(), "From".to_string()
+                    "Subject".to_string(),
+                    "From".to_string(),
                 ])),
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[2.HEADER.FIELDS (Subject From)]")?;
+        .context("fetch BODY[2.HEADER.FIELDS (Subject From)]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
-        assert!(srv_msg.contains("}\r\nFrom: sub@domain.org\r
+        assert!(srv_msg.contains(
+            "}\r\nFrom: sub@domain.org\r
 Subject: submsg\r
 \r
-)"));
+)"
+        ));
 
         // FETCH BODY[TEXT] returns the non-header text body of the message
         let srv_msg = fetch(
@@ -303,7 +317,7 @@ Subject: submsg\r
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[TEXT]")?;
+        .context("fetch BODY[TEXT]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
         assert!(srv_msg.contains("}\r\nRoot MIME prologue"));
         assert!(srv_msg.contains("Root MIME epilogue\n)"));
@@ -318,11 +332,11 @@ Subject: submsg\r
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[2.TEXT]")?;
+        .context("fetch BODY[2.TEXT]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
         assert!(srv_msg.contains("}\r\nSub MIME prologue"));
         assert!(srv_msg.contains("Sub MIME epilogue\n)"));
-        
+
         // FETCH BODY: nested subparts + MIME
         let srv_msg = fetch(
             imap_socket,
@@ -333,7 +347,7 @@ Subject: submsg\r
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[2.1.MIME]")?;
+        .context("fetch BODY[2.1.MIME]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
         assert!(srv_msg.contains("}\r\nContent-Type: text/html\r\n\r\n)"));
 
@@ -351,10 +365,10 @@ Subject: submsg\r
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[2.1]")?;
+        .context("fetch BODY[2.1]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
         assert!(srv_msg.contains("}\r\n<p>Hello world</p>\n)"));
-        
+
         // FETCH BODY: subparts inside of an embedded message (2)
         let srv_msg = fetch(
             imap_socket,
@@ -365,7 +379,7 @@ Subject: submsg\r
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[2.2]")?;
+        .context("fetch BODY[2.2]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
         assert!(srv_msg.contains("}\r\nHello another world\n)"));
 
@@ -379,13 +393,13 @@ Subject: submsg\r
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[2.2.MIME]")?;
+        .context("fetch BODY[2.2.MIME]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal respectively
         assert!(srv_msg.contains("}\r\nContent-Type: text/plain\r\n\r\n)"));
 
         Ok(())
     })
-        .expect("test fully run");
+    .expect("test fully run");
 }
 
 // FETCH BODY tests involving message/rfc822 embedded messages.
@@ -427,7 +441,7 @@ Hello world
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[1]")?;
+        .context("fetch BODY[1]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal
         assert!(srv_msg.contains("}\r\nFrom: sub@domain.org"));
         assert!(srv_msg.contains("Hello world\n)"));
@@ -442,7 +456,7 @@ Hello world
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[1.1]")?;
+        .context("fetch BODY[1.1]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal
         assert!(srv_msg.contains("}\r\nHello world\n)"));
 
@@ -456,11 +470,11 @@ Hello world
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[1.HEADER]")?;
+        .context("fetch BODY[1.HEADER]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal
         assert!(srv_msg.contains("}\r\nFrom: sub@domain.org"));
         assert!(srv_msg.contains("Subject: submsg\n\n)"));
-        
+
         // ---- An email with nested basic embedded messages
 
         let email = b"From: user@domain.org
@@ -493,7 +507,7 @@ Hello world
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[1]")?;
+        .context("fetch BODY[1]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal
         assert!(srv_msg.contains("}\r\nFrom: sub@domain.org"));
         assert!(srv_msg.contains("Hello world\n)"));
@@ -508,7 +522,7 @@ Hello world
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[1.TEXT]")?;
+        .context("fetch BODY[1.TEXT]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal
         assert!(srv_msg.contains("}\r\nFrom: subsub@domain.org"));
         assert!(srv_msg.contains("Hello world\n)"));
@@ -523,7 +537,7 @@ Hello world
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[1.1]")?;
+        .context("fetch BODY[1.1]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal
         assert!(srv_msg.contains("}\r\nFrom: subsub@domain.org"));
         assert!(srv_msg.contains("Hello world\n)"));
@@ -538,7 +552,7 @@ Hello world
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[1.1.TEXT]")?;
+        .context("fetch BODY[1.1.TEXT]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal
         assert!(srv_msg.contains("}\r\nHello world\n)"));
 
@@ -566,7 +580,7 @@ Hello world 2
 --foo--";
         let append_res = append(imap_socket, Email::Other(email)).context("append email")?;
         assert!(append_res.contains("* 3 EXISTS"));
-        
+
         // FETCH BODY[1] returns the embedded message (sub@domain.org)
         let srv_msg = fetch(
             imap_socket,
@@ -577,11 +591,11 @@ Hello world 2
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[1]")?;
+        .context("fetch BODY[1]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal
         assert!(srv_msg.contains("}\r\nFrom: sub@domain.org"));
         assert!(srv_msg.contains("--foo--)"));
-        
+
         // FETCH BODY[1.1] returns the first part of the embedded message
         let srv_msg = fetch(
             imap_socket,
@@ -592,7 +606,7 @@ Hello world 2
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[1.1]")?;
+        .context("fetch BODY[1.1]")?;
         assert!(srv_msg.contains("\"Hello world 1\""));
 
         // ---- An email with a (basic) message embedded in a multipart
@@ -626,7 +640,7 @@ Hello world
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[1]")?;
+        .context("fetch BODY[1]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal
         assert!(srv_msg.contains("}\r\nFrom: sub@domain.org"));
         assert!(srv_msg.contains("Hello world)"));
@@ -671,11 +685,11 @@ epilogue
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[1]")?;
+        .context("fetch BODY[1]")?;
         // '}\r\n' and ')' delimit the start and end of the payload literal
         assert!(srv_msg.contains("}\r\nFrom: sub@domain.org"));
         assert!(srv_msg.contains("epilogue)"));
-        
+
         // FETCH BODY[1.1] returns the first part of the embedded message (Hello world 1)
         let srv_msg = fetch(
             imap_socket,
@@ -686,9 +700,9 @@ epilogue
             })),
             FetchMod::None,
         )
-            .context("fetch BODY[1.1]")?;
+        .context("fetch BODY[1.1]")?;
         assert!(srv_msg.contains("\"Hello world 1\""));
-        
+
         Ok(())
     })
     .expect("test fully run");
@@ -713,7 +727,7 @@ fn rfc3501_imap4rev1_fetch_seen() {
             FetchKind::Rfc822Header,
             FetchMod::None,
         )
-            .context("fetch RFC822.HEADER")?;
+        .context("fetch RFC822.HEADER")?;
         assert!(!srv_msg.to_ascii_lowercase().contains("\\seen"));
 
         // FETCH RFC822.TEXT sets \Seen (it is equivalent to BODY[TEXT])
@@ -723,7 +737,7 @@ fn rfc3501_imap4rev1_fetch_seen() {
             FetchKind::Rfc822Text,
             FetchMod::None,
         )
-            .context("fetch RFC822.TEXT")?;
+        .context("fetch RFC822.TEXT")?;
         assert!(srv_msg.to_ascii_lowercase().contains("\\seen"));
 
         let append_res = append_not_seen(imap_socket, Email::Basic).context("append email")?;
@@ -736,12 +750,12 @@ fn rfc3501_imap4rev1_fetch_seen() {
             FetchKind::Body(None),
             FetchMod::None,
         )
-            .context("fetch BODY[]")?;
+        .context("fetch BODY[]")?;
         assert!(srv_msg.to_ascii_lowercase().contains("\\seen"));
 
         Ok(())
     })
-        .expect("test fully run");
+    .expect("test fully run");
 }
 
 // Extra testcases for SEARCH
@@ -758,32 +772,22 @@ fn rfc3501_imap4rev1_search() {
         assert!(append_res.contains("* 1 EXISTS"));
 
         // SEARCH matching "should be case insensitive for characters within the ASCII range"
-        let srv_msg = search(
-            imap_socket,
-            SearchKind::Header("subject", "TEST"),
-        )
-            .context("SEARCH HEADER")?;
+        let srv_msg =
+            search(imap_socket, SearchKind::Header("subject", "TEST")).context("SEARCH HEADER")?;
         assert!(srv_msg.to_ascii_lowercase().contains("search 1"));
 
         // SEARCH ranges "x:y" can specify bounds in any order, i.e. 2:1 is equivalent to 1:2
-        let srv_msg = search(
-            imap_socket,
-            SearchKind::UidRange(2, 1),
-        )
-            .context("SEARCH 2:1")?;
+        let srv_msg = search(imap_socket, SearchKind::UidRange(2, 1)).context("SEARCH 2:1")?;
         assert!(srv_msg.to_ascii_lowercase().contains("search 1"));
 
         // SEARCH specifies '*' to refer to the largest available UID or SEQID
-        let srv_msg = search(
-            imap_socket,
-            SearchKind::UidRangeNumAsterisk(2),
-        )
-            .context("SEARCH 2:*")?;
+        let srv_msg =
+            search(imap_socket, SearchKind::UidRangeNumAsterisk(2)).context("SEARCH 2:*")?;
         assert!(srv_msg.to_ascii_lowercase().contains("search 1"));
-        
+
         Ok(())
     })
-        .expect("test fully run");
+    .expect("test fully run");
 }
 
 fn rfc3691_imapext_unselect() {
@@ -1076,9 +1080,9 @@ fn rfc5819_imapext_liststatus() {
 use aero_dav::acltypes as acl;
 use aero_dav::caltypes as cal;
 use aero_dav::cardtypes as card;
+use aero_dav::coretypes as dav;
 use aero_dav::realization::{self, All};
 use aero_dav::synctypes as sync;
-use aero_dav::coretypes as dav;
 use aero_dav::versioningtypes as vers;
 
 use crate::common::{dav_deserialize, dav_serialize};
@@ -1095,7 +1099,7 @@ fn rfc4918_webdav_core() {
                 dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/" => Some(x),
                 _ => None,
             })
-            .expect("propstats for root must exist"); 
+            .expect("propstats for root must exist");
 
         assert_eq!(root_propstats.len(), 1, "PROPFIND allprop must return a single propstat");
         assert_eq!(root_propstats[0].status.0.as_u16(), 200, "PROPFIND allprop must return a success propstat");
@@ -1110,7 +1114,7 @@ fn rfc4918_webdav_core() {
         let resource_type = root_success.prop.0.iter()
             .find_map(|v| match v { dav::AnyProperty::Value(dav::Property::ResourceType(x)) => Some(x), _ => None } )
             .expect("root has a resource type");
-        
+
         assert_eq!(display_name, "DAV Root");
         assert_eq!(content_type, "httpd/unix-directory");
         assert_eq!(resource_type, &[ dav::ResourceType::Collection ]);
@@ -1124,7 +1128,7 @@ fn rfc4918_webdav_core() {
                 dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/" => Some(x),
                 _ => None,
             })
-            .expect("propstats for root must exist"); 
+            .expect("propstats for root must exist");
         let root_success = root_propstats.iter().find(|p| p.status.0.as_u16() == 200).expect("some propstats for root must be 200");
         assert!(root_success.prop.0.iter().find(|p| matches!(p, dav::AnyProperty::Request(dav::PropertyRequest::DisplayName))).is_some());
         assert!(root_success.prop.0.iter().find(|p| matches!(p, dav::AnyProperty::Request(dav::PropertyRequest::ResourceType))).is_some());
@@ -1139,7 +1143,7 @@ fn rfc4918_webdav_core() {
                 dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/" => Some(x),
                 _ => None,
             })
-            .expect("propstats for root must exist"); 
+            .expect("propstats for root must exist");
 
         let root_success = root_propstats.iter().find(|p| p.status.0.as_u16() == 200).expect("some propstats for root must be 200");
         let root_not_found = root_propstats.iter().find(|p| p.status.0.as_u16() == 404).expect("some propstats for root must be not found");
@@ -1158,7 +1162,7 @@ fn rfc4918_webdav_core() {
                 dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/alice/" => Some(x),
                 _ => None,
             })
-            .expect("user collection must exist"); 
+            .expect("user collection must exist");
 
         // depth 1 /alice/ -> /alice/calendar/
         let body = http.request(reqwest::Method::from_bytes(b"PROPFIND")?, "http://localhost:8087/alice/").header("Depth", "1").send()?.text()?;
@@ -1743,7 +1747,7 @@ fn rfc6578_webdav_sync() {
                 dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/alice/calendar/Personal/" => Some(x),
                 _ => None,
             })
-            .expect("propstats for target must exist"); 
+            .expect("propstats for target must exist");
         let root_success = root_propstats.iter().find(|p| p.status.0.as_u16() == 200).expect("some propstats for root must be 200");
         assert!(root_success.prop.0.iter().find(|p| matches!(p, dav::AnyProperty::Request(dav::PropertyRequest::Extension(
             realization::PropertyRequest::Sync(sync::PropertyRequest::SyncToken)
@@ -1761,7 +1765,7 @@ fn rfc6578_webdav_sync() {
                 dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/alice/calendar/Personal/" => Some(x),
                 _ => None,
             })
-            .expect("propstats for target must exist"); 
+            .expect("propstats for target must exist");
 
         let root_success = root_propstats.iter().find(|p| p.status.0.as_u16() == 200).expect("some propstats for root must be 200");
 
@@ -1797,7 +1801,7 @@ fn rfc6578_webdav_sync() {
                 dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/alice/calendar/Personal/" => Some(x),
                 _ => None,
             })
-            .expect("propstats for target must exist"); 
+            .expect("propstats for target must exist");
         let root_success = root_propstats.iter().find(|p| p.status.0.as_u16() == 200).expect("some propstats for root must be 200");
         let rfc1_sync_token = root_success.prop.0.iter().find_map(|p| match p {
             dav::AnyProperty::Value(dav::Property::Extension(realization::Property::Sync(sync::Property::SyncToken(st)))) => Some(st),
@@ -1818,7 +1822,7 @@ fn rfc6578_webdav_sync() {
                 dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/alice/calendar/Personal/" => Some(x),
                 _ => None,
             })
-            .expect("propstats for target must exist"); 
+            .expect("propstats for target must exist");
         let root_success = root_propstats.iter().find(|p| p.status.0.as_u16() == 200).expect("some propstats for root must be 200");
         let del_sync_token = root_success.prop.0.iter().find_map(|p| match p {
             dav::AnyProperty::Value(dav::Property::Extension(realization::Property::Sync(sync::Property::SyncToken(st)))) => Some(st),
@@ -2050,7 +2054,7 @@ fn rfc6352_webdav_carddav() {
             })
             .expect("request returns a addressbook home set");
         assert_eq!(addressbook_home_set, "/alice/addressbook/");
-        
+
         // Check addressbook access support with OPTIONS
         let resp = http
             .request(
@@ -2059,7 +2063,11 @@ fn rfc6352_webdav_carddav() {
             )
             .send()?;
         assert_eq!(resp.status(), 200);
-        let dav_header = resp.headers().get("DAV").map(|v| v.to_str().unwrap()).unwrap();
+        let dav_header = resp
+            .headers()
+            .get("DAV")
+            .map(|v| v.to_str().unwrap())
+            .unwrap();
         assert!(dav_header.contains("addressbook"));
         // carddav requires ACL support
         assert!(dav_header.contains("access-control"));
@@ -2084,17 +2092,22 @@ fn rfc6352_webdav_carddav() {
             .responses
             .iter()
             .find_map(|v| match &v.status_or_propstat {
-                dav::StatusOrPropstat::PropStat(dav::Href(p), x) if p.as_str() == "/alice/addressbook/Personal/" => {
+                dav::StatusOrPropstat::PropStat(dav::Href(p), x)
+                    if p.as_str() == "/alice/addressbook/Personal/" =>
+                {
                     Some(x)
                 }
                 _ => None,
             })
             .expect("propstats for target must exist");
-        let prop_success = propstats.iter().find(|p| p.status.0.as_u16() == 200).expect("some propstats must be 200");
+        let prop_success = propstats
+            .iter()
+            .find(|p| p.status.0.as_u16() == 200)
+            .expect("some propstats must be 200");
         prop_success.prop.0.iter().for_each(|p| match p {
             dav::AnyProperty::Value(dav::Property::Extension(realization::Property::Acl(
-                acl::Property::CurrentUserPrivilegeSet(acl::PrivilegeSet(v))))) =>
-                assert!(v.contains(&acl::Privilege::All)),
+                acl::Property::CurrentUserPrivilegeSet(acl::PrivilegeSet(v)),
+            ))) => assert!(v.contains(&acl::Privilege::All)),
             _ => (),
         });
 
@@ -2114,7 +2127,7 @@ fn rfc6352_webdav_carddav() {
             .send()?;
         let obj2_etag = resp.headers().get("etag").expect("etag must be set");
         assert_eq!(resp.status(), 201);
-     let resp = http
+        let resp = http
             .put("http://localhost:8087/alice/addressbook/Personal/rfc3.vcf")
             .header("If-None-Match", "*")
             .body(VCARD_RFC3)
@@ -2125,7 +2138,7 @@ fn rfc6352_webdav_carddav() {
         // A generic function to check a <address-data/> query result
         let check_card =
             |multistatus: &dav::Multistatus<All>,
-            (ref_path, ref_etag, ref_vcard): (&str, Option<&str>, Option<&[u8]>)| {
+             (ref_path, ref_etag, ref_vcard): (&str, Option<&str>, Option<&[u8]>)| {
                 let obj_stats = multistatus
                     .responses
                     .iter()
@@ -2157,7 +2170,7 @@ fn rfc6352_webdav_carddav() {
             };
 
         // --- REPORT multistatus, partial retrieval
-        // retrieve on NICKNAME 
+        // retrieve on NICKNAME
         let card_query = r#"<?xml version="1.0" encoding="utf-8" ?>
    <C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
      <D:prop>
@@ -2179,8 +2192,9 @@ fn rfc6352_webdav_carddav() {
      </C:filter>
    </C:addressbook-query>"#;
         let resp = http
-            .request(reqwest::Method::from_bytes(b"REPORT")?,
-                     "http://localhost:8087/alice/addressbook/Personal/",
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/addressbook/Personal/",
             )
             .body(card_query)
             .send()?;
@@ -2189,9 +2203,11 @@ fn rfc6352_webdav_carddav() {
         let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
         check_card(
             &multistatus,
-            ("/alice/addressbook/Personal/rfc1.vcf",
-             Some(obj1_etag.to_str().unwrap()),
-             Some(VCARD_RFC1_FILTERED)),
+            (
+                "/alice/addressbook/Personal/rfc1.vcf",
+                Some(obj1_etag.to_str().unwrap()),
+                Some(VCARD_RFC1_FILTERED),
+            ),
         );
 
         // retrieve on FN or EMAIL
@@ -2221,8 +2237,9 @@ fn rfc6352_webdav_carddav() {
      </C:filter>
    </C:addressbook-query>"#;
         let resp = http
-            .request(reqwest::Method::from_bytes(b"REPORT")?,
-                     "http://localhost:8087/alice/addressbook/Personal/",
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/addressbook/Personal/",
             )
             .body(card_query)
             .send()?;
@@ -2231,21 +2248,27 @@ fn rfc6352_webdav_carddav() {
         let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
         check_card(
             &multistatus,
-            ("/alice/addressbook/Personal/rfc1.vcf",
-             Some(obj1_etag.to_str().unwrap()),
-             Some(VCARD_RFC1_FILTERED)),
+            (
+                "/alice/addressbook/Personal/rfc1.vcf",
+                Some(obj1_etag.to_str().unwrap()),
+                Some(VCARD_RFC1_FILTERED),
+            ),
         );
         check_card(
             &multistatus,
-            ("/alice/addressbook/Personal/rfc2.vcf",
-             Some(obj2_etag.to_str().unwrap()),
-             Some(VCARD_RFC2_FILTERED)),
+            (
+                "/alice/addressbook/Personal/rfc2.vcf",
+                Some(obj2_etag.to_str().unwrap()),
+                Some(VCARD_RFC2_FILTERED),
+            ),
         );
         check_card(
             &multistatus,
-            ("/alice/addressbook/Personal/rfc3.vcf",
-             Some(obj3_etag.to_str().unwrap()),
-             Some(VCARD_RFC3_FILTERED)),
+            (
+                "/alice/addressbook/Personal/rfc3.vcf",
+                Some(obj3_etag.to_str().unwrap()),
+                Some(VCARD_RFC3_FILTERED),
+            ),
         );
 
         // --- REPORT multistatus; truncated results
@@ -2266,8 +2289,9 @@ fn rfc6352_webdav_carddav() {
      </C:limit>
    </C:addressbook-query>"#;
         let resp = http
-            .request(reqwest::Method::from_bytes(b"REPORT")?,
-                     "http://localhost:8087/alice/addressbook/Personal/",
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/addressbook/Personal/",
             )
             .body(card_query)
             .send()?;
@@ -2275,15 +2299,17 @@ fn rfc6352_webdav_carddav() {
         let body = resp.text()?;
         let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
         assert_eq!(multistatus.responses.len(), 2);
-        assert!(
-            multistatus.responses.iter().find(|resp| {
+        assert!(multistatus
+            .responses
+            .iter()
+            .find(|resp| {
                 resp.error.as_ref().is_some_and(|e| {
-                    e.0 == vec![dav::Violation::Extension(
-                        realization::Error::Acl(acl::Violation::NumberOfMatchesWithinLimits)
-                    )]
+                    e.0 == vec![dav::Violation::Extension(realization::Error::Acl(
+                        acl::Violation::NumberOfMatchesWithinLimits,
+                    ))]
                 })
-            }).is_some()
-        );
+            })
+            .is_some());
 
         let card_query = r#"<?xml version="1.0" encoding="utf-8" ?>
    <C:addressbook-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
@@ -2302,8 +2328,9 @@ fn rfc6352_webdav_carddav() {
      </C:limit>
    </C:addressbook-query>"#;
         let resp = http
-            .request(reqwest::Method::from_bytes(b"REPORT")?,
-                     "http://localhost:8087/alice/addressbook/Personal/",
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/addressbook/Personal/",
             )
             .body(card_query)
             .send()?;
@@ -2311,15 +2338,17 @@ fn rfc6352_webdav_carddav() {
         let body = resp.text()?;
         let multistatus = dav_deserialize::<dav::Multistatus<All>>(&body);
         assert_eq!(multistatus.responses.len(), 2);
-        assert!(
-            multistatus.responses.iter().find(|resp| {
+        assert!(multistatus
+            .responses
+            .iter()
+            .find(|resp| {
                 resp.error.as_ref().is_some_and(|e| {
-                    e.0 == vec![dav::Violation::Extension(
-                        realization::Error::Acl(acl::Violation::NumberOfMatchesWithinLimits)
-                    )]
+                    e.0 == vec![dav::Violation::Extension(realization::Error::Acl(
+                        acl::Violation::NumberOfMatchesWithinLimits,
+                    ))]
                 })
-            }).is_none()
-        );
+            })
+            .is_none());
 
         // --- REPORT multiget
         let card_query = r#"<?xml version="1.0" encoding="utf-8" ?>
@@ -2338,8 +2367,9 @@ fn rfc6352_webdav_carddav() {
      <D:href>/alice/addressbook/Personal/rfc2.vcf</D:href>
    </C:addressbook-multiget>"#;
         let resp = http
-            .request(reqwest::Method::from_bytes(b"REPORT")?,
-                     "http://localhost:8087/alice/addressbook/Personal/",
+            .request(
+                reqwest::Method::from_bytes(b"REPORT")?,
+                "http://localhost:8087/alice/addressbook/Personal/",
             )
             .body(card_query)
             .send()?;
@@ -2349,17 +2379,21 @@ fn rfc6352_webdav_carddav() {
         assert_eq!(multistatus.responses.len(), 2);
         check_card(
             &multistatus,
-            ("/alice/addressbook/Personal/rfc1.vcf",
-             Some(obj1_etag.to_str().unwrap()),
-             Some(VCARD_RFC1_FILTERED)),
+            (
+                "/alice/addressbook/Personal/rfc1.vcf",
+                Some(obj1_etag.to_str().unwrap()),
+                Some(VCARD_RFC1_FILTERED),
+            ),
         );
         check_card(
             &multistatus,
-            ("/alice/addressbook/Personal/rfc2.vcf",
-             Some(obj2_etag.to_str().unwrap()),
-             Some(VCARD_RFC2_FILTERED)),
+            (
+                "/alice/addressbook/Personal/rfc2.vcf",
+                Some(obj2_etag.to_str().unwrap()),
+                Some(VCARD_RFC2_FILTERED),
+            ),
         );
-        
+
         Ok(())
     })
     .expect("test fully run")

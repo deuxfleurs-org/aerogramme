@@ -51,12 +51,11 @@ impl DavNs {
     pub async fn open_by_id(&self, id: UniqueIdent) -> Result<Collection> {
         if let Some(mut col) = {
             let cache = self.collections.lock().unwrap();
-            cache.get(&id)
-                 .and_then(|col_weak| col_weak.upgrade())
+            cache.get(&id).and_then(|col_weak| col_weak.upgrade())
         } {
             // Sync now to get a recent collection state
             col.sync().await?;
-            return Ok(col)
+            return Ok(col);
         }
 
         let col = Collection::open(&self.creds, &self.prefix, id).await?;
@@ -101,7 +100,10 @@ impl DavNs {
     /// Rename a collection in the index
     pub async fn rename(&self, old: &str, new: &str) -> Result<()> {
         if let Some(n) = self.is_default_collection(old) {
-            bail!("Renaming default collection {} is not supported currently", n);
+            bail!(
+                "Renaming default collection {} is not supported currently",
+                n
+            );
         }
         if !new.chars().all(char::is_alphanumeric) {
             bail!("Unsupported characters in new collection name, only alphanumeric characters are allowed currently");
@@ -116,11 +118,14 @@ impl DavNs {
 
         Ok(())
     }
-   
+
     /// Create collection
     pub async fn create(&self, name: &str) -> Result<()> {
         if let Some(n) = self.is_default_collection(name) {
-            bail!("Default collection {} is automatically created, can't create it manually", n);
+            bail!(
+                "Default collection {} is automatically created, can't create it manually",
+                n
+            );
         }
         if !name.chars().all(char::is_alphanumeric) {
             bail!("Unsupported characters in new collection name, only alphanumeric characters are allowed");
@@ -145,19 +150,24 @@ impl DavNs {
             .await
             .map(|(list, _)| list.has(name))
     }
-    
+
     fn is_default_collection(&self, name: &str) -> Option<&str> {
-        self.default_collections.iter().find(|n| *n == name).map(|x| x.as_str())
+        self.default_collections
+            .iter()
+            .find(|n| *n == name)
+            .map(|x| x.as_str())
     }
 
     // --- internal collction list management ----
 
     /// Load from storage
     async fn load_collection_list(&self) -> Result<(IdentList, Option<storage::RowRef>)> {
-        let (mut list, row) = IdentList::load_from_storage(&self.creds, &self.prefix, "list").await?;
+        let (mut list, row) =
+            IdentList::load_from_storage(&self.creds, &self.prefix, "list").await?;
 
         // Create default collections
-        let is_default_col_missing = self.default_collections
+        let is_default_col_missing = self
+            .default_collections
             .iter()
             .map(|colname| list.create(colname))
             .fold(false, |acc, r| {
@@ -178,6 +188,7 @@ impl DavNs {
         list: &IdentList,
         ct: Option<storage::RowRef>,
     ) -> Result<()> {
-        list.store_to_storage(&self.creds, &self.prefix, "list", ct).await
+        list.store_to_storage(&self.creds, &self.prefix, "list", ct)
+            .await
     }
 }
