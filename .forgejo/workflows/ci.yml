@@ -1,0 +1,22 @@
+name: Continuous integration
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust_check:
+    name: Rust code checks
+    runs-on: rust-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: https://github.com/dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97
+          components: rustfmt
+      - name: "Cargo formatting"
+        if: $${{ always() }}
+        run: cargo fmt --all --check
