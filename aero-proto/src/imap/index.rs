@@ -24,15 +24,16 @@ impl FetchBy {
 
 // Extension trait that adds extra methods to UidIndex.
 pub trait UidIndexForImap {
-    fn fetch(&self, sequence_set: &SequenceSet, by: FetchBy) -> Vec<MailIndex>;
+    fn fetch(&self, sequence_set: &SequenceSet, recent_from: ImapUid, by: FetchBy) -> Vec<MailIndex>;
 
     fn fetch_changed_since(
         &self,
         sequence_set: &SequenceSet,
         maybe_modseq: Option<NonZeroU64>,
+        recent_from: ImapUid,
         by: FetchBy,
     ) -> Vec<MailIndex> {
-        let raw = self.fetch(sequence_set, by);
+        let raw = self.fetch(sequence_set, recent_from, by);
         match maybe_modseq {
             Some(pit) => raw.into_iter().filter(|midx| midx.modseq > pit).collect(),
             None => raw,
@@ -43,9 +44,10 @@ pub trait UidIndexForImap {
         &self,
         sequence_set: &SequenceSet,
         maybe_modseq: Option<NonZeroU64>,
+        recent_from: ImapUid,
         by: FetchBy,
     ) -> (Vec<MailIndex>, Vec<MailIndex>) {
-        let raw = self.fetch(sequence_set, by);
+        let raw = self.fetch(sequence_set, recent_from, by);
         match maybe_modseq {
             Some(pit) => raw.into_iter().partition(|midx| midx.modseq <= pit),
             None => (raw, vec![]),
@@ -54,7 +56,7 @@ pub trait UidIndexForImap {
 }
 
 impl UidIndexForImap for UidIndex {
-    fn fetch(&self, sequence_seq: &SequenceSet, by: FetchBy) -> Vec<MailIndex> {
+    fn fetch(&self, sequence_seq: &SequenceSet, recent_from: ImapUid, by: FetchBy) -> Vec<MailIndex> {
         let largest_uuid = match self.idx_by_seqid.largest() {
             Some((_, uuid)) => uuid,
             None => return vec![],
@@ -84,6 +86,10 @@ impl UidIndexForImap for UidIndex {
                     FetchBy::Uid => *self.idx_seqid_of_uuid.get(&uuid)?,
                     FetchBy::SeqId => id,
                 };
+                let mut flags = flags.clone();
+                if uid >= recent_from {
+                    flags.insert("\\Recent".to_string());
+                }
                 Some(MailIndex {
                     seqid,
                     uid,

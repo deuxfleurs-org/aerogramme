@@ -29,9 +29,9 @@ pub struct SelectedContext<'a> {
 }
 
 pub async fn dispatch<'a>(
-    ctx: SelectedContext<'a>,
+    mut ctx: SelectedContext<'a>,
 ) -> Result<(Response<'static>, flow::Transition)> {
-    match &ctx.req.body {
+    let res = match &ctx.req.body {
         // Any State
         // noop is specific to this state
         CommandBody::Capability => {
@@ -108,13 +108,17 @@ pub async fn dispatch<'a>(
             })
             .await
         }
+    };
+    if let flow::MailboxPerm::ReadWrite = ctx.perm {
+        ctx.mailbox.bump_next_recent_uid().await?;
     }
+    res
 }
 
 // --- PRIVATE ---
 
 impl<'a> SelectedContext<'a> {
-    async fn close(self) -> Result<(Response<'static>, flow::Transition)> {
+    async fn close(&mut self) -> Result<(Response<'static>, flow::Transition)> {
         // We expunge messages,
         // but we don't send the untagged EXPUNGE responses
         let tag = self.req.tag.clone();
@@ -127,7 +131,7 @@ impl<'a> SelectedContext<'a> {
 
     /// CLOSE in examined state is not the same as in selected state
     /// (in selected state it also does an EXPUNGE, here it doesn't)
-    async fn examine_close(self) -> Result<(Response<'static>, flow::Transition)> {
+    async fn examine_close(&self) -> Result<(Response<'static>, flow::Transition)> {
         Ok((
             Response::build()
                 .to_req(self.req)
@@ -137,7 +141,7 @@ impl<'a> SelectedContext<'a> {
         ))
     }
 
-    async fn unselect(self) -> Result<(Response<'static>, flow::Transition)> {
+    async fn unselect(&self) -> Result<(Response<'static>, flow::Transition)> {
         Ok((
             Response::build()
                 .to_req(self.req)
@@ -148,7 +152,7 @@ impl<'a> SelectedContext<'a> {
     }
 
     pub async fn fetch(
-        self,
+        &mut self,
         sequence_set: &SequenceSet,
         attributes: &'a MacroOrMessageDataItemNames<'static>,
         modifiers: &[FetchModifier],
@@ -184,7 +188,7 @@ impl<'a> SelectedContext<'a> {
     }
 
     pub async fn search(
-        self,
+        &mut self,
         charset: &Option<Charset<'a>>,
         criteria: &SearchKey<'a>,
         uid: &bool,
@@ -203,7 +207,7 @@ impl<'a> SelectedContext<'a> {
         ))
     }
 
-    pub async fn noop(self) -> Result<(Response<'static>, flow::Transition)> {
+    pub async fn noop(&mut self) -> Result<(Response<'static>, flow::Transition)> {
         let updates = self.mailbox.noop().await?;
         Ok((
             Response::build()
@@ -216,7 +220,7 @@ impl<'a> SelectedContext<'a> {
     }
 
     async fn expunge(
-        self,
+        &mut self,
         uid_sequence_set: &Option<SequenceSet>,
     ) -> Result<(Response<'static>, flow::Transition)> {
         if let Some(failed) = self.fail_read_only() {
@@ -237,7 +241,7 @@ impl<'a> SelectedContext<'a> {
     }
 
     async fn store(
-        self,
+        &mut self,
         sequence_set: &SequenceSet,
         kind: &StoreType,
         response: &StoreResponse,
@@ -289,7 +293,7 @@ impl<'a> SelectedContext<'a> {
     }
 
     async fn copy(
-        self,
+        &mut self,
         sequence_set: &SequenceSet,
         mailbox: &MailboxCodec<'a>,
         uid: &bool,
@@ -346,7 +350,7 @@ impl<'a> SelectedContext<'a> {
     }
 
     async fn r#move(
-        self,
+        &mut self,
         sequence_set: &SequenceSet,
         mailbox: &MailboxCodec<'a>,
         uid: &bool,
@@ -404,7 +408,7 @@ impl<'a> SelectedContext<'a> {
     }
 
     async fn append(
-        self,
+        &mut self,
         mailbox: &MailboxCodec<'a>,
         flags: &[Flag<'a>],
         date: &Option<DateTime>,

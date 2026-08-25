@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::num::NonZeroU32;
 
 use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
@@ -45,10 +46,13 @@ pub struct Mailbox {
     mbox: MailboxInternal,
 }
 
+const NEXT_RECENT_UID_SK: &str = "next_uid";
+
 impl Mailbox {
     pub(crate) async fn open(creds: &Credentials, prefix: &str, id: UniqueIdent) -> Result<Self> {
         let index_path = format!("{}/index/{}", prefix, id);
         let mail_path = format!("{}/blob/{}", prefix, id);
+        let next_recent_uid_path = format!("{}/index_recent/{}", prefix, id);
 
         let mut uid_index = Bayou::<UidIndex>::new(creds, index_path).await?;
         uid_index.sync().await?;
@@ -64,6 +68,7 @@ impl Mailbox {
             storage: creds.storage.clone(),
             uid_index,
             mail_path,
+            next_recent_uid_path,
         };
 
         Ok(Self { id, mbox })
@@ -109,6 +114,11 @@ impl Mailbox {
         }
     }
 
+    pub async fn next_recent_uid(&self) -> Result<ImapUid> {
+        let (uid, _ct) = self.mbox.next_recent_uid().await?;
+        Ok(uid)
+    }
+    
     // ---- Functions for changing the mailbox ----
 
     /// Add flags to message
@@ -177,10 +187,17 @@ impl Mailbox {
         self.mbox.move_from(&mut from.mbox, uuid).await
     }
 
+    pub async fn bump_next_recent_uid(&mut self) -> Result<()> {
+        let next_uid = self.current_uid_index().uidnext();
+        let (cur_uid, ct) = self.mbox.next_recent_uid().await?;
+        self.mbox.set_next_recent_uid(next_uid.max(cur_uid), ct).await
+    }
+
     pub fn downgrade(&self) -> MailboxWeak {
         MailboxWeak {
             id: self.id.clone(),
             mail_path: self.mbox.mail_path.clone(),
+            next_recent_uid_path: self.mbox.next_recent_uid_path.clone(),
             encryption_key: self.mbox.encryption_key.clone(),
             storage: self.mbox.storage.clone(),
             uid_index: self.mbox.uid_index.downgrade(),
@@ -197,6 +214,7 @@ impl Mailbox {
 pub struct MailboxWeak {
     id: UniqueIdent,
     mail_path: String,
+    next_recent_uid_path: String,
     encryption_key: Key,
     storage: Store,
     uid_index: BayouWeak<UidIndex>,
@@ -209,6 +227,7 @@ impl MailboxWeak {
             id: self.id.clone(),
             mbox: MailboxInternal {
                 mail_path: self.mail_path.clone(),
+                next_recent_uid_path: self.next_recent_uid_path.clone(),
                 encryption_key: self.encryption_key.clone(),
                 storage: self.storage.clone(),
                 uid_index,
@@ -224,6 +243,7 @@ impl MailboxWeak {
 #[derive(Clone)]
 struct MailboxInternal {
     mail_path: String,
+    next_recent_uid_path: String,
     encryption_key: Key,
     storage: Store,
     uid_index: Bayou<UidIndex>,
@@ -290,6 +310,24 @@ impl MailboxInternal {
             .await?;
         let body = obj_res.value;
         cryptoblob::open(&body, message_key)
+    }
+
+    async fn next_recent_uid(&self) -> Result<(ImapUid, Option<storage::RowRef>)> {
+        match self.storage.row_fetch(&self.next_recent_uid_path, NEXT_RECENT_UID_SK).await {
+            Err(storage::StorageError::NotFound) => Ok((NonZeroU32::MIN, None)),
+            Err(e) => Err(e.into()),
+            Ok(rv) => {
+                let mut uid = NonZeroU32::MIN;
+                let (row_ref, row_vals) = (rv.row_ref, rv.value);
+                for v in row_vals {
+                    if let storage::Alternative::Value(vbytes) = v {
+                        let uid2 = open_deserialize::<ImapUid>(&vbytes, &self.encryption_key)?;
+                        uid = uid.max(uid2)
+                    }
+                }
+                Ok((uid, Some(row_ref)))
+            }
+        }
     }
 
     // ---- Functions for changing the mailbox ----
@@ -506,6 +544,14 @@ impl MailboxInternal {
         let add_mail_op = self.uid_index.state().op_mail_add(new_id, flags);
         self.uid_index.push(add_mail_op).await?;
 
+        Ok(())
+    }
+
+    async fn set_next_recent_uid(&mut self, uid: ImapUid, ct: Option<storage::RowRef>) -> Result<()> {
+        let uid_blob = seal_serialize(uid, &self.encryption_key)?;
+        let rref = ct.unwrap_or(storage::RowRef::new(&self.next_recent_uid_path, NEXT_RECENT_UID_SK));
+        let row_val = storage::RowVal::new(rref, uid_blob);
+        self.storage.row_update(vec![row_val]).await?;
         Ok(())
     }
 }

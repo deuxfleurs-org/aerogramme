@@ -50,24 +50,57 @@ impl Default for UpdateParameters {
 /// A MailboxView is responsible for giving the client the information it needs
 /// about a mailbox, such as an initial summary of the mailbox's content and
 /// continuous updates indicating when the content of the mailbox has been
-/// changed. To do this, it keeps a variable `known_state` that corresponds to
-/// what the client knows, and produces IMAP messages to be sent to the client
-/// that go along updates to `known_state`. More generally, a MailboxView is
-/// responsible for all IMAP-specific sync decisions.
+/// changed.
+///
+/// It corresponds to the view of a given client session. Different sessions
+/// have different `MailboxView` instances.
 pub struct MailboxView {
+    /// The state of the mailbox in storage.
     mailbox: Mailbox,
+
+    /// The client's current view of the mailbox, which can lag behind
+    /// `mailbox.current_uid_index()`.
+    ///
+    /// An IMAP server needs to inform the client when other sessions changed
+    /// the contents of the mailbox. To do this, it keeps a variable
+    /// `known_state` that corresponds to what the client knows, and produces
+    /// IMAP messages to be sent to the client that go along updates to
+    /// `known_state`. More generally, a MailboxView is responsible for all
+    /// IMAP-specific sync decisions.
     known_state: UidIndex,
+
+    /// Whether this session has CONDSTORE enabled.
     is_condstore: bool,
+
+    /// All messages with UID >= recent_from will have the \Recent flag.
+    /// `recent_from` is loaded once from storage when the `MailboxView` is
+    /// created and not updated afterwards: it represents the session-local view
+    /// of what is "recent", that is, any mail added after the beginning of the
+    /// session.
+    ///
+    /// This entails that several sessions may see a \Recent flag for the same
+    /// email. This is, in principle, against the spirit of \Recent, but the
+    /// spec also allows the following exception: "If it is not possible to
+    /// determine whether or not this session is the first session to be
+    /// notified about a message, then that message SHOULD be considered
+    /// recent.". In our case it is indeed not feasible to reliably assign
+    /// \Recent to a single session.
+    ///
+    /// (Note also that \Recent is deprecated in IMAP4rev2, so its support in
+    /// Aerogramme is best-effort.)
+    recent_from: ImapUid,
 }
 
 impl MailboxView {
     /// Creates a new IMAP view into a mailbox.
     pub async fn new(mailbox: Mailbox, is_condstore: bool) -> Result<Self> {
         let known_state = mailbox.current_uid_index();
+        let recent_from = mailbox.next_recent_uid().await?;
         Ok(Self {
             mailbox,
             known_state,
             is_condstore,
+            recent_from,
         })
     }
 
@@ -153,10 +186,12 @@ impl MailboxView {
         }
 
         // - if new mails arrived, notify client of number of existing mails
+        // and recent emails
         if new_snapshot.table.len() != old_snapshot.table.len() - n_expunge
             || new_snapshot.uidvalidity != old_snapshot.uidvalidity
         {
             data.push(self.exists_status()?);
+            data.push(self.recent_status()?);
         }
 
         if new_snapshot.uidvalidity != old_snapshot.uidvalidity {
@@ -207,6 +242,10 @@ impl MailboxView {
         Ok(data)
     }
 
+    pub async fn bump_next_recent_uid(&mut self) -> Result<()> {
+        self.mailbox.bump_next_recent_uid().await
+    }
+    
     /// Generates the necessary IMAP messages so that the client
     /// has a satisfactory summary of the current mailbox's state.
     /// These are the messages that are sent in response to a SELECT command.
@@ -272,6 +311,7 @@ impl MailboxView {
             state.fetch_unchanged_since(
                 sequence_set,
                 unchanged_since,
+                self.recent_from,
                 FetchBy::from_bool(*is_uid_store),
             );
 
@@ -344,7 +384,7 @@ impl MailboxView {
 
         let deleted_flag = Flag::Deleted.to_string();
         let msgs = state
-            .fetch(&seq, FetchBy::Uid)
+            .fetch(&seq, self.recent_from, FetchBy::Uid)
             .into_iter()
             .filter(|midx| midx.flags.iter().any(|x| *x == deleted_flag))
             .map(|midx| midx.uuid);
@@ -369,7 +409,7 @@ impl MailboxView {
             self.checked_sync_no_update().await?
         }
         let state = self.mailbox.current_uid_index();
-        let mails = state.fetch(sequence_set, FetchBy::from_bool(*is_uid_copy));
+        let mails = state.fetch(sequence_set, self.recent_from, FetchBy::from_bool(*is_uid_copy));
 
         let mut new_uuids = vec![];
         for mi in mails.iter() {
@@ -403,7 +443,7 @@ impl MailboxView {
             self.checked_sync_no_update().await?
         };
         let state = self.mailbox.current_uid_index();
-        let mails = state.fetch(sequence_set, FetchBy::from_bool(*is_uid_move));
+        let mails = state.fetch(sequence_set, self.recent_from, FetchBy::from_bool(*is_uid_move));
 
         let mut new_uuids = vec![];
         for mi in mails.iter() {
@@ -460,6 +500,7 @@ impl MailboxView {
         let mail_idx_list = state.fetch_changed_since(
             sequence_set,
             changed_since,
+            self.recent_from,
             FetchBy::from_bool(*is_uid_fetch),
         );
 
@@ -523,7 +564,7 @@ impl MailboxView {
         let state = self.mailbox.current_uid_index();
 
         // 2. Get the selection
-        let selection = state.fetch(&seq_set, FetchBy::from_bool(seq_type.is_uid()));
+        let selection = state.fetch(&seq_set, self.recent_from, FetchBy::from_bool(seq_type.is_uid()));
 
         // 3. Filter the selection based on the ID / UID / Flags
         let (kept_idx, to_fetch) = crit.filter_on_idx(&selection);
@@ -581,6 +622,9 @@ impl MailboxView {
 
     // ----
 
+    // TODO are we sure that the functions below should use .known_state instead
+    // of .current_uid_index?
+    
     /// Produce an OK [UIDVALIDITY _] message corresponding to `known_state`
     fn uidvalidity_status(&self) -> Result<Body<'static>> {
         let uid_validity = Status::ok(
@@ -601,7 +645,7 @@ impl MailboxView {
         let next_uid = Status::ok(
             None,
             Some(Code::UidNext(self.uidnext())),
-            "Predict next UID",
+            "Predicted next UID",
         )
         .map_err(Error::msg)?;
         Ok(Body::Status(next_uid))
@@ -641,7 +685,6 @@ impl MailboxView {
         Ok(Body::Data(Data::Recent(self.recent()?)))
     }
 
-    #[allow(dead_code)]
     fn unseen_first_status(&self) -> Result<Option<Body<'static>>> {
         Ok(self
             .unseen_first()?
@@ -651,7 +694,6 @@ impl MailboxView {
             .transpose()?)
     }
 
-    #[allow(dead_code)]
     fn unseen_first(&self) -> Result<Option<NonZeroU32>> {
         Ok(self
             .known_state
@@ -666,10 +708,11 @@ impl MailboxView {
     pub(crate) fn recent(&self) -> Result<u32> {
         let recent = self
             .known_state
-            .idx_by_flag
-            .get(&"\\Recent".to_string())
-            .map(|os| os.len())
-            .unwrap_or(0);
+            .idx_by_uid
+            .iter()
+            .rev()
+            .take_while(|(&uid, _)| uid >= self.recent_from)
+            .count();
         Ok(u32::try_from(recent)?)
     }
 

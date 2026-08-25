@@ -79,7 +79,7 @@ pub async fn dispatch<'a>(
 // --- PRIVATE ---
 impl<'a> AuthenticatedContext<'a> {
     async fn create(
-        self,
+        &self,
         mailbox: &MailboxCodec<'a>,
     ) -> Result<(Response<'static>, flow::Transition)> {
         let name = match mailbox {
@@ -114,7 +114,7 @@ impl<'a> AuthenticatedContext<'a> {
     }
 
     async fn delete(
-        self,
+        &self,
         mailbox: &MailboxCodec<'a>,
     ) -> Result<(Response<'static>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
@@ -138,7 +138,7 @@ impl<'a> AuthenticatedContext<'a> {
     }
 
     async fn rename(
-        self,
+        &self,
         from: &MailboxCodec<'a>,
         to: &MailboxCodec<'a>,
     ) -> Result<(Response<'static>, flow::Transition)> {
@@ -383,7 +383,7 @@ impl<'a> AuthenticatedContext<'a> {
     }
 
     async fn subscribe(
-        self,
+        &self,
         mailbox: &MailboxCodec<'a>,
     ) -> Result<(Response<'static>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
@@ -408,7 +408,7 @@ impl<'a> AuthenticatedContext<'a> {
     }
 
     async fn unsubscribe(
-        self,
+        &self,
         mailbox: &MailboxCodec<'a>,
     ) -> Result<(Response<'static>, flow::Transition)> {
         let name: &str = MailboxName(mailbox).try_into()?;
@@ -470,7 +470,7 @@ impl<'a> AuthenticatedContext<'a> {
     * TRACE END ---
     */
     async fn select(
-        self,
+        &mut self,
         mailbox: &MailboxCodec<'a>,
         modifiers: &[SelectExamineModifier],
     ) -> Result<(Response<'static>, flow::Transition)> {
@@ -493,7 +493,8 @@ impl<'a> AuthenticatedContext<'a> {
         };
         tracing::info!(username=%self.user.username, mailbox=%name, "mailbox.selected");
 
-        let mb = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await?;
+        let mut mb = MailboxView::new(mb, self.client_capabilities.condstore.is_enabled()).await?;
+        mb.bump_next_recent_uid().await?;
         let data = mb.summary()?;
 
         Ok((
@@ -508,7 +509,7 @@ impl<'a> AuthenticatedContext<'a> {
     }
 
     async fn examine(
-        self,
+        &mut self,
         mailbox: &MailboxCodec<'a>,
         modifiers: &[SelectExamineModifier],
     ) -> Result<(Response<'static>, flow::Transition)> {
@@ -546,7 +547,7 @@ impl<'a> AuthenticatedContext<'a> {
     }
 
     async fn append(
-        self,
+        &mut self,
         mailbox: &MailboxCodec<'a>,
         flags: &[Flag<'a>],
         date: &Option<DateTime>,
@@ -558,7 +559,7 @@ impl<'a> AuthenticatedContext<'a> {
     }
 
     fn enable(
-        self,
+        &mut self,
         cap_enable: &Vec1<CapabilityEnable<'static>>,
     ) -> Result<(Response<'static>, flow::Transition)> {
         let mut response_builder = Response::build().to_req(self.req);
