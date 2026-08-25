@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::num::{NonZeroU32, NonZeroU64};
 
 use imap_codec::imap_types::sequence::{SeqOrUid, Sequence, SequenceSet};
@@ -120,7 +121,7 @@ pub struct MailIndex {
     pub uid: ImapUid,
     pub uuid: UniqueIdent,
     pub modseq: ModSeq,
-    pub flags: Vec<String>,
+    pub flags: BTreeSet<String>,
     // the `largest_*` fields are required to compare a MailIndex against '*'
     // (SeqOrUid::Asterisk), which refers to "the largest seqid/uid currently in
     // use"

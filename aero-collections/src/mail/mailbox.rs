@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
 
@@ -110,17 +112,17 @@ impl Mailbox {
     // ---- Functions for changing the mailbox ----
 
     /// Add flags to message
-    pub async fn add_flags<'a>(&mut self, id: UniqueIdent, flags: &[Flag]) -> Result<()> {
+    pub async fn add_flags<'a>(&mut self, id: UniqueIdent, flags: &Flags) -> Result<()> {
         self.mbox.add_flags(id, flags).await
     }
 
     /// Delete flags from message
-    pub async fn del_flags<'a>(&mut self, id: UniqueIdent, flags: &[Flag]) -> Result<()> {
+    pub async fn del_flags<'a>(&mut self, id: UniqueIdent, flags: &Flags) -> Result<()> {
         self.mbox.del_flags(id, flags).await
     }
 
     /// Define the new flags for this message
-    pub async fn set_flags<'a>(&mut self, id: UniqueIdent, flags: &[Flag]) -> Result<()> {
+    pub async fn set_flags<'a>(&mut self, id: UniqueIdent, flags: &Flags) -> Result<()> {
         self.mbox.set_flags(id, flags).await
     }
 
@@ -128,7 +130,7 @@ impl Mailbox {
     pub async fn append<'a>(
         &mut self,
         raw_mail: &[u8],
-        flags: &[Flag],
+        flags: &Flags,
     ) -> Result<(ImapUid, ModSeq)> {
         self.mbox.append(raw_mail, flags).await
     }
@@ -292,22 +294,22 @@ impl MailboxInternal {
 
     // ---- Functions for changing the mailbox ----
 
-    async fn add_flags(&mut self, ident: UniqueIdent, flags: &[Flag]) -> Result<()> {
-        let add_flag_op = self.uid_index.state().op_flag_add(ident, flags.to_vec());
+    async fn add_flags(&mut self, ident: UniqueIdent, flags: &Flags) -> Result<()> {
+        let add_flag_op = self.uid_index.state().op_flag_add(ident, flags.clone());
         self.uid_index.push(add_flag_op).await
     }
 
-    async fn del_flags(&mut self, ident: UniqueIdent, flags: &[Flag]) -> Result<()> {
-        let del_flag_op = self.uid_index.state().op_flag_del(ident, flags.to_vec());
+    async fn del_flags(&mut self, ident: UniqueIdent, flags: &Flags) -> Result<()> {
+        let del_flag_op = self.uid_index.state().op_flag_del(ident, flags.clone());
         self.uid_index.push(del_flag_op).await
     }
 
-    async fn set_flags(&mut self, ident: UniqueIdent, flags: &[Flag]) -> Result<()> {
-        let set_flag_op = self.uid_index.state().op_flag_set(ident, flags.to_vec());
+    async fn set_flags(&mut self, ident: UniqueIdent, flags: &Flags) -> Result<()> {
+        let set_flag_op = self.uid_index.state().op_flag_set(ident, flags.clone());
         self.uid_index.push(set_flag_op).await
     }
 
-    async fn append(&mut self, raw_mail: &[u8], flags: &[Flag]) -> Result<(ImapUid, ModSeq)> {
+    async fn append(&mut self, raw_mail: &[u8], flags: &Flags) -> Result<(ImapUid, ModSeq)> {
         let ident = gen_ident();
         let message_key = gen_key();
 
@@ -348,7 +350,7 @@ impl MailboxInternal {
 
         // Add mail to Bayou mail index
         let uid_state = self.uid_index.state();
-        let add_mail_op = uid_state.op_mail_add(ident, flags.to_vec());
+        let add_mail_op = uid_state.op_mail_add(ident, flags.clone());
 
         let (uid, modseq) = match add_mail_op {
             UidIndexOp::MailAdd(_, uid, modseq, _) => (uid, modseq),
@@ -398,7 +400,7 @@ impl MailboxInternal {
         )?;
 
         // Add mail to Bayou mail index
-        let add_mail_op = self.uid_index.state().op_mail_add(ident, vec![]);
+        let add_mail_op = self.uid_index.state().op_mail_add(ident, BTreeSet::new());
         self.uid_index.push(add_mail_op).await?;
 
         Ok(())
