@@ -762,6 +762,8 @@ mod tests {
             modseq: index_entry.1,
             uuid: unique_ident::gen_ident(),
             flags: index_entry.2,
+            largest_seqid: NonZeroU32::MIN,
+            largest_uid: index_entry.0,
         };
         let rfc822 = b"Subject: hello\r\nFrom: a@a.a\r\nTo: b@b.b\r\nDate: Thu, 12 Oct 2023 08:45:28 +0000\r\n\r\nhello world";
         let qr = QueryResult::FullResult {
