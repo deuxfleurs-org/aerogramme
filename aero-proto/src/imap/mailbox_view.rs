@@ -205,13 +205,12 @@ impl MailboxView {
         data.push(self.exists_status()?);
         data.push(self.recent_status()?);
         data.extend(self.flags_status()?.into_iter());
+        data.extend(self.unseen_first_status()?);
         data.push(self.uidvalidity_status()?);
         data.push(self.uidnext_status()?);
         if self.is_condstore {
             data.push(self.highestmodseq_status()?);
         }
-        /*self.unseen_first_status()?
-        .map(|unseen_status| data.push(unseen_status));*/
 
         Ok(data)
     }
