@@ -87,7 +87,7 @@ impl<'a> AppendContext<'a> {
         if date.is_some() {
             tracing::warn!("Cannot set date when appending message");
         }
-        let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let flags = flags.iter().map(|x| x.to_string()).collect();
         // TODO: filter allowed flags? ping @Quentin
 
         let (uid, uidvalidity, updates) = mbox.append(message.data(), &flags).await?;
