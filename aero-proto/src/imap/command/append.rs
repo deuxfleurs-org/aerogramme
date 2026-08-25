@@ -30,8 +30,8 @@ pub(crate) struct AppendContext<'a> {
     pub user: &'a User,
 }
 
-impl<'a> From<AuthenticatedContext<'a>> for AppendContext<'a> {
-    fn from(ctx: AuthenticatedContext<'a>) -> Self {
+impl<'a, 'b> From<&'b mut AuthenticatedContext<'a>> for AppendContext<'b> {
+    fn from(ctx: &'b mut AuthenticatedContext<'a>) -> Self {
         Self {
             req: ctx.req,
             client_capabilities: ctx.client_capabilities,
@@ -41,8 +41,8 @@ impl<'a> From<AuthenticatedContext<'a>> for AppendContext<'a> {
     }
 }
 
-impl<'a> From<SelectedContext<'a>> for AppendContext<'a> {
-    fn from(ctx: SelectedContext<'a>) -> Self {
+impl<'a, 'b> From<&'b mut SelectedContext<'a>> for AppendContext<'b> {
+    fn from(ctx: &'b mut SelectedContext<'a>) -> Self {
         Self {
             req: ctx.req,
             client_capabilities: ctx.client_capabilities,
