@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::num::{NonZeroU32, NonZeroU64};
 
 use anyhow::{anyhow, Error, Result};
@@ -230,7 +230,7 @@ impl MailboxView {
     pub async fn append(
         &mut self,
         raw_mail: &[u8],
-        flags: &[String],
+        flags: &BTreeSet<String>,
     ) -> Result<(ImapUid, ImapUidvalidity, Vec<Body<'static>>)> {
         self.checked_sync().await?;
         let (uid, _modseq) = self.mailbox.append(raw_mail, flags).await?;
@@ -257,7 +257,7 @@ impl MailboxView {
         }
         let state = self.mailbox.current_uid_index();
 
-        let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let flags = flags.iter().map(|x| x.to_string()).collect();
 
         let (editable, in_conflict) =
             state.fetch_unchanged_since(sequence_set, unchanged_since, *is_uid_store);
@@ -265,13 +265,13 @@ impl MailboxView {
         for mi in editable.iter() {
             match kind {
                 StoreType::Add => {
-                    self.mailbox.add_flags(mi.uuid, &flags[..]).await?;
+                    self.mailbox.add_flags(mi.uuid, &flags).await?;
                 }
                 StoreType::Remove => {
-                    self.mailbox.del_flags(mi.uuid, &flags[..]).await?;
+                    self.mailbox.del_flags(mi.uuid, &flags).await?;
                 }
                 StoreType::Replace => {
-                    self.mailbox.set_flags(mi.uuid, &flags[..]).await?;
+                    self.mailbox.set_flags(mi.uuid, &flags).await?;
                 }
             }
         }
@@ -471,7 +471,7 @@ impl MailboxView {
             // Register the \Seen flags
             if matches!(seen, SeenFlag::MustAdd) {
                 let seen_flag = Flag::Seen.to_string();
-                self.mailbox.add_flags(midx.uuid, &[seen_flag]).await?;
+                self.mailbox.add_flags(midx.uuid, &BTreeSet::from([seen_flag])).await?;
                 res.push(Body::Data(Data::Fetch {
                     seq: midx.seqid,
                     items: Vec1::from(MessageDataItem::Flags(vec![
@@ -755,7 +755,7 @@ mod tests {
             rfc822_size: 8usize,
         };
 
-        let index_entry = (NonZeroU32::MIN, NonZeroU64::MIN, vec![]);
+        let index_entry = (NonZeroU32::MIN, NonZeroU64::MIN, BTreeSet::new());
         let mail_in_idx = MailIndex {
             seqid: NonZeroU32::MIN,
             uid: index_entry.0,

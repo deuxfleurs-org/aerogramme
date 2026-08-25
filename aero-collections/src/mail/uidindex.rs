@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::num::{NonZeroU32, NonZeroU64};
 
 use im::{HashMap, OrdMap, OrdSet, Vector};
@@ -11,7 +12,8 @@ pub type ImapSeqid = NonZeroU32;
 pub type ImapUid = NonZeroU32;
 pub type ImapUidvalidity = NonZeroU32;
 pub type Flag = String;
-pub type IndexEntry = (ImapUid, ModSeq, Vec<Flag>);
+pub type Flags = BTreeSet<Flag>;
+pub type IndexEntry = (ImapUid, ModSeq, Flags);
 
 /// A UidIndex handles the mutable part of a mailbox
 /// It is built by running the event log on it
@@ -110,11 +112,11 @@ impl<T: Clone> SeqidMap<T> {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum UidIndexOp {
-    MailAdd(UniqueIdent, ImapUid, ModSeq, Vec<Flag>),
+    MailAdd(UniqueIdent, ImapUid, ModSeq, Flags),
     MailDel(UniqueIdent),
-    FlagAdd(UniqueIdent, ModSeq, Vec<Flag>),
-    FlagDel(UniqueIdent, ModSeq, Vec<Flag>),
-    FlagSet(UniqueIdent, ModSeq, Vec<Flag>),
+    FlagAdd(UniqueIdent, ModSeq, Flags),
+    FlagDel(UniqueIdent, ModSeq, Flags),
+    FlagSet(UniqueIdent, ModSeq, Flags),
 }
 
 impl UidIndex {
@@ -122,7 +124,7 @@ impl UidIndex {
     /// idents that increase when adding new mails (i.e. `ident` should be
     /// higher than the ones used for earlier calls to `op_mail_add`.
     #[must_use]
-    pub fn op_mail_add(&self, ident: UniqueIdent, flags: Vec<Flag>) -> UidIndexOp {
+    pub fn op_mail_add(&self, ident: UniqueIdent, flags: Flags) -> UidIndexOp {
         UidIndexOp::MailAdd(ident, self.internalseq, self.internalmodseq, flags)
     }
 
@@ -132,17 +134,17 @@ impl UidIndex {
     }
 
     #[must_use]
-    pub fn op_flag_add(&self, ident: UniqueIdent, flags: Vec<Flag>) -> UidIndexOp {
+    pub fn op_flag_add(&self, ident: UniqueIdent, flags: Flags) -> UidIndexOp {
         UidIndexOp::FlagAdd(ident, self.internalmodseq, flags)
     }
 
     #[must_use]
-    pub fn op_flag_del(&self, ident: UniqueIdent, flags: Vec<Flag>) -> UidIndexOp {
+    pub fn op_flag_del(&self, ident: UniqueIdent, flags: Flags) -> UidIndexOp {
         UidIndexOp::FlagDel(ident, self.internalmodseq, flags)
     }
 
     #[must_use]
-    pub fn op_flag_set(&self, ident: UniqueIdent, flags: Vec<Flag>) -> UidIndexOp {
+    pub fn op_flag_set(&self, ident: UniqueIdent, flags: Flags) -> UidIndexOp {
         UidIndexOp::FlagSet(ident, self.internalmodseq, flags)
     }
 
@@ -152,9 +154,9 @@ impl UidIndex {
 
     // INTERNAL functions to keep state consistent
 
-    fn reg_email(&mut self, ident: UniqueIdent, uid: ImapUid, modseq: ModSeq, flags: &[Flag]) {
+    fn reg_email(&mut self, ident: UniqueIdent, uid: ImapUid, modseq: ModSeq, flags: &Flags) {
         // Insert the email in our table
-        self.table.insert(ident, (uid, modseq, flags.to_owned()));
+        self.table.insert(ident, (uid, modseq, flags.clone()));
 
         // Update the indexes/caches
         self.idx_by_uid.insert(uid, ident);
@@ -200,7 +202,7 @@ impl UidIndex {
                 "{} {} {}",
                 uid,
                 hex::encode(ident.0),
-                self.table.get(ident).cloned().unwrap().2.join(", ")
+                self.table.get(ident).cloned().unwrap().2.into_iter().collect::<Vec<_>>().join(", ")
             );
         }
         println!();
@@ -274,15 +276,10 @@ impl BayouState for UidIndex {
                     }
 
                     // Add flags to the source of trust and the cache
-                    let mut to_add: Vec<Flag> = new_flags
-                        .iter()
-                        .filter(|f| !existing_flags.contains(f))
-                        .cloned()
-                        .collect();
-                    new.idx_by_flag.insert(*uid, &to_add);
+                    new.idx_by_flag.insert(*uid, new_flags);
                     *email_modseq = new.internalmodseq;
                     new.idx_by_modseq.insert(new.internalmodseq, *ident);
-                    existing_flags.append(&mut to_add);
+                    existing_flags.append(&mut new_flags.clone());
 
                     // Update counters
                     new.highestmodseq = new.internalmodseq;
@@ -322,20 +319,11 @@ impl BayouState for UidIndex {
                             NonZeroU32::new(new.uidvalidity.get() + bump_modseq).unwrap();
                     }
 
-                    // Remove flags from the source of trust and the cache
-                    let (keep_flags, rm_flags): (Vec<String>, Vec<String>) = existing_flags
-                        .iter()
-                        .cloned()
-                        .partition(|x| new_flags.contains(x));
-                    *existing_flags = keep_flags;
-                    let mut to_add: Vec<Flag> = new_flags
-                        .iter()
-                        .filter(|f| !existing_flags.contains(f))
-                        .cloned()
-                        .collect();
-                    existing_flags.append(&mut to_add);
+                    // Update flags from the source of trust and the cache
+                    let rm_flags = existing_flags.difference(new_flags).cloned().collect();
+                    *existing_flags = new_flags.clone();
                     new.idx_by_flag.remove(*uid, &rm_flags);
-                    new.idx_by_flag.insert(*uid, &to_add);
+                    new.idx_by_flag.insert(*uid, new_flags);
 
                     // Register that email has been modified
                     new.idx_by_modseq.insert(new.internalmodseq, *ident);
@@ -361,7 +349,7 @@ impl FlagIndex {
     fn new() -> Self {
         Self(HashMap::new())
     }
-    fn insert(&mut self, uid: ImapUid, flags: &[Flag]) {
+    fn insert(&mut self, uid: ImapUid, flags: &Flags) {
         flags.iter().for_each(|flag| {
             self.0
                 .entry(flag.clone())
@@ -369,7 +357,7 @@ impl FlagIndex {
                 .insert(uid);
         });
     }
-    fn remove(&mut self, uid: ImapUid, flags: &[Flag]) {
+    fn remove(&mut self, uid: ImapUid, flags: &Flags) {
         for flag in flags.iter() {
             if let Some(set) = self.0.get_mut(flag) {
                 set.remove(&uid);
@@ -393,7 +381,7 @@ impl FlagIndex {
 
 #[derive(Serialize, Deserialize)]
 struct UidIndexSerializedRepr {
-    mails: Vec<(ImapUid, ModSeq, UniqueIdent, Vec<Flag>)>,
+    mails: Vec<(ImapUid, ModSeq, UniqueIdent, Flags)>,
 
     uidvalidity: ImapUidvalidity,
     highestmodseq: ModSeq,
@@ -460,7 +448,7 @@ mod tests {
         // Add message 1
         {
             let m = UniqueIdent([0x01; 24]);
-            let f = vec!["\\Recent".to_string(), "\\Archive".to_string()];
+            let f = BTreeSet::from(["\\Recent".to_string(), "\\Archive".to_string()]);
             let ev = state.op_mail_add(m, f);
             state = state.apply(&ev);
 
@@ -482,7 +470,7 @@ mod tests {
         // Add message 2
         {
             let m = UniqueIdent([0x02; 24]);
-            let f = vec!["\\Seen".to_string(), "\\Archive".to_string()];
+            let f = BTreeSet::from(["\\Seen".to_string(), "\\Archive".to_string()]);
             let ev = state.op_mail_add(m, f);
             state = state.apply(&ev);
 
@@ -493,7 +481,7 @@ mod tests {
         // Add flags to message 1
         {
             let m = UniqueIdent([0x01; 24]);
-            let f = vec!["Important".to_string(), "$cl_1".to_string()];
+            let f = BTreeSet::from(["Important".to_string(), "$cl_1".to_string()]);
             let ev = state.op_flag_add(m, f);
             state = state.apply(&ev);
         }
@@ -501,7 +489,7 @@ mod tests {
         // Delete flags from message 1
         {
             let m = UniqueIdent([0x01; 24]);
-            let f = vec!["\\Recent".to_string()];
+            let f = BTreeSet::from(["\\Recent".to_string()]);
             let ev = state.op_flag_del(m, f);
             state = state.apply(&ev);
 
@@ -522,7 +510,7 @@ mod tests {
         // Add a message 3 concurrent to message 1 (trigger a uid validity change)
         {
             let m = UniqueIdent([0x03; 24]);
-            let f = vec!["\\Archive".to_string(), "\\Recent".to_string()];
+            let f = BTreeSet::from(["\\Archive".to_string(), "\\Recent".to_string()]);
             let ev = UidIndexOp::MailAdd(
                 m,
                 NonZeroU32::new(1).unwrap(),
