@@ -190,7 +190,7 @@ async fn main() -> Result<()> {
             }
             CompanionCommand::Account(cmd) => {
                 let user_file = config.users.user_list;
-                account_management(&args.command, cmd, user_file)?;
+                account_management(cmd, AccountManagementContext::Companion, user_file)?;
             }
         },
         (Command::Provider(subcommand), AnyConfig::Provider(config)) => match subcommand {
@@ -206,7 +206,7 @@ async fn main() -> Result<()> {
                         panic!("Only static account management is supported from Aerogramme.")
                     }
                 };
-                account_management(&args.command, cmd, user_file)?;
+                account_management(cmd, AccountManagementContext::Provider, user_file)?;
             }
         },
         (Command::Provider(_), AnyConfig::Companion(_)) => {
@@ -301,7 +301,15 @@ fn reload(pid: Option<i32>, pid_path: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-fn account_management(root: &Command, cmd: &AccountManagement, users: PathBuf) -> Result<()> {
+enum AccountManagementContext {
+    Provider,
+    Companion,
+}
+fn account_management(
+    cmd: &AccountManagement,
+    ctx: AccountManagementContext,
+    users: PathBuf,
+) -> Result<()> {
     let mut ulist: UserList =
         read_config(users.clone()).context(format!("'{:?}' must be a user database", users))?;
 
@@ -325,10 +333,11 @@ fn account_management(root: &Command, cmd: &AccountManagement, users: PathBuf) -
             };
 
             let crypto_keys = CryptoKeys::init();
-            let crypto_root = match root {
-                Command::Provider(_) => CryptoRoot::create_pass(&password, &crypto_keys)?,
-                Command::Companion(_) => CryptoRoot::create_cleartext(&crypto_keys),
-                _ => unreachable!(),
+            let crypto_root = match ctx {
+                AccountManagementContext::Provider => {
+                    CryptoRoot::create_pass(&password, &crypto_keys)?
+                }
+                AccountManagementContext::Companion => CryptoRoot::create_cleartext(&crypto_keys),
             };
 
             let hash = hash_password(password.as_str()).context("unable to hash password")?;
