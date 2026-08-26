@@ -208,8 +208,8 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::config::{
-        AnyConfig, AuthConfig, ImapConfig, ImapUnsecureConfig, LmtpConfig, ProviderConfig,
-        UserManagement,
+        AnyConfig, AuthConfig, CompanionConfig, ImapConfig, ImapUnsecureConfig, LmtpConfig,
+        LoginStaticConfig, ProviderConfig, UserManagement,
     };
 
     #[test]
@@ -262,6 +262,33 @@ mod tests {
                 dav_unsecure: None,
                 metrics: None,
                 users: UserManagement::Demo,
+            })
+        );
+    }
+
+    #[test]
+    fn deserialize_companion_config() {
+        const COMPANION_CONFIG: &str = r#"
+        role = "Companion"
+        pid = "/var/run/user/1000/aerogramme.pid"
+        user_list = "/home/user/.config/aerogramme-users.toml"
+
+        [imap]
+        bind_addr = "[::1]:1143"
+        "#;
+
+        let config = toml::from_str::<AnyConfig>(COMPANION_CONFIG)
+            .expect("failed to deserialize `CompanionConfig` into `AnyConfig`");
+        assert_eq!(
+            config,
+            AnyConfig::Companion(CompanionConfig {
+                pid: Some(PathBuf::from("/var/run/user/1000/aerogramme.pid")),
+                imap: ImapUnsecureConfig {
+                    bind_addr: "[::1]:1143".parse().expect("failed to parse SocketAddr")
+                },
+                users: LoginStaticConfig {
+                    user_list: PathBuf::from("/home/user/.config/aerogramme-users.toml")
+                },
             })
         );
     }
