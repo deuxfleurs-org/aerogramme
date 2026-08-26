@@ -223,6 +223,17 @@ set -euxo pipefail
 cargo fmt --all --check
           '';
 
+          ci = pkgs.writeScriptBin "aerogramme-ci" ''
+#!/usr/bin/env bash
+set -euxo pipefail
+echo "--- Starting CI checks ---"
+
+echo "Checking format..."
+nix run .#tools.fmt
+
+echo "--- All CI checks passed! ---"
+          '';
+
           build = pkgs.writeScriptBin "aerogramme-build" ''
 #!/usr/bin/env bash
 set -euxo pipefail
