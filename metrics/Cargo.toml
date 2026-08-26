@@ -1,0 +1,16 @@
+[package]
+name = "metrics"
+version = "0.4.0"
+authors = [
+  "Alex Auvolat <alex@adnab.me>", 
+  "Quentin Dufour <quentin@dufour.io>",
+  "Armaël Guéneau <armael@deuxfleurs.fr>",
+  "Perrine Letellier <perrine.letellier@pm.me>"
+]
+edition = "2021"
+license = "EUPL-1.2"
+description = "Contains all metrics for "
+
+[dependencies]
+prometheus.workspace = true
+lazy_static.workspace = true
