@@ -151,21 +151,23 @@ fn tracer() {
     tracing_subscriber::fmt::init();
 }
 
-async fn serve_metrics() {
-    let bind_addr = SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)), 8080);
-    let _jh = tokio::spawn(async move {
-        if let Err(e) = PrometheusServer::run(
-            Arc::clone(&metrics::REGISTRY),
-            bind_addr,
-            std::future::pending(),
-        )
-        .await
-        {
-            eprintln!("Prometheus server error: {e}");
-        }
-    });
-    tracing::info!("Metric server available at {:#}", bind_addr);
-
+async fn serve_metrics(config: Option<PrometheusEndpointConfig>) {
+    if let Some(cfg) = config {
+        let _jh = tokio::spawn(async move {
+            if let Err(e) = PrometheusServer::run(
+                Arc::clone(&metrics::REGISTRY),
+                cfg.bind_addr,
+                std::future::pending(),
+            )
+            .await
+            {
+                tracing::error!("Prometheus server error: {}", e);
+            }
+        });
+        tracing::info!("Metric server available at {:#}", cfg.bind_addr);
+    } else {
+        return;
+    }
 }
 
 
@@ -185,11 +187,6 @@ async fn main() -> Result<()> {
 
     tracer();
     
-    // Register all metrics at launch
-    metrics::register_all()?;
-
-    // Launch HTTP metric server in background, it handles its own errors
-    serve_metrics().await;
 
     // Set a default rustls implementation
     // Try ring first, fall back to aws_lc_rs
@@ -220,11 +217,18 @@ async fn main() -> Result<()> {
                     12345,
                 ),
             }),
+            metrics: Some(PrometheusEndpointConfig {
+                bind_addr: SocketAddr::new(
+                    IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)),
+                    8080
+                ),
+            }),
             users: UserManagement::Demo,
         })
     } else {
         read_config(args.config_file)?
     };
+
 
     match (&args.command, any_config) {
         (Command::Companion(subcommand), AnyConfig::Companion(config)) => match subcommand {
@@ -241,20 +245,27 @@ async fn main() -> Result<()> {
                 account_management(&args.command, cmd, user_file)?;
             }
         },
-        (Command::Provider(subcommand), AnyConfig::Provider(config)) => match subcommand {
-            ProviderCommand::Daemon => {
-                let server = Server::from_provider_config(config).await?;
-                server.run().await?;
-            }
-            ProviderCommand::Reload { pid } => reload(*pid, config.pid)?,
-            ProviderCommand::Account(cmd) => {
-                let user_file = match config.users {
-                    UserManagement::Static(conf) => conf.user_list,
-                    _ => {
-                        panic!("Only static account management is supported from Aerogramme.")
-                    }
-                };
-                account_management(&args.command, cmd, user_file)?;
+        (Command::Provider(subcommand), AnyConfig::Provider(config)) => {
+            // Register all metrics at launch
+            metrics::register_all()?;
+
+            // Launch HTTP metric server in background, it handles its own errors
+            serve_metrics(config.metrics.clone()).await;
+            match subcommand {
+                ProviderCommand::Daemon => {
+                    let server = Server::from_provider_config(config).await?;
+                    server.run().await?;
+                }
+                ProviderCommand::Reload { pid } => reload(*pid, config.pid)?,
+                ProviderCommand::Account(cmd) => {
+                    let user_file = match config.users {
+                        UserManagement::Static(conf) => conf.user_list,
+                        _ => {
+                            panic!("Only static account management is supported from Aerogramme.")
+                        }
+                    };
+                    account_management(&args.command, cmd, user_file)?;
+                }
             }
         },
         (Command::Provider(_), AnyConfig::Companion(_)) => {

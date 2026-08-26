@@ -24,6 +24,7 @@ pub struct ProviderConfig {
     pub auth: Option<AuthConfig>,
     pub dav: Option<DavConfig>,
     pub dav_unsecure: Option<DavUnsecureConfig>,
+    pub metrics: Option<PrometheusEndpointConfig>,
     pub users: UserManagement,
 }
 
@@ -73,6 +74,11 @@ pub struct ImapUnsecureConfig {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LoginStaticConfig {
     pub user_list: PathBuf,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PrometheusEndpointConfig {
+    pub bind_addr: SocketAddr,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
