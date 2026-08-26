@@ -172,26 +172,28 @@ async fn main() -> Result<()> {
         .expect("unable to set rustls default provider to ring or aws-lc-rs.");
 
     let args = Args::parse();
-    let any_config = if args.dev {
-        dev_config()
-    } else {
-        read_config(args.config_file)?
-    };
-
-    match (&args.command, any_config) {
-        (Command::Companion(subcommand), AnyConfig::Companion(config)) => {
+    match &args.command {
+        Command::Companion(subcommand) => {
+            let any_config = read_config(args.config_file)?;
+            let config = match any_config {
+              AnyConfig::Companion(config) => config,
+              AnyConfig::Provider(_) => bail!("You want to run a 'Companion' command but your configuration file has role 'Provider'."),
+            };
             run_companion_command(subcommand, config).await?;
         }
-        (Command::Provider(subcommand), AnyConfig::Provider(config)) => {
+        Command::Provider(subcommand) => {
+            let config = if args.dev {
+                dev_config()
+            } else {
+                match read_config(args.config_file)? {
+                  AnyConfig::Companion(_) => bail!("You want to run a 'Provider' command but your configuration file has role 'Companion'."),
+                  AnyConfig::Provider(config) => config,
+                }
+            };
+
             run_provider_command(subcommand, config).await?;
         }
-        (Command::Provider(_), AnyConfig::Companion(_)) => {
-            bail!("You want to run a 'Provider' command but your configuration file has role 'Companion'.");
-        }
-        (Command::Companion(_), AnyConfig::Provider(_)) => {
-            bail!("You want to run a 'Companion' command but your configuration file has role 'Provider'.");
-        }
-        (Command::Tools(subcommand), _) => run_tools_command(subcommand)?,
+        Command::Tools(subcommand) => run_tools_command(subcommand)?,
     }
 
     Ok(())
@@ -423,9 +425,9 @@ fn account_management(
     Ok(())
 }
 
-fn dev_config() -> AnyConfig {
+fn dev_config() -> ProviderConfig {
     use std::net::{IpAddr, Ipv6Addr, SocketAddr};
-    AnyConfig::Provider(ProviderConfig {
+    ProviderConfig {
         pid: None,
         imap: None,
         dav: None,
@@ -446,5 +448,5 @@ fn dev_config() -> AnyConfig {
             bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)), 8080),
         }),
         users: UserManagement::Demo,
-    })
+    }
 }
