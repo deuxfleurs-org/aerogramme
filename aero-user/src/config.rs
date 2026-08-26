@@ -271,6 +271,56 @@ mod tests {
     }
 
     #[test]
+    fn serialize_provider_config() {
+        const PROVIDER_CONFIG: &str = r#"role = "Provider"
+pid = "/var/run/aerogramme.pid"
+
+[imap]
+bind_addr = "[::]:993"
+certs = "my-certs.pem"
+key = "my-key.pem"
+
+[imap_unsecure]
+bind_addr = "[::1]:143"
+
+[lmtp]
+bind_addr = "[::1]:1025"
+hostname = "example.tld"
+
+[auth]
+bind_addr = "[::1]:12345"
+
+[users]
+user_driver = "Demo"
+"#;
+
+        let config_toml = toml::to_string(&ProviderConfig {
+            pid: Some(PathBuf::from("/var/run/aerogramme.pid")),
+            imap: Some(ImapConfig {
+                bind_addr: "[::]:993".parse().expect("failed to parse SocketAddr"),
+                certs: PathBuf::from("my-certs.pem"),
+                key: PathBuf::from("my-key.pem"),
+            }),
+            imap_unsecure: Some(ImapUnsecureConfig {
+                bind_addr: "[::1]:143".parse().expect("failed to parse bind addr"),
+            }),
+            lmtp: Some(LmtpConfig {
+                bind_addr: "[::1]:1025".parse().expect("failed to parse SocketAddr"),
+                hostname: "example.tld".into(),
+            }),
+            auth: Some(AuthConfig {
+                bind_addr: "[::1]:12345".parse().expect("failed to parse SocketAddr"),
+            }),
+            dav: None,
+            dav_unsecure: None,
+            metrics: None,
+            users: UserManagement::Demo,
+        })
+        .expect("failed to serialize `ProviderConfig` in toml");
+        assert_eq!(config_toml, PROVIDER_CONFIG);
+    }
+
+    #[test]
     fn deserialize_companion_config() {
         const COMPANION_CONFIG: &str = r#"
         role = "Companion"
@@ -298,5 +348,28 @@ mod tests {
 
         let _ = toml::from_str::<ProviderConfig>(COMPANION_CONFIG)
             .expect_err("`CompanionConfig` toml text should not be parsed as `ProviderConfig`");
+    }
+
+    #[test]
+    fn serialize_companion_config() {
+        const COMPANION_CONFIG: &str = r#"role = "Companion"
+pid = "/var/run/user/1000/aerogramme.pid"
+user_list = "/home/user/.config/aerogramme-users.toml"
+
+[imap]
+bind_addr = "[::1]:1143"
+"#;
+
+        let config_toml = toml::to_string(&CompanionConfig {
+            pid: Some(PathBuf::from("/var/run/user/1000/aerogramme.pid")),
+            imap: ImapUnsecureConfig {
+                bind_addr: "[::1]:1143".parse().expect("failed to parse SocketAddr"),
+            },
+            users: LoginStaticConfig {
+                user_list: PathBuf::from("/home/user/.config/aerogramme-users.toml"),
+            },
+        })
+        .expect("failed to serialize `CompanionConfig` in toml");
+        assert_eq!(config_toml, COMPANION_CONFIG);
     }
 }
