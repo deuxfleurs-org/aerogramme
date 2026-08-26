@@ -174,23 +174,15 @@ async fn main() -> Result<()> {
     let args = Args::parse();
     match &args.command {
         Command::Companion(subcommand) => {
-            let any_config = read_config(args.config_file)?;
-            let config = match any_config {
-              AnyConfig::Companion(config) => config,
-              AnyConfig::Provider(_) => bail!("You want to run a 'Companion' command but your configuration file has role 'Provider'."),
-            };
+            let config = read_config(args.config_file)?;
             run_companion_command(subcommand, config).await?;
         }
         Command::Provider(subcommand) => {
             let config = if args.dev {
                 dev_config()
             } else {
-                match read_config(args.config_file)? {
-                  AnyConfig::Companion(_) => bail!("You want to run a 'Provider' command but your configuration file has role 'Companion'."),
-                  AnyConfig::Provider(config) => config,
-                }
+                read_config(args.config_file)?
             };
-
             run_provider_command(subcommand, config).await?;
         }
         Command::Tools(subcommand) => run_tools_command(subcommand)?,
