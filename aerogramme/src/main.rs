@@ -179,109 +179,130 @@ async fn main() -> Result<()> {
     };
 
     match (&args.command, any_config) {
-        (Command::Companion(subcommand), AnyConfig::Companion(config)) => match subcommand {
-            CompanionCommand::Daemon => {
-                let server = Server::from_companion_config(config).await?;
-                server.run().await?;
-            }
-            CompanionCommand::Reload { pid } => reload(*pid, config.pid)?,
-            CompanionCommand::Wizard => {
-                unimplemented!();
-            }
-            CompanionCommand::Account(cmd) => {
-                let user_file = config.users.user_list;
-                account_management(cmd, AccountManagementContext::Companion, user_file)?;
-            }
-        },
-        (Command::Provider(subcommand), AnyConfig::Provider(config)) => match subcommand {
-            ProviderCommand::Daemon => {
-                let server = Server::from_provider_config(config).await?;
-                server.run().await?;
-            }
-            ProviderCommand::Reload { pid } => reload(*pid, config.pid)?,
-            ProviderCommand::Account(cmd) => {
-                let user_file = match config.users {
-                    UserManagement::Static(conf) => conf.user_list,
-                    _ => {
-                        panic!("Only static account management is supported from Aerogramme.")
-                    }
-                };
-                account_management(cmd, AccountManagementContext::Provider, user_file)?;
-            }
-        },
+        (Command::Companion(subcommand), AnyConfig::Companion(config)) => {
+            run_companion_command(subcommand, config).await?;
+        }
+        (Command::Provider(subcommand), AnyConfig::Provider(config)) => {
+            run_provider_command(subcommand, config).await?;
+        }
         (Command::Provider(_), AnyConfig::Companion(_)) => {
             bail!("You want to run a 'Provider' command but your configuration file has role 'Companion'.");
         }
         (Command::Companion(_), AnyConfig::Provider(_)) => {
             bail!("You want to run a 'Companion' command but your configuration file has role 'Provider'.");
         }
-        (Command::Tools(subcommand), _) => match subcommand {
-            ToolsCommand::PasswordHash { maybe_password } => {
-                let password = match maybe_password {
-                    Some(pwd) => pwd.clone(),
-                    None => rpassword::prompt_password("Enter password: ")?,
-                };
-                println!("{}", hash_password(&password)?);
-            }
-            ToolsCommand::CryptoRoot(crcommand) => match crcommand {
-                CryptoRootCommand::New { maybe_password } => {
-                    let password = match maybe_password {
-                        Some(pwd) => pwd.clone(),
-                        None => {
-                            let password = rpassword::prompt_password("Enter password: ")?;
-                            let password_confirm =
-                                rpassword::prompt_password("Confirm password: ")?;
-                            if password != password_confirm {
-                                bail!("Passwords don't match.");
-                            }
-                            password
-                        }
-                    };
-                    let crypto_keys = CryptoKeys::init();
-                    let cr = CryptoRoot::create_pass(&password, &crypto_keys)?;
-                    println!("{}", cr.0);
-                }
-                CryptoRootCommand::NewClearText => {
-                    let crypto_keys = CryptoKeys::init();
-                    let cr = CryptoRoot::create_cleartext(&crypto_keys);
-                    println!("{}", cr.0);
-                }
-                CryptoRootCommand::ChangePassword {
-                    maybe_old_password,
-                    maybe_new_password,
-                    crypto_root,
-                } => {
-                    let old_password = match maybe_old_password {
-                        Some(pwd) => pwd.to_string(),
-                        None => rpassword::prompt_password("Enter old password: ")?,
-                    };
-
-                    let new_password = match maybe_new_password {
-                        Some(pwd) => pwd.to_string(),
-                        None => {
-                            let password = rpassword::prompt_password("Enter new password: ")?;
-                            let password_confirm =
-                                rpassword::prompt_password("Confirm new password: ")?;
-                            if password != password_confirm {
-                                bail!("Passwords don't match.");
-                            }
-                            password
-                        }
-                    };
-
-                    let keys = CryptoRoot(crypto_root.to_string()).crypto_keys(&old_password)?;
-                    let cr = CryptoRoot::create_pass(&new_password, &keys)?;
-                    println!("{}", cr.0);
-                }
-                CryptoRootCommand::DeriveIncoming { crypto_root } => {
-                    let pubkey = CryptoRoot(crypto_root.to_string()).public_key()?;
-                    let cr = CryptoRoot::create_incoming(&pubkey);
-                    println!("{}", cr.0);
-                }
-            },
-        },
+        (Command::Tools(subcommand), _) => run_tools_command(subcommand)?,
     }
 
+    Ok(())
+}
+
+async fn run_companion_command(
+    subcommand: &CompanionCommand,
+    config: CompanionConfig,
+) -> Result<()> {
+    match subcommand {
+        CompanionCommand::Daemon => {
+            let server = Server::from_companion_config(config).await?;
+            server.run().await?;
+        }
+        CompanionCommand::Reload { pid } => reload(*pid, config.pid)?,
+        CompanionCommand::Wizard => {
+            unimplemented!();
+        }
+        CompanionCommand::Account(cmd) => {
+            let user_file = config.users.user_list;
+            account_management(cmd, AccountManagementContext::Companion, user_file)?;
+        }
+    };
+    Ok(())
+}
+
+async fn run_provider_command(subcommand: &ProviderCommand, config: ProviderConfig) -> Result<()> {
+    match subcommand {
+        ProviderCommand::Daemon => {
+            let server = Server::from_provider_config(config).await?;
+            server.run().await?;
+        }
+        ProviderCommand::Reload { pid } => reload(*pid, config.pid)?,
+        ProviderCommand::Account(cmd) => {
+            let user_file = match config.users {
+                UserManagement::Static(conf) => conf.user_list,
+                _ => {
+                    panic!("Only static account management is supported from Aerogramme.")
+                }
+            };
+            account_management(cmd, AccountManagementContext::Provider, user_file)?;
+        }
+    };
+    Ok(())
+}
+
+fn run_tools_command(subcommand: &ToolsCommand) -> Result<()> {
+    match subcommand {
+        ToolsCommand::PasswordHash { maybe_password } => {
+            let password = match maybe_password {
+                Some(pwd) => pwd.clone(),
+                None => rpassword::prompt_password("Enter password: ")?,
+            };
+            println!("{}", hash_password(&password)?);
+        }
+        ToolsCommand::CryptoRoot(crcommand) => match crcommand {
+            CryptoRootCommand::New { maybe_password } => {
+                let password = match maybe_password {
+                    Some(pwd) => pwd.clone(),
+                    None => {
+                        let password = rpassword::prompt_password("Enter password: ")?;
+                        let password_confirm = rpassword::prompt_password("Confirm password: ")?;
+                        if password != password_confirm {
+                            bail!("Passwords don't match.");
+                        }
+                        password
+                    }
+                };
+                let crypto_keys = CryptoKeys::init();
+                let cr = CryptoRoot::create_pass(&password, &crypto_keys)?;
+                println!("{}", cr.0);
+            }
+            CryptoRootCommand::NewClearText => {
+                let crypto_keys = CryptoKeys::init();
+                let cr = CryptoRoot::create_cleartext(&crypto_keys);
+                println!("{}", cr.0);
+            }
+            CryptoRootCommand::ChangePassword {
+                maybe_old_password,
+                maybe_new_password,
+                crypto_root,
+            } => {
+                let old_password = match maybe_old_password {
+                    Some(pwd) => pwd.to_string(),
+                    None => rpassword::prompt_password("Enter old password: ")?,
+                };
+
+                let new_password = match maybe_new_password {
+                    Some(pwd) => pwd.to_string(),
+                    None => {
+                        let password = rpassword::prompt_password("Enter new password: ")?;
+                        let password_confirm =
+                            rpassword::prompt_password("Confirm new password: ")?;
+                        if password != password_confirm {
+                            bail!("Passwords don't match.");
+                        }
+                        password
+                    }
+                };
+
+                let keys = CryptoRoot(crypto_root.to_string()).crypto_keys(&old_password)?;
+                let cr = CryptoRoot::create_pass(&new_password, &keys)?;
+                println!("{}", cr.0);
+            }
+            CryptoRootCommand::DeriveIncoming { crypto_root } => {
+                let pubkey = CryptoRoot(crypto_root.to_string()).public_key()?;
+                let cr = CryptoRoot::create_incoming(&pubkey);
+                println!("{}", cr.0);
+            }
+        },
+    };
     Ok(())
 }
 
