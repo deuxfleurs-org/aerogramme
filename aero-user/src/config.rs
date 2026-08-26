@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CompanionConfig {
     pub pid: Option<PathBuf>,
     pub imap: ImapUnsecureConfig,
@@ -15,7 +15,7 @@ pub struct CompanionConfig {
     pub users: LoginStaticConfig,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct ProviderConfig {
     pub pid: Option<PathBuf>,
     pub imap: Option<ImapConfig>,
@@ -28,7 +28,7 @@ pub struct ProviderConfig {
     pub users: UserManagement,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "user_driver")]
 pub enum UserManagement {
     Demo,
@@ -36,59 +36,59 @@ pub enum UserManagement {
     Ldap(LoginLdapConfig),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct AuthConfig {
     pub bind_addr: SocketAddr,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct LmtpConfig {
     pub bind_addr: SocketAddr,
     pub hostname: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct ImapConfig {
     pub bind_addr: SocketAddr,
     pub certs: PathBuf,
     pub key: PathBuf,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct DavUnsecureConfig {
     pub bind_addr: SocketAddr,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct DavConfig {
     pub bind_addr: SocketAddr,
     pub certs: PathBuf,
     pub key: PathBuf,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct ImapUnsecureConfig {
     pub bind_addr: SocketAddr,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct LoginStaticConfig {
     pub user_list: PathBuf,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PrometheusEndpointConfig {
     pub bind_addr: SocketAddr,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "storage_driver")]
 pub enum LdapStorage {
     Garage(LdapGarageConfig),
     InMemory,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct LdapGarageConfig {
     pub s3_endpoint: String,
     pub k2v_endpoint: String,
@@ -100,7 +100,7 @@ pub struct LdapGarageConfig {
     pub default_bucket: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct LoginLdapConfig {
     // LDAP connection info
     pub ldap_server: String,
@@ -168,7 +168,7 @@ pub struct SetupEntry {
     pub storage: StaticStorage,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "role")]
 pub enum AnyConfig {
     Companion(CompanionConfig),
@@ -201,4 +201,68 @@ pub fn write_config<T: Serialize>(config_file: PathBuf, config: &T) -> Result<()
 
 fn default_mail_attr() -> String {
     "mail".into()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use crate::config::{
+        AnyConfig, AuthConfig, ImapConfig, ImapUnsecureConfig, LmtpConfig, ProviderConfig,
+        UserManagement,
+    };
+
+    #[test]
+    fn deserialize_provider_config() {
+        const PROVIDER_CONFIG: &str = r#"role = "Provider"
+        pid = "/var/run/aerogramme.pid"
+
+        [auth]
+        bind_addr = "[::1]:12345"
+
+        [imap_unsecure]
+        bind_addr="[::1]:143"
+
+        [imap]
+        bind_addr="[::]:993"
+        certs = "my-certs.pem"
+        key = "my-key.pem"
+
+        [lmtp]
+        bind_addr="[::1]:1025"
+        hostname="example.tld"
+
+        [users]
+        user_driver = "Demo"
+        "#;
+
+        let config = toml::from_str::<AnyConfig>(PROVIDER_CONFIG)
+            .expect("failed to deserialize `ProviderConfig` into `AnyConfig`");
+
+        assert_eq!(
+            config,
+            AnyConfig::Provider(ProviderConfig {
+                pid: Some(PathBuf::from("/var/run/aerogramme.pid")),
+                imap: Some(ImapConfig {
+                    bind_addr: "[::]:993".parse().expect("failed to parse SocketAddr"),
+                    certs: PathBuf::from("my-certs.pem"),
+                    key: PathBuf::from("my-key.pem"),
+                }),
+                imap_unsecure: Some(ImapUnsecureConfig {
+                    bind_addr: "[::1]:143".parse().expect("failed to parse bind addr")
+                }),
+                lmtp: Some(LmtpConfig {
+                    bind_addr: "[::1]:1025".parse().expect("failed to parse SocketAddr"),
+                    hostname: "example.tld".into()
+                }),
+                auth: Some(AuthConfig {
+                    bind_addr: "[::1]:12345".parse().expect("failed to parse SocketAddr")
+                }),
+                dav: None,
+                dav_unsecure: None,
+                metrics: None,
+                users: UserManagement::Demo,
+            })
+        );
+    }
 }
