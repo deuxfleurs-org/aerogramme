@@ -7,6 +7,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(tag = "role", rename = "Companion")]
 pub struct CompanionConfig {
     pub pid: Option<PathBuf>,
     pub imap: ImapUnsecureConfig,
@@ -16,6 +17,7 @@ pub struct CompanionConfig {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(tag = "role", rename = "Provider")]
 pub struct ProviderConfig {
     pub pid: Option<PathBuf>,
     pub imap: Option<ImapConfig>,
@@ -208,8 +210,8 @@ mod tests {
     use std::path::PathBuf;
 
     use crate::config::{
-        AnyConfig, AuthConfig, CompanionConfig, ImapConfig, ImapUnsecureConfig, LmtpConfig,
-        LoginStaticConfig, ProviderConfig, UserManagement,
+        AuthConfig, CompanionConfig, ImapConfig, ImapUnsecureConfig, LmtpConfig, LoginStaticConfig,
+        ProviderConfig, UserManagement,
     };
 
     #[test]
@@ -236,12 +238,11 @@ mod tests {
         user_driver = "Demo"
         "#;
 
-        let config = toml::from_str::<AnyConfig>(PROVIDER_CONFIG)
-            .expect("failed to deserialize `ProviderConfig` into `AnyConfig`");
-
+        let config = toml::from_str::<ProviderConfig>(PROVIDER_CONFIG)
+            .expect("failed to deserialize toml text into `ProviderConfig`");
         assert_eq!(
             config,
-            AnyConfig::Provider(ProviderConfig {
+            ProviderConfig {
                 pid: Some(PathBuf::from("/var/run/aerogramme.pid")),
                 imap: Some(ImapConfig {
                     bind_addr: "[::]:993".parse().expect("failed to parse SocketAddr"),
@@ -262,7 +263,7 @@ mod tests {
                 dav_unsecure: None,
                 metrics: None,
                 users: UserManagement::Demo,
-            })
+            }
         );
     }
 
@@ -277,11 +278,11 @@ mod tests {
         bind_addr = "[::1]:1143"
         "#;
 
-        let config = toml::from_str::<AnyConfig>(COMPANION_CONFIG)
-            .expect("failed to deserialize `CompanionConfig` into `AnyConfig`");
+        let config = toml::from_str::<CompanionConfig>(COMPANION_CONFIG)
+            .expect("failed to deserialize toml text into `CompanionConfig`");
         assert_eq!(
             config,
-            AnyConfig::Companion(CompanionConfig {
+            CompanionConfig {
                 pid: Some(PathBuf::from("/var/run/user/1000/aerogramme.pid")),
                 imap: ImapUnsecureConfig {
                     bind_addr: "[::1]:1143".parse().expect("failed to parse SocketAddr")
@@ -289,7 +290,7 @@ mod tests {
                 users: LoginStaticConfig {
                     user_list: PathBuf::from("/home/user/.config/aerogramme-users.toml")
                 },
-            })
+            }
         );
     }
 }
