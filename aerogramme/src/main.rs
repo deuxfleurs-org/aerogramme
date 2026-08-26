@@ -1,6 +1,6 @@
 mod server;
 
-use std::{io::Read, net::IpAddr, net::Ipv6Addr, net::SocketAddr, path::PathBuf};
+use std::{io::Read, path::PathBuf};
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -173,31 +173,7 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
     let any_config = if args.dev {
-        AnyConfig::Provider(ProviderConfig {
-            pid: None,
-            imap: None,
-            dav: None,
-            imap_unsecure: Some(ImapUnsecureConfig {
-                bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)), 1143),
-            }),
-            dav_unsecure: Some(DavUnsecureConfig {
-                bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)), 8087),
-            }),
-            lmtp: Some(LmtpConfig {
-                bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)), 1025),
-                hostname: "example.tld".to_string(),
-            }),
-            auth: Some(AuthConfig {
-                bind_addr: SocketAddr::new(
-                    IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)),
-                    12345,
-                ),
-            }),
-            metrics: Some(PrometheusEndpointConfig {
-                bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)), 8080),
-            }),
-            users: UserManagement::Demo,
-        })
+        dev_config()
     } else {
         read_config(args.config_file)?
     };
@@ -415,4 +391,30 @@ fn account_management(root: &Command, cmd: &AccountManagement, users: PathBuf) -
     };
 
     Ok(())
+}
+
+fn dev_config() -> AnyConfig {
+    use std::net::{IpAddr, Ipv6Addr, SocketAddr};
+    AnyConfig::Provider(ProviderConfig {
+        pid: None,
+        imap: None,
+        dav: None,
+        imap_unsecure: Some(ImapUnsecureConfig {
+            bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)), 1143),
+        }),
+        dav_unsecure: Some(DavUnsecureConfig {
+            bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)), 8087),
+        }),
+        lmtp: Some(LmtpConfig {
+            bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)), 1025),
+            hostname: "example.tld".to_string(),
+        }),
+        auth: Some(AuthConfig {
+            bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)), 12345),
+        }),
+        metrics: Some(PrometheusEndpointConfig {
+            bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)), 8080),
+        }),
+        users: UserManagement::Demo,
+    })
 }
