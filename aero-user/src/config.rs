@@ -265,6 +265,9 @@ mod tests {
                 users: UserManagement::Demo,
             }
         );
+
+        let _ = toml::from_str::<CompanionConfig>(PROVIDER_CONFIG)
+            .expect_err("`ProviderConfig` toml should not be parsed as `CompanionConfig`");
     }
 
     #[test]
@@ -292,5 +295,8 @@ mod tests {
                 },
             }
         );
+
+        let _ = toml::from_str::<ProviderConfig>(COMPANION_CONFIG)
+            .expect_err("`CompanionConfig` toml text should not be parsed as `ProviderConfig`");
     }
 }
