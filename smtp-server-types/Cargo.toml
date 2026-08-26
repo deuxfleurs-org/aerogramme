@@ -1,6 +1,6 @@
 [package]
 name = "smtp-server-types"
-version = "0.5.0"
+version = "0.5.1"
 authors = [
   # Léo authored this crate as part of Kannader, a SMTP server project.
   # We forked his code to vendor it in Aerogramme.
