@@ -1,6 +1,6 @@
 mod server;
 
-use std::{io::Read, net::SocketAddr, path::PathBuf, sync::Arc, net::Ipv6Addr, net::IpAddr};
+use std::{io::Read, net::IpAddr, net::Ipv6Addr, net::SocketAddr, path::PathBuf, sync::Arc};
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -170,8 +170,6 @@ async fn serve_metrics(config: Option<PrometheusEndpointConfig>) {
     }
 }
 
-
-
 #[tokio::main]
 async fn main() -> Result<()> {
     if std::env::var("RUST_LOG").is_err() {
@@ -186,7 +184,6 @@ async fn main() -> Result<()> {
     }));
 
     tracer();
-    
 
     // Set a default rustls implementation
     // Try ring first, fall back to aws_lc_rs
@@ -218,17 +215,13 @@ async fn main() -> Result<()> {
                 ),
             }),
             metrics: Some(PrometheusEndpointConfig {
-                bind_addr: SocketAddr::new(
-                    IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)),
-                    8080
-                ),
+                bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)), 8080),
             }),
             users: UserManagement::Demo,
         })
     } else {
         read_config(args.config_file)?
     };
-
 
     match (&args.command, any_config) {
         (Command::Companion(subcommand), AnyConfig::Companion(config)) => match subcommand {
@@ -267,7 +260,7 @@ async fn main() -> Result<()> {
                     account_management(&args.command, cmd, user_file)?;
                 }
             }
-        },
+        }
         (Command::Provider(_), AnyConfig::Companion(_)) => {
             bail!("You want to run a 'Provider' command but your configuration file has role 'Companion'.");
         }

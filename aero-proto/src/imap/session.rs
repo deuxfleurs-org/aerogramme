@@ -11,7 +11,6 @@ use crate::imap::request::Request;
 use crate::imap::response::{Response, ResponseOrIdle, SyncError};
 //-----
 
-
 pub struct Instance {
     pub login_provider: ArcLoginProvider,
     pub server_capabilities: ServerCapability,
