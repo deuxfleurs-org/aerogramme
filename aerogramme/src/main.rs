@@ -258,10 +258,10 @@ async fn main() -> Result<()> {
             }
         },
         (Command::Provider(_), AnyConfig::Companion(_)) => {
-            bail!("Your want to run a 'Provider' command but your configuration file has role 'Companion'.");
+            bail!("You want to run a 'Provider' command but your configuration file has role 'Companion'.");
         }
         (Command::Companion(_), AnyConfig::Provider(_)) => {
-            bail!("Your want to run a 'Companion' command but your configuration file has role 'Provider'.");
+            bail!("You want to run a 'Companion' command but your configuration file has role 'Provider'.");
         }
         (Command::Tools(subcommand), _) => match subcommand {
             ToolsCommand::PasswordHash { maybe_password } => {

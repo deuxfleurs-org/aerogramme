@@ -1,6 +1,5 @@
 use anyhow::{anyhow, bail, Context, Result};
 use imap_codec::imap_types::{command::Command, core::Tag};
-use prometheus::{IntCounter, IntGauge, Opts};
 
 use aero_user::login::ArcLoginProvider;
 use metrics::{INSTANCES_CREATED, INSTANCES_CURRENT};
