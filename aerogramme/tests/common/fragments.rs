@@ -61,11 +61,13 @@ pub enum Flag {
 pub enum Email {
     Basic,
     Multipart,
+    Other(&'static [u8]),
 }
 
 pub enum Selection {
     FirstId,
     SecondId,
+    Id(u64),
     All,
 }
 
@@ -91,8 +93,48 @@ pub enum StoreMod {
 pub enum FetchKind {
     Rfc822,
     Rfc822Size,
+    Rfc822Header,
+    Rfc822Text,
+    Body(Option<FetchBodySection>),
+}
+
+pub struct FetchBodySection {
+    pub part_no: Vec<u64>,
+    pub part_spec: Option<PartSpec>,
+}
+
+impl ToString for FetchBodySection {
+    fn to_string(&self) -> String {
+        let no = self.part_no.iter().map(u64::to_string).collect::<Vec<_>>().join(".");
+        match &self.part_spec {
+            None => no,
+            Some(spec) =>
+                if no.is_empty() {
+                    spec.to_string()
+                } else {
+                    format!("{}.{}", no, spec.to_string())
+                }
+        }
+    }
+}
+
+pub enum PartSpec {
     HeaderFields(Vec<String>),
-    BodyBracket,
+    Mime,
+    Header,
+    Text,
+}
+
+impl ToString for PartSpec {
+    fn to_string(&self) -> String {
+        match self {
+            PartSpec::HeaderFields(fields) => 
+                format!("HEADER.FIELDS ({})", fields.join(" ")),
+            PartSpec::Mime => "MIME".to_string(),
+            PartSpec::Header => "HEADER".to_string(),
+            PartSpec::Text => "TEXT".to_string(),
+        }
+    }
 }
 
 pub enum FetchMod {
@@ -101,8 +143,11 @@ pub enum FetchMod {
 }
 
 pub enum SearchKind<'a> {
+    Header(&'a str, &'a str),
     Text(&'a str),
     ModSeq(u64),
+    UidRange(u64, u64),
+    UidRangeNumAsterisk(u64),
 }
 
 pub enum StatusKind {
@@ -276,6 +321,7 @@ pub fn lmtp_deliver_email(lmtp: &mut TcpStream, email_type: Email) -> Result<()>
     let email = match email_type {
         Email::Basic => EMAIL2,
         Email::Multipart => EMAIL1,
+        Email::Other(eml) => eml,
     };
     lmtp.write(&b"MAIL FROM:<bob@example.tld>\r\n"[..])?;
     let _read = read_lines(lmtp, &mut buffer, Some(&b"250 2.0.0"[..]))?;
@@ -333,14 +379,19 @@ pub fn fetch(
     let sel_str = match selection {
         Selection::FirstId => "1",
         Selection::SecondId => "2",
+        Selection::Id(n) => &n.to_string(),
         Selection::All => "1:*",
     };
 
     let kind_str = match kind {
         FetchKind::Rfc822 => "RFC822",
         FetchKind::Rfc822Size => "RFC822.SIZE",
-        FetchKind::HeaderFields(fields) => &format!("BODY[HEADER.FIELDS ({})]", fields.join(" ")),
-        FetchKind::BodyBracket => "BODY[]",
+        FetchKind::Rfc822Header => "RFC822.HEADER",
+        FetchKind::Rfc822Text => "RFC822.TEXT",
+        FetchKind::Body(None) => "BODY[]",
+        FetchKind::Body(Some(section)) => {
+            &format!("BODY[{}]", section.to_string())
+        },
     };
 
     let mod_str = match modifier {
@@ -369,15 +420,17 @@ pub fn copy(imap: &mut TcpStream, selection: Selection, to: Mailbox) -> Result<S
     Ok(srv_msg.to_string())
 }
 
-pub fn append(imap: &mut TcpStream, content: Email) -> Result<String> {
+fn append_internal(imap: &mut TcpStream, content: Email, seen: bool) -> Result<String> {
     let mut buffer: [u8; 6000] = [0; 6000];
 
     let ref_mail = match content {
         Email::Multipart => EMAIL1,
         Email::Basic => EMAIL2,
+        Email::Other(eml) => eml,
     };
 
-    let append_cmd = format!("47 append inbox (\\Seen) {{{}}}\r\n", ref_mail.len());
+    let flags = if seen { "(\\Seen)" } else { "()" };
+    let append_cmd = format!("47 append inbox {} {{{}}}\r\n", flags, ref_mail.len());
     println!("append cmd: {}", append_cmd);
     imap.write(append_cmd.as_bytes())?;
 
@@ -394,12 +447,27 @@ pub fn append(imap: &mut TcpStream, content: Email) -> Result<String> {
     Ok(srv_msg.to_string())
 }
 
+pub fn append(imap: &mut TcpStream, content: Email) -> Result<String> {
+    append_internal(imap, content, true)
+}
+
+pub fn append_not_seen(imap: &mut TcpStream, content: Email) -> Result<String> {
+    append_internal(imap, content, false)
+}
+    
 pub fn search(imap: &mut TcpStream, sk: SearchKind) -> Result<String> {
     let sk_str = match sk {
+        SearchKind::Header(k, v) => format!("HEADER \"{}\" \"{}\"", k, v),
         SearchKind::Text(x) => format!("TEXT \"{}\"", x),
         SearchKind::ModSeq(x) => format!("MODSEQ {}", x),
+        SearchKind::UidRange(lo, hi) => format!("{}:{}", lo, hi),
+        SearchKind::UidRangeNumAsterisk(lo) => format!("{}:*", lo),
     };
-    imap.write(format!("55 SEARCH {}\r\n", sk_str).as_bytes())?;
+    let prefix = match sk {
+        SearchKind::UidRange(_, _) => "UID ",
+        _ => "",
+    };
+    imap.write(format!("55 {}SEARCH {}\r\n", prefix, sk_str).as_bytes())?;
     let mut buffer: [u8; 1500] = [0; 1500];
     let read = read_lines(imap, &mut buffer, Some(&b"55 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
@@ -418,6 +486,7 @@ pub fn store(
     let seq = match sel {
         Selection::FirstId => "1",
         Selection::SecondId => "2",
+        Selection::Id(n) => &n.to_string(),
         Selection::All => "1:*",
     };
 
@@ -460,6 +529,7 @@ pub fn uid_expunge(imap: &mut TcpStream, sel: Selection) -> Result<String> {
     let selstr = match sel {
         FirstId => "1",
         SecondId => "2",
+        Id(n) => &n.to_string(),
         All => "1:*",
     };
     imap.write(format!("61 UID EXPUNGE {}\r\n", selstr).as_bytes())?;
@@ -568,7 +638,7 @@ pub fn stop_idle(imap: &mut TcpStream) -> Result<String> {
 pub fn logout(imap: &mut TcpStream) -> Result<()> {
     imap.write(&b"99 logout\r\n"[..])?;
     let mut buffer: [u8; 1500] = [0; 1500];
-    let read = read_lines(imap, &mut buffer, None)?;
-    assert_eq!(&read[..5], &b"* BYE"[..]);
+    let read = read_lines(imap, &mut buffer, Some(&b"* BYE"[..]))?;
+    assert_eq!(&read[..5], &b"99 OK"[..]);
     Ok(())
 }

@@ -61,7 +61,12 @@ impl<'a> MailView<'a> {
                 MessageDataItemName::Flags => Ok(self.flags()),
                 MessageDataItemName::Rfc822Size => self.rfc_822_size(),
                 MessageDataItemName::Rfc822Header => self.rfc_822_header(),
-                MessageDataItemName::Rfc822Text => self.rfc_822_text(),
+                MessageDataItemName::Rfc822Text => {
+                    if self.is_not_yet_seen() {
+                        seen = SeenFlag::MustAdd;
+                    }
+                    self.rfc_822_text()
+                },
                 MessageDataItemName::Rfc822 => {
                     if self.is_not_yet_seen() {
                         seen = SeenFlag::MustAdd;
@@ -110,7 +115,16 @@ impl<'a> MailView<'a> {
             Err(_) => return false, // XXX hack?
         };
         mime_view::raw_kv_headers(&msg).iter().any(|(k, v)| {
-            k.eq_ignore_ascii_case(hdr) && v.windows(pattern.len()).any(|win| win == pattern)
+            k.eq_ignore_ascii_case(hdr) && (
+                // If the string to search is zero-length, this matches all
+                // messages that have a header field with the specified
+                // field-name regardless of the contents.
+                //
+                // NOTE: `v.windows(0)` panics so we need to check this case
+                // explicitly
+                pattern.is_empty() ||
+                    v.windows(pattern.len()).any(|win| win.eq_ignore_ascii_case(pattern))
+            )
         })
     }
 
@@ -202,7 +216,6 @@ impl<'a> MailView<'a> {
         let mut seen = SeenFlag::DoNothing;
         if !peek && self.is_not_yet_seen() {
             // Add \Seen flag
-            //self.mailbox.add_flags(uuid, &[seen_flag]).await?;
             seen = SeenFlag::MustAdd;
         }
 
@@ -253,6 +266,7 @@ impl<'a> MailView<'a> {
     }
 }
 
+#[derive(Debug)]
 pub enum SeenFlag {
     DoNothing,
     MustAdd,

@@ -5,7 +5,7 @@ use anyhow::{anyhow, Error, Result};
 
 use futures::stream::{StreamExt, TryStreamExt};
 
-use imap_codec::imap_types::core::Charset;
+use imap_codec::imap_types::core::{Charset, Vec1};
 use imap_codec::imap_types::fetch::MessageDataItem;
 use imap_codec::imap_types::flag::{Flag, FlagFetch, FlagPerm, StoreResponse, StoreType};
 use imap_codec::imap_types::response::{Code, CodeOther, Data, Status};
@@ -472,6 +472,12 @@ impl MailboxView {
             if matches!(seen, SeenFlag::MustAdd) {
                 let seen_flag = Flag::Seen.to_string();
                 self.mailbox.add_flags(midx.uuid, &[seen_flag]).await?;
+                res.push(Body::Data(Data::Fetch {
+                    seq: midx.seqid,
+                    items: Vec1::from(MessageDataItem::Flags(vec![
+                        FlagFetch::Flag(Flag::Seen),
+                    ])),
+                }));
             }
             // Add "body" to the final result that will be sent to the client
             res.push(body);
@@ -756,6 +762,8 @@ mod tests {
             modseq: index_entry.1,
             uuid: unique_ident::gen_ident(),
             flags: index_entry.2,
+            largest_seqid: NonZeroU32::MIN,
+            largest_uid: index_entry.0,
         };
         let rfc822 = b"Subject: hello\r\nFrom: a@a.a\r\nTo: b@b.b\r\nDate: Thu, 12 Oct 2023 08:45:28 +0000\r\n\r\nhello world";
         let qr = QueryResult::FullResult {

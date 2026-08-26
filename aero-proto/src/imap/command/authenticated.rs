@@ -38,7 +38,7 @@ pub async fn dispatch<'a>(
         CommandBody::Capability => {
             anystate::capability(ctx.req.tag.clone(), ctx.server_capabilities)
         }
-        CommandBody::Logout => anystate::logout(),
+        CommandBody::Logout => anystate::logout(ctx.req.tag.clone()),
 
         // Specific to this state (11 commands)
         CommandBody::Create { mailbox } => ctx.create(mailbox).await,
@@ -213,7 +213,7 @@ impl<'a> AuthenticatedContext<'a> {
                         .to_req(self.req)
                         .message("LIST complete")
                         .data(Data::List {
-                            items: vec![],
+                            items: vec![FlagNameAttribute::Noselect],
                             delimiter: Some(mbx_hier_delim),
                             mailbox: "".try_into().unwrap(),
                         })

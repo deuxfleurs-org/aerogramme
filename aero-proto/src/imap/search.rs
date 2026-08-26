@@ -20,6 +20,7 @@ impl SeqType {
     }
 }
 
+#[derive(Debug)]
 pub struct Criteria<'a>(pub &'a SearchKey<'a>);
 impl<'a> Criteria<'a> {
     /// Returns a set of email identifiers that is greater or equal
@@ -57,9 +58,11 @@ impl<'a> Criteria<'a> {
                 }
             }
             SearchKey::And(search_list) => {
-                tracing::debug!(
-                    "using AND in a search request is slow: no intersection is performed"
-                );
+                if search_list.as_ref().len() > 1 {
+                    tracing::debug!(
+                        "using AND in a search request is slow: no intersection is performed"
+                    );
+                }
                 // As we perform no intersection, we don't care if we mix uid or id.
                 // We only keep the smallest range, being it ID or UID, depending of
                 // which one has the less items. This is an approximation as UID ranges
@@ -277,7 +280,7 @@ impl<'a> Criteria<'a> {
                 .imf()
                 .map(|imf| imf.naive_date().ok())
                 .flatten()
-                .map(|msg_naive| &msg_naive > search_naive.as_ref())
+                .map(|msg_naive| &msg_naive >= search_naive.as_ref())
                 .unwrap_or(false),
 
             // Filter on the full content of the email
@@ -343,6 +346,7 @@ fn approx_sequence_size(seq: &Sequence) -> u64 {
 
 // --- Partial decision things ----
 
+#[derive(Debug)]
 enum PartialDecision {
     Keep,
     Discard,
@@ -416,7 +420,7 @@ fn is_keep_flag(sk: &SearchKey, midx: &MailIndex) -> bool {
         Recent => midx.is_flag_set("\\Recent"),
         Seen => midx.is_flag_set("\\Seen"),
         Unanswered => {
-            let is_answered = midx.is_flag_set("\\Recent");
+            let is_answered = midx.is_flag_set("\\Answered");
             !is_answered
         }
         Undeleted => {

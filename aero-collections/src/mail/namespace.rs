@@ -114,8 +114,13 @@ impl MailboxNs {
 
     /// Creates a new mailbox in the user's IMAP namespace.
     pub async fn create(&self, name: &str) -> Result<()> {
+        // "If the mailbox name is suffixed with the server's hierarchy
+        // separator character (as returned from the server by a LIST command),
+        // this is a declaration that the client intends to create mailbox names
+        // under this name in the hierarchy. Server implementations that do not
+        // require this declaration MUST ignore the declaration."
         if name.ends_with(MAILBOX_HIERARCHY_DELIMITER) {
-            bail!("Invalid mailbox name: {}", name);
+            return Ok(())
         }
 
         let (mut list, ct) = self.load_mailbox_list().await?;

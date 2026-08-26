@@ -27,7 +27,7 @@ pub async fn dispatch(ctx: AnonymousContext<'_>) -> Result<(Response<'static>, f
         CommandBody::Capability => {
             anystate::capability(ctx.req.tag.clone(), ctx.server_capabilities)
         }
-        CommandBody::Logout => anystate::logout(),
+        CommandBody::Logout => anystate::logout(ctx.req.tag.clone()),
 
         // Specific to anonymous context (3 commands)
         CommandBody::Login { username, password } => ctx.login(username, password).await,
