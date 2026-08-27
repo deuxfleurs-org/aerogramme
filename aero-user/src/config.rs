@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "role", rename = "Companion")]
@@ -177,16 +178,40 @@ pub enum AnyConfig {
     Provider(ProviderConfig),
 }
 
+#[derive(Debug, Error)]
+#[error("failed to read config file `{filename}`")]
+pub struct ReadConfigError {
+    #[source]
+    source: ReadConfigInnerError,
+    filename: PathBuf,
+}
+#[derive(Debug, Error)]
+pub enum ReadConfigInnerError {
+    #[error(transparent)]
+    IO(#[from] std::io::Error),
+    #[error(transparent)]
+    Parse(#[from] toml::de::Error),
+}
+
 // ---
-pub fn read_config<T: serde::de::DeserializeOwned>(config_file: PathBuf) -> Result<T> {
-    let mut file = std::fs::OpenOptions::new()
-        .read(true)
-        .open(config_file.as_path())?;
+pub fn read_config<T: serde::de::DeserializeOwned>(
+    config_file: PathBuf,
+) -> Result<T, ReadConfigError> {
+    fn inner<T: serde::de::DeserializeOwned>(
+        config_file: &Path,
+    ) -> Result<T, ReadConfigInnerError> {
+        let mut file = std::fs::OpenOptions::new().read(true).open(config_file)?;
 
-    let mut config = String::new();
-    file.read_to_string(&mut config)?;
+        let mut config = String::new();
+        file.read_to_string(&mut config)?;
 
-    Ok(toml::from_str(&config)?)
+        Ok(toml::from_str(&config)?)
+    }
+
+    inner(config_file.as_path()).map_err(|source| ReadConfigError {
+        source,
+        filename: config_file,
+    })
 }
 
 pub fn write_config<T: Serialize>(config_file: PathBuf, config: &T) -> Result<()> {
