@@ -215,7 +215,7 @@ impl NetLoop {
     ) -> () {
         let mut session = Instance::new(ctx.login_provider, ctx.server_capabilities);
         loop {
-            // Automatically seend BYE and disconnect as soon as we enter LOGOUT
+            // Automatically send BYE and disconnect as soon as we enter LOGOUT
             // state. This way the previous command that switched to LOGOUT
             // state could send its response independently of the BYE untagged
             // status.

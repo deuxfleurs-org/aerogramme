@@ -1,5 +1,9 @@
 use anyhow::{anyhow, bail, Context, Result};
-use imap_codec::imap_types::{command::Command, core::Tag};
+use imap_codec::imap_types::{
+    command::Command,
+    core::Tag,
+    response::{Code, Status},
+};
 
 use aero_user::login::ArcLoginProvider;
 use metrics::{INSTANCES_CREATED, INSTANCES_CURRENT};
@@ -8,7 +12,8 @@ use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anonymous, authenticated, selected};
 use crate::imap::flow;
 use crate::imap::request::Request;
-use crate::imap::response::{Response, ResponseOrIdle, SyncError};
+use crate::imap::response::{Body, Response, ResponseOrIdle, SyncError};
+
 //-----
 
 pub struct Instance {
@@ -122,7 +127,7 @@ impl Instance {
                     server_capabilities: &self.server_capabilities,
                     client_capabilities: &mut self.client_capabilities,
                     user,
-                };
+                };  
                 authenticated::dispatch(ctx).await
             }
             flow::State::Selected(ref user, ref mut mailbox, ref perm) => {
@@ -144,22 +149,35 @@ impl Instance {
                 .map(|r| (r, flow::Transition::None)),
         }
         .unwrap_or_else(|err| {
-            let transition =  
-                if let Some(e) = err.downcast_ref::<SyncError>() {
-                    tracing::debug!("command raised SyncError {e}, disconnecting client");
-                    flow::Transition::Logout
-                } else {
-                    tracing::error!("Command error {:?} occured while processing {:?}", err, cmd);
-                    flow::Transition::None
-                };
-            (
-                Response::build()
+            if let Some(e) = err.downcast_ref::<SyncError>() {
+                tracing::debug!("command raised SyncError {e}, disconnecting client");
+                match e {
+                    SyncError::UidvalidityChanged(uidv) => (
+                        Response::build()
+                            .to_req(&cmd)
+                            .message("Command rejected because UIDVALIDITY changed")
+                            .set_body(vec![Body::Status(Status::ok(
+                                None,
+                                Some(Code::UidValidity(*uidv)),
+                                "New UIDVALIDITY value!",
+                            ).unwrap()
+                            )])
+                            .no()
+                            .unwrap(),
+                        flow::Transition::Logout,
+                    )
+                }
+            } else {
+                tracing::error!("Command error {:?} occured while processing {:?}", err, cmd);
+                (
+                    Response::build()
                     .to_req(&cmd)
                     .message("Internal error while processing command")
                     .bad()
                     .unwrap(),
-                transition,
-            )
+                    flow::Transition::None,
+                )
+            }
         });
 
         if let Err(e) = self.state.apply(tr) {
