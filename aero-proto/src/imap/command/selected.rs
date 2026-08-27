@@ -5,7 +5,7 @@ use imap_codec::imap_types::datetime::DateTime;
 use imap_codec::imap_types::fetch::MacroOrMessageDataItemNames;
 use imap_codec::imap_types::flag::{Flag, StoreResponse, StoreType};
 use imap_codec::imap_types::mailbox::Mailbox as MailboxCodec;
-use imap_codec::imap_types::response::{Code, CodeOther};
+use imap_codec::imap_types::response::{Code, CodeOther, Status};
 use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::SequenceSet;
 use std::num::NonZeroU64;
@@ -17,7 +17,7 @@ use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anystate, append, authenticated, MailboxName};
 use crate::imap::flow;
 use crate::imap::mailbox_view::MailboxView;
-use crate::imap::response::Response;
+use crate::imap::response::{Body, Response};
 
 pub struct SelectedContext<'a> {
     pub req: &'a Command<'static>,
@@ -372,7 +372,7 @@ impl<'a> SelectedContext<'a> {
             }
         };
 
-        let (uidval, uid_map, data) = self.mailbox.r#move(sequence_set, &mut mb, uid).await?;
+        let (uidval, uid_map, mut data) = self.mailbox.r#move(sequence_set, &mut mb, uid).await?;
 
         // compute code
         let copyuid_str = format!(
@@ -389,14 +389,28 @@ impl<'a> SelectedContext<'a> {
                 .collect::<Vec<_>>()
                 .join(",")
         );
+        let copyuid_code = CodeOther::unvalidated(
+            format!("COPYUID {}", copyuid_str).into_bytes(),
+        );
 
+        // From RFC6851 (IMAP MOVE):
+        // "Servers implementing UIDPLUS are also advised to send the COPYUID
+        // response code in an untagged OK before sending EXPUNGE or moved
+        // responses. (Sending COPYUID in the tagged OK, as described in the
+        // UIDPLUS specification, means that clients first receive an EXPUNGE
+        // for a message and afterwards COPYUID for the same message. It can be
+        // unnecessarily difficult to process that sequence usefully.)"
+        data.insert(0, Body::Status(Status::ok(
+            None,
+            Some(Code::Other(copyuid_code.clone())),
+            "Copy UIDs",
+        )?));
+        
         Ok((
             Response::build()
                 .to_req(self.req)
                 .message("COPY completed")
-                .code(Code::Other(CodeOther::unvalidated(
-                    format!("COPYUID {}", copyuid_str).into_bytes(),
-                )))
+                .code(Code::Other(copyuid_code))
                 .set_body(data)
                 .ok()?,
             flow::Transition::None,
