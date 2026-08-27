@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::{anyhow, bail};
 use async_trait::async_trait;
+use thiserror::Error;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::watch;
 
@@ -166,7 +167,11 @@ impl LoginProvider for StaticLoginProvider {
     }
 }
 
-pub fn hash_password(password: &str) -> Result<String> {
+#[derive(Debug, Error)]
+#[error("failed to hash password")]
+pub struct HashPasswordError(#[from] argon2::password_hash::Error);
+
+pub fn hash_password(password: &str) -> Result<String, HashPasswordError> {
     use argon2::{
         password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
         Argon2,
@@ -174,8 +179,7 @@ pub fn hash_password(password: &str) -> Result<String> {
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();
     Ok(argon2
-        .hash_password(password.as_bytes(), &salt)
-        .map_err(|e| anyhow!("Argon2 error: {}", e))?
+        .hash_password(password.as_bytes(), &salt)?
         .to_string())
 }
 
