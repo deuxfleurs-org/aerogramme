@@ -2,6 +2,7 @@ use anyhow::Result;
 use imap_codec::imap_types::command::Command;
 use imap_codec::imap_types::core::Tag;
 use imap_codec::imap_types::response::{Code, Data, Status};
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use tokio::sync::Notify;
 
@@ -125,7 +126,7 @@ pub enum ResponseOrIdle {
 
 #[derive(Debug)]
 pub enum SyncError {
-    UidvalidityChanged,
+    UidvalidityChanged(NonZeroU32),
 }
 
 impl std::fmt::Display for SyncError {
