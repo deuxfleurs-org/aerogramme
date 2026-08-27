@@ -211,6 +211,7 @@ EOF
         #
         # --- MAINTENANCE AND RELEASE TOOLING ---
         # expected to be call with nix run .#tools.build and nix run .#tools.push
+        # for maintenance : `nix run .#tools.fmt` and `nix run .#tools.clippy`
         ###
         tools = rec {
           version = cross.amd64.crate.version; # bind version on amd64 crate
@@ -223,6 +224,14 @@ set -euxo pipefail
 cargo fmt --all --check
           '';
 
+          lints = pkgs.writeScriptBin "aerogramme-lints" ''
+#!/usr/bin/env bash
+set -euxo pipefail
+
+export RUSTFLAGS="-D warnings"
+cargo clippy --workspace --locked --all-targets --profile=test
+          '';
+
           ci = pkgs.writeScriptBin "aerogramme-ci" ''
 #!/usr/bin/env bash
 set -euxo pipefail
@@ -230,6 +239,9 @@ echo "--- Starting CI checks ---"
 
 echo "Checking format..."
 nix run .#tools.fmt
+
+echo "Checking lints..."
+nix run .#tools.lints
 
 echo "--- All CI checks passed! ---"
           '';
