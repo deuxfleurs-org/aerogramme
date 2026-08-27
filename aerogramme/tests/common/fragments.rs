@@ -170,7 +170,7 @@ pub enum ListReturn {
 }
 
 pub fn capability(imap: &mut TcpStream, ext: Extension) -> Result<()> {
-    imap.write(&b"5 capability\r\n"[..])?;
+    imap.write_all(&b"5 capability\r\n"[..])?;
 
     let maybe_ext = match ext {
         Extension::None => None,
@@ -198,7 +198,7 @@ pub fn login(imap: &mut TcpStream, account: Account) -> Result<()> {
     let mut buffer: [u8; 1500] = [0; 1500];
 
     assert!(matches!(account, Account::Alice));
-    imap.write(&b"10 login alice hunter2\r\n"[..])?;
+    imap.write_all(&b"10 login alice hunter2\r\n"[..])?;
 
     let read = read_lines(imap, &mut buffer, None)?;
     assert_eq!(&read[..5], &b"10 OK"[..]);
@@ -210,7 +210,7 @@ pub fn login_with_literal(imap: &mut TcpStream, account: Account) -> Result<()> 
     let mut buffer: [u8; 1500] = [0; 1500];
 
     assert!(matches!(account, Account::Alice));
-    imap.write(&b"10 login {5+}\r\nalice {7+}\r\nhunter2\r\n"[..])?;
+    imap.write_all(&b"10 login {5+}\r\nalice {7+}\r\nhunter2\r\n"[..])?;
     let _read = read_lines(imap, &mut buffer, Some(&b"10 OK"[..]))?;
     Ok(())
 }
@@ -225,7 +225,7 @@ pub fn create_mailbox(imap: &mut TcpStream, mbx: Mailbox) -> Result<()> {
     };
 
     let cmd = format!("15 create {}\r\n", mbx_str);
-    imap.write(cmd.as_bytes())?;
+    imap.write_all(cmd.as_bytes())?;
     let read = read_lines(imap, &mut buffer, None)?;
     assert_eq!(&read[..12], &b"15 OK CREATE"[..]);
 
@@ -244,7 +244,7 @@ pub fn list(imap: &mut TcpStream, select: MbxSelect, mod_return: ListReturn) -> 
         ListReturn::StatusMessagesUnseen => " RETURN (STATUS (MESSAGES UNSEEN))",
     };
 
-    imap.write(format!("19 LIST \"\" \"{}\"{}\r\n", select_str, mod_return_str).as_bytes())?;
+    imap.write_all(format!("19 LIST \"\" \"{}\"{}\r\n", select_str, mod_return_str).as_bytes())?;
 
     let read = read_lines(imap, &mut buffer, Some(&b"19 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
@@ -265,7 +265,7 @@ pub fn select(imap: &mut TcpStream, mbx: Mailbox, modifier: SelectMod) -> Result
         SelectMod::None => "",
     };
 
-    imap.write(format!("20 select {}{}\r\n", mbx_str, mod_str).as_bytes())?;
+    imap.write_all(format!("20 select {}{}\r\n", mbx_str, mod_str).as_bytes())?;
 
     let read = read_lines(imap, &mut buffer, Some(&b"20 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
@@ -274,7 +274,7 @@ pub fn select(imap: &mut TcpStream, mbx: Mailbox, modifier: SelectMod) -> Result
 }
 
 pub fn unselect(imap: &mut TcpStream) -> Result<()> {
-    imap.write(&b"70 unselect\r\n"[..])?;
+    imap.write_all(&b"70 unselect\r\n"[..])?;
     let mut buffer: [u8; 1500] = [0; 1500];
     let _read = read_lines(imap, &mut buffer, Some(&b"70 OK"[..]))?;
 
@@ -284,7 +284,7 @@ pub fn unselect(imap: &mut TcpStream) -> Result<()> {
 pub fn check(imap: &mut TcpStream) -> Result<()> {
     let mut buffer: [u8; 1500] = [0; 1500];
 
-    imap.write(&b"21 check\r\n"[..])?;
+    imap.write_all(&b"21 check\r\n"[..])?;
     let _read = read_lines(imap, &mut buffer, Some(&b"21 OK"[..]))?;
 
     Ok(())
@@ -300,7 +300,7 @@ pub fn status(imap: &mut TcpStream, mbx: Mailbox, sk: StatusKind) -> Result<Stri
         StatusKind::UidNext => "(UIDNEXT)",
         StatusKind::HighestModSeq => "(HIGHESTMODSEQ)",
     };
-    imap.write(format!("25 STATUS {} {}\r\n", mbx_str, sk_str).as_bytes())?;
+    imap.write_all(format!("25 STATUS {} {}\r\n", mbx_str, sk_str).as_bytes())?;
     let mut buffer: [u8; 6000] = [0; 6000];
     let read = read_lines(imap, &mut buffer, Some(&b"25 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
@@ -314,7 +314,7 @@ pub fn lmtp_handshake(lmtp: &mut TcpStream) -> Result<()> {
     let _read = read_lines(lmtp, &mut buffer, None)?;
     assert_eq!(&buffer[..4], &b"220 "[..]);
 
-    lmtp.write(&b"LHLO example.tld\r\n"[..])?;
+    lmtp.write_all(&b"LHLO example.tld\r\n"[..])?;
     let _read = read_lines(lmtp, &mut buffer, Some(&b"250 "[..]))?;
 
     Ok(())
@@ -328,17 +328,17 @@ pub fn lmtp_deliver_email(lmtp: &mut TcpStream, email_type: Email) -> Result<()>
         Email::Multipart => EMAIL1,
         Email::Other(eml) => eml,
     };
-    lmtp.write(&b"MAIL FROM:<bob@example.tld>\r\n"[..])?;
+    lmtp.write_all(&b"MAIL FROM:<bob@example.tld>\r\n"[..])?;
     let _read = read_lines(lmtp, &mut buffer, Some(&b"250 2.0.0"[..]))?;
 
-    lmtp.write(&b"RCPT TO:<alice@example.tld>\r\n"[..])?;
+    lmtp.write_all(&b"RCPT TO:<alice@example.tld>\r\n"[..])?;
     let _read = read_lines(lmtp, &mut buffer, Some(&b"250 2.1.5"[..]))?;
 
-    lmtp.write(&b"DATA\r\n"[..])?;
+    lmtp.write_all(&b"DATA\r\n"[..])?;
     let _read = read_lines(lmtp, &mut buffer, Some(&b"354 "[..]))?;
 
-    lmtp.write(email)?;
-    lmtp.write(&b"\r\n.\r\n"[..])?;
+    lmtp.write_all(email)?;
+    lmtp.write_all(&b"\r\n.\r\n"[..])?;
     let _read = read_lines(lmtp, &mut buffer, Some(&b"250 2.0.0"[..]))?;
 
     Ok(())
@@ -350,7 +350,7 @@ pub fn noop_exists(imap: &mut TcpStream, must_exists: u32) -> Result<()> {
     let mut max_retry = 20;
     loop {
         max_retry -= 1;
-        imap.write(&b"30 NOOP\r\n"[..])?;
+        imap.write_all(&b"30 NOOP\r\n"[..])?;
         let read = read_lines(imap, &mut buffer, Some(&b"30 OK"[..]))?;
         let srv_msg = std::str::from_utf8(read)?;
 
@@ -402,7 +402,7 @@ pub fn fetch(
         FetchMod::ChangedSince(val) => format!(" (CHANGEDSINCE {})", val),
     };
 
-    imap.write(format!("40 fetch {} {}{}\r\n", sel_str, kind_str, mod_str).as_bytes())?;
+    imap.write_all(format!("40 fetch {} {}{}\r\n", sel_str, kind_str, mod_str).as_bytes())?;
 
     let read = read_lines(imap, &mut buffer, Some(&b"40 OK FETCH"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
@@ -415,7 +415,7 @@ pub fn copy(imap: &mut TcpStream, selection: Selection, to: Mailbox) -> Result<S
     assert!(matches!(selection, Selection::FirstId));
     assert!(matches!(to, Mailbox::Archive));
 
-    imap.write(&b"45 copy 1 ArchiveCustom\r\n"[..])?;
+    imap.write_all(&b"45 copy 1 ArchiveCustom\r\n"[..])?;
     let read = read_lines(imap, &mut buffer, None)?;
     assert_eq!(&read[..5], &b"45 OK"[..]);
     let srv_msg = std::str::from_utf8(read)?;
@@ -435,15 +435,15 @@ fn append_internal(imap: &mut TcpStream, content: Email, seen: bool) -> Result<S
     let flags = if seen { "(\\Seen)" } else { "()" };
     let append_cmd = format!("47 append inbox {} {{{}}}\r\n", flags, ref_mail.len());
     println!("append cmd: {}", append_cmd);
-    imap.write(append_cmd.as_bytes())?;
+    imap.write_all(append_cmd.as_bytes())?;
 
     // wait for continuation
     let read = read_lines(imap, &mut buffer, None)?;
     assert_eq!(read[0], b'+');
 
     // write our stuff
-    imap.write(ref_mail)?;
-    imap.write(&b"\r\n"[..])?;
+    imap.write_all(ref_mail)?;
+    imap.write_all(&b"\r\n"[..])?;
     let read = read_lines(imap, &mut buffer, Some(&b"47 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
 
@@ -470,7 +470,7 @@ pub fn search(imap: &mut TcpStream, sk: SearchKind) -> Result<String> {
         SearchKind::UidRange(_, _) => "UID ",
         _ => "",
     };
-    imap.write(format!("55 {}SEARCH {}\r\n", prefix, sk_str).as_bytes())?;
+    imap.write_all(format!("55 {}SEARCH {}\r\n", prefix, sk_str).as_bytes())?;
     let mut buffer: [u8; 1500] = [0; 1500];
     let read = read_lines(imap, &mut buffer, Some(&b"55 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
@@ -512,14 +512,16 @@ pub fn store(
         StoreAction::SetFlagsSilent => "FLAGS.SILENT",
     };
 
-    imap.write(format!("57 STORE {}{} {} {}\r\n", seq, modif, action_str, flags_str).as_bytes())?;
+    imap.write_all(
+        format!("57 STORE {}{} {} {}\r\n", seq, modif, action_str, flags_str).as_bytes(),
+    )?;
     let read = read_lines(imap, &mut buffer, Some(&b"57 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
     Ok(srv_msg.to_string())
 }
 
 pub fn expunge(imap: &mut TcpStream) -> Result<()> {
-    imap.write(&b"60 expunge\r\n"[..])?;
+    imap.write_all(&b"60 expunge\r\n"[..])?;
     let mut buffer: [u8; 1500] = [0; 1500];
     let _read = read_lines(imap, &mut buffer, Some(&b"60 OK EXPUNGE"[..]))?;
 
@@ -535,7 +537,7 @@ pub fn uid_expunge(imap: &mut TcpStream, sel: Selection) -> Result<String> {
         Id(n) => &n.to_string(),
         All => "1:*",
     };
-    imap.write(format!("61 UID EXPUNGE {}\r\n", selstr).as_bytes())?;
+    imap.write_all(format!("61 UID EXPUNGE {}\r\n", selstr).as_bytes())?;
     let read = read_lines(imap, &mut buffer, Some(&b"61 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
     Ok(srv_msg.to_string())
@@ -545,12 +547,12 @@ pub fn rename_mailbox(imap: &mut TcpStream, from: Mailbox, to: Mailbox) -> Resul
     assert!(matches!(from, Mailbox::Archive));
     assert!(matches!(to, Mailbox::Drafts));
 
-    imap.write(&b"70 rename ArchiveCustom DraftsCustom\r\n"[..])?;
+    imap.write_all(&b"70 rename ArchiveCustom DraftsCustom\r\n"[..])?;
     let mut buffer: [u8; 1500] = [0; 1500];
     let read = read_lines(imap, &mut buffer, None)?;
     assert_eq!(&read[..5], &b"70 OK"[..]);
 
-    imap.write(&b"71 list \"\" *\r\n"[..])?;
+    imap.write_all(&b"71 list \"\" *\r\n"[..])?;
     let read = read_lines(imap, &mut buffer, Some(&b"71 OK LIST"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
     assert!(!srv_msg.contains(" ArchiveCustom\r\n"));
@@ -568,12 +570,12 @@ pub fn delete_mailbox(imap: &mut TcpStream, mbx: Mailbox) -> Result<()> {
     };
     let cmd = format!("80 delete {}\r\n", mbx_str);
 
-    imap.write(cmd.as_bytes())?;
+    imap.write_all(cmd.as_bytes())?;
     let mut buffer: [u8; 1500] = [0; 1500];
     let read = read_lines(imap, &mut buffer, None)?;
     assert_eq!(&read[..5], &b"80 OK"[..]);
 
-    imap.write(&b"81 list \"\" *\r\n"[..])?;
+    imap.write_all(&b"81 list \"\" *\r\n"[..])?;
     let read = read_lines(imap, &mut buffer, Some(&b"81 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
     assert!(srv_msg.contains(" INBOX\r\n"));
@@ -583,7 +585,7 @@ pub fn delete_mailbox(imap: &mut TcpStream, mbx: Mailbox) -> Result<()> {
 }
 
 pub fn close(imap: &mut TcpStream) -> Result<()> {
-    imap.write(&b"60 close\r\n"[..])?;
+    imap.write_all(&b"60 close\r\n"[..])?;
     let mut buffer: [u8; 1500] = [0; 1500];
     let _read = read_lines(imap, &mut buffer, Some(&b"60 OK"[..]))?;
 
@@ -595,7 +597,7 @@ pub fn r#move(imap: &mut TcpStream, selection: Selection, to: Mailbox) -> Result
     assert!(matches!(to, Mailbox::Archive));
     assert!(matches!(selection, Selection::FirstId));
 
-    imap.write(&b"35 move 1 ArchiveCustom\r\n"[..])?;
+    imap.write_all(&b"35 move 1 ArchiveCustom\r\n"[..])?;
     let read = read_lines(imap, &mut buffer, Some(&b"35 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
     assert!(srv_msg.contains("* 1 EXPUNGE"));
@@ -607,7 +609,7 @@ pub fn enable(imap: &mut TcpStream, ask: Enable, done: Option<Enable>) -> Result
     let mut buffer: [u8; 6000] = [0; 6000];
     assert!(matches!(ask, Enable::Utf8Accept));
 
-    imap.write(&b"36 enable UTF8=ACCEPT\r\n"[..])?;
+    imap.write_all(&b"36 enable UTF8=ACCEPT\r\n"[..])?;
     let read = read_lines(imap, &mut buffer, Some(&b"36 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
     match done {
@@ -624,7 +626,7 @@ pub fn enable(imap: &mut TcpStream, ask: Enable, done: Option<Enable>) -> Result
 
 pub fn start_idle(imap: &mut TcpStream) -> Result<()> {
     let mut buffer: [u8; 1500] = [0; 1500];
-    imap.write(&b"98 IDLE\r\n"[..])?;
+    imap.write_all(&b"98 IDLE\r\n"[..])?;
     let read = read_lines(imap, &mut buffer, None)?;
     assert_eq!(read[0], b'+');
     Ok(())
@@ -632,14 +634,14 @@ pub fn start_idle(imap: &mut TcpStream) -> Result<()> {
 
 pub fn stop_idle(imap: &mut TcpStream) -> Result<String> {
     let mut buffer: [u8; 16536] = [0; 16536];
-    imap.write(&b"DONE\r\n"[..])?;
+    imap.write_all(&b"DONE\r\n"[..])?;
     let read = read_lines(imap, &mut buffer, Some(&b"98 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
     Ok(srv_msg.to_string())
 }
 
 pub fn logout(imap: &mut TcpStream) -> Result<()> {
-    imap.write(&b"99 logout\r\n"[..])?;
+    imap.write_all(&b"99 logout\r\n"[..])?;
     let mut buffer: [u8; 1500] = [0; 1500];
     let read = read_lines(imap, &mut buffer, Some(&b"* BYE"[..]))?;
     assert_eq!(&read[..5], &b"99 OK"[..]);
