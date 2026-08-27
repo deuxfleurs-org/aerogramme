@@ -31,3 +31,6 @@ quickcheck.workspace = true
 quickcheck_macros.workspace = true
 itertools.workspace = true
 maplit.workspace = true
+
+[lints]
+workspace = true

@@ -24,3 +24,6 @@ hex.workspace = true
 
 #log.workspace = true
 #serde.workspace = true
+
+[lints]
+workspace = true

@@ -45,3 +45,6 @@ tracing.workspace = true
 quick-xml.workspace = true
 icalendar.workspace = true
 prometheus.workspace = true
+
+[lints]
+workspace = true

@@ -30,3 +30,6 @@ test = false
 name = "fuzz_data_parser"
 path = "fuzz_targets/fuzz_data_parser.rs"
 test = false
+
+[lints]
+workspace = true

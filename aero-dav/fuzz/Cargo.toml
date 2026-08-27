@@ -22,3 +22,6 @@ path = "fuzz_targets/dav.rs"
 test = false
 doc = false
 bench = false
+
+[lints]
+workspace = true

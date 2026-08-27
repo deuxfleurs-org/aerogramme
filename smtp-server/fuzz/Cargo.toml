@@ -23,3 +23,6 @@ smtp-server = { path = ".." }
 name = "fuzz_interact"
 path = "fuzz_targets/fuzz_interact.rs"
 test = false
+
+[lints]
+workspace = true

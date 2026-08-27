@@ -131,3 +131,14 @@ prometheus-hyper = "0.2.1"
 [patch.crates-io]
 imap-types = { git = "https://github.com/superboum/imap-codec", branch = "custom/aerogramme" }
 imap-codec = { git = "https://github.com/superboum/imap-codec", branch = "custom/aerogramme" }
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
+non_upper_case_globals = "allow"
+
+[workspace.lints.clippy]
+complexity = "allow"
+correctness = "warn"
+perf = "allow"
+style = "allow"
+suspicious = "allow"

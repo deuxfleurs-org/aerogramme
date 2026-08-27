@@ -31,3 +31,6 @@ rmp-serde.workspace = true
 toml.workspace = true
 tracing.workspace = true
 argon2.workspace = true
+
+[lints]
+workspace = true
