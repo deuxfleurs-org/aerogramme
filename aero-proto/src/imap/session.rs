@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use imap_codec::imap_types::{command::Command, core::Tag};
 
 use aero_user::login::ArcLoginProvider;
-use metrics::{INSTANCES_CREATED, INSTANCES_CURRENT};
+use metrics::{NB_CREATED_SESSIONS, NB_CURRENT_SESSIONS};
 
 use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anonymous, authenticated, selected};
@@ -19,8 +19,8 @@ pub struct Instance {
 }
 impl Instance {
     pub fn new(login_provider: ArcLoginProvider, cap: ServerCapability) -> Self {
-        INSTANCES_CREATED.inc();
-        INSTANCES_CURRENT.inc();
+        NB_CREATED_SESSIONS.inc();
+        NB_CURRENT_SESSIONS.inc();
         let client_cap = ClientCapability::new(&cap);
         Self {
             login_provider,
@@ -188,6 +188,6 @@ impl Instance {
 
 impl Drop for Instance {
     fn drop(&mut self) {
-        INSTANCES_CURRENT.dec();
+        NB_CURRENT_SESSIONS.dec();
     }
 }
