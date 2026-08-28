@@ -47,22 +47,20 @@ pub struct UidIndex {
     // - generate mail UIDs: UIDNEXT is `internalseq`
     // - detect conflicts between concurrent MailAdd commands.
     //
-    // NOTE: the fact that we do not count MailDel commands is an optimization
-    // to reduce uidvalidity changes. It relies on the assumption that an
-    // email is never added twice to the mailbox.
-    // (It would otherwise be natural to count all modifications to the list
-    // of emails, i.e. all MailAdd and MailDel commands.)
+    // NOTE: we do not count MailDel commands. This is an optimization to reduce
+    // uidvalidity changes, which relies on the assumption that an email is
+    // never added twice to the mailbox with the same UniqueIdent. The code in
+    // `mailbox.rs` (for append, copy, move) ensures that this assumption always
+    // holds.
     //
-    // Indeed: if we ensure that an email is never added twice with the same
-    // `UniqueIdent` in a mailbox, then there is no need to bump `internalseq`
-    // when receiving a MailDel. Bumping the `internalseq` causes later MailAdd
-    // operations to be replayed with different `ImapUid`s. However, if we know
-    // that there is only one MailAdd possible for the same `UniqueIdent`, then
-    // either:
+    // Reasoning: consider a MailDel operation. Bumping `internalseq` causes
+    // later MailAdd operations to be replayed with different `ImapUid`s.
+    // However, if we know that there is only one MailAdd possible for the same
+    // `UniqueIdent`, then either:
     // - it occurs before the MailDel (and is not replayed),
     // - it occurs after the MailDel, and thus the deletion is a no-op.
     //
-    // In both cases, there is no actual `ImapUid` conflicts: it is safe to keep
+    // In both cases, there is no actual `ImapUid` conflict: it is safe to keep
     // `ImapUid`s as they were, and thus no need to bump `internalseq` and
     // `uidvalidity`.
     internalseq: ImapUid,
