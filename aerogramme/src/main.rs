@@ -1,11 +1,12 @@
 mod server;
 
-use std::io::Read;
-use std::path::PathBuf;
+use std::{io::Read, net::IpAddr, net::Ipv6Addr, net::SocketAddr, path::PathBuf, sync::Arc};
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use nix::{sys::signal, unistd::Pid};
+
+use prometheus_hyper::Server as PrometheusServer;
 
 use crate::server::Server;
 use aero_user::config::*;
@@ -150,6 +151,25 @@ fn tracer() {
     tracing_subscriber::fmt::init();
 }
 
+async fn serve_metrics(config: Option<PrometheusEndpointConfig>) {
+    if let Some(cfg) = config {
+        let _jh = tokio::spawn(async move {
+            if let Err(e) = PrometheusServer::run(
+                Arc::clone(&metrics::REGISTRY),
+                cfg.bind_addr,
+                std::future::pending(),
+            )
+            .await
+            {
+                tracing::error!("Prometheus server error: {}", e);
+            }
+        });
+        tracing::info!("Metric server available at {:#}", cfg.bind_addr);
+    } else {
+        return;
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     if std::env::var("RUST_LOG").is_err() {
@@ -174,7 +194,6 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
     let any_config = if args.dev {
-        use std::net::*;
         AnyConfig::Provider(ProviderConfig {
             pid: None,
             imap: None,
@@ -194,6 +213,9 @@ async fn main() -> Result<()> {
                     IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)),
                     12345,
                 ),
+            }),
+            metrics: Some(PrometheusEndpointConfig {
+                bind_addr: SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)), 8080),
             }),
             users: UserManagement::Demo,
         })
@@ -216,27 +238,34 @@ async fn main() -> Result<()> {
                 account_management(&args.command, cmd, user_file)?;
             }
         },
-        (Command::Provider(subcommand), AnyConfig::Provider(config)) => match subcommand {
-            ProviderCommand::Daemon => {
-                let server = Server::from_provider_config(config).await?;
-                server.run().await?;
+        (Command::Provider(subcommand), AnyConfig::Provider(config)) => {
+            // Register all metrics at launch
+            metrics::register_all()?;
+
+            // Launch HTTP metric server in background, it handles its own errors
+            serve_metrics(config.metrics.clone()).await;
+            match subcommand {
+                ProviderCommand::Daemon => {
+                    let server = Server::from_provider_config(config).await?;
+                    server.run().await?;
+                }
+                ProviderCommand::Reload { pid } => reload(*pid, config.pid)?,
+                ProviderCommand::Account(cmd) => {
+                    let user_file = match config.users {
+                        UserManagement::Static(conf) => conf.user_list,
+                        _ => {
+                            panic!("Only static account management is supported from Aerogramme.")
+                        }
+                    };
+                    account_management(&args.command, cmd, user_file)?;
+                }
             }
-            ProviderCommand::Reload { pid } => reload(*pid, config.pid)?,
-            ProviderCommand::Account(cmd) => {
-                let user_file = match config.users {
-                    UserManagement::Static(conf) => conf.user_list,
-                    _ => {
-                        panic!("Only static account management is supported from Aerogramme.")
-                    }
-                };
-                account_management(&args.command, cmd, user_file)?;
-            }
-        },
+        }
         (Command::Provider(_), AnyConfig::Companion(_)) => {
-            bail!("Your want to run a 'Provider' command but your configuration file has role 'Companion'.");
+            bail!("You want to run a 'Provider' command but your configuration file has role 'Companion'.");
         }
         (Command::Companion(_), AnyConfig::Provider(_)) => {
-            bail!("Your want to run a 'Companion' command but your configuration file has role 'Provider'.");
+            bail!("You want to run a 'Companion' command but your configuration file has role 'Provider'.");
         }
         (Command::Tools(subcommand), _) => match subcommand {
             ToolsCommand::PasswordHash { maybe_password } => {

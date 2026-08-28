@@ -2,14 +2,15 @@ use anyhow::{anyhow, bail, Context, Result};
 use imap_codec::imap_types::{command::Command, core::Tag};
 
 use aero_user::login::ArcLoginProvider;
+use metrics::{INSTANCES_CREATED, INSTANCES_CURRENT};
 
 use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anonymous, authenticated, selected};
 use crate::imap::flow;
 use crate::imap::request::Request;
 use crate::imap::response::{Response, ResponseOrIdle, SyncError};
-
 //-----
+
 pub struct Instance {
     pub login_provider: ArcLoginProvider,
     pub server_capabilities: ServerCapability,
@@ -18,6 +19,8 @@ pub struct Instance {
 }
 impl Instance {
     pub fn new(login_provider: ArcLoginProvider, cap: ServerCapability) -> Self {
+        INSTANCES_CREATED.inc();
+        INSTANCES_CURRENT.inc();
         let client_cap = ClientCapability::new(&cap);
         Self {
             login_provider,
@@ -180,5 +183,11 @@ impl Instance {
             flow::State::Idle(_, _, _, _, n) => ResponseOrIdle::StartIdle(n.clone()),
             _ => ResponseOrIdle::Response(resp),
         }*/
+    }
+}
+
+impl Drop for Instance {
+    fn drop(&mut self) {
+        INSTANCES_CURRENT.dec();
     }
 }
