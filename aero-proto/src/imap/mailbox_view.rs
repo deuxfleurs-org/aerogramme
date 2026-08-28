@@ -115,20 +115,28 @@ impl MailboxView {
     /// to receive unsolicited UIDVALIDITY updates (these are not explicitly
     /// allowed by the IMAP4 RFC, even if RFC2683 suggests them...).
     ///
+    /// If "modseqvalidity" changes we similarly disconnect the client. Just
+    /// like a change in UIDVALIDITY signals a conflict in UID assignations, a
+    /// change in modseqvalidity signals a conflict in MODSEQ assignations.
+    /// (MODSEQ comes from the CONDSTORE extension.)
+    ///
     /// This is an internal helper. It (or `checked_sync_no_update`) must be
     /// called at the beginning of each IMAP operation.
     async fn checked_sync(&mut self) -> Result<()> {
         self.mailbox.sync().await?;
-        let uidvalidity = self.mailbox.current_uid_index().uidvalidity; 
-        if uidvalidity != self.known_state.uidvalidity {
-            return Err(SyncError::UidvalidityChanged(uidvalidity).into())
+        let cur_state = self.mailbox.current_uid_index();
+        if cur_state.uidvalidity != self.known_state.uidvalidity {
+            return Err(SyncError::UidvalidityChanged(cur_state.uidvalidity).into())
+        }
+        if cur_state.modseqvalidity != self.known_state.modseqvalidity {
+            return Err(SyncError::ModseqvalidityChanged(cur_state.modseqvalidity).into())
         }
         Ok(())
     }
 
     /// Like `checked_sync`, import remote changes to the mailbox and raise an
-    /// error if UIDVALIDITY changed. Unlike `checked_sync`, does not update the
-    /// internal mailbox.
+    /// error if UIDVALIDITY or modseqvalidity changed. Unlike `checked_sync`,
+    /// does not update the internal mailbox.
     ///
     /// This is required for commands that take sequence IDs as input and must
     /// not see remote changes that could invalidate these sequence IDs (such as
@@ -139,9 +147,12 @@ impl MailboxView {
     async fn checked_sync_no_update(&self) -> Result<()> {
         let mut mbox = self.mailbox.clone();
         mbox.sync().await?;
-        let uidvalidity = mbox.current_uid_index().uidvalidity; 
-        if uidvalidity != self.known_state.uidvalidity {
-            return Err(SyncError::UidvalidityChanged(uidvalidity).into());
+        let cur_state = mbox.current_uid_index();
+        if cur_state.uidvalidity != self.known_state.uidvalidity {
+            return Err(SyncError::UidvalidityChanged(cur_state.uidvalidity).into());
+        }
+        if cur_state.modseqvalidity != self.known_state.modseqvalidity {
+            return Err(SyncError::ModseqvalidityChanged(cur_state.modseqvalidity).into());
         }
         Ok(())
     }
