@@ -12,11 +12,11 @@ use aero_user::config::*;
 // Here we list all metrics used in workspace
 lazy_static::lazy_static! {
     pub static ref INSTANCES_CREATED: IntCounter = IntCounter::with_opts(
-        Opts::new("imap_instances_created_total", "Number of created IMAP sessions since server run")
+        Opts::new("imap_nb_created_sessions", "Number of created IMAP sessions since server run")
     ).unwrap();
 
     pub static ref INSTANCES_CURRENT: IntGauge = IntGauge::with_opts(
-        Opts::new("imap_instances_current", "Number of current IMAP active sessions")
+        Opts::new("imap_nb_current_sessions", "Number of current IMAP active sessions")
     ).unwrap();
 }
 
