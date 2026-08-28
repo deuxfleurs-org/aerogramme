@@ -173,6 +173,14 @@ impl Instance {
                             .unwrap(),
                         flow::Transition::Logout,
                     ),
+                    SyncError::ModseqvalidityChanged(_modseqv) => (
+                        Response::build()
+                            .to_req(&cmd)
+                            .message("Command rejected because MODSEQ have been invalidated")
+                            .no()
+                            .unwrap(),
+                        flow::Transition::Logout,
+                    ),
                 }
             } else {
                 tracing::error!("Command error {:?} occured while processing {:?}", err, cmd);

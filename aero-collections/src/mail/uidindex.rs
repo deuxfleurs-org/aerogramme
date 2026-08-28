@@ -37,8 +37,14 @@ pub struct UidIndex {
     pub idx_seqid_of_uuid: OrdMap<UniqueIdent, ImapSeqid>,
 
     // "Public" Counters
+
+    // UIDVALIDITY as defined in IMAP
     pub uidvalidity: ImapUidvalidity,
-    pub highestmodseq: ModSeq,
+
+    // Not defined in IMAP, but similar to uidvalidity for MODSEQ counters:
+    // increases each time MODSEQ get reassigned because of concurrent commands.
+    pub modseqvalidity: u64,
+
     // Emails with an UID greater or equal than `recent_from` are "recent".
     pub recent_from: ImapUid,
 
@@ -262,7 +268,7 @@ impl Default for UidIndex {
             idx_seqid_of_uuid: OrdMap::new(),
 
             uidvalidity: NonZeroU32::new(1).unwrap(),
-            highestmodseq: NonZeroU64::new(1).unwrap(),
+            modseqvalidity: 0,
             recent_from: NonZeroU32::new(1).unwrap(),
 
             internalseq: 0,
@@ -278,14 +284,17 @@ impl BayouState for UidIndex {
         let mut new = self.clone();
         match op {
             UidIndexOp::MailAdd(ident, iseq, imodseq, flags) => {
-                // Change UIDValidity if there is a UID conflict or a MODSEQ conflict
+                // Change UIDValidity if there is a UID conflict
                 // The intuition: we increase the UIDValidity by the number of possible conflicts
                 // Proof: https://aerogramme.deuxfleurs.fr/documentation/internals/imap-uid/
-                if *iseq < new.internalseq || *imodseq < new.internalmodseq {
+                if *iseq < new.internalseq {
                     let bump_uid = new.internalseq - iseq;
-                    let bump_modseq = (new.internalmodseq - imodseq) as u32;
-                    new.uidvalidity =
-                        NonZeroU32::new(new.uidvalidity.get() + bump_uid + bump_modseq).unwrap();
+                    new.uidvalidity = NonZeroU32::new(new.uidvalidity.get() + bump_uid).unwrap();
+                }
+                // Change modseqvalidity if there is a modseq conflict
+                if *imodseq < new.internalmodseq {
+                    let bump_modseq = new.internalmodseq - imodseq;
+                    new.modseqvalidity = new.modseqvalidity + bump_modseq;
                 }
 
                 // Assign the real uid of the email using uidnext(), then bump
@@ -309,11 +318,10 @@ impl BayouState for UidIndex {
             }
             UidIndexOp::FlagAdd(ident, imodseq, new_flags) => {
                 if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
-                    // Bump UIDValidity if required
+                    // Bump modseqvalidity if required
                     if *imodseq < new.internalmodseq {
-                        let bump_modseq = (new.internalmodseq - imodseq) as u32;
-                        new.uidvalidity =
-                            NonZeroU32::new(new.uidvalidity.get() + bump_modseq).unwrap();
+                        let bump_modseq = new.internalmodseq - imodseq;
+                        new.modseqvalidity = new.modseqvalidity + bump_modseq;
                     }
 
                     // Add flags to the source of trust and the cache.
@@ -328,11 +336,10 @@ impl BayouState for UidIndex {
             }
             UidIndexOp::FlagDel(ident, imodseq, rm_flags) => {
                 if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
-                    // Bump UIDValidity if required
+                    // Bump modseqvalidity if required
                     if *imodseq < new.internalmodseq {
-                        let bump_modseq = (new.internalmodseq - imodseq) as u32;
-                        new.uidvalidity =
-                            NonZeroU32::new(new.uidvalidity.get() + bump_modseq).unwrap();
+                        let bump_modseq = new.internalmodseq - imodseq;
+                        new.modseqvalidity = new.modseqvalidity + bump_modseq;
                     }
 
                     // Remove flags from the source of trust and the cache
@@ -349,11 +356,10 @@ impl BayouState for UidIndex {
             }
             UidIndexOp::FlagSet(ident, imodseq, new_flags) => {
                 if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
-                    // Bump UIDValidity if required
+                    // Bump modseqvalidity if required
                     if *imodseq < new.internalmodseq {
-                        let bump_modseq = (new.internalmodseq - imodseq) as u32;
-                        new.uidvalidity =
-                            NonZeroU32::new(new.uidvalidity.get() + bump_modseq).unwrap();
+                        let bump_modseq = new.internalmodseq - imodseq;
+                        new.modseqvalidity = new.modseqvalidity + bump_modseq;
                     }
 
                     // Update flags from the source of trust and the cache
@@ -424,7 +430,7 @@ struct UidIndexSerializedRepr {
     mails: Vec<(ImapUid, ModSeq, UniqueIdent, Flags)>,
 
     uidvalidity: ImapUidvalidity,
-    highestmodseq: ModSeq,
+    modseqvalidity: u64,
     recent_from: ImapUid,
 
     internalseq: InternalSeq,
@@ -439,7 +445,7 @@ impl<'de> Deserialize<'de> for UidIndex {
         let val: UidIndexSerializedRepr = UidIndexSerializedRepr::deserialize(d)?;
         let mut uidindex = UidIndex {
             uidvalidity: val.uidvalidity,
-            highestmodseq: val.highestmodseq,
+            modseqvalidity: val.modseqvalidity,
             recent_from: val.recent_from,
             internalseq: val.internalseq,
             internalmodseq: val.internalmodseq,
@@ -467,7 +473,7 @@ impl Serialize for UidIndex {
         let val = UidIndexSerializedRepr {
             mails,
             uidvalidity: self.uidvalidity,
-            highestmodseq: self.highestmodseq,
+            modseqvalidity: self.modseqvalidity,
             recent_from: self.recent_from,
             internalseq: self.internalseq,
             internalmodseq: self.internalmodseq,
