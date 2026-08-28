@@ -14,6 +14,7 @@ use aero_proto::sasl as auth;
 use aero_user::config::*;
 use aero_user::login::ArcLoginProvider;
 use aero_user::login::{demo_provider::*, ldap_provider::*, static_provider::*};
+use metrics;
 
 pub struct Server {
     lmtp_server: Option<Arc<LmtpServer>>,
@@ -22,6 +23,7 @@ pub struct Server {
     auth_server: Option<auth::AuthServer>,
     dav_unsecure_server: Option<dav::Server>,
     dav_server: Option<dav::Server>,
+    metric_server: Option<metrics::MetricServer>,
     pid_file: Option<PathBuf>,
 }
 
@@ -39,6 +41,7 @@ impl Server {
             auth_server: None,
             dav_unsecure_server: None,
             dav_server: None,
+            metric_server: None,
             pid_file: config.pid,
         })
     }
@@ -69,6 +72,10 @@ impl Server {
             .dav
             .map(|dav_config| dav::new(dav_config, login.clone()))
             .transpose()?;
+        let metric_server = config
+            .metrics
+            .map(|metrics_config| metrics::MetricServer::new(metrics_config))
+            .transpose()?;
 
         Ok(Self {
             lmtp_server,
@@ -77,6 +84,7 @@ impl Server {
             dav_unsecure_server,
             dav_server,
             auth_server,
+            metric_server,
             pid_file: config.pid,
         })
     }
@@ -137,6 +145,12 @@ impl Server {
                 match self.dav_server {
                     None => Ok(()),
                     Some(s) => s.run(exit_signal.clone()).await,
+                }
+            },
+            async {
+                match self.metric_server {
+                    None => Ok(()),
+                    Some(m) => m.run(exit_signal.clone()).await,
                 }
             }
         )?;

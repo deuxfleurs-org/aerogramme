@@ -26,8 +26,6 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 rpassword.workspace = true
 rustls.workspace = true
-prometheus-hyper.workspace = true
-prometheus.workspace = true
 
 [dev-dependencies]
 reqwest.workspace = true

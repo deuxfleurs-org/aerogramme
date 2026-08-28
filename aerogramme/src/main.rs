@@ -1,12 +1,11 @@
 mod server;
 
-use std::{io::Read, net::IpAddr, net::Ipv6Addr, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{io::Read, net::IpAddr, net::Ipv6Addr, net::SocketAddr, path::PathBuf};
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use nix::{sys::signal, unistd::Pid};
 
-use prometheus_hyper::Server as PrometheusServer;
 
 use crate::server::Server;
 use aero_user::config::*;
@@ -151,25 +150,6 @@ fn tracer() {
     tracing_subscriber::fmt::init();
 }
 
-async fn serve_metrics(config: Option<PrometheusEndpointConfig>) {
-    if let Some(cfg) = config {
-        let _jh = tokio::spawn(async move {
-            if let Err(e) = PrometheusServer::run(
-                Arc::clone(&metrics::REGISTRY),
-                cfg.bind_addr,
-                std::future::pending(),
-            )
-            .await
-            {
-                tracing::error!("Prometheus server error: {}", e);
-            }
-        });
-        tracing::info!("Metric server available at {:#}", cfg.bind_addr);
-    } else {
-        return;
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     if std::env::var("RUST_LOG").is_err() {
@@ -238,27 +218,20 @@ async fn main() -> Result<()> {
                 account_management(&args.command, cmd, user_file)?;
             }
         },
-        (Command::Provider(subcommand), AnyConfig::Provider(config)) => {
-            // Register all metrics at launch
-            metrics::register_all()?;
-
-            // Launch HTTP metric server in background, it handles its own errors
-            serve_metrics(config.metrics.clone()).await;
-            match subcommand {
-                ProviderCommand::Daemon => {
-                    let server = Server::from_provider_config(config).await?;
-                    server.run().await?;
-                }
-                ProviderCommand::Reload { pid } => reload(*pid, config.pid)?,
-                ProviderCommand::Account(cmd) => {
-                    let user_file = match config.users {
-                        UserManagement::Static(conf) => conf.user_list,
-                        _ => {
-                            panic!("Only static account management is supported from Aerogramme.")
-                        }
-                    };
-                    account_management(&args.command, cmd, user_file)?;
-                }
+        (Command::Provider(subcommand), AnyConfig::Provider(config)) => match subcommand {
+            ProviderCommand::Daemon => {
+                let server = Server::from_provider_config(config).await?;
+                server.run().await?;
+            }
+            ProviderCommand::Reload { pid } => reload(*pid, config.pid)?,
+            ProviderCommand::Account(cmd) => {
+                let user_file = match config.users {
+                    UserManagement::Static(conf) => conf.user_list,
+                    _ => {
+                        panic!("Only static account management is supported from Aerogramme.")
+                    }
+                };
+                account_management(&args.command, cmd, user_file)?;
             }
         }
         (Command::Provider(_), AnyConfig::Companion(_)) => {

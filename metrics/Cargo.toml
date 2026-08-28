@@ -12,5 +12,12 @@ license = "EUPL-1.2"
 description = "Contains all metrics for Aerogramme"
 
 [dependencies]
-prometheus.workspace = true
+aero-user.workspace = true
+
+anyhow.workspace = true
+futures.workspace = true
 lazy_static.workspace = true
+prometheus.workspace = true
+prometheus-hyper.workspace = true
+tracing.workspace = true
+tokio.workspace = true
