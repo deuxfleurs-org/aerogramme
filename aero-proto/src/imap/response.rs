@@ -127,6 +127,7 @@ pub enum ResponseOrIdle {
 #[derive(Debug)]
 pub enum SyncError {
     UidvalidityChanged(NonZeroU32),
+    ModseqvalidityChanged(u64),
 }
 
 impl std::fmt::Display for SyncError {
