@@ -21,9 +21,9 @@ default-members = ["aerogramme"]
 
 [workspace.dependencies]
 # internal vendored/forked crates
-smtp-message = { version = "0.5.0", path = "smtp-message" }
-smtp-server = { version = "0.5.0", path = "smtp-server" }
-smtp-server-types = { version = "0.5.0", path = "smtp-server-types" }
+smtp-message = { version = "0.5.1", path = "smtp-message" }
+smtp-server = { version = "0.5.1", path = "smtp-server" }
+smtp-server-types = { version = "0.5.1", path = "smtp-server-types" }
 
 # internal core crates
 aero-bayou = { version = "0.5.0", path = "aero-bayou" }
