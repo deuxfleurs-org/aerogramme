@@ -13,9 +13,14 @@ jobs:
     runs-on: rust-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Get Rust toolchain version
+        id: get_rust_toolchain_version
+        run: |
+          RUST_TOOLCHAIN=$(grep -Po 'channel\s*=\s*"\K[^"]+' rust-toolchain.toml)
+          echo "rust_toolchain=$RUST_TOOLCHAIN" >> $GITHUB_OUTPUT
       - uses: https://github.com/dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.97
+          toolchain: ${{ steps.get_rust_toolchain_version.outputs.rust_toolchain }}
           components: rustfmt
       - name: "Cargo formatting"
         if: $${{ always() }}
