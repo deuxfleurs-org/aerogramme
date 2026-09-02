@@ -1028,10 +1028,10 @@ fn rfc4551_imapext_condstore() {
             Selection::All,
             Flag::Important,
             StoreAction::AddFlags,
-            StoreMod::UnchangedSince(1),
+            StoreMod::UnchangedSince(2),
         )?;
         assert!(store_res.contains("[MODIFIED 2]"));
-        assert!(store_res.contains("* 1 FETCH (FLAGS (\\Important) MODSEQ (3))"));
+        assert!(store_res.contains("* 1 FETCH (FLAGS (\\Important) MODSEQ (4))"));
         assert!(!store_res.contains("* 2 FETCH"));
         assert_eq!(store_res.lines().count(), 3);
 
@@ -1040,20 +1040,20 @@ fn rfc4551_imapext_condstore() {
             imap_socket,
             Selection::All,
             FetchKind::Rfc822Size,
-            FetchMod::ChangedSince(2),
+            FetchMod::ChangedSince(3),
         )?;
-        assert!(fetch_res.contains("* 1 FETCH (RFC822.SIZE 81 MODSEQ (3))"));
+        assert!(fetch_res.contains("* 1 FETCH (RFC822.SIZE 81 MODSEQ (4))"));
         assert!(!fetch_res.contains("* 2 FETCH"));
         assert_eq!(fetch_res.lines().count(), 2);
 
         // RFC 3.1.5.  MODSEQ Search Criterion in SEARCH
-        let search_res = search(imap_socket, SearchKind::ModSeq(3))?;
+        let search_res = search(imap_socket, SearchKind::ModSeq(4))?;
         // RFC 3.1.6.  Modified SEARCH Untagged Response
-        assert!(search_res.contains("* SEARCH 1 (MODSEQ 3)"));
+        assert!(search_res.contains("* SEARCH 1 (MODSEQ 4)"));
 
         // RFC 3.1.7   HIGHESTMODSEQ Status Data Items
         let status_res = status(imap_socket, Mailbox::Inbox, StatusKind::HighestModSeq)?;
-        assert!(status_res.contains("HIGHESTMODSEQ 3"));
+        assert!(status_res.contains("HIGHESTMODSEQ 4"));
 
         Ok(())
     })

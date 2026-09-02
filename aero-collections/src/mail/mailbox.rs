@@ -389,15 +389,9 @@ impl MailboxInternal {
         // Add mail to Bayou mail index
         let uid_state = self.uid_index.state();
         let add_mail_op = uid_state.op_mail_add(ident, flags.clone());
-
-        let (uid, modseq) = match add_mail_op {
-            UidIndexOp::MailAdd(_, uid, modseq, _) => (uid, modseq),
-            _ => unreachable!(),
-        };
-
         self.uid_index.push(add_mail_op).await?;
-
-        Ok((uid, modseq))
+        let (uid, modseq, _flags) = self.uid_index.state().table.get(&ident).unwrap();
+        Ok((*uid, *modseq))
     }
 
     async fn append_from_s3<'a>(
