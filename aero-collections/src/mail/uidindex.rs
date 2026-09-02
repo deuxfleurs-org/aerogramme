@@ -14,6 +14,8 @@ pub type ImapUidvalidity = NonZeroU32;
 pub type Flag = String;
 pub type Flags = BTreeSet<Flag>;
 pub type IndexEntry = (ImapUid, ModSeq, Flags);
+pub type InternalSeq = u32;
+pub type InternalModSeq = u64;
 
 /// A UidIndex handles the mutable part of a mailbox
 /// It is built by running the event log on it
@@ -42,11 +44,11 @@ pub struct UidIndex {
 
     // "Internal" Counters
 
-    // `internalseq` counts the number of *added emails*: it is incremented at
-    // each MailAdd.
+    // `internalseq` counts the number of *added emails*: it is equal to
+    // count(MailAdd commands).
     //
     // This has two purposes:
-    // - generate mail UIDs: UIDNEXT is `internalseq`
+    // - generate mail UIDs
     // - detect conflicts between concurrent MailAdd commands.
     //
     // NOTE: we do not count MailDel commands. This is an optimization to reduce
@@ -65,15 +67,16 @@ pub struct UidIndex {
     // In both cases, there is no actual `ImapUid` conflict: it is safe to keep
     // `ImapUid`s as they were, and thus no need to bump `internalseq` and
     // `uidvalidity`.
-    internalseq: ImapUid,
+    internalseq: InternalSeq,
 
-    // `internalmodseq` counts the number of modifications to mail flags in the
-    // entire mailbox: it is incremented at each Flag{Add,Del,Set} command.
+    // `internalmodseq` counts the number of added mails and modifications to
+    // mail flags in the entire mailbox: it is equal to count(MailAdd commands)
+    // + count(Flag{Add,Del,Set} commands).
     //
     // This is used to implement RFC4551 (CONDSTORE). It also serves two purposes:
-    // - generate MODSEQ numbers for emails (and thus HIGHESTMODSEQ);
+    // - generate MODSEQ numbers for emails
     // - detect conflicts between concurrent Flag{Add,Del,Set} commands.
-    internalmodseq: ModSeq,
+    internalmodseq: InternalModSeq,
 }
 
 /// A map where keys are sequence IDs. Sequence IDs are non-zero integers.
@@ -112,11 +115,11 @@ impl<T: Clone> SeqidMap<T> {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum UidIndexOp {
-    MailAdd(UniqueIdent, ImapUid, ModSeq, Flags),
+    MailAdd(UniqueIdent, InternalSeq, InternalModSeq, Flags),
     MailDel(UniqueIdent),
-    FlagAdd(UniqueIdent, ModSeq, Flags),
-    FlagDel(UniqueIdent, ModSeq, Flags),
-    FlagSet(UniqueIdent, ModSeq, Flags),
+    FlagAdd(UniqueIdent, InternalModSeq, Flags),
+    FlagDel(UniqueIdent, InternalModSeq, Flags),
+    FlagSet(UniqueIdent, InternalModSeq, Flags),
     BumpRecent,
 }
 
@@ -155,7 +158,32 @@ impl UidIndex {
     }
 
     pub fn uidnext(&self) -> ImapUid {
-        self.internalseq
+        Self::uidnext_of_internal(self.internalseq)
+    }
+
+    pub fn highestmodseq(&self) -> ModSeq {
+        Self::highestmodseq_of_internal(self.internalmodseq)
+    }
+
+    fn uidnext_of_internal(internalseq: u32) -> ImapUid {
+        // UIDNEXT is internalseq + 1.
+        //
+        // Mail UIDs start at 1, and internalseq (count(MailAdd)) is 0 on an
+        // empty mailbox => UIDNEXT=1 initially.
+        NonZeroU32::try_from(internalseq + 1).unwrap()
+    }
+
+    fn highestmodseq_of_internal(internalmodseq: u64) -> ModSeq {
+        // HIGHESTMODSEQ is internalmodseq + 1
+        //
+        // NOTE: the reasoning is different than for UIDNEXT. (UIDNEXT refers to
+        // the *next* unallocated UID, while HIGHESTMODSEQ refers to the maximum
+        // *currently* allocated ModSeq.) HIGHESTMODSEQ is defined as
+        // `internalmodseq` + 1 because it needs to be >= 1 according to the RFC
+        // definitions. This means that we get HIGHESTMODSEQ=1 on an empty
+        // mailbox, and the first ModSeq assigned to an email is *2*. (I.e. if
+        // we had a MODSEQNEXT counter, we would MODSEQNEXT=2 initially.)
+        NonZeroU64::try_from(internalmodseq + 1).unwrap()
     }
 
     // INTERNAL functions to keep state consistent
@@ -237,8 +265,8 @@ impl Default for UidIndex {
             highestmodseq: NonZeroU64::new(1).unwrap(),
             recent_from: NonZeroU32::new(1).unwrap(),
 
-            internalseq: NonZeroU32::new(1).unwrap(),
-            internalmodseq: NonZeroU64::new(1).unwrap(),
+            internalseq: 0,
+            internalmodseq: 0,
         }
     }
 }
@@ -249,63 +277,60 @@ impl BayouState for UidIndex {
     fn apply(&self, op: &UidIndexOp) -> Self {
         let mut new = self.clone();
         match op {
-            UidIndexOp::MailAdd(ident, uid, modseq, flags) => {
+            UidIndexOp::MailAdd(ident, iseq, imodseq, flags) => {
                 // Change UIDValidity if there is a UID conflict or a MODSEQ conflict
                 // The intuition: we increase the UIDValidity by the number of possible conflicts
                 // Proof: https://aerogramme.deuxfleurs.fr/documentation/internals/imap-uid/
-                if *uid < new.internalseq || *modseq < new.internalmodseq {
-                    let bump_uid = new.internalseq.get() - uid.get();
-                    let bump_modseq = (new.internalmodseq.get() - modseq.get()) as u32;
+                if *iseq < new.internalseq || *imodseq < new.internalmodseq {
+                    let bump_uid = new.internalseq - iseq;
+                    let bump_modseq = (new.internalmodseq - imodseq) as u32;
                     new.uidvalidity =
                         NonZeroU32::new(new.uidvalidity.get() + bump_uid + bump_modseq).unwrap();
                 }
 
-                // Assign the real uid of the email
-                let new_uid = new.internalseq;
+                // Assign the real uid of the email using uidnext(), then bump
+                // the counter.
+                let new_uid = new.uidnext();
+                new.internalseq += 1;
 
-                // Assign the real modseq of the email and its new flags
-                let new_modseq = new.internalmodseq;
+                // Assign the real modseq of the email and its new flags.
+                //
+                // highestmodseq() returns the highest currently assigned
+                // modseq; first bump the counter then assign the new modseq.
+                new.internalmodseq += 1;
+                let new_modseq = new.highestmodseq();
 
                 // We record our email and update our caches
                 new.reg_email(*ident, new_uid, new_modseq, flags);
-
-                // Update counters
-                new.highestmodseq = new.internalmodseq;
-
-                new.internalseq = NonZeroU32::new(new.internalseq.get() + 1).unwrap();
-                new.internalmodseq = NonZeroU64::new(new.internalmodseq.get() + 1).unwrap();
             }
             UidIndexOp::MailDel(ident) => {
                 // If the email is known locally, we remove its references in all our indexes
                 new.unreg_email(ident);
             }
-            UidIndexOp::FlagAdd(ident, candidate_modseq, new_flags) => {
+            UidIndexOp::FlagAdd(ident, imodseq, new_flags) => {
                 if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
                     // Bump UIDValidity if required
-                    if *candidate_modseq < new.internalmodseq {
-                        let bump_modseq =
-                            (new.internalmodseq.get() - candidate_modseq.get()) as u32;
+                    if *imodseq < new.internalmodseq {
+                        let bump_modseq = (new.internalmodseq - imodseq) as u32;
                         new.uidvalidity =
                             NonZeroU32::new(new.uidvalidity.get() + bump_modseq).unwrap();
                     }
 
-                    // Add flags to the source of trust and the cache
+                    // Add flags to the source of trust and the cache.
+                    // Bump the modseq counter first to get a new highestmodseq()
+                    new.internalmodseq += 1;
                     new.idx_by_flag.insert(*uid, new_flags);
-                    *email_modseq = new.internalmodseq;
-                    new.idx_by_modseq.insert(new.internalmodseq, *ident);
+                    new.idx_by_modseq.remove(email_modseq);
+                    *email_modseq = Self::highestmodseq_of_internal(new.internalmodseq);
+                    new.idx_by_modseq.insert(*email_modseq, *ident);
                     existing_flags.append(&mut new_flags.clone());
-
-                    // Update counters
-                    new.highestmodseq = new.internalmodseq;
-                    new.internalmodseq = NonZeroU64::new(new.internalmodseq.get() + 1).unwrap();
                 }
             }
-            UidIndexOp::FlagDel(ident, candidate_modseq, rm_flags) => {
+            UidIndexOp::FlagDel(ident, imodseq, rm_flags) => {
                 if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
                     // Bump UIDValidity if required
-                    if *candidate_modseq < new.internalmodseq {
-                        let bump_modseq =
-                            (new.internalmodseq.get() - candidate_modseq.get()) as u32;
+                    if *imodseq < new.internalmodseq {
+                        let bump_modseq = (new.internalmodseq - imodseq) as u32;
                         new.uidvalidity =
                             NonZeroU32::new(new.uidvalidity.get() + bump_modseq).unwrap();
                     }
@@ -314,21 +339,19 @@ impl BayouState for UidIndex {
                     existing_flags.retain(|x| !rm_flags.contains(x));
                     new.idx_by_flag.remove(*uid, rm_flags);
 
-                    // Register that email has been modified
-                    new.idx_by_modseq.insert(new.internalmodseq, *ident);
-                    *email_modseq = new.internalmodseq;
-
-                    // Update counters
-                    new.highestmodseq = new.internalmodseq;
-                    new.internalmodseq = NonZeroU64::new(new.internalmodseq.get() + 1).unwrap();
+                    // Register that email has been modified.
+                    // Bump the modseq counter first to get a new highestmodseq()
+                    new.internalmodseq += 1;
+                    new.idx_by_modseq.remove(email_modseq);
+                    *email_modseq = Self::highestmodseq_of_internal(new.internalmodseq);
+                    new.idx_by_modseq.insert(*email_modseq, *ident);
                 }
             }
-            UidIndexOp::FlagSet(ident, candidate_modseq, new_flags) => {
+            UidIndexOp::FlagSet(ident, imodseq, new_flags) => {
                 if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
                     // Bump UIDValidity if required
-                    if *candidate_modseq < new.internalmodseq {
-                        let bump_modseq =
-                            (new.internalmodseq.get() - candidate_modseq.get()) as u32;
+                    if *imodseq < new.internalmodseq {
+                        let bump_modseq = (new.internalmodseq - imodseq) as u32;
                         new.uidvalidity =
                             NonZeroU32::new(new.uidvalidity.get() + bump_modseq).unwrap();
                     }
@@ -340,12 +363,11 @@ impl BayouState for UidIndex {
                     new.idx_by_flag.insert(*uid, new_flags);
 
                     // Register that email has been modified
-                    new.idx_by_modseq.insert(new.internalmodseq, *ident);
-                    *email_modseq = new.internalmodseq;
-
-                    // Update counters
-                    new.highestmodseq = new.internalmodseq;
-                    new.internalmodseq = NonZeroU64::new(new.internalmodseq.get() + 1).unwrap();
+                    // Bump the modseq counter first to get a new highestmodseq()
+                    new.internalmodseq += 1;
+                    new.idx_by_modseq.remove(email_modseq);
+                    *email_modseq = Self::highestmodseq_of_internal(new.internalmodseq);
+                    new.idx_by_modseq.insert(*email_modseq, *ident);
                 }
             }
 
@@ -405,8 +427,8 @@ struct UidIndexSerializedRepr {
     highestmodseq: ModSeq,
     recent_from: ImapUid,
 
-    internalseq: ImapUid,
-    internalmodseq: ModSeq,
+    internalseq: InternalSeq,
+    internalmodseq: InternalModSeq,
 }
 
 impl<'de> Deserialize<'de> for UidIndex {
@@ -476,7 +498,7 @@ mod tests {
             assert_eq!(state.table.len(), 1);
             let (uid, modseq, flags) = state.table.get(&m).unwrap();
             assert_eq!(*uid, NonZeroU32::new(1).unwrap());
-            assert_eq!(*modseq, NonZeroU64::new(1).unwrap());
+            assert_eq!(*modseq, NonZeroU64::new(2).unwrap());
             assert_eq!(flags.len(), 2);
             let ident = state.idx_by_uid.get(&NonZeroU32::new(1).unwrap()).unwrap();
             assert_eq!(&m, ident);
@@ -531,12 +553,7 @@ mod tests {
         {
             let m = UniqueIdent([0x03; 24]);
             let f = BTreeSet::from(["\\Archive".to_string(), "\\Recent".to_string()]);
-            let ev = UidIndexOp::MailAdd(
-                m,
-                NonZeroU32::new(1).unwrap(),
-                NonZeroU64::new(1).unwrap(),
-                f,
-            );
+            let ev = UidIndexOp::MailAdd(m, 0, 0, f);
             state = state.apply(&ev);
         }
 
