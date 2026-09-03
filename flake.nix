@@ -13,7 +13,7 @@
     };
 
     cargo2nix = {
-      url = "github:cargo2nix/cargo2nix";
+      url = "github:superboum/cargo2nix";
       inputs = {
         nixpkgs.follows = "nixpkgs";
         flake-utils.follows = "flake-utils";
