@@ -128,7 +128,7 @@ impl MailboxView {
         if cur_state.uidvalidity != self.known_state.uidvalidity {
             return Err(SyncError::UidvalidityChanged(cur_state.uidvalidity).into())
         }
-        if cur_state.modseqvalidity != self.known_state.modseqvalidity {
+        if self.is_condstore && cur_state.modseqvalidity != self.known_state.modseqvalidity {
             return Err(SyncError::ModseqvalidityChanged(cur_state.modseqvalidity).into())
         }
         Ok(())
@@ -151,7 +151,7 @@ impl MailboxView {
         if cur_state.uidvalidity != self.known_state.uidvalidity {
             return Err(SyncError::UidvalidityChanged(cur_state.uidvalidity).into());
         }
-        if cur_state.modseqvalidity != self.known_state.modseqvalidity {
+        if self.is_condstore && cur_state.modseqvalidity != self.known_state.modseqvalidity {
             return Err(SyncError::ModseqvalidityChanged(cur_state.modseqvalidity).into());
         }
         Ok(())
