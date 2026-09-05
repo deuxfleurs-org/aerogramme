@@ -668,7 +668,7 @@ pub fn stop_idle(imap: &mut TcpStream) -> Result<String> {
 pub fn logout(imap: &mut TcpStream) -> Result<()> {
     imap.write(&b"99 logout\r\n"[..])?;
     let mut buffer: [u8; 1500] = [0; 1500];
-    let read = read_lines(imap, &mut buffer, Some(&b"* BYE"[..]))?;
-    assert_eq!(&read[..5], &b"99 OK"[..]);
+    let read = read_lines(imap, &mut buffer, Some(&b"99 OK"[..]))?;
+    assert_eq!(&read[..5], &b"* BYE"[..]);
     Ok(())
 }

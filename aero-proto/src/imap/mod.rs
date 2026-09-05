@@ -13,13 +13,14 @@ mod response;
 mod search;
 mod session;
 
+use std::collections::HashSet;
 use std::net::SocketAddr;
 
 use anyhow::{anyhow, bail, Result};
 use futures::stream::{FuturesUnordered, StreamExt};
-use imap_codec::imap_types::response::{Code, CommandContinuationRequest, Response as ImapResponse, Status};
+use imap_codec::imap_types::response::{Code, CommandContinuationRequest, Status};
 use imap_codec::imap_types::{core::Text, response::Greeting};
-use imap_flow::server::{ServerFlow, ServerFlowEvent, ServerFlowOptions};
+use imap_flow::server::{ServerFlow, ServerFlowEvent, ServerFlowOptions, ServerFlowResponseHandle};
 use imap_flow::stream::AnyStream;
 use rustls_pemfile::{certs, private_key};
 use tokio::net::TcpListener;
@@ -32,7 +33,7 @@ use aero_user::login::ArcLoginProvider;
 
 use crate::imap::capability::ServerCapability;
 use crate::imap::request::Request;
-use crate::imap::response::{Body, ResponseOrIdle, Response};
+use crate::imap::response::{Body, ResponseOrIdle};
 use crate::imap::session::Instance;
 
 /// Server is a thin wrapper to register our Services in BàL
@@ -148,6 +149,8 @@ struct NetLoop {
     server: ServerFlow,
     cmd_tx: Sender<Request>,
     resp_rx: UnboundedReceiver<ResponseOrIdle>,
+    pending_responses: HashSet<ServerFlowResponseHandle>,
+    shutting_down: bool,
 }
 
 impl NetLoop {
@@ -204,10 +207,18 @@ impl NetLoop {
             server,
             cmd_tx,
             resp_rx,
+            pending_responses: HashSet::new(),
+            shutting_down: false,
         })
     }
 
     /// Coms with the background session
+    ///
+    /// This function receives imap commands and processes them (running
+    /// aerogramme's core imap business logic). We want this to be done
+    /// concurrently from the main loop in `core()` which handles low-level
+    /// request/responses at the IMAP protocol-level: `session()` runs in a
+    /// separate tokio task and communicates with `core()` using channels.
     async fn session(
         ctx: ClientContext,
         mut cmd_rx: Receiver<Request>,
@@ -215,16 +226,20 @@ impl NetLoop {
     ) -> () {
         let mut session = Instance::new(ctx.login_provider, ctx.server_capabilities);
         loop {
-            // Automatically send BYE and disconnect as soon as we enter LOGOUT
-            // state. This way the previous command that switched to LOGOUT
-            // state could send its response independently of the BYE untagged
-            // status.
-            if let flow::State::Logout = session.state {
-                tracing::debug!(sock=%ctx.addr, "entered LOGOUT state, sending BYE");
-                let _ = resp_tx.send(ResponseOrIdle::Response(Response::bye().unwrap()));
+            // Exit the session after entering LOGOUT state. We propagate
+            // whether to include an additional BYE status message. In some
+            // cases (the LOGOUT command) a BYE was already sent as part of the
+            // command; in other cases (commands that trigger an immediate
+            // shutdown) an extra BYE is needed.
+            if let flow::State::Logout { needs_bye } = session.state {
+                tracing::debug!(sock=%ctx.addr, "entered LOGOUT state, closing session");
+                let _ = resp_tx.send(ResponseOrIdle::CloseSession { needs_bye });
                 break
             }
 
+            // `recv()` and `send()` on channels can only return `None` if the
+            // whole NetLoop has exited, which means the session has shutdown
+            // and we just need to exit this task.
             let cmd = match cmd_rx.recv().await {
                 None => break,
                 Some(cmd_recv) => cmd_recv,
@@ -244,27 +259,39 @@ impl NetLoop {
         // connection.
     }
 
+    /// Send BYE and initiate shutdown. Used internally by `core()` to account
+    /// for low-level error cases. Shutdown events that corresponds to normal
+    /// "imap business logic" are first initiated by `session()` sending a
+    /// `CloseSession` response to `core()`.
+    fn shutdown(&mut self, msg: &'static str) {
+        let handle = self.server.enqueue_status(Status::bye(None, msg).unwrap());
+        self.pending_responses.insert(handle);
+        self.shutting_down = true;
+    }
+
     async fn core(&mut self) -> Result<()> {
         let mut maybe_idle: Option<Arc<Notify>> = None;
         loop {
+            if self.shutting_down && self.pending_responses.is_empty() {
+                return Ok(())
+            }
+
             tokio::select! {
                 // Managing imap_flow stuff
                 srv_evt = self.server.progress() =>  match srv_evt? {
-                    ServerFlowEvent::ResponseSent { handle: _handle, response } => {
-                        match response {
-                            ImapResponse::Status(Status::Bye(_)) => return Ok(()),
-                            _ => tracing::trace!("sent to {} content {:?}", self.ctx.addr, response),
-                        }
+                    ServerFlowEvent::ResponseSent { handle, response } => {
+                        tracing::trace!("sent to {} content {:?}", self.ctx.addr, response);
+                        self.pending_responses.remove(&handle);
                     },
                     ServerFlowEvent::CommandReceived { command } => {
                         match self.cmd_tx.try_send(Request::ImapCommand(command)) {
                             Ok(_) => (),
                             Err(mpsc::error::TrySendError::Full(_)) => {
-                                self.server.enqueue_status(Status::bye(None, "Too fast").unwrap());
+                                self.shutdown("Too fast");
                                 tracing::error!("client {:?} is sending commands too fast, closing.", self.ctx.addr);
                             }
-                            _ => {
-                                self.server.enqueue_status(Status::bye(None, "Internal session exited").unwrap());
+                            Err(mpsc::error::TrySendError::Closed(_)) => {
+                                self.shutdown("Internal session exited");
                                 tracing::error!("session task exited for {:?}, quitting", self.ctx.addr);
                             }
                         }
@@ -273,11 +300,11 @@ impl NetLoop {
                         match self.cmd_tx.try_send(Request::IdleStart(tag)) {
                             Ok(_) => (),
                             Err(mpsc::error::TrySendError::Full(_)) => {
-                                self.server.enqueue_status(Status::bye(None, "Too fast").unwrap());
+                                self.shutdown("Too fast");
                                 tracing::error!("client {:?} is sending commands too fast, closing.", self.ctx.addr);
                             }
-                            _ => {
-                                self.server.enqueue_status(Status::bye(None, "Internal session exited").unwrap());
+                            Err(mpsc::error::TrySendError::Closed(_)) => {
+                                self.shutdown("Internal session exited");
                                 tracing::error!("session task exited for {:?}, quitting", self.ctx.addr);
                             }
                         }
@@ -288,22 +315,31 @@ impl NetLoop {
                         maybe_idle = None;
                     }
                     flow => {
-                        self.server.enqueue_status(Status::bye(None, "Unsupported server flow event").unwrap());
+                        self.shutdown("Unsupported server flow event");
                         tracing::error!("session task exited for {:?} due to unsupported flow {:?}", self.ctx.addr, flow);
                     }
                 },
 
                 // Managing response generated by Aerogramme
-                maybe_msg = self.resp_rx.recv() => match maybe_msg {
+                maybe_msg = self.resp_rx.recv(), if !self.shutting_down => match maybe_msg {
+                    Some(ResponseOrIdle::CloseSession { needs_bye }) => {
+                        tracing::trace!("Closing session as required");
+                        if needs_bye {
+                            self.shutdown("bye");
+                        }
+                        self.shutting_down = true;
+                    },
                     Some(ResponseOrIdle::Response(response)) => {
                         tracing::trace!("Interactive, server has a response for the client");
                         for body_elem in response.body.into_iter() {
-                            let _handle = match body_elem {
+                            let handle = match body_elem {
                                 Body::Data(d) => self.server.enqueue_data(d),
                                 Body::Status(s) => self.server.enqueue_status(s),
                             };
+                            self.pending_responses.insert(handle);
                         }
-                        self.server.enqueue_status(response.completion);
+                        let handle = self.server.enqueue_status(response.completion);
+                        self.pending_responses.insert(handle);
                     },
                     Some(ResponseOrIdle::IdleAccept(stop)) => {
                         tracing::trace!("Interactive, server agreed to switch in idle mode");
@@ -318,10 +354,11 @@ impl NetLoop {
                     Some(ResponseOrIdle::IdleEvent(elems)) => {
                         tracing::trace!("server imap session has some change to communicate to the client");
                         for body_elem in elems.into_iter() {
-                            let _handle = match body_elem {
+                            let handle = match body_elem {
                                 Body::Data(d) => self.server.enqueue_data(d),
                                 Body::Status(s) => self.server.enqueue_status(s),
                             };
+                            self.pending_responses.insert(handle);
                         }
                         self.cmd_tx.try_send(Request::IdlePoll)?;
                     },
@@ -332,16 +369,19 @@ impl NetLoop {
                             .or(Err(anyhow!("wrong reject command")))?;
                     },
                     None => {
-                        // the channel has been closed
-                        self.server.enqueue_status(Status::bye(None, "Internal session exited").unwrap());
-                        tracing::error!("session task exited for {:?}, quitting", self.ctx.addr);
+                        tracing::info!("session task exited");
+                        // The channel has been closed, which means the session
+                        // task has exited and we are ongoing shutdown. The
+                        // `session()` task already arranged for required BYE
+                        // messages to be sent. There is nothing to do, continue
+                        // to send pending responses before exiting.
                     },
                 },
 
                 // When receiving a CTRL+C
                 _ = self.ctx.must_exit.changed() => {
                     tracing::trace!("Interactive, CTRL+C, exiting");
-                    self.server.enqueue_status(Status::bye(None, "Server is being shutdown").unwrap());
+                    self.shutdown("Server is being shutdown");
                 },
             };
         }

@@ -25,7 +25,7 @@ pub enum State {
     Authenticated(User),
     Selected(User, MailboxView, MailboxPerm),
     Idle(User, MailboxView, MailboxPerm, Tag<'static>, Arc<Notify>),
-    Logout,
+    Logout { needs_bye: bool },
 }
 impl State {
     pub fn notify(&self) -> Option<Arc<Notify>> {
@@ -43,7 +43,7 @@ impl fmt::Display for State {
             Authenticated(..) => write!(f, "Authenticated"),
             Selected(..) => write!(f, "Selected"),
             Idle(..) => write!(f, "Idle"),
-            Logout => write!(f, "Logout"),
+            Logout{..} => write!(f, "Logout"),
         }
     }
 }
@@ -61,7 +61,7 @@ pub enum Transition {
     Idle(Tag<'static>, Notify),
     UnIdle,
     Unselect,
-    Logout,
+    Logout { needs_bye: bool },
 }
 impl fmt::Display for Transition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -73,7 +73,7 @@ impl fmt::Display for Transition {
             Idle(..) => write!(f, "Idle"),
             UnIdle => write!(f, "UnIdle"),
             Unselect => write!(f, "Unselect"),
-            Logout => write!(f, "Logout"),
+            Logout{..} => write!(f, "Logout"),
         }
     }
 }
@@ -84,7 +84,8 @@ impl State {
     pub fn apply(&mut self, tr: Transition) -> Result<(), Error> {
         tracing::debug!(state=%self, transition=%tr, "try change state");
 
-        let new_state = match (std::mem::replace(self, State::Logout), tr) {
+        let placeholder = State::Logout { needs_bye: true };
+        let new_state = match (std::mem::replace(self, placeholder), tr) {
             (s, Transition::None) => s,
             (State::NotAuthenticated, Transition::Authenticate(u)) => State::Authenticated(u),
             (State::Authenticated(u) | State::Selected(u, _, _), Transition::Select(m, p)) => {
@@ -95,7 +96,7 @@ impl State {
                 State::Idle(u, m, p, t, Arc::new(s))
             }
             (State::Idle(u, m, p, _, _), Transition::UnIdle) => State::Selected(u, m, p),
-            (_, Transition::Logout) => State::Logout,
+            (_, Transition::Logout { needs_bye }) => State::Logout { needs_bye },
             (s, t) => {
                 tracing::error!(state=%s, transition=%t, "forbidden transition");
                 return Err(Error::ForbiddenTransition);

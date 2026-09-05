@@ -82,7 +82,7 @@ impl Instance {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!(err=?e, "something bad happened in idle");
-                self.state.apply(flow::Transition::Logout).unwrap();
+                self.state.apply(flow::Transition::Logout { needs_bye: true }).unwrap();
                 ResponseOrIdle::Response(Response::build().message("error during idle").bad().unwrap())
             }
         }
@@ -142,7 +142,7 @@ impl Instance {
                 selected::dispatch(ctx).await
             }
             flow::State::Idle(..) => Err(anyhow!("can not receive command while idling")),
-            flow::State::Logout => Response::build()
+            flow::State::Logout{..} => Response::build()
                 .tag(cmd.tag.clone())
                 .message("No commands are allowed in the LOGOUT state.")
                 .bad()
@@ -156,15 +156,16 @@ impl Instance {
                         Response::build()
                             .to_req(&cmd)
                             .message("Command rejected because UIDVALIDITY changed")
-                            .set_body(vec![Body::Status(Status::ok(
-                                None,
-                                Some(Code::UidValidity(*uidv)),
-                                "New UIDVALIDITY value!",
-                            ).unwrap()
-                            )])
+                            .set_body(vec![
+                                Body::Status(Status::ok(
+                                    None,
+                                    Some(Code::UidValidity(*uidv)),
+                                    "New UIDVALIDITY value!",
+                                ).unwrap()),
+                            ])
                             .no()
                             .unwrap(),
-                        flow::Transition::Logout,
+                        flow::Transition::Logout { needs_bye: true },
                     ),
                     SyncError::ModseqvalidityChanged(_modseqv) => (
                         Response::build()
@@ -172,7 +173,7 @@ impl Instance {
                             .message("Command rejected because MODSEQ have been invalidated")
                             .no()
                             .unwrap(),
-                        flow::Transition::Logout,
+                        flow::Transition::Logout { needs_bye: true },
                     ),
                 }
             } else {
