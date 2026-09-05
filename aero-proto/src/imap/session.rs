@@ -82,7 +82,9 @@ impl Instance {
             Ok(r) => r,
             Err(e) => {
                 tracing::error!(err=?e, "something bad happened in idle");
-                self.state.apply(flow::Transition::Logout).unwrap();
+                self.state
+                    .apply(flow::Transition::Logout { needs_bye: true })
+                    .unwrap();
                 ResponseOrIdle::Response(
                     Response::build()
                         .message("error during idle")
@@ -147,7 +149,7 @@ impl Instance {
                 selected::dispatch(ctx).await
             }
             flow::State::Idle(..) => Err(anyhow!("can not receive command while idling")),
-            flow::State::Logout => Response::build()
+            flow::State::Logout { .. } => Response::build()
                 .tag(cmd.tag.clone())
                 .message("No commands are allowed in the LOGOUT state.")
                 .bad()
@@ -171,7 +173,7 @@ impl Instance {
                             )])
                             .no()
                             .unwrap(),
-                        flow::Transition::Logout,
+                        flow::Transition::Logout { needs_bye: true },
                     ),
                 }
             } else {
