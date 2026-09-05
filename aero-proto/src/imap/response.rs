@@ -107,13 +107,6 @@ impl<'a> Response<'a> {
             body: vec![],
         }
     }
-
-    pub fn bye() -> Result<Response<'a>> {
-        Ok(Response {
-            completion: Status::bye(None, "bye")?,
-            body: vec![],
-        })
-    }
 }
 
 #[derive(Debug)]
@@ -122,6 +115,7 @@ pub enum ResponseOrIdle {
     IdleAccept(Arc<Notify>),
     IdleReject(Response<'static>),
     IdleEvent(Vec<Body<'static>>),
+    CloseSession { needs_bye: bool },
 }
 
 #[derive(Debug)]

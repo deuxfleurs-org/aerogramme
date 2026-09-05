@@ -1,10 +1,10 @@
 use anyhow::Result;
 use imap_codec::imap_types::core::Tag;
-use imap_codec::imap_types::response::Data;
+use imap_codec::imap_types::response::{Data, Status};
 
 use crate::imap::capability::ServerCapability;
 use crate::imap::flow;
-use crate::imap::response::Response;
+use crate::imap::response::{Body, Response};
 
 pub(crate) fn capability(
     tag: Tag<'static>,
@@ -31,8 +31,9 @@ pub(crate) fn logout<'a>(tag: Tag<'a>) -> Result<(Response<'a>, flow::Transition
         Response::build()
             .tag(tag)
             .message("Logout completed")
+            .set_body(vec![Body::Status(Status::bye(None, "bye")?)])
             .ok()?,
-        flow::Transition::Logout,
+        flow::Transition::Logout { needs_bye: false },
     ))
 }
 
