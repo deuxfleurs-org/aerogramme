@@ -33,7 +33,7 @@ impl Server {
         let login = Arc::new(StaticLoginProvider::new(config.users).await?);
 
         let lmtp_server = None;
-        let imap_unsecure_server = Some(imap::new_unsecure(config.imap, login.clone()));
+        let imap_unsecure_server = Some(imap::Server::new_unsecure(config.imap, login.clone()));
         Ok(Self {
             lmtp_server,
             imap_unsecure_server,
@@ -57,20 +57,20 @@ impl Server {
         let lmtp_server = config.lmtp.map(|lmtp| LmtpServer::new(lmtp, login.clone()));
         let imap_unsecure_server = config
             .imap_unsecure
-            .map(|imap| imap::new_unsecure(imap, login.clone()));
+            .map(|imap| imap::Server::new_unsecure(imap, login.clone()));
         let imap_server = config
             .imap
-            .map(|imap| imap::new(imap, login.clone()))
+            .map(|imap| imap::Server::new(imap, login.clone()))
             .transpose()?;
         let auth_server = config
             .auth
             .map(|auth| auth::AuthServer::new(auth, login.clone()));
         let dav_unsecure_server = config
             .dav_unsecure
-            .map(|dav_config| dav::new_unsecure(dav_config, login.clone()));
+            .map(|dav_config| dav::Server::new_unsecure(dav_config, login.clone()));
         let dav_server = config
             .dav
-            .map(|dav_config| dav::new(dav_config, login.clone()))
+            .map(|dav_config| dav::Server::new(dav_config, login.clone()))
             .transpose()?;
         let metric_server = config
             .metrics
