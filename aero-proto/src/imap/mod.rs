@@ -51,39 +51,39 @@ struct ClientContext {
     server_capabilities: ServerCapability,
 }
 
-pub fn new(config: ImapConfig, login: ArcLoginProvider) -> Result<Server> {
-    let loaded_certs = certs(&mut std::io::BufReader::new(std::fs::File::open(
-        config.certs,
-    )?))
-    .collect::<Result<Vec<_>, _>>()?;
-    let loaded_key = private_key(&mut std::io::BufReader::new(std::fs::File::open(
-        config.key,
-    )?))?
-    .unwrap();
-
-    let tls_config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(loaded_certs, loaded_key)?;
-    let acceptor = TlsAcceptor::from(Arc::new(tls_config));
-
-    Ok(Server {
-        bind_addr: config.bind_addr,
-        login_provider: login,
-        capabilities: ServerCapability::default(),
-        tls: Some(acceptor),
-    })
-}
-
-pub fn new_unsecure(config: ImapUnsecureConfig, login: ArcLoginProvider) -> Server {
-    Server {
-        bind_addr: config.bind_addr,
-        login_provider: login,
-        capabilities: ServerCapability::default(),
-        tls: None,
-    }
-}
-
 impl Server {
+    pub fn new(config: ImapConfig, login: ArcLoginProvider) -> Result<Self> {
+        let loaded_certs = certs(&mut std::io::BufReader::new(std::fs::File::open(
+            config.certs,
+        )?))
+        .collect::<Result<Vec<_>, _>>()?;
+        let loaded_key = private_key(&mut std::io::BufReader::new(std::fs::File::open(
+            config.key,
+        )?))?
+        .unwrap();
+    
+        let tls_config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(loaded_certs, loaded_key)?;
+        let acceptor = TlsAcceptor::from(Arc::new(tls_config));
+    
+        Ok(Self {
+            bind_addr: config.bind_addr,
+            login_provider: login,
+            capabilities: ServerCapability::default(),
+            tls: Some(acceptor),
+        })
+    }
+    
+    pub fn new_unsecure(config: ImapUnsecureConfig, login: ArcLoginProvider) -> Self {
+        Self {
+            bind_addr: config.bind_addr,
+            login_provider: login,
+            capabilities: ServerCapability::default(),
+            tls: None,
+        }
+    }
+
     pub async fn run(self: Self, mut must_exit: watch::Receiver<bool>) -> Result<()> {
         let tcp = TcpListener::bind(self.bind_addr).await?;
         tracing::info!("IMAP server listening on {:#}", self.bind_addr);

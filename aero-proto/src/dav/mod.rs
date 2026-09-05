@@ -30,46 +30,46 @@ use aero_user::login::ArcLoginProvider;
 
 use crate::dav::controller::Controller;
 
+trait Stream: Read + Write + Send + Unpin {}
+impl<T: Unpin + AsyncRead + AsyncWrite + Send> Stream for TokioIo<T> {}
+
 pub struct Server {
     bind_addr: SocketAddr,
     login_provider: ArcLoginProvider,
     tls: Option<TlsAcceptor>,
 }
 
-pub fn new_unsecure(config: DavUnsecureConfig, login: ArcLoginProvider) -> Server {
-    Server {
-        bind_addr: config.bind_addr,
-        login_provider: login,
-        tls: None,
-    }
-}
-
-pub fn new(config: DavConfig, login: ArcLoginProvider) -> Result<Server> {
-    let loaded_certs = certs(&mut std::io::BufReader::new(std::fs::File::open(
-        config.certs,
-    )?))
-    .collect::<Result<Vec<_>, _>>()?;
-    let loaded_key = private_key(&mut std::io::BufReader::new(std::fs::File::open(
-        config.key,
-    )?))?
-    .unwrap();
-
-    let tls_config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(loaded_certs, loaded_key)?;
-    let acceptor = TlsAcceptor::from(Arc::new(tls_config));
-
-    Ok(Server {
-        bind_addr: config.bind_addr,
-        login_provider: login,
-        tls: Some(acceptor),
-    })
-}
-
-trait Stream: Read + Write + Send + Unpin {}
-impl<T: Unpin + AsyncRead + AsyncWrite + Send> Stream for TokioIo<T> {}
-
 impl Server {
+    pub fn new_unsecure(config: DavUnsecureConfig, login: ArcLoginProvider) -> Self {
+        Self {
+            bind_addr: config.bind_addr,
+            login_provider: login,
+            tls: None,
+        }
+    }
+    
+    pub fn new(config: DavConfig, login: ArcLoginProvider) -> Result<Self> {
+        let loaded_certs = certs(&mut std::io::BufReader::new(std::fs::File::open(
+            config.certs,
+        )?))
+        .collect::<Result<Vec<_>, _>>()?;
+        let loaded_key = private_key(&mut std::io::BufReader::new(std::fs::File::open(
+            config.key,
+        )?))?
+        .unwrap();
+    
+        let tls_config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(loaded_certs, loaded_key)?;
+        let acceptor = TlsAcceptor::from(Arc::new(tls_config));
+    
+        Ok(Self {
+            bind_addr: config.bind_addr,
+            login_provider: login,
+            tls: Some(acceptor),
+        })
+    }
+
     pub async fn run(self: Self, mut must_exit: watch::Receiver<bool>) -> Result<()> {
         let tcp = TcpListener::bind(self.bind_addr).await?;
         tracing::info!("DAV server listening on {:#}", self.bind_addr);
