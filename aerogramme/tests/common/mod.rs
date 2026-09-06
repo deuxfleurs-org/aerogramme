@@ -4,7 +4,7 @@ pub mod fragments;
 
 use anyhow::{bail, Context, Result};
 use std::io::Read;
-use std::net::{Shutdown, TcpStream};
+use std::net::TcpStream;
 use std::process::Command;
 use std::thread;
 
@@ -13,8 +13,29 @@ use reqwest::header;
 
 use constants::SMALL_DELAY;
 
-pub fn aerogramme_provider_daemon_dev(
-    mut fx: impl FnMut(&mut TcpStream, &mut TcpStream, &mut Client) -> Result<()>,
+pub struct DevServer {}
+
+impl DevServer {
+    fn connect(&mut self) -> Result<(TcpStream, TcpStream, Client)> {
+        let imap_socket =
+            TcpStream::connect("[::1]:1143").context("imap socket must be conncted")?;
+
+        let lmtp_socket =
+            TcpStream::connect("[::1]:1025").context("lmtp socket must be connected")?;
+
+        let mut headers = header::HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            header::HeaderValue::from_static("Basic YWxpY2U6aHVudGVyMg=="),
+        );
+        let http_client = Client::builder().default_headers(headers).build()?;
+
+        Ok((imap_socket, lmtp_socket, http_client))
+    }
+}
+
+pub fn aerogramme_provider_daemon_dev_multisession(
+    mut fx: impl FnMut(&mut DevServer) -> Result<()>,
 ) -> Result<()> {
     // Check port is not used (= free) before starting the test
     let mut max_retry = 20;
@@ -40,42 +61,34 @@ pub fn aerogramme_provider_daemon_dev(
 
     // Check that our daemon is correctly listening on the free port
     let mut max_retry = 20;
-    let mut imap_socket = loop {
+    loop {
         max_retry -= 1;
         match (TcpStream::connect("[::1]:1143"), max_retry) {
             (Err(e), 0) => bail!("no more retry, last error is: {}", e),
             (Err(e), _) => {
                 println!("unable to connect: {} ; will retry soon...", e);
             }
-            (Ok(v), _) => break v,
+            (Ok(_), _) => break,
         }
         thread::sleep(SMALL_DELAY);
     };
 
-    // Assuming now it's safe to open a LMTP socket
-    let mut lmtp_socket =
-        TcpStream::connect("[::1]:1025").context("lmtp socket must be connected")?;
-
-    let mut headers = header::HeaderMap::new();
-    headers.insert(
-        header::AUTHORIZATION,
-        header::HeaderValue::from_static("Basic YWxpY2U6aHVudGVyMg=="),
-    );
-    let mut http_client = Client::builder().default_headers(headers).build()?;
-
     println!("-- ready to test features --");
-    let result = fx(&mut imap_socket, &mut lmtp_socket, &mut http_client);
+    let result = fx(&mut DevServer{});
     println!("-- test teardown --");
-
-    imap_socket
-        .shutdown(Shutdown::Both)
-        .context("closing imap socket at the end of the test")?;
-    lmtp_socket
-        .shutdown(Shutdown::Both)
-        .context("closing lmtp socket at the end of the test")?;
+    
     daemon.kill().context("daemon should be killed")?;
 
     result.context("all tests passed")
+}
+
+pub fn aerogramme_provider_daemon_dev(
+    mut fx: impl FnMut(&mut TcpStream, &mut TcpStream, &mut Client) -> Result<()>,
+) -> Result<()> {
+    aerogramme_provider_daemon_dev_multisession(|server| {
+        let (mut imap_socket, mut lmtp_socket, mut client) = server.connect()?;
+        fx(&mut imap_socket, &mut lmtp_socket, &mut client)
+    })
 }
 
 pub fn read_lines<'a, F: Read>(
