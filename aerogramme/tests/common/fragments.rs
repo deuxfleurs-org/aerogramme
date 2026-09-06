@@ -96,6 +96,7 @@ pub enum FetchKind {
     Rfc822Header,
     Rfc822Text,
     Body(Option<FetchBodySection>),
+    Flags,
 }
 
 pub struct FetchBodySection {
@@ -153,11 +154,13 @@ pub enum SearchKind<'a> {
     ModSeq(u64),
     UidRange(u64, u64),
     UidRangeNumAsterisk(u64),
+    Recent,
 }
 
 pub enum StatusKind {
     UidNext,
     HighestModSeq,
+    Recent,
 }
 
 pub enum MbxSelect {
@@ -273,6 +276,23 @@ pub fn select(imap: &mut TcpStream, mbx: Mailbox, modifier: SelectMod) -> Result
     Ok(srv_msg.to_string())
 }
 
+pub fn examine(imap: &mut TcpStream, mbx: Mailbox) -> Result<String> {
+    let mut buffer: [u8; 6000] = [0; 6000];
+
+    let mbx_str = match mbx {
+        Mailbox::Inbox => "INBOX",
+        Mailbox::Archive => "ArchiveCustom",
+        Mailbox::Drafts => "DraftsCustom",
+    };
+
+    imap.write_all(format!("23 examine {}\r\n", mbx_str).as_bytes())?;
+
+    let read = read_lines(imap, &mut buffer, Some(&b"23 OK"[..]))?;
+    let srv_msg = std::str::from_utf8(read)?;
+
+    Ok(srv_msg.to_string())
+}
+
 pub fn unselect(imap: &mut TcpStream) -> Result<()> {
     imap.write_all(&b"70 unselect\r\n"[..])?;
     let mut buffer: [u8; 1500] = [0; 1500];
@@ -299,6 +319,7 @@ pub fn status(imap: &mut TcpStream, mbx: Mailbox, sk: StatusKind) -> Result<Stri
     let sk_str = match sk {
         StatusKind::UidNext => "(UIDNEXT)",
         StatusKind::HighestModSeq => "(HIGHESTMODSEQ)",
+        StatusKind::Recent => "(RECENT)",
     };
     imap.write_all(format!("25 STATUS {} {}\r\n", mbx_str, sk_str).as_bytes())?;
     let mut buffer: [u8; 6000] = [0; 6000];
@@ -341,6 +362,13 @@ pub fn lmtp_deliver_email(lmtp: &mut TcpStream, email_type: Email) -> Result<()>
     lmtp.write_all(&b"\r\n.\r\n"[..])?;
     let _read = read_lines(lmtp, &mut buffer, Some(&b"250 2.0.0"[..]))?;
 
+    Ok(())
+}
+
+pub fn noop(imap: &mut TcpStream) -> Result<()> {
+    let mut buffer: [u8; 6000] = [0; 6000];
+    imap.write_all(&b"31 NOOP\r\n"[..])?;
+    read_lines(imap, &mut buffer, Some(&b"31 OK"[..]))?;
     Ok(())
 }
 
@@ -395,6 +423,7 @@ pub fn fetch(
         FetchKind::Rfc822Text => "RFC822.TEXT",
         FetchKind::Body(None) => "BODY[]",
         FetchKind::Body(Some(section)) => &format!("BODY[{}]", section.to_string()),
+        FetchKind::Flags => "FLAGS",
     };
 
     let mod_str = match modifier {
@@ -465,6 +494,7 @@ pub fn search(imap: &mut TcpStream, sk: SearchKind) -> Result<String> {
         SearchKind::ModSeq(x) => format!("MODSEQ {}", x),
         SearchKind::UidRange(lo, hi) => format!("{}:{}", lo, hi),
         SearchKind::UidRangeNumAsterisk(lo) => format!("{}:*", lo),
+        SearchKind::Recent => format!("RECENT"),
     };
     let prefix = match sk {
         SearchKind::UidRange(_, _) => "UID ",
