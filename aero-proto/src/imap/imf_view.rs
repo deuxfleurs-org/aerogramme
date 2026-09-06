@@ -61,7 +61,7 @@ impl<'a> ImfView<'a> {
 
         Envelope {
             date: NString(match &msg.date {
-                imf::DateTimeOpt::Some(dt) => Some(IString::try_from(dt.0.to_rfc3339()).unwrap()),
+                imf::DateTimeOpt::Some(dt) => Some(IString::try_from(dt.0.to_rfc2822()).unwrap()),
                 imf::DateTimeOpt::InvalidMissing => None,
             }),
             subject: NString(
