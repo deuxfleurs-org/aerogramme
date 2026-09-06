@@ -6,6 +6,7 @@ use imap_codec::imap_types::envelope::{Address, Envelope};
 
 use eml_codec::imf;
 
+#[derive(Debug)]
 pub struct ImfView<'a>(pub &'a imf::Imf<'a>);
 
 impl<'a> ImfView<'a> {
@@ -98,22 +99,24 @@ impl<'a> ImfView<'a> {
     }
 }
 
-pub fn convert_addresses(addrlist: &Vec<imf::address::AddressRef>) -> Vec<Address<'static>> {
+fn convert_addresses(addrlist: &Vec<imf::address::AddressRef>) -> Vec<Address<'static>> {
     let mut acc = vec![];
     for item in addrlist {
         match item {
             imf::address::AddressRef::Single(a) => acc.push(convert_mbx(a)),
             imf::address::AddressRef::Many(l) => {
+                acc.push(group_start(l.name.to_string()));
                 if let Some(mboxl) = &l.participants {
-                    acc.extend(mboxl.0.iter().map(convert_mbx))
+                    acc.extend(mboxl.0.iter().map(convert_mbx));
                 }
+                acc.push(group_end());
             }
         }
     }
     return acc;
 }
 
-pub fn convert_mbx(addr: &imf::mailbox::MailboxRef) -> Address<'static> {
+fn convert_mbx(addr: &imf::mailbox::MailboxRef) -> Address<'static> {
     Address {
         name: NString(
             addr.name
@@ -129,5 +132,32 @@ pub fn convert_mbx(addr: &imf::mailbox::MailboxRef) -> Address<'static> {
         host: NString(Some(
             IString::try_from(addr.addrspec.domain.to_string()).unwrap(),
         )),
+    }
+}
+
+// [RFC-2822] group syntax is indicated by a special form of address structure
+// in which the host name field is NIL. [...] If the mailbox name field is
+// non-NIL, this is a start of group marker, and the mailbox name field holds
+// the group name phrase.
+fn group_start(name: String) -> Address<'static> {
+    Address {
+        name: NString(None),
+        adl: NString(None),
+        mailbox: NString(Some(
+            IString::try_from(name).unwrap()
+        )),
+        host: NString(None),
+    }
+}
+
+// [RFC-2822] group syntax is indicated by a special form of address structure
+// in which the host name field is NIL. If the mailbox name field is also NIL,
+// this is an end of group marker (semi-colon in RFC 822 syntax).
+fn group_end() -> Address<'static> {
+    Address {
+        name: NString(None),
+        adl: NString(None),
+        mailbox: NString(None),
+        host: NString(None),
     }
 }
