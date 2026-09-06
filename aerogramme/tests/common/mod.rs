@@ -16,7 +16,7 @@ use constants::SMALL_DELAY;
 pub struct DevServer {}
 
 impl DevServer {
-    fn connect(&mut self) -> Result<(TcpStream, TcpStream, Client)> {
+    pub fn connect(&mut self) -> Result<(TcpStream, TcpStream, Client)> {
         let imap_socket =
             TcpStream::connect("[::1]:1143").context("imap socket must be conncted")?;
 

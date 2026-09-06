@@ -11,6 +11,7 @@ fn main() {
     rfc3501_imap4rev1_fetch_body_rfc822();
     rfc3501_imap4rev1_fetch_seen();
     rfc3501_imap4rev1_search();
+    rfc3501_imap4rev1_recent();
     rfc6851_imapext_move();
     rfc4551_imapext_condstore();
     rfc2177_imapext_idle();
@@ -784,6 +785,103 @@ fn rfc3501_imap4rev1_search() {
         Ok(())
     })
         .expect("test fully run");
+}
+
+fn rfc3501_imap4rev1_recent() {
+    println!("🧪 rfc3501_imap4rev1_recent");
+
+    common::aerogramme_provider_daemon_dev_multisession(|server| {
+        let (ref mut imap_socket, ref mut lmtp_socket, _dav_socket) = server.connect()?;
+        connect(imap_socket).context("server says hello")?;
+        login(imap_socket, Account::Alice).context("login test")?;
+
+        // No session with the inbox selected: emails added to the mailbox appear as RECENT in the mailbox status
+        append(imap_socket, Email::Basic).context("append email to INBOX")?;
+        let status_res = status(imap_socket, Mailbox::Inbox, StatusKind::Recent).context("status INBOX")?;
+        assert!(status_res.contains("RECENT 1"));
+
+        lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
+        lmtp_deliver_email(lmtp_socket, Email::Basic).context("mail delivered successfully")?;
+        let status_res = status(imap_socket, Mailbox::Inbox, StatusKind::Recent).context("status INBOX")?;
+        assert!(status_res.contains("RECENT 2"));
+        
+        // Selecting the mailbox read-only does not clear the recent status
+        let examine_res = examine(imap_socket, Mailbox::Inbox).context("examine INBOX")?;
+        assert!(examine_res.contains("2 RECENT"));
+        unselect(imap_socket).context("unselect INBOX")?;
+        let status_res = status(imap_socket, Mailbox::Inbox, StatusKind::Recent).context("status INBOX")?;
+        assert!(status_res.contains("RECENT 2"));
+
+        // Selecting the mailbox read-write sees the recent status in the
+        // session, but clears it for everyone else.
+        let select_res = select(imap_socket, Mailbox::Inbox, SelectMod::None).context("examine INBOX")?;
+        assert!(select_res.contains("2 RECENT"));
+        {
+            let (ref mut imap_socket2, _, _) = server.connect()?;
+            connect(imap_socket2).context("connect")?;
+            login(imap_socket2, Account::Alice).context("login")?;
+            
+            let status_res = status(imap_socket2, Mailbox::Inbox, StatusKind::Recent).context("status INBOX")?;
+            assert!(status_res.contains("RECENT 0"));
+
+            let examine_res = examine(imap_socket2, Mailbox::Inbox).context("examine INBOX")?;
+            assert!(examine_res.contains("0 RECENT"));
+        }
+        let res = fetch(imap_socket, Selection::FirstId, FetchKind::Flags, FetchMod::None).context("fetch flags")?;
+        assert!(res.contains("\\Recent"));
+        let res = fetch(imap_socket, Selection::SecondId, FetchKind::Flags, FetchMod::None).context("fetch flags")?;
+        assert!(res.contains("\\Recent"));
+        unselect(imap_socket).context("unselect INBOX")?;
+        let status_res = status(imap_socket, Mailbox::Inbox, StatusKind::Recent).context("status INBOX")?;
+        assert!(status_res.contains("RECENT 0"));
+        
+        Ok(())
+    })
+        .expect("test fully run");
+
+    // Test with concurrent sessions.
+    common::aerogramme_provider_daemon_dev_multisession(|server| {
+        let (ref mut imap_socket, _, _) = server.connect()?;
+        connect(imap_socket).context("server says hello")?;
+        login(imap_socket, Account::Alice).context("login test")?;
+        select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select1")?;
+
+        let (ref mut imap_socket2, _, _) = server.connect()?;
+        connect(imap_socket2).context("server says hello")?;
+        login(imap_socket2, Account::Alice).context("login test")?;
+        select(imap_socket2, Mailbox::Inbox, SelectMod::None).context("select2")?;
+
+        let (ref mut imap_socket3, _, _) = server.connect()?;
+        connect(imap_socket3).context("server says hello")?;
+        login(imap_socket3, Account::Alice).context("login test")?;
+
+        // Sessions 1 and 2 have the mailbox selected, session 3 doesn't.
+
+        // append from session 1
+        append(imap_socket, Email::Basic).context("append")?;
+        noop(imap_socket2).context("noop")?;
+        // \Recent is visible in sessions 1 and 2 which have concurrently
+        // selected the mailbox, but not 3 (which did not select it).
+        //
+        // This is in principle against the spirit of the spec, which says that
+        // only one session should see the \Recent flag. However, the spec also
+        // says: "If it is not possible to determine whether or not this session
+        // is the first session to be notified about a message, then that
+        // message SHOULD be considered recent."
+        //
+        // Since we cannot really assign \Recent to a single session with our
+        // architecture, consider that we fall in this exception and assign
+        // \Recent to *all* concurrent sessions which selected the mailbox
+        // before the message creation.
+        let res = fetch(imap_socket2, Selection::FirstId, FetchKind::Flags, FetchMod::None).context("fetch flags")?;
+        assert!(res.contains("\\Recent"));
+        let res = fetch(imap_socket, Selection::FirstId, FetchKind::Flags, FetchMod::None).context("fetch flags")?;
+        assert!(res.contains("\\Recent"));
+        let res = status(imap_socket3, Mailbox::Inbox, StatusKind::Recent).context("status INBOX")?;
+        assert!(res.contains("RECENT 0"));
+
+        Ok(())
+    }).expect("test fully run");
 }
 
 fn rfc3691_imapext_unselect() {
