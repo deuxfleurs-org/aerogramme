@@ -3,25 +3,20 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use aero_bayou::timestamp::now_msec;
-use aero_user::cryptoblob::{open_deserialize, seal_serialize};
-use aero_user::login::Credentials;
-use aero_user::storage;
 
+use crate::crdt::Crdt;
 use crate::unique_ident::{gen_ident, UniqueIdent};
 
-/// A list of named identifiers, designed to be serialized as a single K2V entry.
-///
-/// This is useful to represent the list of toplevel collections in a namespace,
-/// such as mailboxes, calendars, etc.
-#[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct IdentList(BTreeMap<String, IdentListEntry>);
+/// A list of DAV collection names, designed to be serialized as a single K2V entry.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub(crate) struct CollectionList(BTreeMap<String, CollectionListEntry>);
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
-struct IdentListEntry {
+struct CollectionListEntry {
     id_lww: (u64, Option<UniqueIdent>),
 }
 
-impl IdentListEntry {
+impl CollectionListEntry {
     fn merge(&mut self, other: &Self) {
         // Simple CRDT merge rule
         if other.id_lww.0 > self.id_lww.0
@@ -32,49 +27,8 @@ impl IdentListEntry {
     }
 }
 
-impl IdentList {
-    pub fn new() -> Self {
-        Self(BTreeMap::new())
-    }
-
-    pub async fn load_from_storage(
-        creds: &Credentials,
-        pk: &str,
-        sk: &str,
-    ) -> Result<(Self, Option<storage::RowRef>)> {
-        match creds.storage.row_fetch(pk, sk).await {
-            Err(storage::StorageError::NotFound) => Ok((IdentList::new(), None)),
-            Err(e) => Err(e.into()),
-            Ok(rv) => {
-                let mut list = IdentList::new();
-                let (row_ref, row_vals) = (rv.row_ref, rv.value);
-
-                for v in row_vals {
-                    if let storage::Alternative::Value(vbytes) = v {
-                        let list2 = open_deserialize::<IdentList>(&vbytes, &creds.keys.master)?;
-                        list.merge(list2);
-                    }
-                }
-                Ok((list, Some(row_ref)))
-            }
-        }
-    }
-
-    pub async fn store_to_storage(
-        &self,
-        creds: &Credentials,
-        pk: &str,
-        sk: &str,
-        ct: Option<storage::RowRef>,
-    ) -> Result<()> {
-        let list_blob = seal_serialize(self, &creds.keys.master)?;
-        let rref = ct.unwrap_or(storage::RowRef::new(pk, sk));
-        let row_val = storage::RowVal::new(rref, list_blob);
-        creds.storage.row_update(vec![row_val]).await?;
-        Ok(())
-    }
-
-    pub fn merge(&mut self, list2: Self) {
+impl Crdt for CollectionList {
+    fn merge(&mut self, list2: Self) {
         for (k, v) in list2.0.into_iter() {
             if let Some(e) = self.0.get_mut(&k) {
                 e.merge(&v);
@@ -83,7 +37,9 @@ impl IdentList {
             }
         }
     }
+}
 
+impl CollectionList {
     /// Get a list of all ident names.
     pub fn names(&self) -> Vec<String> {
         self.0
@@ -94,26 +50,21 @@ impl IdentList {
     }
 
     pub fn has(&self, name: &str) -> bool {
-        matches!(
-            self.0.get(name),
-            Some(IdentListEntry {
-                id_lww: (_, Some(_)),
-                ..
-            })
-        )
+        self.0.get(name).is_some()
     }
 
     pub fn get(&self, name: &str) -> Option<UniqueIdent> {
-        self.0
-            .get(name)
-            .map(|IdentListEntry { id_lww: (_, ident) }| *ident)
-            .flatten()
+        self.0.get(name).and_then(|entry| entry.id_lww.1)
+    }
+
+    pub fn delete(&mut self, name: &str) {
+        self.set(name, None);
     }
 
     /// Ensures name `name` maps to ident `id`.
     /// If it already mapped to that, returns false.
     /// If a change had to be done, returns true.
-    pub fn set(&mut self, name: &str, id: Option<UniqueIdent>) -> bool {
+    fn set(&mut self, name: &str, id: Option<UniqueIdent>) -> bool {
         let (ts, id) = match self.0.get_mut(name) {
             None => {
                 // The entry does not exist.
@@ -125,7 +76,7 @@ impl IdentList {
                     (now_msec(), id)
                 }
             }
-            Some(IdentListEntry { id_lww }) => {
+            Some(CollectionListEntry { id_lww }) => {
                 // The entry currently exists.
                 if id_lww.1 == id {
                     // Entry has the requested `id`. Nothing to do.
@@ -138,21 +89,23 @@ impl IdentList {
         };
 
         self.0
-            .insert(name.into(), IdentListEntry { id_lww: (ts, id) });
+            .insert(name.into(), CollectionListEntry { id_lww: (ts, id) });
         true
     }
 
-    pub fn create(&mut self, name: &str) -> CreatedResult {
-        if let Some(id) = self.get(name) {
-            return CreatedResult::Existed(id);
+    pub fn create(&mut self, name: &str) -> CreateResult {
+        if let Some(_id) = self.get(name) {
+            return CreateResult::Existed;
         }
 
         let id = gen_ident();
         self.set(name, Some(id));
-        CreatedResult::Created(id)
+        CreateResult::Created
     }
 
     pub fn rename(&mut self, old_name: &str, new_name: &str) -> Result<()> {
+        //@TODO: does this have reasonable semantics if merged with other
+        // concurrent operations?
         if let Some(mbid) = self.get(old_name) {
             if self.has(new_name) {
                 bail!(
@@ -177,7 +130,7 @@ impl IdentList {
     }
 }
 
-pub(crate) enum CreatedResult {
-    Created(UniqueIdent),
-    Existed(UniqueIdent),
+pub(crate) enum CreateResult {
+    Created,
+    Existed,
 }

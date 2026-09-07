@@ -5,8 +5,9 @@ use std::sync::Arc;
 use aero_user::login::Credentials;
 use aero_user::storage;
 
+use crate::crdt::Crdt;
 use crate::dav::collection::{Collection, CollectionWeak};
-use crate::ident_list::{CreatedResult, IdentList};
+use crate::dav::collection_list::{CollectionList, CreateResult};
 use crate::unique_ident::UniqueIdent;
 
 pub(crate) const MAX_COLNAME_CHARS: usize = 32;
@@ -89,7 +90,7 @@ impl DavNs {
         let (mut list, ct) = self.load_collection_list().await?;
         if list.has(name) {
             //@TODO: actually delete collection content
-            list.set(name, None);
+            list.delete(name);
             self.save_collection_list(&list, ct).await?;
             Ok(())
         } else {
@@ -136,8 +137,8 @@ impl DavNs {
 
         let (mut list, ct) = self.load_collection_list().await?;
         match list.create(name) {
-            CreatedResult::Existed(_) => bail!("Collection {} already exists", name),
-            CreatedResult::Created(_) => (),
+            CreateResult::Existed => bail!("Collection {} already exists", name),
+            CreateResult::Created => (),
         }
         self.save_collection_list(&list, ct).await?;
 
@@ -161,18 +162,16 @@ impl DavNs {
     // --- internal collction list management ----
 
     /// Load from storage
-    async fn load_collection_list(&self) -> Result<(IdentList, Option<storage::RowRef>)> {
+    async fn load_collection_list(&self) -> Result<(CollectionList, Option<storage::RowRef>)> {
         let (mut list, row) =
-            IdentList::load_from_storage(&self.creds, &self.prefix, "list").await?;
+            CollectionList::load_from_storage(&self.creds, &self.prefix, "list").await?;
 
         // Create default collections
         let is_default_col_missing = self
             .default_collections
             .iter()
             .map(|colname| list.create(colname))
-            .fold(false, |acc, r| {
-                acc || matches!(r, CreatedResult::Created(..))
-            });
+            .fold(false, |acc, r| acc || matches!(r, CreateResult::Created));
 
         // Save the index if we created a new collection
         if is_default_col_missing {
@@ -185,7 +184,7 @@ impl DavNs {
     /// Save an updated index
     async fn save_collection_list(
         &self,
-        list: &IdentList,
+        list: &CollectionList,
         ct: Option<storage::RowRef>,
     ) -> Result<()> {
         list.store_to_storage(&self.creds, &self.prefix, "list", ct)
