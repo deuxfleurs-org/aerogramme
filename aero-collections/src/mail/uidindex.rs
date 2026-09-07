@@ -26,6 +26,9 @@ pub type InternalModSeq = u64;
 pub struct UidIndex {
     // Source of trust
     pub table: OrdMap<UniqueIdent, IndexEntry>,
+    // Whether this index represents a deleted mailbox. If `deleted` is `true`
+    // then `table` and related index must be empty.
+    pub deleted: bool,
 
     // Indexes optimized for queries
     pub idx_by_uid: OrdMap<ImapUid, UniqueIdent>,
@@ -126,6 +129,8 @@ pub enum UidIndexOp {
     FlagDel(UniqueIdent, InternalModSeq, Flags),
     FlagSet(UniqueIdent, InternalModSeq, Flags),
     BumpRecent,
+    MailboxDelete,
+    MailboxCreate,
 }
 
 impl UidIndex {
@@ -160,6 +165,16 @@ impl UidIndex {
     #[must_use]
     pub fn op_bump_recent(&self) -> UidIndexOp {
         UidIndexOp::BumpRecent
+    }
+
+    #[must_use]
+    pub fn op_mailbox_delete(&self) -> UidIndexOp {
+        UidIndexOp::MailboxDelete
+    }
+
+    #[must_use]
+    pub fn op_mailbox_create(&self) -> UidIndexOp {
+        UidIndexOp::MailboxCreate
     }
 
     pub fn uidnext(&self) -> ImapUid {
@@ -257,6 +272,7 @@ impl Default for UidIndex {
     fn default() -> Self {
         Self {
             table: OrdMap::new(),
+            deleted: false,
 
             idx_by_uid: OrdMap::new(),
             idx_by_flag: FlagIndex::new(),
@@ -279,34 +295,57 @@ impl BayouState for UidIndex {
     fn apply(&self, op: &UidIndexOp) -> Self {
         let mut new = self.clone();
         match op {
+            UidIndexOp::MailboxDelete => {
+                new.deleted = true;
+                // clear tables and indexes, except UIDVALIDITY/modseqvalidity
+                new.table = OrdMap::new();
+                new.idx_by_uid = OrdMap::new();
+                new.idx_by_flag = FlagIndex::new();
+                new.idx_by_seqid = SeqidMap::new();
+                new.idx_seqid_of_uuid = OrdMap::new();
+                new.recent_from = NonZeroU32::new(1).unwrap();
+                new.internalseq = 0;
+                new.internalmodseq = 0;
+                // bump UIDVALIDITY (& modseqvalidity) to ensure they are not
+                // reused if the mailbox gets re-created later (this is required
+                // by the specification).
+                new.uidvalidity = NonZeroU32::new(new.uidvalidity.get() + 1).unwrap();
+                new.modseqvalidity += 1;
+            }
+            UidIndexOp::MailboxCreate => {
+                new.deleted = false;
+            }
             UidIndexOp::MailAdd(ident, iseq, imodseq, flags) => {
-                // Change UIDValidity if there is a UID conflict
-                // The intuition: we increase the UIDValidity by the number of possible conflicts
-                // Proof: https://aerogramme.deuxfleurs.fr/documentation/internals/imap-uid/
-                if *iseq < new.internalseq {
-                    let bump_uid = new.internalseq - iseq;
-                    new.uidvalidity = NonZeroU32::new(new.uidvalidity.get() + bump_uid).unwrap();
+                if !new.deleted {
+                    // Change UIDValidity if there is a UID conflict
+                    // The intuition: we increase the UIDValidity by the number of possible conflicts
+                    // Proof: https://aerogramme.deuxfleurs.fr/documentation/internals/imap-uid/
+                    if *iseq < new.internalseq {
+                        let bump_uid = new.internalseq - iseq;
+                        new.uidvalidity =
+                            NonZeroU32::new(new.uidvalidity.get() + bump_uid).unwrap();
+                    }
+                    // Change modseqvalidity if there is a modseq conflict
+                    if *imodseq < new.internalmodseq {
+                        let bump_modseq = new.internalmodseq - imodseq;
+                        new.modseqvalidity = new.modseqvalidity + bump_modseq;
+                    }
+
+                    // Assign the real uid of the email using uidnext(), then bump
+                    // the counter.
+                    let new_uid = new.uidnext();
+                    new.internalseq += 1;
+
+                    // Assign the real modseq of the email and its new flags.
+                    //
+                    // highestmodseq() returns the highest currently assigned
+                    // modseq; first bump the counter then assign the new modseq.
+                    new.internalmodseq += 1;
+                    let new_modseq = new.highestmodseq();
+
+                    // We record our email and update our caches
+                    new.reg_email(*ident, new_uid, new_modseq, flags);
                 }
-                // Change modseqvalidity if there is a modseq conflict
-                if *imodseq < new.internalmodseq {
-                    let bump_modseq = new.internalmodseq - imodseq;
-                    new.modseqvalidity = new.modseqvalidity + bump_modseq;
-                }
-
-                // Assign the real uid of the email using uidnext(), then bump
-                // the counter.
-                let new_uid = new.uidnext();
-                new.internalseq += 1;
-
-                // Assign the real modseq of the email and its new flags.
-                //
-                // highestmodseq() returns the highest currently assigned
-                // modseq; first bump the counter then assign the new modseq.
-                new.internalmodseq += 1;
-                let new_modseq = new.highestmodseq();
-
-                // We record our email and update our caches
-                new.reg_email(*ident, new_uid, new_modseq, flags);
             }
             UidIndexOp::MailDel(ident) => {
                 // If the email is known locally, we remove its references in all our indexes
@@ -368,7 +407,9 @@ impl BayouState for UidIndex {
             }
 
             UidIndexOp::BumpRecent => {
-                new.recent_from = new.uidnext();
+                if !new.deleted {
+                    new.recent_from = new.uidnext();
+                }
             }
         }
         new
