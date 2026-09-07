@@ -26,6 +26,8 @@ pub type InternalModSeq = u64;
 pub struct UidIndex {
     // Source of trust
     pub table: OrdMap<UniqueIdent, IndexEntry>,
+    // Whether this index represents a mailbox that has been deleted.
+    pub deleted: bool,
 
     // Indexes optimized for queries
     pub idx_by_uid: OrdMap<ImapUid, UniqueIdent>,
@@ -120,6 +122,8 @@ pub enum UidIndexOp {
     FlagDel(UniqueIdent, InternalModSeq, Flags),
     FlagSet(UniqueIdent, InternalModSeq, Flags),
     BumpRecent,
+    UidvalidityAdd(u32),
+    MailboxDelete,
 }
 
 impl UidIndex {
@@ -154,6 +158,16 @@ impl UidIndex {
     #[must_use]
     pub fn op_bump_recent(&self) -> UidIndexOp {
         UidIndexOp::BumpRecent
+    }
+
+    #[must_use]
+    pub fn op_uidvalidity_add(&self, delta: u32) -> UidIndexOp {
+        UidIndexOp::UidvalidityAdd(delta)
+    }
+
+    #[must_use]
+    pub fn op_mailbox_delete(&self) -> UidIndexOp {
+        UidIndexOp::MailboxDelete
     }
 
     pub fn uidnext(&self) -> ImapUid {
@@ -251,6 +265,7 @@ impl Default for UidIndex {
     fn default() -> Self {
         Self {
             table: OrdMap::new(),
+            deleted: false,
 
             idx_by_uid: OrdMap::new(),
             idx_by_flag: FlagIndex::new(),
@@ -370,6 +385,10 @@ impl BayouState for UidIndex {
             UidIndexOp::BumpRecent => {
                 new.recent_from = new.uidnext();
             }
+            UidIndexOp::UidvalidityAdd(delta) => {
+                new.uidvalidity = NonZeroU32::new(new.uidvalidity.get() + delta).unwrap();
+            }
+            UidIndexOp::MailboxDelete => new.deleted = true,
         }
         new
     }
@@ -418,6 +437,7 @@ impl FlagIndex {
 #[derive(Serialize, Deserialize)]
 struct UidIndexSerializedRepr {
     mails: Vec<(ImapUid, ModSeq, UniqueIdent, Flags)>,
+    deleted: bool,
 
     uidvalidity: ImapUidvalidity,
     highestmodseq: ModSeq,
@@ -434,6 +454,7 @@ impl<'de> Deserialize<'de> for UidIndex {
     {
         let val: UidIndexSerializedRepr = UidIndexSerializedRepr::deserialize(d)?;
         let mut uidindex = UidIndex {
+            deleted: val.deleted,
             uidvalidity: val.uidvalidity,
             highestmodseq: val.highestmodseq,
             recent_from: val.recent_from,
@@ -462,6 +483,7 @@ impl Serialize for UidIndex {
 
         let val = UidIndexSerializedRepr {
             mails,
+            deleted: self.deleted,
             uidvalidity: self.uidvalidity,
             highestmodseq: self.highestmodseq,
             recent_from: self.recent_from,

@@ -2,15 +2,16 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::watch;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 
 use aero_user::login::Credentials;
 use aero_user::storage;
 
-use crate::ident_list::{CreatedResult, IdentList};
+use crate::crdt::Crdt;
 use crate::mail::incoming::incoming_mail_watch_process;
 use crate::mail::mailbox::{Mailbox, MailboxWeak};
-use crate::unique_ident::UniqueIdent;
+use crate::mail::mailbox_list::{MailboxList, MailboxListVal};
+use crate::unique_ident::{gen_ident, UniqueIdent};
 
 pub const MAILBOX_HIERARCHY_DELIMITER: char = '.';
 
@@ -92,11 +93,12 @@ impl MailboxNs {
         }
         */
 
-        if let Some(mbid) = list.get(name) {
-            let mb = self.inner.open_by_id(mbid).await?;
-            Ok(Some(mb))
-        } else {
-            Ok(None)
+        match list.get(name) {
+            Some(MailboxListVal::Active { id }) => {
+                let mb = self.inner.open_by_id(id).await?;
+                Ok(Some(mb))
+            }
+            Some(MailboxListVal::Deleted { .. }) | None => Ok(None),
         }
     }
 
@@ -124,13 +126,11 @@ impl MailboxNs {
         }
 
         let (mut list, ct) = self.load_mailbox_list().await?;
-        match list.create(name) {
-            CreatedResult::Created(_) => {
-                self.save_mailbox_list(&list, ct).await?;
-                Ok(())
-            }
-            CreatedResult::Existed(_) => Err(anyhow!("Mailbox {} already exists", name)),
+        match self.create_in_list(&mut list, name).await? {
+            CreateResult::Created(_id) => self.save_mailbox_list(&list, ct).await?,
+            CreateResult::Existed(_id) => bail!("Mailbox {} already exists", name),
         }
+        Ok(())
     }
 
     /// Deletes a mailbox in the user's IMAP namespace.
@@ -140,10 +140,11 @@ impl MailboxNs {
         }
 
         let (mut list, ct) = self.load_mailbox_list().await?;
-        if list.has(name) {
-            //@TODO: actually delete mailbox contents
-            list.set(name, None);
+        if let DeleteResult::Deleted(mbid) = self.delete_in_list(&mut list, name).await? {
             self.save_mailbox_list(&list, ct).await?;
+            // Signal to the mailbox that it has been deleted
+            let mut mbox = self.inner.open_by_id(mbid).await?;
+            mbox.delete_mailbox().await?;
             Ok(())
         } else {
             bail!("Mailbox {} does not exist", name);
@@ -162,10 +163,8 @@ impl MailboxNs {
         }
 
         if old_name == INBOX {
-            list.rename(old_name, new_name)?;
-            if !self.ensure_inbox_exists(&mut list, &ct).await? {
-                self.save_mailbox_list(&list, ct).await?;
-            }
+            self.rename_in_list(&mut list, old_name, new_name).await?;
+            let _res = self.ensure_inbox_exists(&mut list).await?;
         } else {
             let names = list.names();
 
@@ -181,71 +180,125 @@ impl MailboxNs {
 
             for name in names.iter() {
                 if name == old_name {
-                    list.rename(name, new_name)?;
+                    self.rename_in_list(&mut list, name, new_name).await?;
                 } else if let Some(tail) = name.strip_prefix(&old_name_w_delim) {
                     let nnew = format!("{}{}", new_name_w_delim, tail);
-                    list.rename(name, &nnew)?;
+                    self.rename_in_list(&mut list, name, &nnew).await?;
                 }
             }
-
-            self.save_mailbox_list(&list, ct).await?;
         }
+        self.save_mailbox_list(&list, ct).await?;
         Ok(())
     }
 
     // ---- internal mailbox list management ----
 
-    async fn load_mailbox_list(&self) -> Result<(IdentList, Option<storage::RowRef>)> {
+    async fn create_in_list(&self, list: &mut MailboxList, name: &str) -> Result<CreateResult> {
+        let id = match list.get(name) {
+            None => {
+                // Mailbox is being created for the first time; just generate a
+                // fresh id
+                gen_ident()
+            }
+            Some(MailboxListVal::Deleted { prev_uidvalidity }) => {
+                // Initialize a new mailbox with a starting UIDVALIDITY higher
+                // than the previous mailbox with this name.
+                let id = gen_ident();
+                let mut mbox = self.inner.open_by_id(id).await?;
+                mbox.increase_uidvalidity(prev_uidvalidity.get() + 16)
+                    .await?;
+                id
+            }
+            Some(MailboxListVal::Active { id }) => return Ok(CreateResult::Existed(id)),
+        };
+
+        list.set(name, MailboxListVal::Active { id });
+        Ok(CreateResult::Created(id))
+    }
+
+    async fn delete_in_list(&self, list: &mut MailboxList, name: &str) -> Result<DeleteResult> {
+        match list.get(name) {
+            Some(MailboxListVal::Active { id }) => {
+                let mbox = self.inner.open_by_id(id).await?;
+                let prev_uidvalidity = mbox.current_uid_index().uidvalidity;
+                list.set(name, MailboxListVal::Deleted { prev_uidvalidity });
+                Ok(DeleteResult::Deleted(id))
+            }
+            Some(MailboxListVal::Deleted { .. }) | None => Ok(DeleteResult::Missing),
+        }
+    }
+
+    async fn rename_in_list(
+        &self,
+        list: &mut MailboxList,
+        old_name: &str,
+        new_name: &str,
+    ) -> Result<()> {
+        // Check that we can perform the rename before modifying list
+        let Some(MailboxListVal::Active { .. }) = list.get(old_name) else {
+            bail!(
+                "Cannot rename {} into {}: {} does not exist",
+                old_name,
+                new_name,
+                old_name,
+            )
+        };
+
+        if let Some(MailboxListVal::Active { .. }) = list.get(new_name) {
+            bail!(
+                "Cannot rename {} into {}: {} already exists",
+                old_name,
+                new_name,
+                new_name,
+            )
+        }
+
+        let res = self.delete_in_list(list, old_name).await?;
+        assert!(matches!(res, DeleteResult::Deleted(_)));
+        let res = self.create_in_list(list, new_name).await?;
+        assert!(matches!(res, CreateResult::Created(_)));
+
+        Ok(())
+    }
+
+    async fn load_mailbox_list(&self) -> Result<(MailboxList, Option<storage::RowRef>)> {
         let (mut list, row) =
-            IdentList::load_from_storage(&self.inner.creds, MAILBOX_LIST_PK, MAILBOX_LIST_SK)
+            MailboxList::load_from_storage(&self.inner.creds, MAILBOX_LIST_PK, MAILBOX_LIST_SK)
                 .await?;
 
-        let is_default_mbx_missing = [DRAFTS, ARCHIVE, SENT, TRASH]
-            .iter()
-            .map(|mbx| list.create(mbx))
-            .fold(false, |acc, r| {
-                acc || matches!(r, CreatedResult::Created(..))
-            });
-        let is_inbox_missing = self.ensure_inbox_exists(&mut list, &row).await?;
-        if is_default_mbx_missing && !is_inbox_missing {
-            // It's the only case where we created some mailboxes and not saved them
-            // So we save them!
+        let mut created_default_mbx = false;
+        for mbx in [DRAFTS, ARCHIVE, SENT, TRASH] {
+            if let CreateResult::Created(_) = self.create_in_list(&mut list, mbx).await? {
+                created_default_mbx = true;
+            }
+        }
+        let inbox_res = self.ensure_inbox_exists(&mut list).await?;
+        if created_default_mbx || matches!(inbox_res, CreateResult::Created(_)) {
+            // We created some mailboxes and not saved them, so save them now
             self.save_mailbox_list(&list, row.clone()).await?;
         }
 
         Ok((list, row))
     }
 
-    async fn ensure_inbox_exists(
-        &self,
-        list: &mut IdentList,
-        ct: &Option<storage::RowRef>,
-    ) -> Result<bool> {
+    async fn ensure_inbox_exists(&self, list: &mut MailboxList) -> Result<CreateResult> {
         // If INBOX doesn't exist, create a new mailbox with that name
         // and save new mailbox list.
         // Also, ensure that the mpsc::watch that keeps track of the
         // inbox id is up-to-date.
-        let saved;
-        let inbox_id = match list.create(INBOX) {
-            CreatedResult::Created(i) => {
-                self.save_mailbox_list(list, ct.clone()).await?;
-                saved = true;
-                i
-            }
-            CreatedResult::Existed(i) => {
-                saved = false;
-                i
-            }
-        };
-        let inbox_id = Some(inbox_id);
+        let res = self.create_in_list(list, INBOX).await?;
+        let inbox_id = Some(res.id());
         if *self.tx_inbox_id.borrow() != inbox_id {
             self.tx_inbox_id.send(inbox_id).unwrap();
         }
-
-        Ok(saved)
+        Ok(res)
     }
 
-    async fn save_mailbox_list(&self, list: &IdentList, ct: Option<storage::RowRef>) -> Result<()> {
+    async fn save_mailbox_list(
+        &self,
+        list: &MailboxList,
+        ct: Option<storage::RowRef>,
+    ) -> Result<()> {
         list.store_to_storage(&self.inner.creds, MAILBOX_LIST_PK, MAILBOX_LIST_SK, ct)
             .await
     }
@@ -279,4 +332,23 @@ impl MailboxNsInner {
         cache.insert(id, mb.downgrade());
         Ok(mb)
     }
+}
+
+enum CreateResult {
+    Created(UniqueIdent),
+    Existed(UniqueIdent),
+}
+
+impl CreateResult {
+    fn id(&self) -> UniqueIdent {
+        match self {
+            Self::Created(id) => *id,
+            Self::Existed(id) => *id,
+        }
+    }
+}
+
+enum DeleteResult {
+    Deleted(UniqueIdent),
+    Missing,
 }

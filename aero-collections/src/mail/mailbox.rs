@@ -131,6 +131,10 @@ impl Mailbox {
         self.mbox.bump_recent().await
     }
 
+    pub async fn increase_uidvalidity(&mut self, delta: u32) -> Result<()> {
+        self.mbox.increase_uidvalidity(delta).await
+    }
+
     /// Insert an email into the mailbox
     pub async fn append<'a>(
         &mut self,
@@ -180,6 +184,13 @@ impl Mailbox {
         }
 
         self.mbox.move_from(&mut from.mbox, uuid).await
+    }
+
+    /// Set the mailbox as deleted and empty its contents.
+    pub async fn delete_mailbox(&mut self) -> Result<()> {
+        //@TODO: actually delete mailbox contents
+        let delete_mailbox_op = self.mbox.uid_index.state().op_mailbox_delete();
+        self.mbox.uid_index.push(delete_mailbox_op).await
     }
 
     pub fn downgrade(&self) -> MailboxWeak {
@@ -321,6 +332,15 @@ impl MailboxInternal {
         if state.recent_from != state.uidnext() {
             let bump_op = self.uid_index.state().op_bump_recent();
             self.uid_index.push(bump_op).await
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn increase_uidvalidity(&mut self, delta: u32) -> Result<()> {
+        if delta > 0 {
+            let op = self.uid_index.state().op_uidvalidity_add(delta);
+            self.uid_index.push(op).await
         } else {
             Ok(())
         }

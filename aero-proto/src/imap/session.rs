@@ -175,6 +175,14 @@ impl Instance {
                             .unwrap(),
                         flow::Transition::Logout { needs_bye: true },
                     ),
+                    SyncError::MailboxDeleted => (
+                        Response::build()
+                            .to_req(&cmd)
+                            .message("Selected mailbox has been deleted")
+                            .no()
+                            .unwrap(),
+                        flow::Transition::Logout { needs_bye: true },
+                    ),
                 }
             } else {
                 tracing::error!("Command error {:?} occured while processing {:?}", err, cmd);
