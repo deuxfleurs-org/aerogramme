@@ -12,6 +12,7 @@ fn main() {
     rfc3501_imap4rev1_fetch_seen();
     rfc3501_imap4rev1_search();
     rfc3501_imap4rev1_recent();
+    rfc3501_imap4rev1_uidvalidity();
     rfc6851_imapext_move();
     rfc4551_imapext_condstore();
     rfc2177_imapext_idle();
@@ -789,7 +790,6 @@ fn rfc3501_imap4rev1_search() {
 
 fn rfc3501_imap4rev1_recent() {
     println!("🧪 rfc3501_imap4rev1_recent");
-
     common::aerogramme_provider_daemon_dev_multisession(|server| {
         let (ref mut imap_socket, ref mut lmtp_socket, _dav_socket) = server.connect()?;
         connect(imap_socket).context("server says hello")?;
@@ -882,6 +882,28 @@ fn rfc3501_imap4rev1_recent() {
 
         Ok(())
     }).expect("test fully run");
+}
+
+fn rfc3501_imap4rev1_uidvalidity() {
+    println!("🧪 rfc3501_imap4rev1_uidvalidity");
+    common::aerogramme_provider_daemon_dev(|imap_socket, _lmtp_socket, _dav_socket| {
+        connect(imap_socket).context("server says hello")?;
+        login(imap_socket, Account::Alice).context("login test")?;
+
+        // "If the mailbox is deleted and a new mailbox with the same name is
+        // created at a later date, the server must either keep track of unique
+        // identifiers from the previous instance of the mailbox, or it must
+        // assign a new UIDVALIDITY value to the new instance of the mailbox."
+        create_mailbox(imap_socket, Mailbox::Archive).context("create Archive")?;
+        let res = status(imap_socket, Mailbox::Archive, StatusKind::UidValidity).context("status")?;
+        assert!(res.contains("UIDVALIDITY 1"));
+        delete_mailbox(imap_socket, Mailbox::Archive).context("delete Archive")?;
+        create_mailbox(imap_socket, Mailbox::Archive).context("create Archive")?;
+        let res = status(imap_socket, Mailbox::Archive, StatusKind::UidValidity).context("status")?;
+        assert!(res.contains("UIDVALIDITY 2"));
+
+        Ok(())
+    }).expect("test fully run")
 }
 
 fn rfc3691_imapext_unselect() {

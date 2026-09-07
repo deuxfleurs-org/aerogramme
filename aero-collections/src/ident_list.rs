@@ -18,7 +18,44 @@ pub(crate) struct IdentList(BTreeMap<String, IdentListEntry>);
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 struct IdentListEntry {
-    id_lww: (u64, Option<UniqueIdent>),
+    id_lww: (u64, IdentListVal),
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+enum IdentListVal {
+    /// Active entry with this ID
+    Active(UniqueIdent),
+    /// Deleted entry with this ID; the ID will be reused if the entry is
+    /// re-created
+    Deleted(UniqueIdent),
+    /// Empty entry
+    None,
+}
+
+impl PartialOrd for IdentListVal {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        use core::cmp::Ordering;
+        match (self, other) {
+            (Self::None, Self::None) => Some(Ordering::Equal),
+            (Self::None, _) => Some(Ordering::Less),
+            (_, Self::None) => Some(Ordering::Greater),
+            
+            (Self::Deleted(id), Self::Deleted(id2)) |
+            (Self::Active(id), Self::Active(id2)) => id.partial_cmp(id2),
+            
+            (Self::Deleted(_), Self::Active(_)) => Some(Ordering::Less),
+            (Self::Active(_), Self::Deleted(_)) => Some(Ordering::Greater),
+        }
+    }
+}
+
+impl IdentListVal {
+    pub fn into_active(&self) -> Option<UniqueIdent> {
+        match self {
+            Self::Active(id) => Some(*id),
+            Self::Deleted(_) | Self::None => None,
+        }
+    }
 }
 
 impl IdentListEntry {
@@ -89,7 +126,7 @@ impl IdentList {
     pub fn names(&self) -> Vec<String> {
         self.0
             .iter()
-            .filter(|(_, v)| v.id_lww.1.is_some())
+            .filter(|(_, v)| matches!(v.id_lww.1, IdentListVal::Active(_)))
             .map(|(k, _)| k.to_string())
             .collect()
     }
@@ -98,7 +135,7 @@ impl IdentList {
         matches!(
             self.0.get(name),
             Some(IdentListEntry {
-                id_lww: (_, Some(_)),
+                id_lww: (_, IdentListVal::Active(_)),
                 ..
             })
         )
@@ -107,22 +144,33 @@ impl IdentList {
     pub fn get(&self, name: &str) -> Option<UniqueIdent> {
         self.0
             .get(name)
-            .map(|IdentListEntry { id_lww: (_, ident) }| *ident)
+            .map(|IdentListEntry { id_lww: (_, id) }| id.into_active())
             .flatten()
     }
-   
+
+    pub fn delete(&mut self, name: &str) {
+        self.set(name, IdentListVal::None);
+    }
+
+    pub fn delete_remember_id(&mut self, name: &str) {
+        if let Some(IdentListEntry {
+            id_lww: (_, IdentListVal::Active(id)),
+        }) = self.0.get(name) {
+            self.set(name, IdentListVal::Deleted(*id));
+        }
+    }
+
     /// Ensures name `name` maps to ident `id`.
     /// If it already mapped to that, returns false.
     /// If a change had to be done, returns true.
-    pub fn set(&mut self, name: &str, id: Option<UniqueIdent>) -> bool {
+    fn set(&mut self, name: &str, id: IdentListVal) -> bool {
         let (ts, id) = match self.0.get_mut(name) {
             None => {
-                // The entry does not exist.
-                if id.is_none() {
-                    // The user wants to delete the entry (`id` is `None`). Nothing to do.
+                if let IdentListVal::None = id {
+                    // A None entry is equivalent to no entry. Nothing to do.
                     return false;
                 } else {
-                    // The user wants to set the entry (`id` is `Some`). Initialize it.
+                    // The entry does not exist, initialize it.
                     (now_msec(), id)
                 }
             }
@@ -144,16 +192,23 @@ impl IdentList {
     }
 
     pub fn create(&mut self, name: &str) -> CreatedResult {
-        if let Some(id) = self.get(name) {
-            return CreatedResult::Existed(id);
+        match self.0.get(name).map(|ent| ent.id_lww.1) {
+            Some(IdentListVal::Active(id)) => CreatedResult::Existed(id),
+            Some(IdentListVal::Deleted(id)) => {
+                self.set(name, IdentListVal::Active(id));
+                CreatedResult::Created(id)
+            },
+            Some(IdentListVal::None) | None => {
+                let id = gen_ident();
+                self.set(name, IdentListVal::Active(id));
+                CreatedResult::Created(id)
+            }
         }
-
-        let id = gen_ident();
-        self.set(name, Some(id));
-        CreatedResult::Created(id)
     }
 
     pub fn rename(&mut self, old_name: &str, new_name: &str) -> Result<()> {
+        //@TODO: does this have reasonable semantics if merged with other
+        // concurrent operations?
         if let Some(mbid) = self.get(old_name) {
             if self.has(new_name) {
                 bail!(
@@ -164,8 +219,8 @@ impl IdentList {
                 );
             }
 
-            self.set(old_name, None);
-            self.set(new_name, Some(mbid));
+            self.set(old_name, IdentListVal::None);
+            self.set(new_name, IdentListVal::Active(mbid));
             Ok(())
         } else {
             bail!(

@@ -156,6 +156,7 @@ pub enum StatusKind {
     UidNext,
     HighestModSeq,
     Recent,
+    UidValidity,
 }
 
 pub enum MbxSelect {
@@ -315,6 +316,7 @@ pub fn status(imap: &mut TcpStream, mbx: Mailbox, sk: StatusKind) -> Result<Stri
         StatusKind::UidNext => "(UIDNEXT)",
         StatusKind::HighestModSeq => "(HIGHESTMODSEQ)",
         StatusKind::Recent => "(RECENT)",
+        StatusKind::UidValidity => "(UIDVALIDITY)",
     };
     imap.write(format!("25 STATUS {} {}\r\n", mbx_str, sk_str).as_bytes())?;
     let mut buffer: [u8; 6000] = [0; 6000];

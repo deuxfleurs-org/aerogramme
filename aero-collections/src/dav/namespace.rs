@@ -90,7 +90,7 @@ impl DavNs {
         let (mut list, ct) = self.load_collection_list().await?;
         if list.has(name) {
             //@TODO: actually delete collection content
-            list.set(name, None);
+            list.delete(name);
             self.save_collection_list(&list, ct).await?;
             Ok(())
         } else {

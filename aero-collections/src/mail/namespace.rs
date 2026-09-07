@@ -124,8 +124,15 @@ impl MailboxNs {
         }
 
         let (mut list, ct) = self.load_mailbox_list().await?;
+
         match list.create(name) {
-            CreatedResult::Created(_) => {
+            CreatedResult::Created(mbid) => {
+                // Update the mailbox to mark it mailbox as active again, in
+                // case it is currently in a deleted state
+                {
+                    let mut mbox = self.inner.open_by_id(mbid).await?;
+                    mbox.create_mailbox().await?;
+                }
                 self.save_mailbox_list(&list, ct).await?;
                 Ok(())
             }
@@ -140,10 +147,16 @@ impl MailboxNs {
         }
 
         let (mut list, ct) = self.load_mailbox_list().await?;
-        if list.has(name) {
-            //@TODO: actually delete mailbox contents
-            list.set(name, None);
+        if let Some(mbid) = list.get(name) {
+            // Use `delete_remember_id` to store the mailbox Uuid and reuse it
+            // later if it is re-created with the same name. This way, the
+            // mailbox index is reused and ensures that a fresh UIDVALIDITY
+            // value is assigned to the new mailbox.
+            list.delete_remember_id(name);
             self.save_mailbox_list(&list, ct).await?;
+            // Update the mailbox to delete its contents
+            let mut mbox = self.inner.open_by_id(mbid).await?; 
+            mbox.delete_mailbox().await?;
             Ok(())
         } else {
             bail!("Mailbox {} does not exist", name);

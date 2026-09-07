@@ -193,6 +193,21 @@ impl Mailbox {
         self.mbox.set_next_recent_uid(next_uid.max(cur_uid), ct).await
     }
 
+    /// Set the mailbox as deleted and empty its contents.
+    pub async fn delete_mailbox(&mut self) -> Result<()> {
+        //@TODO: actually delete mailbox contents
+        let delete_mailbox_op = self.mbox.uid_index.state().op_mailbox_delete();
+        self.mbox.uid_index.push(delete_mailbox_op).await
+    }
+
+    /// A `Mailbox` can also represent mailbox that has been deleted. This
+    /// ensures that the mailbox is created again if it was previously deleted.
+    /// If the mailbox was not deleted, this is a no-op.
+    pub async fn create_mailbox(&mut self) -> Result<()> {
+        let create_mailbox_op = self.mbox.uid_index.state().op_mailbox_create();
+        self.mbox.uid_index.push(create_mailbox_op).await
+    }
+
     pub fn downgrade(&self) -> MailboxWeak {
         MailboxWeak {
             id: self.id.clone(),
