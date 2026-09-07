@@ -29,7 +29,6 @@ pub struct UidIndex {
 
     // Indexes optimized for queries
     pub idx_by_uid: OrdMap<ImapUid, UniqueIdent>,
-    pub idx_by_modseq: OrdMap<ModSeq, UniqueIdent>,
     pub idx_by_flag: FlagIndex,
     pub idx_by_seqid: SeqidMap<UniqueIdent>,
     // FIXME: can we remove this index which is somewhat expensive to maintain?
@@ -192,7 +191,6 @@ impl UidIndex {
         // Update the indexes/caches
         self.idx_by_uid.insert(uid, ident);
         self.idx_by_flag.insert(uid, flags);
-        self.idx_by_modseq.insert(modseq, ident);
         let next_seqid = self.idx_by_seqid.next_seqid();
         self.idx_by_seqid.push(ident);
         self.idx_seqid_of_uuid.insert(ident, next_seqid);
@@ -200,7 +198,7 @@ impl UidIndex {
 
     fn unreg_email(&mut self, ident: &UniqueIdent) {
         // We do nothing if the mail does not exist
-        let (uid, modseq, flags) = match self.table.get(ident) {
+        let (uid, _modseq, flags) = match self.table.get(ident) {
             Some(v) => v,
             None => return,
         };
@@ -208,7 +206,6 @@ impl UidIndex {
         // Delete all cache entries
         self.idx_by_uid.remove(uid);
         self.idx_by_flag.remove(*uid, flags);
-        self.idx_by_modseq.remove(modseq);
         let seqid = self.idx_seqid_of_uuid.remove(ident).unwrap();
         self.idx_by_seqid.remove(seqid);
         // we need to update all indexed seqids starting from this one in idx_seqid_of_uuid
@@ -246,7 +243,6 @@ impl Default for UidIndex {
             table: OrdMap::new(),
 
             idx_by_uid: OrdMap::new(),
-            idx_by_modseq: OrdMap::new(),
             idx_by_flag: FlagIndex::new(),
             idx_by_seqid: SeqidMap::new(),
             idx_seqid_of_uuid: OrdMap::new(),
@@ -312,9 +308,7 @@ impl BayouState for UidIndex {
                     // Bump the modseq counter first to get a new highestmodseq()
                     new.internalmodseq += 1;
                     new.idx_by_flag.insert(*uid, new_flags);
-                    new.idx_by_modseq.remove(email_modseq);
                     *email_modseq = Self::highestmodseq_of_internal(new.internalmodseq);
-                    new.idx_by_modseq.insert(*email_modseq, *ident);
                     existing_flags.append(&mut new_flags.clone());
                 }
             }
@@ -333,9 +327,7 @@ impl BayouState for UidIndex {
                     // Register that email has been modified.
                     // Bump the modseq counter first to get a new highestmodseq()
                     new.internalmodseq += 1;
-                    new.idx_by_modseq.remove(email_modseq);
                     *email_modseq = Self::highestmodseq_of_internal(new.internalmodseq);
-                    new.idx_by_modseq.insert(*email_modseq, *ident);
                 }
             }
             UidIndexOp::FlagSet(ident, imodseq, new_flags) => {
@@ -355,9 +347,7 @@ impl BayouState for UidIndex {
                     // Register that email has been modified
                     // Bump the modseq counter first to get a new highestmodseq()
                     new.internalmodseq += 1;
-                    new.idx_by_modseq.remove(email_modseq);
                     *email_modseq = Self::highestmodseq_of_internal(new.internalmodseq);
-                    new.idx_by_modseq.insert(*email_modseq, *ident);
                 }
             }
         }
