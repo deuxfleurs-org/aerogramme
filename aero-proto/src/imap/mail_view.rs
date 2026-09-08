@@ -13,7 +13,7 @@ use imap_codec::imap_types::response::Data;
 
 use eml_codec::{imf, message::Message};
 
-use aero_collections::mail::query::QueryResult;
+use aero_collections::mail::query::MailData;
 
 use crate::imap::attributes::AttributesProxy;
 use crate::imap::flags;
@@ -24,25 +24,25 @@ use crate::imap::response::Body;
 
 pub struct MailView<'a> {
     pub in_idx: &'a MailIndex,
-    pub query_result: &'a QueryResult,
+    pub query_result: &'a MailData,
     pub content: FetchedMail<'a>,
 }
 
 impl<'a> MailView<'a> {
-    pub fn new(query_result: &'a QueryResult, in_idx: &'a MailIndex) -> Result<MailView<'a>> {
+    pub fn new(query_result: &'a MailData, in_idx: &'a MailIndex) -> Result<MailView<'a>> {
         Ok(Self {
             in_idx,
             query_result,
             content: match query_result {
-                QueryResult::FullResult { content, .. } => {
+                MailData::Full { content, .. } => {
                     let parsed = eml_codec::parse_message(&content);
                     FetchedMail::full_from_message(parsed)
                 }
-                QueryResult::PartialResult { metadata, .. } => {
+                MailData::Partial { metadata, .. } => {
                     let parsed = eml_codec::parse_message(&metadata.headers);
                     FetchedMail::partial_from_message(parsed)
                 }
-                QueryResult::IndexResult { .. } => FetchedMail::IndexOnly,
+                MailData::Index { .. } => FetchedMail::IndexOnly,
             },
         })
     }

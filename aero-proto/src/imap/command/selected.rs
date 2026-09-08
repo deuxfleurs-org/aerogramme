@@ -166,7 +166,7 @@ impl<'a> SelectedContext<'a> {
             }
         });
 
-        let resp = self
+        let (resp, complete) = self
             .mailbox
             .fetch(sequence_set, &ap, changed_since, uid)
             .await?;
@@ -178,11 +178,25 @@ impl<'a> SelectedContext<'a> {
 
         // Response to the client
         Ok((
-            Response::build()
-                .to_req(self.req)
-                .message("FETCH completed")
-                .set_body(resp)
-                .ok()?,
+            if complete {
+                Response::build()
+                    .to_req(self.req)
+                    .message("FETCH completed")
+                    .set_body(resp)
+                    .ok()?
+            } else {
+                // When some of the messages exist in the index but have been
+                // deleted in storage, we are in case 4.1 of RFC2180, "Fetching
+                // of expunged messages".
+                //
+                // We implement the strategy in §4.1.2: return FETCH responses
+                // only for non-expunged messages and a tagged NO.
+                Response::build()
+                    .to_req(self.req)
+                    .message("Some of the requested messages no longer exist")
+                    .set_body(resp)
+                    .no()?
+            },
             flow::Transition::None,
         ))
     }

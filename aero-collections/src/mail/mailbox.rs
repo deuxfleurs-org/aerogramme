@@ -7,7 +7,7 @@ use aero_bayou::timestamp::now_msec;
 use aero_bayou::{Bayou, BayouWeak};
 use aero_user::cryptoblob::{self, gen_key, open_deserialize, seal_serialize, Key};
 use aero_user::login::Credentials;
-use aero_user::storage::{self, BlobRef, BlobVal, RowRef, RowVal, Selector, Store};
+use aero_user::storage::{self, BlobRef, BlobVal, RowRef, RowVal, Selector, Store, StorageError};
 
 use crate::mail::query::{Query, QueryScope};
 use crate::mail::uidindex::*;
@@ -91,12 +91,12 @@ impl Mailbox {
 
     /// Fetch the metadata (headers + some more info) of the specified
     /// mail IDs
-    pub async fn fetch_meta(&self, ids: &[UniqueIdent]) -> Result<Vec<MailMeta>> {
+    pub async fn fetch_meta(&self, ids: &[UniqueIdent]) -> Result<Vec<MailMetaResult>> {
         self.mbox.fetch_meta(ids).await
     }
 
     /// Fetch an entire e-mail
-    pub async fn fetch_full(&self, id: UniqueIdent, message_key: &Key) -> Result<Vec<u8>> {
+    pub async fn fetch_full(&self, id: UniqueIdent, message_key: &Key) -> Result<Option<Vec<u8>>> {
         self.mbox.fetch_full(id, message_key).await
     }
 
@@ -257,7 +257,7 @@ impl MailboxInternal {
 
     // ---- Functions for reading the mailbox ----
 
-    async fn fetch_meta(&self, ids: &[UniqueIdent]) -> Result<Vec<MailMeta>> {
+    async fn fetch_meta(&self, ids: &[UniqueIdent]) -> Result<Vec<MailMetaResult>> {
         let ids = ids.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         let sort_list = ids.iter().map(|x| x.as_str()).collect::<Vec<_>>();
         let res_vec = self
@@ -290,22 +290,30 @@ impl MailboxInternal {
                 }
             }
             if let Some(meta) = meta_opt {
-                meta_vec.push(meta);
+                meta_vec.push(MailMetaResult::MailMeta(meta));
             } else {
-                bail!("No valid meta value in k2v for {:?}", res.row_ref);
+                meta_vec.push(MailMetaResult::NotFound)
             }
         }
 
         Ok(meta_vec)
     }
 
-    async fn fetch_full(&self, id: UniqueIdent, message_key: &Key) -> Result<Vec<u8>> {
+    async fn fetch_full(&self, id: UniqueIdent, message_key: &Key) -> Result<Option<Vec<u8>>> {
         let obj_res = self
             .storage
             .blob_fetch(&BlobRef(format!("{}/{}", self.mail_path, id)))
-            .await?;
-        let body = obj_res.value;
-        cryptoblob::open(&body, message_key)
+            .await;
+        match obj_res {
+            Ok(obj) => {
+                let bytes = cryptoblob::open(&obj.value, message_key)?;
+                Ok(Some(bytes))
+            }
+            Err(StorageError::NotFound) =>
+                Ok(None),
+            Err(e) =>
+                Err(e)?
+        }
     }
 
     // ---- Functions for changing the mailbox ----
@@ -517,7 +525,11 @@ impl MailboxInternal {
             },
             async {
                 // Copy mail meta in K2V
-                let meta = &from.fetch_meta(&[source_id]).await?[0];
+                let meta_res = &from.fetch_meta(&[source_id]).await?[0];
+                let meta = match meta_res {
+                    MailMetaResult::NotFound => bail!("metadata not found for id {}", source_id),
+                    MailMetaResult::MailMeta(meta) => meta,
+                };
                 let meta_blob = seal_serialize(meta, &self.encryption_key)?;
                 self.storage
                     .row_update(vec![RowVal::new(
@@ -555,6 +567,15 @@ pub struct MailMeta {
     pub message_key: Key,
     /// RFC822 size
     pub rfc822_size: usize,
+}
+
+/// The result of fetching an email metadata entry (see `fetch_meta`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum MailMetaResult {
+    /// Successfully fetched mail metadata from storage.
+    MailMeta(MailMeta),
+    /// The mail metadata was not found in storage.
+    NotFound,
 }
 
 impl MailMeta {

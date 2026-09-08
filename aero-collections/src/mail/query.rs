@@ -1,4 +1,4 @@
-use super::mailbox::{MailMeta, Mailbox};
+use super::mailbox::{MailMeta, MailMetaResult, Mailbox};
 use crate::unique_ident::UniqueIdent;
 use anyhow::Result;
 use futures::future::FutureExt;
@@ -28,14 +28,12 @@ impl QueryScope {
     }
 }
 
-//type QueryResultStream = Box<dyn Stream<Item = Result<QueryResult>>>;
-
 impl Query {
     pub fn fetch(&self) -> BoxStream<'_, Result<QueryResult>> {
         match self.scope {
             QueryScope::Index => Box::pin(
                 futures::stream::iter(&self.emails)
-                    .map(|&uuid| Ok(QueryResult::IndexResult { uuid })),
+                    .map(|&uuid| Ok(QueryResult::MailData(MailData::Index { uuid }))),
             ),
             QueryScope::Partial => Box::pin(self.partial()),
             QueryScope::Full => Box::pin(self.full()),
@@ -45,15 +43,21 @@ impl Query {
     // --- functions below are private *for reasons*
     fn partial<'d>(&'d self) -> impl Stream<Item = Result<QueryResult>> + 'd + Send {
         async move {
-            let maybe_meta_list: Result<Vec<MailMeta>> =
+            let maybe_meta_list: Result<Vec<MailMetaResult>> =
                 self.mailbox.fetch_meta(&self.emails).await;
             let list_res = maybe_meta_list
                 .map(|meta_list| {
                     meta_list
                         .into_iter()
                         .zip(&self.emails)
-                        .map(|(metadata, &uuid)| Ok(QueryResult::PartialResult { uuid, metadata }))
-                        .collect()
+                        .map(|(metadata, &uuid)| {
+                            match metadata {
+                                MailMetaResult::NotFound => Ok(QueryResult::NotFound),
+                                MailMetaResult::MailMeta(metadata) =>
+                                    Ok(QueryResult::MailData(MailData::Partial { uuid, metadata }))
+                            }
+                        })
+                     .collect()
                 })
                 .unwrap_or_else(|e| vec![Err(e)]);
 
@@ -65,66 +69,86 @@ impl Query {
     fn full<'d>(&'d self) -> impl Stream<Item = Result<QueryResult>> + 'd + Send {
         self.partial().then(move |maybe_meta| async move {
             let meta = maybe_meta?;
-
-            let content = self
-                .mailbox
-                .fetch_full(
-                    *meta.uuid(),
-                    &meta
-                        .metadata()
-                        .expect("meta to be PartialResult")
-                        .message_key,
-                )
-                .await?;
-
-            Ok(meta.into_full(content).expect("meta to be PartialResult"))
+            
+            match meta {
+                QueryResult::NotFound => Ok(QueryResult::NotFound),
+                QueryResult::MailData(meta) => {
+                    let content = self
+                        .mailbox
+                        .fetch_full(
+                            *meta.uuid(),
+                            &meta
+                                .metadata()
+                                .expect("meta to be PartialResult")
+                                .message_key,
+                        )
+                        .await?;
+                    match content {
+                        None => Ok(QueryResult::NotFound),
+                        Some(content) =>
+                            Ok(QueryResult::MailData(
+                                meta.into_full(content).expect("meta to be PartialResult")
+                            ))
+                    }
+                }
+            }
         })
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum QueryResult {
-    IndexResult {
+    /// Successfully fetched the required mail data.
+    MailData(MailData),
+    /// The required mail data was not found (this indicates that the index
+    /// referencing this email is outdated and that the email has since then
+    /// been deleted in storage).
+    NotFound,
+}
+    
+#[derive(Debug, Clone)]
+pub enum MailData {
+    Index {
         uuid: UniqueIdent,
     },
-    PartialResult {
+    Partial {
         uuid: UniqueIdent,
         metadata: MailMeta,
     },
-    FullResult {
+    Full {
         uuid: UniqueIdent,
         metadata: MailMeta,
         content: Vec<u8>,
     },
 }
-impl QueryResult {
+impl MailData {
     pub fn uuid(&self) -> &UniqueIdent {
         match self {
-            Self::IndexResult { uuid, .. } => uuid,
-            Self::PartialResult { uuid, .. } => uuid,
-            Self::FullResult { uuid, .. } => uuid,
+            Self::Index { uuid, .. } => uuid,
+            Self::Partial { uuid, .. } => uuid,
+            Self::Full { uuid, .. } => uuid,
         }
     }
 
     pub fn metadata(&self) -> Option<&MailMeta> {
         match self {
-            Self::IndexResult { .. } => None,
-            Self::PartialResult { metadata, .. } => Some(metadata),
-            Self::FullResult { metadata, .. } => Some(metadata),
+            Self::Index { .. } => None,
+            Self::Partial { metadata, .. } => Some(metadata),
+            Self::Full { metadata, .. } => Some(metadata),
         }
     }
 
     #[allow(dead_code)]
     pub fn content(&self) -> Option<&[u8]> {
         match self {
-            Self::FullResult { content, .. } => Some(content),
+            Self::Full { content, .. } => Some(content),
             _ => None,
         }
     }
 
     fn into_full(self, content: Vec<u8>) -> Option<Self> {
         match self {
-            Self::PartialResult { uuid, metadata } => Some(Self::FullResult {
+            Self::Partial { uuid, metadata } => Some(Self::Full {
                 uuid,
                 metadata,
                 content,
