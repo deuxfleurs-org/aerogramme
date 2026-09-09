@@ -13,7 +13,6 @@ use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::SequenceSet;
 
 use aero_collections::mail::mailbox::Mailbox;
-use aero_collections::mail::query::QueryScope;
 use aero_collections::mail::uidindex::{ImapUid, ImapUidvalidity, ModSeq, UidIndex};
 use aero_collections::unique_ident::UniqueIdent;
 
@@ -508,11 +507,7 @@ impl MailboxView {
         // Pre-compute data
         //  a. what are the uuids of the emails we want?
         //  b. do we need to fetch the full body?
-        //let ap = AttributesProxy::new(attributes, *is_uid_fetch);
-        let query_scope = match ap.need_body() {
-            true => QueryScope::Full,
-            _ => QueryScope::Partial,
-        };
+        let query_scope = ap.scope();
         tracing::debug!("Query scope {:?}", query_scope);
         let state = self.mailbox.current_uid_index();
         let mail_idx_list = state.fetch_changed_since(
