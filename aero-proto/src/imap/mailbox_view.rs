@@ -309,11 +309,7 @@ impl MailboxView {
         unchanged_since: Option<NonZeroU64>,
         is_uid_store: &bool,
     ) -> Result<(Vec<Body<'static>>, Vec<NonZeroU32>)> {
-        if *is_uid_store {
-            self.checked_sync().await?;
-        } else {
-            self.checked_sync_no_update().await?;
-        }
+        self.checked_sync_no_update().await?;
         let state = self.mailbox.current_uid_index();
 
         let flags = flags.iter().map(|x| x.to_string()).collect();
@@ -413,6 +409,7 @@ impl MailboxView {
         is_uid_copy: &bool,
     ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>)> {
         if *is_uid_copy {
+            // TODO: need to emit update status message for EXPUNGE then?
             self.checked_sync().await?
         } else {
             // TODO: is this correct? cf RFC2180?
@@ -451,6 +448,7 @@ impl MailboxView {
         is_uid_move: &bool,
     ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>, Vec<Body<'static>>)> {
         if *is_uid_move {
+            // TODO: need to emit update status message for EXPUNGE then?
             self.checked_sync().await?
         } else {
             // TODO: is this correct? cf RFC2180?
@@ -504,11 +502,7 @@ impl MailboxView {
         changed_since: Option<NonZeroU64>,
         is_uid_fetch: &bool,
     ) -> Result<(Vec<Body<'static>>, bool)> {
-        if *is_uid_fetch {
-            self.checked_sync().await?;
-        } else {
-            self.checked_sync_no_update().await?;
-        }
+        self.checked_sync_no_update().await?;
 
         // Pre-compute data
         //  a. what are the uuids of the emails we want?
@@ -581,11 +575,7 @@ impl MailboxView {
         search_key: &SearchKey<'a>,
         uid: bool,
     ) -> Result<(Vec<Body<'static>>, bool)> {
-        if uid {
-            self.checked_sync().await?;
-        } else {
-            self.checked_sync_no_update().await?;
-        }
+        self.checked_sync_no_update().await?;
 
         // 1. Compute the subset of sequence identifiers we need to fetch
         // based on the search query
