@@ -33,7 +33,12 @@ impl AttributesProxy {
             MacroOrMessageDataItemNames::MessageDataItemNames(a) => a.clone(),
         };
 
-        // Handle uids
+        // Include a UID request if this is a UID command
+        //
+        // "server implementations MUST implicitly include the UID message data
+        // item as part of any FETCH response caused by a UID command,
+        // regardless of whether a UID was specified as a message data item to
+        // the FETCH."
         if is_uid_fetch && !fetch_attrs.contains(&MessageDataItemName::Uid) {
             fetch_attrs.push(MessageDataItemName::Uid);
         }
