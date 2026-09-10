@@ -474,9 +474,7 @@ impl MailboxView {
                 self.mailbox.add_flags(midx.uuid, &[seen_flag]).await?;
                 res.push(Body::Data(Data::Fetch {
                     seq: midx.seqid,
-                    items: Vec1::from(MessageDataItem::Flags(vec![
-                        FlagFetch::Flag(Flag::Seen),
-                    ])),
+                    items: Vec1::from(MessageDataItem::Flags(vec![FlagFetch::Flag(Flag::Seen)])),
                 }));
             }
             // Add "body" to the final result that will be sent to the client

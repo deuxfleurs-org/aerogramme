@@ -1,5 +1,5 @@
 //! This modules defines the WebDAV filesystem structure exposed by aerogramme
-//! 
+//!
 //! /                                 root
 //! ├── alice                         homedir for user "alice"
 //! │   └── calendar                  calendar namespace
@@ -17,17 +17,12 @@ use aero_collections::user::User;
 use aero_dav::acltypes as acl;
 use aero_dav::caltypes as cal;
 use aero_dav::cardtypes as card;
-use aero_dav::realization::{self as all, All};
 use aero_dav::coretypes as dav;
+use aero_dav::realization::{self as all, All};
 
-use crate::dav::node::{
-    ChildNode,
-    DavNode,
-    IOResult,
-    PropertyResult,
-};
 use crate::dav::cal_resource::CalendarListNode;
 use crate::dav::card_resource::AddressbookListNode;
+use crate::dav::node::{ChildNode, DavNode, IOResult, PropertyResult};
 
 /// The root of the webdav filesystem
 #[derive(Clone)]
@@ -42,12 +37,11 @@ impl DavNode for RootNode {
     }
 
     fn child_node<'a>(&self, user: &'a User, name: &str) -> BoxFuture<'a, IOResult<ChildNode>> {
-        let node =
-            if name == user.username {
-                ChildNode::Existing(Box::new(HomeNode {}) as Box<dyn DavNode>)
-            } else {
-                ChildNode::CannotCreate
-            };
+        let node = if name == user.username {
+            ChildNode::Existing(Box::new(HomeNode {}) as Box<dyn DavNode>)
+        } else {
+            ChildNode::CannotCreate
+        };
         async move { Ok(node) }.boxed()
     }
 
@@ -66,17 +60,24 @@ impl DavNode for RootNode {
         ])
     }
 
-    fn properties<'a>(&'a mut self, user: &'a User, prop: dav::PropName<All>) -> BoxFuture<'a, Vec<PropertyResult>> {
+    fn properties<'a>(
+        &'a mut self,
+        user: &'a User,
+        prop: dav::PropName<All>,
+    ) -> BoxFuture<'a, Vec<PropertyResult>> {
         async move {
             let mut v = vec![];
             for n in prop.0 {
                 let res = match n {
-                    dav::PropertyRequest::DisplayName =>
-                        Ok(dav::Property::DisplayName("DAV Root".to_string())),
-                    dav::PropertyRequest::ResourceType =>
-                        Ok(dav::Property::ResourceType(vec![dav::ResourceType::Collection])),
-                    dav::PropertyRequest::GetContentType =>
-                        Ok(dav::Property::GetContentType("httpd/unix-directory".into())),
+                    dav::PropertyRequest::DisplayName => {
+                        Ok(dav::Property::DisplayName("DAV Root".to_string()))
+                    }
+                    dav::PropertyRequest::ResourceType => Ok(dav::Property::ResourceType(vec![
+                        dav::ResourceType::Collection,
+                    ])),
+                    dav::PropertyRequest::GetContentType => {
+                        Ok(dav::Property::GetContentType("httpd/unix-directory".into()))
+                    }
                     dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
                         acl::PropertyRequest::CurrentUserPrincipal,
                     )) => Ok(dav::Property::Extension(all::Property::Acl(
@@ -89,7 +90,8 @@ impl DavNode for RootNode {
                 v.push(res)
             }
             v
-        }.boxed()
+        }
+        .boxed()
     }
 
     fn dav_header(&self) -> String {
@@ -118,18 +120,20 @@ impl DavNode for HomeNode {
             async move {
                 let callist = CalendarListNode::new(user)
                     .await
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Interrupted, e))?; 
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Interrupted, e))?;
                 let node = Box::new(callist) as Box<dyn DavNode>;
                 Ok(ChildNode::Existing(node))
-            }.boxed()
-        } else if name == "addressbook" { 
+            }
+            .boxed()
+        } else if name == "addressbook" {
             async move {
                 let cardlist = AddressbookListNode::new(user)
                     .await
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::Interrupted, e))?;
                 let node = Box::new(cardlist) as Box<dyn DavNode>;
                 Ok(ChildNode::Existing(node))
-            }.boxed()
+            }
+            .boxed()
         } else {
             async move { Ok(ChildNode::CannotCreate) }.boxed()
         }
@@ -155,13 +159,19 @@ impl DavNode for HomeNode {
             )),
         ])
     }
-    fn properties<'a>(&'a mut self, user: &'a User, prop: dav::PropName<All>) -> BoxFuture<'a, Vec<PropertyResult>> {
+    fn properties<'a>(
+        &'a mut self,
+        user: &'a User,
+        prop: dav::PropName<All>,
+    ) -> BoxFuture<'a, Vec<PropertyResult>> {
         async move {
             let mut v = vec![];
             for n in prop.0 {
                 let res = match n {
-                    dav::PropertyRequest::DisplayName =>
-                        Ok(dav::Property::DisplayName(format!("{} home", user.username))),
+                    dav::PropertyRequest::DisplayName => Ok(dav::Property::DisplayName(format!(
+                        "{} home",
+                        user.username
+                    ))),
                     dav::PropertyRequest::ResourceType => Ok(dav::Property::ResourceType(vec![
                         dav::ResourceType::Collection,
                         dav::ResourceType::Extension(all::ResourceType::Acl(
@@ -170,13 +180,14 @@ impl DavNode for HomeNode {
                     ])),
                     dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
                         acl::PropertyRequest::CurrentUserPrivilegeSet,
-                    )) =>
-                        Ok(dav::Property::Extension(all::Property::Acl(
-                            acl::Property::CurrentUserPrivilegeSet(
-                                acl::PrivilegeSet(vec![acl::Privilege::All]))
-                        ))),
-                    dav::PropertyRequest::GetContentType =>
-                        Ok(dav::Property::GetContentType("httpd/unix-directory".into())),
+                    )) => Ok(dav::Property::Extension(all::Property::Acl(
+                        acl::Property::CurrentUserPrivilegeSet(acl::PrivilegeSet(vec![
+                            acl::Privilege::All,
+                        ])),
+                    ))),
+                    dav::PropertyRequest::GetContentType => {
+                        Ok(dav::Property::GetContentType("httpd/unix-directory".into()))
+                    }
                     dav::PropertyRequest::Extension(all::PropertyRequest::Cal(
                         cal::PropertyRequest::CalendarHomeSet,
                     )) => Ok(dav::Property::Extension(all::Property::Cal(
@@ -199,7 +210,8 @@ impl DavNode for HomeNode {
                 v.push(res);
             }
             v
-        }.boxed()
+        }
+        .boxed()
     }
 
     fn content_type(&self) -> &str {

@@ -774,8 +774,8 @@ impl QWrite for TimeRange {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::realization::Calendar;
     use crate::coretypes as dav;
+    use crate::realization::Calendar;
     use chrono::{TimeZone, Utc};
     use tokio::io::AsyncWriteExt;
 

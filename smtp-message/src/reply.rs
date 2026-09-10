@@ -624,12 +624,15 @@ mod tests {
             match r {
                 Ok((rest, res)) => {
                     assert_eq!(rest, b"");
-                    assert_eq!(res, EnhancedReplyCode {
-                        raw: str::from_utf8(inp).unwrap(),
-                        class,
-                        raw_subject,
-                        raw_detail,
-                    });
+                    assert_eq!(
+                        res,
+                        EnhancedReplyCode {
+                            raw: str::from_utf8(inp).unwrap(),
+                            class,
+                            raw_subject,
+                            raw_detail,
+                        }
+                    );
                 }
                 x => panic!("Unexpected result: {:?}", x),
             }
@@ -660,30 +663,42 @@ mod tests {
     #[test]
     fn reply_line_valid() {
         let tests: &[(&[u8], ReplyLine<&str>)] = &[
-            (b"250 All is well\r\n", ReplyLine {
-                code: ReplyCode(*b"250"),
-                last: true,
-                ecode: None,
-                text: MaybeUtf8::Ascii("All is well"),
-            }),
-            (b"450-Temporary\r\n", ReplyLine {
-                code: ReplyCode(*b"450"),
-                last: false,
-                ecode: None,
-                text: MaybeUtf8::Ascii("Temporary"),
-            }),
-            (b"354 Please do start input now\r\n", ReplyLine {
-                code: ReplyCode(*b"354"),
-                last: true,
-                ecode: None,
-                text: MaybeUtf8::Ascii("Please do start input now"),
-            }),
-            (b"550 5.1.1 Mailbox does not exist\r\n", ReplyLine {
-                code: ReplyCode(*b"550"),
-                last: true,
-                ecode: Some(EnhancedReplyCode::parse(b"5.1.1").unwrap().1),
-                text: MaybeUtf8::Ascii("Mailbox does not exist"),
-            }),
+            (
+                b"250 All is well\r\n",
+                ReplyLine {
+                    code: ReplyCode(*b"250"),
+                    last: true,
+                    ecode: None,
+                    text: MaybeUtf8::Ascii("All is well"),
+                },
+            ),
+            (
+                b"450-Temporary\r\n",
+                ReplyLine {
+                    code: ReplyCode(*b"450"),
+                    last: false,
+                    ecode: None,
+                    text: MaybeUtf8::Ascii("Temporary"),
+                },
+            ),
+            (
+                b"354 Please do start input now\r\n",
+                ReplyLine {
+                    code: ReplyCode(*b"354"),
+                    last: true,
+                    ecode: None,
+                    text: MaybeUtf8::Ascii("Please do start input now"),
+                },
+            ),
+            (
+                b"550 5.1.1 Mailbox does not exist\r\n",
+                ReplyLine {
+                    code: ReplyCode(*b"550"),
+                    last: true,
+                    ecode: Some(EnhancedReplyCode::parse(b"5.1.1").unwrap().1),
+                    text: MaybeUtf8::Ascii("Mailbox does not exist"),
+                },
+            ),
         ];
         for (inp, out) in tests.iter().cloned() {
             println!("Test: {:?}", show_bytes(inp));

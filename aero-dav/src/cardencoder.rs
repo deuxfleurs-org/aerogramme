@@ -1,4 +1,4 @@
- use quick_xml::events::{BytesText, Event};
+use quick_xml::events::{BytesText, Event};
 use quick_xml::Error as QError;
 
 use super::cardtypes::*;
@@ -109,12 +109,9 @@ impl QWrite for Violation {
             xml.q.write_event_async(Event::Empty(empty_tag)).await
         };
         match self {
-            Self::SupportedAddressDataConversion =>
-                atom("supported-address-data-conversion").await,
-            Self::SupportedAddressData =>
-                atom("supported-address-data").await,
-            Self::ValidAddressData =>
-                atom("valid-address-data").await,
+            Self::SupportedAddressDataConversion => atom("supported-address-data-conversion").await,
+            Self::SupportedAddressData => atom("supported-address-data").await,
+            Self::ValidAddressData => atom("valid-address-data").await,
             Self::NoUidConflict(href) => {
                 let start = xml.create_card_element("no-uid-conflict");
                 let end = start.to_end();
@@ -123,13 +120,15 @@ impl QWrite for Violation {
                 href.qwrite(xml).await?;
                 xml.q.write_event_async(Event::End(end)).await
             }
-            Self::AddressbookCollectionLocationOk =>
-                atom("addressbook-collection-location-ok").await,
-            Self::MaxResourceSize =>
-                atom("max-resource-size").await,
-            Self::SupportedCollation =>
-                atom("supported-collation").await,
-            Self::SupportedFilter { prop_filters, param_filters } => {
+            Self::AddressbookCollectionLocationOk => {
+                atom("addressbook-collection-location-ok").await
+            }
+            Self::MaxResourceSize => atom("max-resource-size").await,
+            Self::SupportedCollation => atom("supported-collation").await,
+            Self::SupportedFilter {
+                prop_filters,
+                param_filters,
+            } => {
                 let start = xml.create_card_element("supported-filter");
                 let end = start.to_end();
                 xml.q.write_event_async(Event::Start(start.clone())).await?;
@@ -170,7 +169,6 @@ impl<E: Extension> QWrite for ReportType<E> {
         }
     }
 }
-
 
 impl<E: Extension> QWrite for AddressbookQuery<E> {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
@@ -220,8 +218,8 @@ impl QWrite for AddressDataPayload {
 
         xml.q.write_event_async(Event::Start(start.clone())).await?;
         xml.q
-           .write_event_async(Event::Text(BytesText::new(self.payload.as_str())))
-           .await?;
+            .write_event_async(Event::Text(BytesText::new(self.payload.as_str())))
+            .await?;
         xml.q.write_event_async(Event::End(end)).await
     }
 }
@@ -326,13 +324,15 @@ impl QWrite for PropFilter {
 impl QWrite for PropFilterRules {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match &self {
-            Self::Empty =>
-                Ok(()),
+            Self::Empty => Ok(()),
             Self::IsNotDefined => {
                 let empty_tag = xml.create_card_element("is-not-defined");
                 xml.q.write_event_async(Event::Empty(empty_tag)).await
-            },
-            Self::Match { text_match, param_filter } => {
+            }
+            Self::Match {
+                text_match,
+                param_filter,
+            } => {
                 for tmatch in text_match {
                     tmatch.qwrite(xml).await?;
                 }
@@ -405,7 +405,9 @@ impl QWrite for Limit {
             let start = xml.create_card_element("nresults");
             let end = start.to_end();
             xml.q.write_event_async(Event::Start(start.clone())).await?;
-            xml.q.write_event_async(Event::Text(BytesText::new(&self.nresults.to_string()))).await?;
+            xml.q
+                .write_event_async(Event::Text(BytesText::new(&self.nresults.to_string())))
+                .await?;
             xml.q.write_event_async(Event::End(end)).await?;
         }
         xml.q.write_event_async(Event::End(end)).await
@@ -443,12 +445,12 @@ impl QWrite for CardProp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::realization::{Addressbook, All, Error};
     use crate::acltypes as acl;
     use crate::coretypes as dav;
+    use crate::realization::{Addressbook, All, Error};
     use crate::xml::WithDefault;
-    use tokio::io::AsyncWriteExt;
     use pretty_assertions::assert_eq;
+    use tokio::io::AsyncWriteExt;
 
     async fn serialize(elem: &impl QWrite) -> String {
         let mut buffer = Vec::new();
@@ -474,7 +476,7 @@ mod tests {
         let expected = r#"<CD:principal-address xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
     <D:href>/system/cyrus.vcf</D:href>
 </CD:principal-address>"#;
-        
+
         let ser = serialize(&got).await;
 
         assert_eq!(ser, expected)
@@ -503,38 +505,54 @@ mod tests {
         let got = AddressbookQuery::<Addressbook> {
             selector: Some(AddressbookSelector::Prop(dav::PropName(vec![
                 dav::PropertyRequest::GetEtag,
-                dav::PropertyRequest::Extension(PropertyRequest::AddressData(
-                    AddressDataRequest {
-                        content_type: Default::default(),
-                        version: Default::default(),
-                        prop_kind: Some(PropKind::Prop(vec![
-                            CardProp {
-                                name: PropertyName { group: None, name: "VERSION".into() },
-                                novalue: Default::default(),
+                dav::PropertyRequest::Extension(PropertyRequest::AddressData(AddressDataRequest {
+                    content_type: Default::default(),
+                    version: Default::default(),
+                    prop_kind: Some(PropKind::Prop(vec![
+                        CardProp {
+                            name: PropertyName {
+                                group: None,
+                                name: "VERSION".into(),
                             },
-                            CardProp {
-                                name: PropertyName { group: None, name: "UID".into() },
-                                novalue: Default::default(),
+                            novalue: Default::default(),
+                        },
+                        CardProp {
+                            name: PropertyName {
+                                group: None,
+                                name: "UID".into(),
                             },
-                            CardProp {
-                                name: PropertyName { group: None, name: "NICKNAME".into() },
-                                novalue: Default::default(),
+                            novalue: Default::default(),
+                        },
+                        CardProp {
+                            name: PropertyName {
+                                group: None,
+                                name: "NICKNAME".into(),
                             },
-                            CardProp {
-                                name: PropertyName { group: None, name: "EMAIL".into() },
-                                novalue: Default::default(),
+                            novalue: Default::default(),
+                        },
+                        CardProp {
+                            name: PropertyName {
+                                group: None,
+                                name: "EMAIL".into(),
                             },
-                            CardProp {
-                                name: PropertyName { group: None, name: "FN".into() },
-                                novalue: Default::default(),
+                            novalue: Default::default(),
+                        },
+                        CardProp {
+                            name: PropertyName {
+                                group: None,
+                                name: "FN".into(),
                             },
-                        ])),
-                    }
-                )),
+                            novalue: Default::default(),
+                        },
+                    ])),
+                })),
             ]))),
             filter: Filter {
                 prop_filters: vec![PropFilter {
-                    name: PropertyName { group: None, name: "NICKNAME".to_string() },
+                    name: PropertyName {
+                        group: None,
+                        name: "NICKNAME".to_string(),
+                    },
                     test: Default::default(),
                     rules: PropFilterRules::Match {
                         text_match: vec![TextMatch {
@@ -568,7 +586,7 @@ mod tests {
         </CD:prop-filter>
     </CD:filter>
 </CD:addressbook-query>"#;
-        
+
         let ser = serialize(&got).await;
 
         assert_eq!(ser, expected)
@@ -579,36 +597,34 @@ mod tests {
     async fn rfc_addressbook_query_res_8_6_3() {
         let got = dav::Multistatus::<Addressbook> {
             extension: None,
-            responses: vec![
-                dav::Response {
-                    status_or_propstat: dav::StatusOrPropstat::PropStat(
-                        dav::Href("/home/bernard/addressbook/v102.vcf".into()),
-                        vec![dav::PropStat {
-                            prop: dav::AnyProp(vec![
-                                dav::AnyProperty::Value(dav::Property::GetEtag(
-                                    "\"23ba4d-ff11fb\"".into(),
-                                )),
-                                dav::AnyProperty::Value(dav::Property::Extension(
-                                    Property::AddressData(AddressDataPayload {
-                                        content_type: Default::default(),
-                                        version: Default::default(),
-                                        payload: "BEGIN:VCARD".into(),
-                                    }),
-                                )),
-                            ]),
-                            status: dav::Status(http::status::StatusCode::OK),
-                            error: None,
-                            responsedescription: None,
-                        }],
-                    ),
-                    error: None,
-                    location: None,
-                    responsedescription: None,
-                },
-            ],
+            responses: vec![dav::Response {
+                status_or_propstat: dav::StatusOrPropstat::PropStat(
+                    dav::Href("/home/bernard/addressbook/v102.vcf".into()),
+                    vec![dav::PropStat {
+                        prop: dav::AnyProp(vec![
+                            dav::AnyProperty::Value(dav::Property::GetEtag(
+                                "\"23ba4d-ff11fb\"".into(),
+                            )),
+                            dav::AnyProperty::Value(dav::Property::Extension(
+                                Property::AddressData(AddressDataPayload {
+                                    content_type: Default::default(),
+                                    version: Default::default(),
+                                    payload: "BEGIN:VCARD".into(),
+                                }),
+                            )),
+                        ]),
+                        status: dav::Status(http::status::StatusCode::OK),
+                        error: None,
+                        responsedescription: None,
+                    }],
+                ),
+                error: None,
+                location: None,
+                responsedescription: None,
+            }],
             responsedescription: None,
         };
-        
+
         let expected = r#"<D:multistatus xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
     <D:response>
         <D:href>/home/bernard/addressbook/v102.vcf</D:href>
@@ -623,7 +639,7 @@ mod tests {
 </D:multistatus>"#;
 
         let ser = serialize(&got).await;
-        
+
         assert_eq!(ser, expected);
     }
 
@@ -633,39 +649,55 @@ mod tests {
         let got = AddressbookQuery::<Addressbook> {
             selector: Some(AddressbookSelector::Prop(dav::PropName(vec![
                 dav::PropertyRequest::GetEtag,
-                dav::PropertyRequest::Extension(PropertyRequest::AddressData(
-                    AddressDataRequest {
-                        content_type: Default::default(),
-                        version: Default::default(),
-                        prop_kind: Some(PropKind::Prop(vec![
-                            CardProp {
-                                name: PropertyName { group: None, name: "VERSION".into() },
-                                novalue: Default::default(),
+                dav::PropertyRequest::Extension(PropertyRequest::AddressData(AddressDataRequest {
+                    content_type: Default::default(),
+                    version: Default::default(),
+                    prop_kind: Some(PropKind::Prop(vec![
+                        CardProp {
+                            name: PropertyName {
+                                group: None,
+                                name: "VERSION".into(),
                             },
-                            CardProp {
-                                name: PropertyName { group: None, name: "UID".into() },
-                                novalue: Default::default(),
+                            novalue: Default::default(),
+                        },
+                        CardProp {
+                            name: PropertyName {
+                                group: None,
+                                name: "UID".into(),
                             },
-                            CardProp {
-                                name: PropertyName { group: None, name: "NICKNAME".into() },
-                                novalue: Default::default(),
+                            novalue: Default::default(),
+                        },
+                        CardProp {
+                            name: PropertyName {
+                                group: None,
+                                name: "NICKNAME".into(),
                             },
-                            CardProp {
-                                name: PropertyName { group: None, name: "EMAIL".into() },
-                                novalue: Default::default(),
+                            novalue: Default::default(),
+                        },
+                        CardProp {
+                            name: PropertyName {
+                                group: None,
+                                name: "EMAIL".into(),
                             },
-                            CardProp {
-                                name: PropertyName { group: None, name: "FN".into() },
-                                novalue: Default::default(),
+                            novalue: Default::default(),
+                        },
+                        CardProp {
+                            name: PropertyName {
+                                group: None,
+                                name: "FN".into(),
                             },
-                        ])),
-                    }
-                )),
+                            novalue: Default::default(),
+                        },
+                    ])),
+                })),
             ]))),
             filter: Filter {
                 prop_filters: vec![
                     PropFilter {
-                        name: PropertyName { group: None, name: "FN".to_string() },
+                        name: PropertyName {
+                            group: None,
+                            name: "FN".to_string(),
+                        },
                         test: Default::default(),
                         rules: PropFilterRules::Match {
                             text_match: vec![TextMatch {
@@ -678,7 +710,10 @@ mod tests {
                         },
                     },
                     PropFilter {
-                        name: PropertyName { group: None, name: "EMAIL".to_string() },
+                        name: PropertyName {
+                            group: None,
+                            name: "EMAIL".to_string(),
+                        },
                         test: Default::default(),
                         rules: PropFilterRules::Match {
                             text_match: vec![TextMatch {
@@ -716,7 +751,7 @@ mod tests {
         </CD:prop-filter>
     </CD:filter>
 </CD:addressbook-query>"#;
-        
+
         let ser = serialize(&got).await;
 
         assert_eq!(ser, expected)
@@ -781,7 +816,7 @@ mod tests {
             ],
             responsedescription: None,
         };
-        
+
         let expected = r#"<D:multistatus xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
     <D:response>
         <D:href>/home/bernard/addressbook/v102.vcf</D:href>
@@ -817,21 +852,22 @@ mod tests {
                 dav::PropertyRequest::GetEtag,
             ]))),
             filter: Filter {
-                prop_filters: vec![
-                    PropFilter {
-                        name: PropertyName { group: None, name: "FN".to_string() },
-                        test: Default::default(),
-                        rules: PropFilterRules::Match {
-                            text_match: vec![TextMatch {
-                                collation: WithDefault::new(Collation::UnicodeCaseMap),
-                                match_type: WithDefault::new(TextMatchType::Contains),
-                                negate_condition: WithDefault::default(),
-                                text: "daboo".to_string(),
-                            }],
-                            param_filter: vec![],
-                        },
+                prop_filters: vec![PropFilter {
+                    name: PropertyName {
+                        group: None,
+                        name: "FN".to_string(),
                     },
-                ],
+                    test: Default::default(),
+                    rules: PropFilterRules::Match {
+                        text_match: vec![TextMatch {
+                            collation: WithDefault::new(Collation::UnicodeCaseMap),
+                            match_type: WithDefault::new(TextMatchType::Contains),
+                            negate_condition: WithDefault::default(),
+                            text: "daboo".to_string(),
+                        }],
+                        param_filter: vec![],
+                    },
+                }],
                 test: WithDefault::new(FilterTest::AnyOf),
             },
             limit: Some(Limit { nresults: 2 }),
@@ -850,7 +886,7 @@ mod tests {
         <CD:nresults>2</CD:nresults>
     </CD:limit>
 </CD:addressbook-query>"#;
-        
+
         let ser = serialize(&got).await;
         assert_eq!(ser, expected)
     }
@@ -866,13 +902,11 @@ mod tests {
                         vec![dav::Href("/home/bernard/addressbook/".into())],
                         dav::Status(http::status::StatusCode::INSUFFICIENT_STORAGE),
                     ),
-                    error: Some(dav::Error(vec![
-                        dav::Violation::Extension(Error::Acl(
-                            acl::Violation::NumberOfMatchesWithinLimits
-                        )),
-                    ])),
+                    error: Some(dav::Error(vec![dav::Violation::Extension(Error::Acl(
+                        acl::Violation::NumberOfMatchesWithinLimits,
+                    ))])),
                     responsedescription: Some(dav::ResponseDescription(
-                        "\n         Only two matching records were returned\n       ".into()
+                        "\n         Only two matching records were returned\n       ".into(),
                     )),
                     location: None,
                 },
@@ -880,11 +914,9 @@ mod tests {
                     status_or_propstat: dav::StatusOrPropstat::PropStat(
                         dav::Href("/home/bernard/addressbook/v102.vcf".into()),
                         vec![dav::PropStat {
-                            prop: dav::AnyProp(vec![
-                                dav::AnyProperty::Value(dav::Property::GetEtag(
-                                    "\"23ba4d-ff11fb\"".into(),
-                                )),
-                            ]),
+                            prop: dav::AnyProp(vec![dav::AnyProperty::Value(
+                                dav::Property::GetEtag("\"23ba4d-ff11fb\"".into()),
+                            )]),
                             status: dav::Status(http::status::StatusCode::OK),
                             error: None,
                             responsedescription: None,
@@ -898,11 +930,9 @@ mod tests {
                     status_or_propstat: dav::StatusOrPropstat::PropStat(
                         dav::Href("/home/bernard/addressbook/v104.vcf".into()),
                         vec![dav::PropStat {
-                            prop: dav::AnyProp(vec![
-                                dav::AnyProperty::Value(dav::Property::GetEtag(
-                                    "\"23ba4d-ff11fc\"".into(),
-                                )),
-                            ]),
+                            prop: dav::AnyProp(vec![dav::AnyProperty::Value(
+                                dav::Property::GetEtag("\"23ba4d-ff11fc\"".into()),
+                            )]),
                             status: dav::Status(http::status::StatusCode::OK),
                             error: None,
                             responsedescription: None,
@@ -915,7 +945,7 @@ mod tests {
             ],
             responsedescription: None,
         };
-        
+
         let expected = r#"<D:multistatus xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
     <D:response>
         <D:href>/home/bernard/addressbook/</D:href>
@@ -957,34 +987,47 @@ mod tests {
         let got = AddressbookMultiget::<Addressbook> {
             selector: Some(AddressbookSelector::Prop(dav::PropName(vec![
                 dav::PropertyRequest::GetEtag,
-                dav::PropertyRequest::Extension(PropertyRequest::AddressData(
-                    AddressDataRequest {
-                        content_type: Default::default(),
-                        version: Default::default(),
-                        prop_kind: Some(PropKind::Prop(vec![
-                            CardProp {
-                                name: PropertyName { group: None, name: "VERSION".into() },
-                                novalue: Default::default(),
+                dav::PropertyRequest::Extension(PropertyRequest::AddressData(AddressDataRequest {
+                    content_type: Default::default(),
+                    version: Default::default(),
+                    prop_kind: Some(PropKind::Prop(vec![
+                        CardProp {
+                            name: PropertyName {
+                                group: None,
+                                name: "VERSION".into(),
                             },
-                            CardProp {
-                                name: PropertyName { group: None, name: "UID".into() },
-                                novalue: Default::default(),
+                            novalue: Default::default(),
+                        },
+                        CardProp {
+                            name: PropertyName {
+                                group: None,
+                                name: "UID".into(),
                             },
-                            CardProp {
-                                name: PropertyName { group: None, name: "NICKNAME".into() },
-                                novalue: Default::default(),
+                            novalue: Default::default(),
+                        },
+                        CardProp {
+                            name: PropertyName {
+                                group: None,
+                                name: "NICKNAME".into(),
                             },
-                            CardProp {
-                                name: PropertyName { group: None, name: "EMAIL".into() },
-                                novalue: Default::default(),
+                            novalue: Default::default(),
+                        },
+                        CardProp {
+                            name: PropertyName {
+                                group: None,
+                                name: "EMAIL".into(),
                             },
-                            CardProp {
-                                name: PropertyName { group: None, name: "FN".into() },
-                                novalue: Default::default(),
+                            novalue: Default::default(),
+                        },
+                        CardProp {
+                            name: PropertyName {
+                                group: None,
+                                name: "FN".into(),
                             },
-                        ])),
-                    }
-                )),
+                            novalue: Default::default(),
+                        },
+                    ])),
+                })),
             ]))),
             href: vec![
                 dav::Href("/home/bernard/addressbook/vcf102.vcf".into()),
@@ -1006,7 +1049,7 @@ mod tests {
     <D:href>/home/bernard/addressbook/vcf102.vcf</D:href>
     <D:href>/home/bernard/addressbook/vcf1.vcf</D:href>
 </CD:addressbook-multiget>"#;
-        
+
         let ser = serialize(&got).await;
         assert_eq!(ser, expected)
     }
@@ -1054,7 +1097,7 @@ mod tests {
             ],
             responsedescription: None,
         };
-        
+
         let expected = r#"<D:multistatus xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
     <D:response>
         <D:href>/home/bernard/addressbook/vcf102.vcf</D:href>
@@ -1075,24 +1118,20 @@ mod tests {
         let ser = serialize(&got).await;
         assert_eq!(ser, expected);
     }
-    
+
     // §8.7.2, query
     #[tokio::test]
     async fn rfc_multiget_query_8_7_2() {
         let got = AddressbookMultiget::<Addressbook> {
             selector: Some(AddressbookSelector::Prop(dav::PropName(vec![
                 dav::PropertyRequest::GetEtag,
-                dav::PropertyRequest::Extension(PropertyRequest::AddressData(
-                    AddressDataRequest {
-                        content_type: WithDefault::new(ContentType("text/vcard".to_string())),
-                        version: WithDefault::new(Version("4.0".to_string())),
-                        prop_kind: None,
-                    }
-                )),
+                dav::PropertyRequest::Extension(PropertyRequest::AddressData(AddressDataRequest {
+                    content_type: WithDefault::new(ContentType("text/vcard".to_string())),
+                    version: WithDefault::new(Version("4.0".to_string())),
+                    prop_kind: None,
+                })),
             ]))),
-            href: vec![
-                dav::Href("/home/bernard/addressbook/vcf3.vcf".into()),
-            ],
+            href: vec![dav::Href("/home/bernard/addressbook/vcf3.vcf".into())],
         };
 
         let expected = r#"<CD:addressbook-multiget xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
@@ -1103,7 +1142,7 @@ mod tests {
     </D:prop>
     <D:href>/home/bernard/addressbook/vcf3.vcf</D:href>
 </CD:addressbook-multiget>"#;
-        
+
         let ser = serialize(&got).await;
         assert_eq!(ser, expected)
     }
@@ -1113,26 +1152,22 @@ mod tests {
     async fn rfc_multiget_query_res_8_7_2() {
         let got = dav::Multistatus::<Addressbook> {
             extension: None,
-            responses: vec![
-                dav::Response {
-                    status_or_propstat: dav::StatusOrPropstat::Status(
-                        vec![dav::Href("/home/bernard/addressbook/vcf3.vcf".into())],
-                        dav::Status(http::status::StatusCode::UNSUPPORTED_MEDIA_TYPE),
-                    ),
-                    error: Some(dav::Error(vec![
-                        dav::Violation::Extension(
-                            Violation::SupportedAddressDataConversion
-                        )
-                    ])),
-                    location: None,
-                    responsedescription: Some(dav::ResponseDescription(
-                        "Unable to convert from vCard v3.0\n       to vCard v4.0".into()
-                    )),
-                },
-            ],
+            responses: vec![dav::Response {
+                status_or_propstat: dav::StatusOrPropstat::Status(
+                    vec![dav::Href("/home/bernard/addressbook/vcf3.vcf".into())],
+                    dav::Status(http::status::StatusCode::UNSUPPORTED_MEDIA_TYPE),
+                ),
+                error: Some(dav::Error(vec![dav::Violation::Extension(
+                    Violation::SupportedAddressDataConversion,
+                )])),
+                location: None,
+                responsedescription: Some(dav::ResponseDescription(
+                    "Unable to convert from vCard v3.0\n       to vCard v4.0".into(),
+                )),
+            }],
             responsedescription: None,
         };
-        
+
         let expected = r#"<D:multistatus xmlns:D="DAV:" xmlns:CD="urn:ietf:params:xml:ns:carddav">
     <D:response>
         <D:href>/home/bernard/addressbook/vcf3.vcf</D:href>

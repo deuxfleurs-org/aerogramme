@@ -2,13 +2,10 @@
 //! addressbook namespace, addressbook collection, and addressbook contact item.
 
 use anyhow::Result;
-use futures::{future::BoxFuture, future::FutureExt};
 use futures::stream::{Stream, StreamExt, TryStreamExt};
+use futures::{future::BoxFuture, future::FutureExt};
 
-use aero_collections::{
-    dav::collection::Collection,
-    user::User,
-};
+use aero_collections::{dav::collection::Collection, user::User};
 use aero_dav::acltypes as acl;
 use aero_dav::cardtypes as card;
 use aero_dav::coretypes as dav;
@@ -18,13 +15,8 @@ use aero_dav::versioningtypes as vers;
 use crate::dav::codec::Path;
 use crate::dav::multistatus;
 use crate::dav::node::{
-    ChildNode,
-    DavNode,
-    DavObject, DavObjectNode,
-    DavStoredCollection, DavStoredCollectionNode,
-    IOResult,
-    PropertyResult,
-    ReportResponse,
+    ChildNode, DavNode, DavObject, DavObjectNode, DavStoredCollection, DavStoredCollectionNode,
+    IOResult, PropertyResult, ReportResponse,
 };
 
 /// The addressbook namespace of a user. It contains addressbook collections.
@@ -60,16 +52,12 @@ impl DavNode for AddressbookListNode {
             match col {
                 //@FIXME: allow creating new calendar nodes
                 None => Ok(ChildNode::CannotCreate),
-                Some(col) => {
-                    Ok(ChildNode::Existing(
-                        Box::new(DavStoredCollectionNode(AddressbookNode {
-                            col,
-                            addrbookname,
-                        })) as Box<dyn DavNode>
-                    ))
-                }
+                Some(col) => Ok(ChildNode::Existing(Box::new(DavStoredCollectionNode(
+                    AddressbookNode { col, addrbookname },
+                )) as Box<dyn DavNode>)),
             }
-        }.boxed()
+        }
+        .boxed()
     }
 
     fn path(&self, user: &User) -> String {
@@ -86,31 +74,39 @@ impl DavNode for AddressbookListNode {
             )),
         ])
     }
-    fn properties<'a>(&'a mut self, user: &'a User, prop: dav::PropName<All>) -> BoxFuture<'a, Vec<PropertyResult>> {
+    fn properties<'a>(
+        &'a mut self,
+        user: &'a User,
+        prop: dav::PropName<All>,
+    ) -> BoxFuture<'a, Vec<PropertyResult>> {
         async move {
             let mut v = vec![];
             for n in prop.0 {
                 let res = match n {
-                    dav::PropertyRequest::DisplayName =>
-                        Ok(dav::Property::DisplayName(format!("{} addressbooks", user.username))),
-                    dav::PropertyRequest::ResourceType =>
-                        Ok(dav::Property::ResourceType(vec![dav::ResourceType::Collection])),
-                    dav::PropertyRequest::GetContentType =>
-                        Ok(dav::Property::GetContentType("httpd/unix-directory".into())),
+                    dav::PropertyRequest::DisplayName => Ok(dav::Property::DisplayName(format!(
+                        "{} addressbooks",
+                        user.username
+                    ))),
+                    dav::PropertyRequest::ResourceType => Ok(dav::Property::ResourceType(vec![
+                        dav::ResourceType::Collection,
+                    ])),
+                    dav::PropertyRequest::GetContentType => {
+                        Ok(dav::Property::GetContentType("httpd/unix-directory".into()))
+                    }
                     dav::PropertyRequest::Extension(all::PropertyRequest::Acl(
                         acl::PropertyRequest::CurrentUserPrivilegeSet,
-                    )) =>
-                        Ok(dav::Property::Extension(all::Property::Acl(
-                            acl::Property::CurrentUserPrivilegeSet(
-                                acl::PrivilegeSet(vec![acl::Privilege::All])
-                            )
-                        ))),
+                    )) => Ok(dav::Property::Extension(all::Property::Acl(
+                        acl::Property::CurrentUserPrivilegeSet(acl::PrivilegeSet(vec![
+                            acl::Privilege::All,
+                        ])),
+                    ))),
                     v => Err(v),
                 };
                 v.push(res)
             }
             v
-        }.boxed()
+        }
+        .boxed()
     }
 
     fn dav_header(&self) -> String {
@@ -149,7 +145,7 @@ impl DavStoredCollection for AddressbookNode {
         // TODO: is this correct?
         "httpd/unix-directory"
     }
-    
+
     fn mk_child_node(&self, filename: &str) -> Box<dyn DavNode> {
         Box::new(DavObjectNode(AddressbookObject {
             col: self.col.clone(),
@@ -159,51 +155,53 @@ impl DavStoredCollection for AddressbookNode {
     }
 
     fn additional_resource_types(&self) -> Vec<dav::ResourceType<All>> {
-        vec![
-            dav::ResourceType::Extension(all::ResourceType::Card(
-                card::ResourceType::Addressbook,
-            )),
-        ]
+        vec![dav::ResourceType::Extension(all::ResourceType::Card(
+            card::ResourceType::Addressbook,
+        ))]
     }
 
     fn additional_supported_properties(&self) -> Vec<dav::PropertyRequest<All>> {
-        vec![
-            dav::PropertyRequest::Extension(all::PropertyRequest::Card(
-                card::PropertyRequest::SupportedCollationSet
-            ))
-        ]         
+        vec![dav::PropertyRequest::Extension(all::PropertyRequest::Card(
+            card::PropertyRequest::SupportedCollationSet,
+        ))]
     }
 
-    fn additional_property<'a>(&'a mut self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult> {
+    fn additional_property<'a>(
+        &'a mut self,
+        prop: &'a dav::PropertyRequest<All>,
+    ) -> BoxFuture<'a, PropertyResult> {
         async move {
             match prop {
                 dav::PropertyRequest::Extension(all::PropertyRequest::Card(
-                    card::PropertyRequest::SupportedCollationSet
-                )) => {
-                    Ok(dav::Property::Extension(all::Property::Card(
-                        card::Property::SupportedCollationSet(vec![
-                            card::SupportedCollation(card::Collation::UnicodeCaseMap),
-                            card::SupportedCollation(card::Collation::AsciiCaseMap),
-                        ])
-                    )))
-                },
+                    card::PropertyRequest::SupportedCollationSet,
+                )) => Ok(dav::Property::Extension(all::Property::Card(
+                    card::Property::SupportedCollationSet(vec![
+                        card::SupportedCollation(card::Collation::UnicodeCaseMap),
+                        card::SupportedCollation(card::Collation::AsciiCaseMap),
+                    ]),
+                ))),
                 _ => Err(prop.clone()),
             }
-        }.boxed()
+        }
+        .boxed()
     }
 
     fn additional_supported_reports(&self) -> Vec<vers::SupportedReport<All>> {
         vec![
-            vers::SupportedReport(vers::ReportName::Extension(
-                all::ReportTypeName::Card(card::ReportTypeName::Multiget),
-            )),
-            vers::SupportedReport(vers::ReportName::Extension(
-                all::ReportTypeName::Card(card::ReportTypeName::Query),
-            )),
+            vers::SupportedReport(vers::ReportName::Extension(all::ReportTypeName::Card(
+                card::ReportTypeName::Multiget,
+            ))),
+            vers::SupportedReport(vers::ReportName::Extension(all::ReportTypeName::Card(
+                card::ReportTypeName::Query,
+            ))),
         ]
     }
 
-    fn additional_report<'a>(&'a mut self, user: &'a User, report: &'a vers::Report<All>) -> BoxFuture<'a, IOResult<ReportResponse>> {
+    fn additional_report<'a>(
+        &'a mut self,
+        user: &'a User,
+        report: &'a vers::Report<All>,
+    ) -> BoxFuture<'a, IOResult<ReportResponse>> {
         async {
             match report {
                 vers::Report::Extension(all::ReportType::Card(card::ReportType::Multiget(m))) => {
@@ -219,20 +217,25 @@ impl DavStoredCollection for AddressbookNode {
                             .and_then(|p| p.as_single_name());
 
                         match filename {
-                            Some(name) if self.col.index().idx_by_filename.contains_key(name) =>
-                                ok_node.push(self.mk_child_node(name)),
-                            _ =>
-                                not_found.push(h)
+                            Some(name) if self.col.index().idx_by_filename.contains_key(name) => {
+                                ok_node.push(self.mk_child_node(name))
+                            }
+                            _ => not_found.push(h),
                         }
                     }
 
                     Ok(ReportResponse::Ok(
                         multistatus::Builder::new()
-                            .with_propfind_nodes(user, selector_to_propfind(m.selector.clone()), ok_node)
+                            .with_propfind_nodes(
+                                user,
+                                selector_to_propfind(m.selector.clone()),
+                                ok_node,
+                            )
                             .await
                             .with_not_found(not_found)
-                            .build()))
-                },
+                            .build(),
+                    ))
+                }
 
                 vers::Report::Extension(all::ReportType::Card(card::ReportType::Query(q))) => {
                     let children_nodes: Vec<_> = self
@@ -246,19 +249,24 @@ impl DavStoredCollection for AddressbookNode {
                     let (ok_node, limit_reached) =
                         apply_limit(apply_filter(children_nodes, &q.filter), &q.limit).await?;
                     let mut status = multistatus::Builder::new()
-                        .with_propfind_nodes(user, selector_to_propfind(q.selector.clone()), ok_node)
+                        .with_propfind_nodes(
+                            user,
+                            selector_to_propfind(q.selector.clone()),
+                            ok_node,
+                        )
                         .await;
                     if limit_reached {
                         status = status.with_limit_reached(dav::Href(self.path(user)))
                     }
                     Ok(ReportResponse::Ok(status.build()))
-                },
+                }
 
-                _ => Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+                _ => Err(std::io::Error::from(std::io::ErrorKind::Unsupported)),
             }
-        }.boxed()
+        }
+        .boxed()
     }
-    
+
     fn additional_dav_headers(&self) -> Vec<String> {
         vec!["addressbook".to_string()]
     }
@@ -297,27 +305,26 @@ impl DavObject for AddressbookObject {
     }
 
     fn additional_supported_properties(&self) -> Vec<dav::PropertyRequest<All>> {
-        vec![
-            dav::PropertyRequest::Extension(all::PropertyRequest::Card(
-                card::PropertyRequest::SupportedCollationSet
-            ))
-        ]
+        vec![dav::PropertyRequest::Extension(all::PropertyRequest::Card(
+            card::PropertyRequest::SupportedCollationSet,
+        ))]
     }
 
-    fn additional_property<'a>(&'a mut self, prop: &'a dav::PropertyRequest<All>) -> BoxFuture<'a, PropertyResult> {
+    fn additional_property<'a>(
+        &'a mut self,
+        prop: &'a dav::PropertyRequest<All>,
+    ) -> BoxFuture<'a, PropertyResult> {
         let this = self.clone();
         async move {
             match prop {
                 dav::PropertyRequest::Extension(all::PropertyRequest::Card(
-                    card::PropertyRequest::SupportedCollationSet
-                )) => {
-                    Ok(dav::Property::Extension(all::Property::Card(
-                        card::Property::SupportedCollationSet(vec![
-                            card::SupportedCollation(card::Collation::UnicodeCaseMap),
-                            card::SupportedCollation(card::Collation::AsciiCaseMap),
-                        ])
-                    )))
-                },
+                    card::PropertyRequest::SupportedCollationSet,
+                )) => Ok(dav::Property::Extension(all::Property::Card(
+                    card::Property::SupportedCollationSet(vec![
+                        card::SupportedCollation(card::Collation::UnicodeCaseMap),
+                        card::SupportedCollation(card::Collation::AsciiCaseMap),
+                    ]),
+                ))),
                 // This is not a "real" property (it cannot be queried by
                 // PROPFIND), but is queried internally by addressbook reports.
                 dav::PropertyRequest::Extension(all::PropertyRequest::Card(
@@ -337,7 +344,7 @@ impl DavObject for AddressbookObject {
                             buf
                         }
                     };
-                    
+
                     Ok(dav::Property::Extension(all::Property::Card(
                         card::Property::AddressData(card::AddressDataPayload {
                             payload: String::from_utf8(filtered_vcard).or(Err(prop.clone()))?,
@@ -345,24 +352,29 @@ impl DavObject for AddressbookObject {
                             version: Default::default(),
                         }),
                     )))
-                },
+                }
                 _ => Err(prop.clone()),
             }
-        }.boxed()
+        }
+        .boxed()
     }
 
     fn supported_reports(&self) -> Vec<vers::SupportedReport<All>> {
         vec![
-            vers::SupportedReport(vers::ReportName::Extension(
-                all::ReportTypeName::Card(card::ReportTypeName::Multiget),
-            )),
-            vers::SupportedReport(vers::ReportName::Extension(
-                all::ReportTypeName::Card(card::ReportTypeName::Query),
-            )),
+            vers::SupportedReport(vers::ReportName::Extension(all::ReportTypeName::Card(
+                card::ReportTypeName::Multiget,
+            ))),
+            vers::SupportedReport(vers::ReportName::Extension(all::ReportTypeName::Card(
+                card::ReportTypeName::Query,
+            ))),
         ]
     }
 
-    fn report<'a>(&'a mut self, user: &'a User, report: vers::Report<All>) -> BoxFuture<'a, IOResult<ReportResponse>> {
+    fn report<'a>(
+        &'a mut self,
+        user: &'a User,
+        report: vers::Report<All>,
+    ) -> BoxFuture<'a, IOResult<ReportResponse>> {
         async {
             match report {
                 vers::Report::Extension(all::ReportType::Card(card::ReportType::Multiget(m))) => {
@@ -382,11 +394,16 @@ impl DavObject for AddressbookObject {
                     }
                     Ok(ReportResponse::Ok(
                         multistatus::Builder::new()
-                            .with_propfind_nodes(user, selector_to_propfind(m.selector.clone()), ok_node)
+                            .with_propfind_nodes(
+                                user,
+                                selector_to_propfind(m.selector.clone()),
+                                ok_node,
+                            )
                             .await
                             .with_not_found(not_found)
-                            .build()))
-                },
+                            .build(),
+                    ))
+                }
 
                 vers::Report::Extension(all::ReportType::Card(card::ReportType::Query(q))) => {
                     let nodes = vec![Box::new(DavObjectNode(self.clone())) as Box<dyn DavNode>];
@@ -395,17 +412,22 @@ impl DavObject for AddressbookObject {
                         apply_limit(apply_filter(nodes, &q.filter), &q.limit).await?;
 
                     let mut status = multistatus::Builder::new()
-                        .with_propfind_nodes(user, selector_to_propfind(q.selector.clone()), ok_node)
+                        .with_propfind_nodes(
+                            user,
+                            selector_to_propfind(q.selector.clone()),
+                            ok_node,
+                        )
                         .await;
                     if limit_reached {
                         status = status.with_limit_reached(dav::Href(self.path(user)))
                     }
                     Ok(ReportResponse::Ok(status.build()))
-                },
+                }
 
-                _ => Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+                _ => Err(std::io::Error::from(std::io::ErrorKind::Unsupported)),
             }
-        }.boxed()
+        }
+        .boxed()
     }
 
     fn additional_dav_headers(&self) -> Vec<String> {
@@ -426,24 +448,26 @@ fn apply_filter<'a>(
     nodes: Vec<Box<dyn DavNode>>,
     filter: &'a card::Filter,
 ) -> impl Stream<Item = std::result::Result<Box<dyn DavNode>, std::io::Error>> + Unpin + 'a {
-    futures::stream::iter(nodes).filter_map(move |single_node| async move {
-        // Get vCard
-        let chunks: Vec<_> = match single_node.content().try_collect().await {
-            Ok(v) => v,
-            Err(e) => return Some(Err(e)),
-        };
-        let raw_vcard = chunks.iter().fold(Vec::new(), |mut acc, single_chunk| {
-            acc.extend_from_slice(single_chunk.as_ref());
-            acc
-        });
-        // Parse vCard
-        let vcard = aero_vcard::parse_lossy(raw_vcard.as_slice());
-        if aero_vcard::query::object_matches_filter(vcard.as_slice(), filter) {
-            Some(Ok(single_node))
-        } else {
-            None
-        }
-    }).boxed()
+    futures::stream::iter(nodes)
+        .filter_map(move |single_node| async move {
+            // Get vCard
+            let chunks: Vec<_> = match single_node.content().try_collect().await {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
+            };
+            let raw_vcard = chunks.iter().fold(Vec::new(), |mut acc, single_chunk| {
+                acc.extend_from_slice(single_chunk.as_ref());
+                acc
+            });
+            // Parse vCard
+            let vcard = aero_vcard::parse_lossy(raw_vcard.as_slice());
+            if aero_vcard::query::object_matches_filter(vcard.as_slice(), filter) {
+                Some(Ok(single_node))
+            } else {
+                None
+            }
+        })
+        .boxed()
 }
 
 // returns (items within limit, limit_reached?)
@@ -455,10 +479,10 @@ async fn apply_limit(
     while let Some(item_res) = items.next().await {
         let item = item_res?;
         match limit {
-            Some(card::Limit { nresults }) if *nresults <= items_keep.len() as u64 =>
-                return Ok((items_keep, true)),
-            _ =>
-                items_keep.push(item),
+            Some(card::Limit { nresults }) if *nresults <= items_keep.len() as u64 => {
+                return Ok((items_keep, true))
+            }
+            _ => items_keep.push(item),
         }
     }
     Ok((items_keep, false))

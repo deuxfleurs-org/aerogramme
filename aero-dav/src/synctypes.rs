@@ -1,8 +1,8 @@
-use super::extension::Extension;
 use super::coretypes as dav;
+use super::extension::Extension;
 use super::versioningtypes as vers;
 
-/** 
+/**
  * # RFC 6578 - WebDAV Sync
  *
  * Implement a synchronization logic through WebDAV based on a token.

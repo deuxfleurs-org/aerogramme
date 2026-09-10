@@ -35,7 +35,9 @@ impl QWrite for Property {
 impl QWrite for Violation {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
-            Self::NumberOfMatchesWithinLimits => xml.create_dav_atom("number-of-matches-within-limits").await,
+            Self::NumberOfMatchesWithinLimits => {
+                xml.create_dav_atom("number-of-matches-within-limits").await
+            }
         }
     }
 }
@@ -45,7 +47,9 @@ impl QWrite for PropertyRequest {
         match self {
             Self::Owner => xml.create_dav_atom("owner").await,
             Self::CurrentUserPrincipal => xml.create_dav_atom("current-user-principal").await,
-            Self::CurrentUserPrivilegeSet => xml.create_dav_atom("current-user-privilege-set").await,
+            Self::CurrentUserPrivilegeSet => {
+                xml.create_dav_atom("current-user-privilege-set").await
+            }
         }
     }
 }
@@ -53,7 +57,7 @@ impl QWrite for PropertyRequest {
 impl QWrite for ResourceType {
     async fn qwrite(&self, xml: &mut Writer<impl IWrite>) -> Result<(), QError> {
         match self {
-            Self::Principal => xml.create_dav_atom("principal").await
+            Self::Principal => xml.create_dav_atom("principal").await,
         }
     }
 }
@@ -67,7 +71,9 @@ impl QWrite for Privilege {
             Self::WriteContent => xml.create_dav_atom("write-content").await,
             Self::Unlock => xml.create_dav_atom("unlock").await,
             Self::ReadAcl => xml.create_dav_atom("read-acl").await,
-            Self::ReadCurrentUserPrivilegeSet => xml.create_dav_atom("read-current-user-privilege-set").await,
+            Self::ReadCurrentUserPrivilegeSet => {
+                xml.create_dav_atom("read-current-user-privilege-set").await
+            }
             Self::WriteAcl => xml.create_dav_atom("write-acl").await,
             Self::Bind => xml.create_dav_atom("bind").await,
             Self::Unbind => xml.create_dav_atom("unbind").await,

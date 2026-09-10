@@ -1,6 +1,6 @@
-use aero_dav::caltypes as cal;
-use crate::collation::{self, contains_subslice} ;
+use crate::collation::{self, contains_subslice};
 use crate::parser;
+use aero_dav::caltypes as cal;
 
 pub fn is_component_match(
     parent: &icalendar::parser::Component,
@@ -108,9 +108,10 @@ fn is_properties_match(props: &[icalendar::parser::Property], filters: &[cal::Pr
                         Some(cal::TimeOrText::Text(txt_match)) => {
                             let collation = *txt_match.collation.get();
                             let prop_val = collation::normalize(collation, prop.val.as_str());
-                            let text_match = collation::normalize(collation, txt_match.text.as_str()); 
+                            let text_match =
+                                collation::normalize(collation, txt_match.text.as_str());
                             let contains = contains_subslice(&prop_val, &text_match);
-                            
+
                             let is_match = match txt_match.negate_condition.get() {
                                 cal::NegateCondition::No => contains,
                                 cal::NegateCondition::Yes => !contains,

@@ -26,10 +26,10 @@ pub fn property(src: &Contentline, prune: &card::PropKind) -> Option<Contentline
 ///    properties.  A "name" set to "X-ABC.TEL" will match an "X-ABC.TEL"
 ///    vCard property only; it will not match "TEL" or "X-ABC-1.TEL".
 pub fn prop_matches_name(src: &Contentline, pname: &card::PropertyName) -> bool {
-    src.name() == pname.name &&
-        match &pname.group {
+    src.name() == pname.name
+        && match &pname.group {
             None => true,
-            Some(g) => src.group() == Some(g.as_str())
+            Some(g) => src.group() == Some(g.as_str()),
         }
 }
 

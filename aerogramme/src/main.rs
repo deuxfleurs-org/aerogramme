@@ -6,7 +6,6 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use nix::{sys::signal, unistd::Pid};
 
-
 use crate::server::Server;
 use aero_user::config::*;
 use aero_user::login::{static_provider::*, *};
@@ -233,7 +232,7 @@ async fn main() -> Result<()> {
                 };
                 account_management(&args.command, cmd, user_file)?;
             }
-        }
+        },
         (Command::Provider(_), AnyConfig::Companion(_)) => {
             bail!("You want to run a 'Provider' command but your configuration file has role 'Companion'.");
         }

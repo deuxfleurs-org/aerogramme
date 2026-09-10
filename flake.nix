@@ -209,12 +209,31 @@ EOF
 
         ###
         #
-        # --- RELEASE TOOLING ---
+        # --- MAINTENANCE AND RELEASE TOOLING ---
         # expected to be call with nix run .#tools.build and nix run .#tools.push
         ###
         tools = rec {
           version = cross.amd64.crate.version; # bind version on amd64 crate
 	  alba = albatros.packages.${system}.alba;
+
+          fmt = pkgs.writeScriptBin "aerogramme-fmt" ''
+#!/usr/bin/env bash
+set -euxo pipefail
+
+cargo fmt --all --check
+          '';
+
+          ci = pkgs.writeScriptBin "aerogramme-ci" ''
+#!/usr/bin/env bash
+set -euxo pipefail
+echo "--- Starting CI checks ---"
+
+echo "Checking format..."
+nix run .#tools.fmt
+
+echo "--- All CI checks passed! ---"
+          '';
+
           build = pkgs.writeScriptBin "aerogramme-build" ''
 #!/usr/bin/env bash
 set -euxo pipefail

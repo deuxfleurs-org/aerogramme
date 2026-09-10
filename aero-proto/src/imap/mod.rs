@@ -17,7 +17,9 @@ use std::net::SocketAddr;
 
 use anyhow::{anyhow, bail, Result};
 use futures::stream::{FuturesUnordered, StreamExt};
-use imap_codec::imap_types::response::{Code, CommandContinuationRequest, Response as ImapResponse, Status};
+use imap_codec::imap_types::response::{
+    Code, CommandContinuationRequest, Response as ImapResponse, Status,
+};
 use imap_codec::imap_types::{core::Text, response::Greeting};
 use imap_flow::server::{ServerFlow, ServerFlowEvent, ServerFlowOptions};
 use imap_flow::stream::AnyStream;
@@ -32,7 +34,7 @@ use aero_user::login::ArcLoginProvider;
 
 use crate::imap::capability::ServerCapability;
 use crate::imap::request::Request;
-use crate::imap::response::{Body, ResponseOrIdle, Response};
+use crate::imap::response::{Body, Response, ResponseOrIdle};
 use crate::imap::session::Instance;
 
 /// Server is a thin wrapper to register our Services in BàL
@@ -222,7 +224,7 @@ impl NetLoop {
             if let flow::State::Logout = session.state {
                 tracing::debug!(sock=%ctx.addr, "entered LOGOUT state, sending BYE");
                 let _ = resp_tx.send(ResponseOrIdle::Response(Response::bye().unwrap()));
-                break
+                break;
             }
 
             let cmd = match cmd_rx.recv().await {

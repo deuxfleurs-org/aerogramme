@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use super::extension::Extension;
 use super::coretypes as dav;
+use super::extension::Extension;
 use super::xml::WithDefault;
 use chrono::{DateTime, Utc};
 
@@ -20,7 +20,7 @@ pub const UTC_DATETIME_FMT: &str = "%Y%m%dT%H%M%SZ";
  * Official RFC
  * https://datatracker.ietf.org/doc/html/rfc4791
  *
- * SabreDAV guide gives high-level & real-world overview: 
+ * SabreDAV guide gives high-level & real-world overview:
  * https://sabre.io/dav/building-a-caldav-client/
  *
  * For reference, non-official extensions documented by SabreDAV:
@@ -784,7 +784,6 @@ pub enum Violation {
         prop: Vec<PropFilter>,
         param: Vec<ParamFilter>,
     },
-
     // TODO: CALDAV:supported-collation
 }
 

@@ -105,15 +105,21 @@ pub struct FetchBodySection {
 
 impl ToString for FetchBodySection {
     fn to_string(&self) -> String {
-        let no = self.part_no.iter().map(u64::to_string).collect::<Vec<_>>().join(".");
+        let no = self
+            .part_no
+            .iter()
+            .map(u64::to_string)
+            .collect::<Vec<_>>()
+            .join(".");
         match &self.part_spec {
             None => no,
-            Some(spec) =>
+            Some(spec) => {
                 if no.is_empty() {
                     spec.to_string()
                 } else {
                     format!("{}.{}", no, spec.to_string())
                 }
+            }
         }
     }
 }
@@ -128,8 +134,7 @@ pub enum PartSpec {
 impl ToString for PartSpec {
     fn to_string(&self) -> String {
         match self {
-            PartSpec::HeaderFields(fields) => 
-                format!("HEADER.FIELDS ({})", fields.join(" ")),
+            PartSpec::HeaderFields(fields) => format!("HEADER.FIELDS ({})", fields.join(" ")),
             PartSpec::Mime => "MIME".to_string(),
             PartSpec::Header => "HEADER".to_string(),
             PartSpec::Text => "TEXT".to_string(),
@@ -389,9 +394,7 @@ pub fn fetch(
         FetchKind::Rfc822Header => "RFC822.HEADER",
         FetchKind::Rfc822Text => "RFC822.TEXT",
         FetchKind::Body(None) => "BODY[]",
-        FetchKind::Body(Some(section)) => {
-            &format!("BODY[{}]", section.to_string())
-        },
+        FetchKind::Body(Some(section)) => &format!("BODY[{}]", section.to_string()),
     };
 
     let mod_str = match modifier {
@@ -454,7 +457,7 @@ pub fn append(imap: &mut TcpStream, content: Email) -> Result<String> {
 pub fn append_not_seen(imap: &mut TcpStream, content: Email) -> Result<String> {
     append_internal(imap, content, false)
 }
-    
+
 pub fn search(imap: &mut TcpStream, sk: SearchKind) -> Result<String> {
     let sk_str = match sk {
         SearchKind::Header(k, v) => format!("HEADER \"{}\" \"{}\"", k, v),

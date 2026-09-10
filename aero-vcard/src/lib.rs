@@ -1,4 +1,4 @@
-use ical_vcard::Contentline; 
+use ical_vcard::Contentline;
 use std::io::Write;
 
 pub mod collation;
@@ -12,8 +12,8 @@ pub fn parse_lossy(raw: &[u8]) -> Vec<Contentline> {
         Some(Ok(cl)) if cl.name() == "BEGIN" && cl.value() == "VCARD" => (),
         _ => {
             tracing::warn!("cannot parse vCard: does not start with BEGIN:VCARD");
-            return vec![]
-        },
+            return vec![];
+        }
     };
     for line_res in parser {
         match line_res {
@@ -27,7 +27,10 @@ pub fn parse_lossy(raw: &[u8]) -> Vec<Contentline> {
     contentlines
 }
 
-pub fn write(mut w: &mut impl Write, lines: impl IntoIterator<Item = Contentline>) -> std::io::Result<()> {
+pub fn write(
+    mut w: &mut impl Write,
+    lines: impl IntoIterator<Item = Contentline>,
+) -> std::io::Result<()> {
     w.write(b"BEGIN:VCARD\r\n")?;
     {
         let mut w = ical_vcard::Writer::new(&mut w);

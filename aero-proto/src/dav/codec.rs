@@ -42,7 +42,7 @@ impl std::str::FromStr for SyncTokenUri {
     type Err = String;
     fn from_str(raw: &str) -> Result<Self, Self::Err> {
         if raw.len() != Self::BASE_URI.len() + 48 {
-            return Err("invalid token length".to_string())
+            return Err("invalid token length".to_string());
         }
         let id = raw[Self::BASE_URI.len()..]
             .parse::<UniqueIdent>()
@@ -83,13 +83,16 @@ impl<'a> Path<'a> {
 
     pub fn relativize(&self, base: &Self) -> Option<Self> {
         use Path::*;
-        fn strip_common_prefix<'a, 'b>(mut s1: &'b[&'a str], mut s2: &'b[&'a str]) -> (&'b[&'a str], &'b[&'a str]) {
+        fn strip_common_prefix<'a, 'b>(
+            mut s1: &'b [&'a str],
+            mut s2: &'b [&'a str],
+        ) -> (&'b [&'a str], &'b [&'a str]) {
             while !s1.is_empty() && !s2.is_empty() {
                 if s1[0] == s2[0] {
                     s1 = &s1[1..];
                     s2 = &s2[1..];
                 } else {
-                    break
+                    break;
                 }
             }
             (s1, s2)

@@ -13,6 +13,8 @@ pub struct AddressbookNs {
 impl AddressbookNs {
     /// Create a new addressbook namespace
     pub fn new(creds: Credentials) -> Self {
-        Self { dav: DavNs::new(creds, CARD_PREFIX, &[MAIN_CARD]) }
+        Self {
+            dav: DavNs::new(creds, CARD_PREFIX, &[MAIN_CARD]),
+        }
     }
 }

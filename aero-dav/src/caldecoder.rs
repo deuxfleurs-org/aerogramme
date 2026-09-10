@@ -3,10 +3,10 @@ use quick_xml::events::Event;
 use std::str::FromStr;
 
 use super::caltypes::*;
+use super::coretypes as dav;
 use super::error::ParsingError;
 use super::extension::Extension;
-use super::coretypes as dav;
-use super::xml::{IRead, QRead, Reader, CAL_URN, DAV_URN, WithDefault};
+use super::xml::{IRead, QRead, Reader, WithDefault, CAL_URN, DAV_URN};
 
 // ---- ROOT ELEMENTS ---
 impl<E: Extension> QRead<MkCalendar<E>> for MkCalendar<E> {
@@ -454,7 +454,8 @@ impl QRead<SupportedCollation> for SupportedCollation {
         xml.open(CAL_URN, "supported-collation").await?;
         // FIXME: an unknown collation should result in precondition error,
         // not a parsing error (different error codes and response body).
-        let col = Collation::from_str(&xml.tag_string().await?).or(Err(ParsingError::InvalidValue))?;
+        let col =
+            Collation::from_str(&xml.tag_string().await?).or(Err(ParsingError::InvalidValue))?;
         xml.close().await?;
         Ok(SupportedCollation(col))
     }
@@ -472,13 +473,12 @@ impl QRead<CalendarDataPayload> for CalendarDataPayload {
 
 impl QRead<CalendarDataSupport> for CalendarDataSupport {
     async fn qread(xml: &mut Reader<impl IRead>) -> Result<Self, ParsingError> {
-        let content_type = WithDefault::from_opt(
-            xml.prev_attr("content-type").map(ContentType)
-        );
-        let version = WithDefault::from_opt(
-            xml.prev_attr("version").map(Version)
-        );
-        Ok(Self { content_type, version })
+        let content_type = WithDefault::from_opt(xml.prev_attr("content-type").map(ContentType));
+        let version = WithDefault::from_opt(xml.prev_attr("version").map(Version));
+        Ok(Self {
+            content_type,
+            version,
+        })
     }
 }
 
@@ -894,15 +894,15 @@ impl QRead<TextMatch> for TextMatch {
             // FIXME: an unknown collation should result in precondition error,
             // not a parsing error (different error codes and response body).
             xml.prev_attr("collation")
-               .map(|s| Collation::from_str(s.as_str()))
-               .transpose()
-               .or(Err(ParsingError::InvalidValue))?
-            );
+                .map(|s| Collation::from_str(s.as_str()))
+                .transpose()
+                .or(Err(ParsingError::InvalidValue))?,
+        );
         let negate_condition = WithDefault::from_opt(
             xml.prev_attr("negate-condition")
-               .map(|v| NegateCondition::from_str(v.as_str()))
-               .transpose()
-               .map_err(|()| ParsingError::InvalidValue)?
+                .map(|v| NegateCondition::from_str(v.as_str()))
+                .transpose()
+                .map_err(|()| ParsingError::InvalidValue)?,
         );
         let text = xml.tag_string().await?;
         xml.close().await?;
@@ -980,9 +980,9 @@ impl QRead<CalProp> for CalProp {
         );
         let novalue = WithDefault::from_opt(
             xml.prev_attr("novalue")
-               .map(|v| NoValue::from_str(v.as_str()))
-               .transpose()
-               .map_err(|()| ParsingError::InvalidValue)?
+                .map(|v| NoValue::from_str(v.as_str()))
+                .transpose()
+                .map_err(|()| ParsingError::InvalidValue)?,
         );
         xml.close().await?;
         Ok(Self { name, novalue })
@@ -1393,7 +1393,9 @@ END:VCALENDAR]]></C:calendar-timezone>
                                             param_filter: vec![],
                                             time_or_text: Some(TimeOrText::Text(TextMatch {
                                                 collation: Default::default(),
-                                                negate_condition: WithDefault::new(NegateCondition::Yes),
+                                                negate_condition: WithDefault::new(
+                                                    NegateCondition::Yes,
+                                                ),
                                                 text: "CANCELLED".into(),
                                             })),
                                         },

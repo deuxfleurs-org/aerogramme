@@ -1,6 +1,6 @@
 use super::coretypes as dav;
 
-/** 
+/**
  * # WebDAV ACL & ACL Current Principal Extension
  *
  * The 1000-feet view: ACL introduces concepts that are useful, but we don't use/implement it
@@ -35,7 +35,7 @@ use super::coretypes as dav;
  *
  * ## RFC 5397 - WebDAV ACL Current Principal Extension
  *
- * It introduces the "current user principal" DAV property. 
+ * It introduces the "current user principal" DAV property.
  * This information is used by Thunderbird.
  *
  * This implementation should be complete.
@@ -68,7 +68,6 @@ pub enum Violation {
     /// specification would cause the return of an extremely large number
     /// of responses.
     NumberOfMatchesWithinLimits,
-    
     // TODO: not a complete list
 }
 
@@ -76,9 +75,9 @@ pub enum Violation {
 ///
 /// Ability to perform a given method on a resource MUST be controlled by
 /// one or more privileges. [...]
-/// 
+///
 /// --- Notes on "privilege aggregation":
-/// 
+///
 /// Server implementations are free to aggregate the predefined
 /// privileges (defined above in Sections 3.1-3.10) subject to the
 /// following limitations:
@@ -114,7 +113,7 @@ pub enum Privilege {
     /// client may expect that no other privilege needs to be granted to have
     /// access to GET and PROPFIND.  Additionally, the read privilege MUST
     /// control the OPTIONS method.
-    /// 
+    ///
     /// <!ELEMENT read EMPTY>
     Read,
 
@@ -129,7 +128,7 @@ pub enum Privilege {
     /// aggregated under DAV:write, e.g., if an ACL grants access to
     /// DAV:write, the client may expect that no other privilege needs to be
     /// granted to have access to PUT and PROPPATCH.
-    /// 
+    ///
     /// <!ELEMENT write EMPTY>
     Write,
 
@@ -142,7 +141,7 @@ pub enum Privilege {
     /// an ACL grants access to DAV:write-properties, the client can safely
     /// expect that no other privilege needs to be granted to have access to
     /// PROPPATCH.
-    /// 
+    ///
     /// <!ELEMENT write-properties EMPTY>
     WriteProperties,
 
@@ -155,7 +154,7 @@ pub enum Privilege {
     /// when applied to an unmapped URI - creates a new resource and
     /// therefore is controlled by the DAV:bind privilege on the parent
     /// collection.
-    /// 
+    ///
     /// <!ELEMENT write-content EMPTY>
     WriteContent,
 
@@ -166,7 +165,7 @@ pub enum Privilege {
     /// a resource, servers may allow various kinds of administrators to
     /// unlock resources locked by others.  Any privilege controlling access
     /// by non-lock owners to UNLOCK MUST be aggregated under DAV:unlock.
-    /// 
+    ///
     /// A lock owner can always remove a lock by issuing an UNLOCK with the
     /// correct lock token and authentication credentials.  That is, even if
     /// a principal does not have DAV:unlock privilege, they can still remove
@@ -174,24 +173,24 @@ pub enum Privilege {
     /// lock only if they have DAV:unlock privilege and they issue an UNLOCK
     /// with the correct lock token.  Lock timeout is not affected by the
     /// DAV:unlock privilege.
-    /// 
+    ///
     /// <!ELEMENT unlock EMPTY>
     Unlock,
 
     /// The DAV:read-acl privilege controls the use of PROPFIND to retrieve
     /// the DAV:acl property of the resource.
-    /// 
+    ///
     /// <!ELEMENT read-acl EMPTY>
     ReadAcl,
 
     /// The DAV:read-current-user-privilege-set privilege controls the use of
     /// PROPFIND to retrieve the DAV:current-user-privilege-set property of
     /// the resource.
-    /// 
+    ///
     /// Clients are intended to use this property to visually indicate in
     /// their UI items that are dependent on the permissions of a resource,
     /// for example, by graying out resources that are not writable.
-    /// 
+    ///
     /// This privilege is separate from DAV:read-acl because there is a need
     /// to allow most users access to the privileges permitted the current
     /// user (due to its use in creating the UI), while the full ACL contains
@@ -199,33 +198,33 @@ pub enum Privilege {
     /// user.  As a result, the set of users who can view the full ACL is
     /// expected to be much smaller than those who can read the current user
     /// privilege set, and hence distinct privileges are needed for each.
-    /// 
+    ///
     /// <!ELEMENT read-current-user-privilege-set EMPTY>
     ReadCurrentUserPrivilegeSet,
 
     /// The DAV:write-acl privilege controls use of the ACL method to modify
     /// the DAV:acl property of the resource.
-    /// 
+    ///
     /// <!ELEMENT write-acl EMPTY>
     WriteAcl,
 
     /// The DAV:bind privilege allows a method to add a new member URL to the
     /// specified collection (for example via PUT or MKCOL).  It is ignored
     /// for resources that are not collections.
-    /// 
+    ///
     /// <!ELEMENT bind EMPTY>
     Bind,
 
     /// The DAV:unbind privilege allows a method to remove a member URL from
     /// the specified collection (for example via DELETE or MOVE).  It is
     /// ignored for resources that are not collections.
-    /// 
+    ///
     /// <!ELEMENT unbind EMPTY>
     Unbind,
 
     /// DAV:all is an aggregate privilege that contains the entire set of
     /// privileges that can be applied to the resource.
-    /// 
+    ///
     /// <!ELEMENT all EMPTY>
     All,
 }

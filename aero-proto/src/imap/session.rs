@@ -78,7 +78,12 @@ impl Instance {
             Err(e) => {
                 tracing::error!(err=?e, "something bad happened in idle");
                 self.state.apply(flow::Transition::Logout).unwrap();
-                ResponseOrIdle::Response(Response::build().message("error during idle").bad().unwrap())
+                ResponseOrIdle::Response(
+                    Response::build()
+                        .message("error during idle")
+                        .bad()
+                        .unwrap(),
+                )
             }
         }
     }
@@ -144,14 +149,13 @@ impl Instance {
                 .map(|r| (r, flow::Transition::None)),
         }
         .unwrap_or_else(|err| {
-            let transition =  
-                if let Some(e) = err.downcast_ref::<SyncError>() {
-                    tracing::debug!("command raised SyncError {e}, disconnecting client");
-                    flow::Transition::Logout
-                } else {
-                    tracing::error!("Command error {:?} occured while processing {:?}", err, cmd);
-                    flow::Transition::None
-                };
+            let transition = if let Some(e) = err.downcast_ref::<SyncError>() {
+                tracing::debug!("command raised SyncError {e}, disconnecting client");
+                flow::Transition::Logout
+            } else {
+                tracing::error!("Command error {:?} occured while processing {:?}", err, cmd);
+                flow::Transition::None
+            };
             (
                 Response::build()
                     .to_req(&cmd)

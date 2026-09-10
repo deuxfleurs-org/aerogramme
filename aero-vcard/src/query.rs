@@ -14,21 +14,31 @@ pub fn object_matches_filter(vcard: &[Contentline], filter: &card::Filter) -> bo
 
 fn object_matches_prop_filter(vcard: &[Contentline], filter: &card::PropFilter) -> bool {
     match &filter.rules {
-        card::PropFilterRules::Empty =>
-            vcard.iter().any(|prop| prop_matches_name(prop, &filter.name)),
-        card::PropFilterRules::IsNotDefined =>
-            vcard.iter().all(|prop| !prop_matches_name(prop, &filter.name)),
-        card::PropFilterRules::Match { text_match, param_filter } =>
-            vcard.iter().any(|prop| {
-                prop_matches_name(prop, &filter.name) &&
-                    test2(
-                        *filter.test.get(),
-                        || tests(*filter.test.get(), &text_match,
-                                 |tm| is_text_match(prop.value(), tm)),
-                        || tests(*filter.test.get(), &param_filter,
-                                 |pf| params_match_filter(prop.params(), pf)),
-                    )
-            }),
+        card::PropFilterRules::Empty => vcard
+            .iter()
+            .any(|prop| prop_matches_name(prop, &filter.name)),
+        card::PropFilterRules::IsNotDefined => vcard
+            .iter()
+            .all(|prop| !prop_matches_name(prop, &filter.name)),
+        card::PropFilterRules::Match {
+            text_match,
+            param_filter,
+        } => vcard.iter().any(|prop| {
+            prop_matches_name(prop, &filter.name)
+                && test2(
+                    *filter.test.get(),
+                    || {
+                        tests(*filter.test.get(), &text_match, |tm| {
+                            is_text_match(prop.value(), tm)
+                        })
+                    },
+                    || {
+                        tests(*filter.test.get(), &param_filter, |pf| {
+                            params_match_filter(prop.params(), pf)
+                        })
+                    },
+                )
+        }),
     }
 }
 
@@ -50,18 +60,19 @@ fn is_text_match(s: &str, text_match: &card::TextMatch) -> bool {
 
 fn params_match_filter(params: &[Param], param_filter: &card::ParamFilter) -> bool {
     match &param_filter.rules {
-        None =>
-            params.iter().any(|param| param.name() == param_filter.name.0.as_str()),
-        Some(card::ParamFilterMatch::IsNotDefined) =>
-            params.iter().all(|param| param.name() != param_filter.name.0.as_str()),
-        Some(card::ParamFilterMatch::Match(text_match)) =>
-            params.iter().any(|param| {
-                param.name() == param_filter.name.0.as_str()
+        None => params
+            .iter()
+            .any(|param| param.name() == param_filter.name.0.as_str()),
+        Some(card::ParamFilterMatch::IsNotDefined) => params
+            .iter()
+            .all(|param| param.name() != param_filter.name.0.as_str()),
+        Some(card::ParamFilterMatch::Match(text_match)) => params.iter().any(|param| {
+            param.name() == param_filter.name.0.as_str()
                 // NOTE: the RFC does not specify the behavior of param-filter
                 // on multi-valued parameters. We use "any of" somewhat
                 // arbitrarily (it is more permissive).
-                    && param.values().iter().any(|val| is_text_match(val.as_str(), text_match)) 
-            })
+                    && param.values().iter().any(|val| is_text_match(val.as_str(), text_match))
+        }),
     }
 }
 

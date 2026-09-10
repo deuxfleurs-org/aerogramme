@@ -108,8 +108,8 @@ impl QWrite for SyncLevel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::realization::{self, All};
     use crate::coretypes as dav;
+    use crate::realization::{self, All};
     use crate::versioningtypes as vers;
     use crate::xml::Node;
     use crate::xml::Reader;

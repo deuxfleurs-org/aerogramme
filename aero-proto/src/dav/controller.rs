@@ -8,8 +8,8 @@ use hyper::body::Incoming;
 use hyper::{body::Bytes, Request, Response};
 
 use aero_collections::user::User;
-use aero_dav::realization::All;
 use aero_dav::coretypes as dav;
+use aero_dav::realization::All;
 use aero_dav::versioningtypes as vers;
 
 use crate::dav::codec;
@@ -98,10 +98,9 @@ impl Controller {
                 hyper::StatusCode::MULTI_STATUS,
                 multistatus,
             ),
-            ReportResponse::Err((status, msg)) => 
-                Ok(Response::builder()
-                   .status(status)
-                   .body(text_body_owned(msg))?),
+            ReportResponse::Err((status, msg)) => Ok(Response::builder()
+                .status(status)
+                .body(text_body_owned(msg))?),
         }
     }
 
@@ -143,7 +142,7 @@ impl Controller {
             multistatus::Builder::new()
                 .with_propfind_nodes(&self.user, propfind, nodes)
                 .await
-                .build()
+                .build(),
         )
     }
 
@@ -205,4 +204,3 @@ impl Controller {
         Ok(response)
     }
 }
-
