@@ -16,7 +16,7 @@ use crate::imap::attributes::AttributesProxy;
 use crate::imap::capability::{ClientCapability, ServerCapability};
 use crate::imap::command::{anystate, append, authenticated, MailboxName};
 use crate::imap::flow;
-use crate::imap::mailbox_view::MailboxView;
+use crate::imap::mailbox_view::{CopyMoveResult, MailboxView};
 use crate::imap::response::{Body, Response};
 
 pub struct SelectedContext<'a> {
@@ -334,33 +334,30 @@ impl<'a> SelectedContext<'a> {
             }
         };
 
-        let (uidval, uid_map) = self.mailbox.copy(sequence_set, &mut mb, uid).await?;
+        let (copy_res, data) = self.mailbox.copy(sequence_set, &mut mb, uid).await?;
 
-        let copyuid_str = format!(
-            "{} {} {}",
-            uidval,
-            uid_map
-                .iter()
-                .map(|(sid, _)| format!("{}", sid))
-                .collect::<Vec<_>>()
-                .join(","),
-            uid_map
-                .iter()
-                .map(|(_, tuid)| format!("{}", tuid))
-                .collect::<Vec<_>>()
-                .join(",")
-        );
+        let response = match copy_res {
+            CopyMoveResult::Success {
+                dest_uidvalidity,
+                uid_map,
+            } => {
+                let copyuid_code = copyuid_code(dest_uidvalidity, uid_map);
+                Response::build()
+                    .to_req(self.req)
+                    .message("COPY completed")
+                    .code(copyuid_code)
+                    .set_body(data)
+                    .ok()?
+            }
 
-        Ok((
-            Response::build()
+            CopyMoveResult::MessagesDeleted => Response::build()
                 .to_req(self.req)
-                .message("COPY completed")
-                .code(Code::Other(CodeOther::unvalidated(
-                    format!("COPYUID {}", copyuid_str).into_bytes(),
-                )))
-                .ok()?,
-            flow::Transition::None,
-        ))
+                .message("Some of the requested messages no longer exist")
+                .set_body(data)
+                .no()?,
+        };
+
+        Ok((response, flow::Transition::None))
     }
 
     async fn r#move(
@@ -390,50 +387,43 @@ impl<'a> SelectedContext<'a> {
             }
         };
 
-        let (uidval, uid_map, mut data) = self.mailbox.r#move(sequence_set, &mut mb, uid).await?;
+        let (move_res, mut data) = self.mailbox.r#move(sequence_set, &mut mb, uid).await?;
 
-        // compute code
-        let copyuid_str = format!(
-            "{} {} {}",
-            uidval,
-            uid_map
-                .iter()
-                .map(|(sid, _)| format!("{}", sid))
-                .collect::<Vec<_>>()
-                .join(","),
-            uid_map
-                .iter()
-                .map(|(_, tuid)| format!("{}", tuid))
-                .collect::<Vec<_>>()
-                .join(",")
-        );
-        let copyuid_code = CodeOther::unvalidated(format!("COPYUID {}", copyuid_str).into_bytes());
+        let response = match move_res {
+            CopyMoveResult::Success {
+                dest_uidvalidity,
+                uid_map,
+            } => {
+                let copyuid_code = copyuid_code(dest_uidvalidity, uid_map);
 
-        // From RFC6851 (IMAP MOVE):
-        // "Servers implementing UIDPLUS are also advised to send the COPYUID
-        // response code in an untagged OK before sending EXPUNGE or moved
-        // responses. (Sending COPYUID in the tagged OK, as described in the
-        // UIDPLUS specification, means that clients first receive an EXPUNGE
-        // for a message and afterwards COPYUID for the same message. It can be
-        // unnecessarily difficult to process that sequence usefully.)"
-        data.insert(
-            0,
-            Body::Status(Status::ok(
-                None,
-                Some(Code::Other(copyuid_code.clone())),
-                "Copy UIDs",
-            )?),
-        );
+                // From RFC6851 (IMAP MOVE):
+                // "Servers implementing UIDPLUS are also advised to send the COPYUID
+                // response code in an untagged OK before sending EXPUNGE or moved
+                // responses. (Sending COPYUID in the tagged OK, as described in the
+                // UIDPLUS specification, means that clients first receive an EXPUNGE
+                // for a message and afterwards COPYUID for the same message. It can be
+                // unnecessarily difficult to process that sequence usefully.)"
+                data.insert(
+                    0,
+                    Body::Status(Status::ok(None, Some(copyuid_code.clone()), "Copy UIDs")?),
+                );
 
-        Ok((
-            Response::build()
+                Response::build()
+                    .to_req(self.req)
+                    .message("COPY completed")
+                    .code(copyuid_code)
+                    .set_body(data)
+                    .ok()?
+            }
+
+            CopyMoveResult::MessagesDeleted => Response::build()
                 .to_req(self.req)
-                .message("COPY completed")
-                .code(Code::Other(copyuid_code))
+                .message("Some of the requested messages no longer exist")
                 .set_body(data)
-                .ok()?,
-            flow::Transition::None,
-        ))
+                .no()?,
+        };
+
+        Ok((response, flow::Transition::None))
     }
 
     async fn append(
@@ -460,4 +450,27 @@ impl<'a> SelectedContext<'a> {
             ),
         }
     }
+}
+
+use aero_collections::mail::uidindex::{ImapUid, ImapUidvalidity};
+
+fn copyuid_code(uidval: ImapUidvalidity, uid_map: Vec<(ImapUid, ImapUid)>) -> Code<'static> {
+    let copyuid_str = format!(
+        "{} {} {}",
+        uidval,
+        uid_map
+            .iter()
+            .map(|(sid, _)| format!("{}", sid))
+            .collect::<Vec<_>>()
+            .join(","),
+        uid_map
+            .iter()
+            .map(|(_, tuid)| format!("{}", tuid))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+
+    Code::Other(CodeOther::unvalidated(
+        format!("COPYUID {}", copyuid_str).into_bytes(),
+    ))
 }

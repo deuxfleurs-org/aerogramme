@@ -47,6 +47,19 @@ impl Default for UpdateParameters {
     }
 }
 
+/// The result of a COPY or MOVE operation
+#[derive(Debug, Clone)]
+pub enum CopyMoveResult {
+    /// All messages could be successfully copied.
+    Success {
+        dest_uidvalidity: ImapUidvalidity,
+        uid_map: Vec<(ImapUid, ImapUid)>,
+    },
+    /// Copy failed because some of the messages were deleted. The entire copy
+    /// operation is a no-op.
+    MessagesDeleted,
+}
+
 /// A MailboxView is responsible for giving the client the information it needs
 /// about a mailbox, such as an initial summary of the mailbox's content and
 /// continuous updates indicating when the content of the mailbox has been
@@ -407,38 +420,76 @@ impl MailboxView {
         sequence_set: &SequenceSet,
         to: &mut Mailbox,
         is_uid_copy: &bool,
-    ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>)> {
-        if *is_uid_copy {
-            // TODO: need to emit update status message for EXPUNGE then?
-            self.checked_sync().await?
-        } else {
-            // TODO: is this correct? cf RFC2180?
-            self.checked_sync_no_update().await?
-        }
-        let state = self.mailbox.current_uid_index();
-        let mails = state.fetch(
-            sequence_set,
-            self.recent_from,
-            FetchBy::from_bool(*is_uid_copy),
-        );
+    ) -> Result<(CopyMoveResult, Vec<Body<'static>>)> {
+        self.checked_sync().await?;
+        // If the arguments are sequence IDs, we need to resolve them against
+        // the client known state; the new sync'd state can have different
+        // seqids if mails were expunged.
+        let mails = {
+            let state = if *is_uid_copy {
+                self.mailbox.current_uid_index()
+            } else {
+                self.known_state.clone()
+            };
+            state.fetch(
+                sequence_set,
+                self.recent_from,
+                FetchBy::from_bool(*is_uid_copy),
+            )
+        };
 
         let mut new_uuids = vec![];
+        let mut errored = false;
         for mi in mails.iter() {
-            new_uuids.push(to.copy_from(&self.mailbox, mi.uuid).await?);
+            // this can fail if the mail was expunged concurrently
+            let copy_res = to.copy_from(&self.mailbox, mi.uuid).await;
+            match copy_res {
+                Ok(copy_uuid) => new_uuids.push(copy_uuid),
+                Err(_err) => errored = true,
+            }
         }
 
-        let mut ret = vec![];
-        let to_state = to.current_uid_index();
-        for (mi, new_uuid) in mails.iter().zip(new_uuids.iter()) {
-            let dest_uid = to_state
-                .table
-                .get(new_uuid)
-                .ok_or(anyhow!("copied mail not in destination mailbox"))?
-                .0;
-            ret.push((mi.uid, dest_uid));
-        }
+        let res = if errored {
+            // Cleanup any copies that did work.
+            //
+            // from RFC3501: "If the COPY command is unsuccessful for any
+            // reason, server implementations MUST restore the destination
+            // mailbox to its state before the COPY attempt."
+            for copy_uuid in new_uuids {
+                // XXX defensively avoid erroring out at this step; is there a
+                // better way?
+                let _ = to.delete(copy_uuid).await;
+            }
+            CopyMoveResult::MessagesDeleted
+        } else {
+            let mut uid_map = vec![];
+            let to_state = to.current_uid_index();
+            for (mi, new_uuid) in mails.iter().zip(new_uuids.iter()) {
+                let dest_uid = to_state
+                    .table
+                    .get(new_uuid)
+                    .ok_or(anyhow!("copied mail not in destination mailbox"))?
+                    .0;
+                uid_map.push((mi.uid, dest_uid));
+            }
+            CopyMoveResult::Success {
+                dest_uidvalidity: to_state.uidvalidity,
+                uid_map,
+            }
+        };
 
-        Ok((to_state.uidvalidity, ret))
+        // Emit updates since we sync'd the mailbox.
+        //
+        // RFC2180: "COPY is the only IMAP4 sequence number command that is safe
+        // to allow an EXPUNGE response on."
+        let update = self
+            .update(UpdateParameters {
+                with_uid: *is_uid_copy,
+                ..UpdateParameters::default()
+            })
+            .await?;
+
+        Ok((res, update))
     }
 
     pub async fn r#move(
@@ -446,37 +497,73 @@ impl MailboxView {
         sequence_set: &SequenceSet,
         to: &mut Mailbox,
         is_uid_move: &bool,
-    ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>, Vec<Body<'static>>)> {
-        if *is_uid_move {
-            // TODO: need to emit update status message for EXPUNGE then?
-            self.checked_sync().await?
-        } else {
-            // TODO: is this correct? cf RFC2180?
-            self.checked_sync_no_update().await?
+    ) -> Result<(CopyMoveResult, Vec<Body<'static>>)> {
+        self.checked_sync().await?;
+        // If the arguments are sequence IDs, we need to resolve them against
+        // the client known state (like for COPY).
+        let mails = {
+            let state = if *is_uid_move {
+                self.mailbox.current_uid_index()
+            } else {
+                self.known_state.clone()
+            };
+            state.fetch(
+                sequence_set,
+                self.recent_from,
+                FetchBy::from_bool(*is_uid_move),
+            )
         };
-        let state = self.mailbox.current_uid_index();
-        let mails = state.fetch(
-            sequence_set,
-            self.recent_from,
-            FetchBy::from_bool(*is_uid_move),
-        );
 
+        // Like COPY, try to either: succeed in moving all the messages, or fail
+        // and do nothing
+
+        // First copy:
         let mut new_uuids = vec![];
+        let mut errored = false;
         for mi in mails.iter() {
-            let new_uuid = to.move_from(&mut self.mailbox, mi.uuid).await?;
-            new_uuids.push((mi.uid, new_uuid));
+            // NOTE: it is necessary to generate a fresh ID for the moved email
+            // (which `copy_from` does). See the comment in uidindex.rs for
+            // `internalseq` related to the MailDel optimization.
+            let copy_res = to.copy_from(&mut self.mailbox, mi.uuid).await;
+            match copy_res {
+                Ok(new_uuid) => new_uuids.push((mi, new_uuid)),
+                Err(_err) => errored = true,
+            }
         }
 
-        let mut ret = vec![];
-        let to_state = to.current_uid_index();
-        for (uid, new_uuid) in new_uuids {
-            let dest_uid = to_state
-                .table
-                .get(&new_uuid)
-                .ok_or(anyhow!("moved mail not in destination mailbox"))?
-                .0;
-            ret.push((uid, dest_uid));
-        }
+        // Then: cleanup if copy failed, or else complete the move
+        let res = if errored {
+            // If some copy failed, cleanup
+            for (_, new_uuid) in new_uuids {
+                // XXX drop the errors to avoid failing at this point; is there
+                // a better way?
+                let _ = to.delete(new_uuid).await;
+            }
+            CopyMoveResult::MessagesDeleted
+        } else {
+            // otherwise delete the source messages to complete the MOVE
+            for (mi, _) in &new_uuids {
+                // XXX also drop the errors... TODO: perhaps at least
+                // Mailbox::delete() should not fail when deleting a
+                // non-existing email?
+                let _ = self.mailbox.delete(mi.uuid).await;
+            }
+
+            let mut uid_map = vec![];
+            let to_state = to.current_uid_index();
+            for (mi, new_uuid) in new_uuids {
+                let dest_uid = to_state
+                    .table
+                    .get(&new_uuid)
+                    .ok_or(anyhow!("moved mail not in destination mailbox"))?
+                    .0;
+                uid_map.push((mi.uid, dest_uid));
+            }
+            CopyMoveResult::Success {
+                dest_uidvalidity: to_state.uidvalidity,
+                uid_map,
+            }
+        };
 
         let update = self
             .update(UpdateParameters {
@@ -485,7 +572,7 @@ impl MailboxView {
             })
             .await?;
 
-        Ok((to_state.uidvalidity, ret, update))
+        Ok((res, update))
     }
 
     /// Looks up state changes in the mailbox and produces a set of IMAP

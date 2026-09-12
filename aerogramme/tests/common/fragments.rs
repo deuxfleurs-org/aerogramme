@@ -496,8 +496,7 @@ pub fn copy(imap: &mut TcpStream, selection: Selection, to: Mailbox) -> Result<S
     assert!(matches!(to, Mailbox::Archive));
 
     imap.write_all(&b"45 copy 1 ArchiveCustom\r\n"[..])?;
-    let read = read_lines(imap, &mut buffer, None)?;
-    assert_eq!(&read[..5], &b"45 OK"[..]);
+    let read = read_lines(imap, &mut buffer, Some(&b"45 OK"[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
 
     Ok(srv_msg.to_string())
