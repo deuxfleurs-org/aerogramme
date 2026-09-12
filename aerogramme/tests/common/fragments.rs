@@ -191,6 +191,7 @@ pub enum StatusKind {
     HighestModSeq,
     Recent,
     UidValidity,
+    Messages,
 }
 
 pub enum MbxSelect {
@@ -351,6 +352,7 @@ pub fn status(imap: &mut TcpStream, mbx: Mailbox, sk: StatusKind) -> Result<Stri
         StatusKind::HighestModSeq => "(HIGHESTMODSEQ)",
         StatusKind::Recent => "(RECENT)",
         StatusKind::UidValidity => "(UIDVALIDITY)",
+        StatusKind::Messages => "(MESSAGES)",
     };
     imap.write_all(format!("25 STATUS {} {}\r\n", mbx_str, sk_str).as_bytes())?;
     let mut buffer: [u8; 6000] = [0; 6000];
@@ -492,11 +494,11 @@ pub fn uid_fetch(
 
 pub fn copy(imap: &mut TcpStream, selection: Selection, to: Mailbox) -> Result<String> {
     let mut buffer: [u8; 65535] = [0; 65535];
-    assert!(matches!(selection, Selection::FirstId));
+    let sel_str = selection.to_string();
     assert!(matches!(to, Mailbox::Archive));
 
-    imap.write_all(&b"45 copy 1 ArchiveCustom\r\n"[..])?;
-    let read = read_lines(imap, &mut buffer, Some(&b"45 OK"[..]))?;
+    imap.write_all(format!("45 copy {} ArchiveCustom\r\n", sel_str).as_bytes())?;
+    let read = read_lines(imap, &mut buffer, Some(&b"45 "[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
 
     Ok(srv_msg.to_string())
@@ -566,12 +568,7 @@ pub fn store(
 ) -> Result<String> {
     let mut buffer: [u8; 6000] = [0; 6000];
 
-    let seq = match sel {
-        Selection::FirstId => "1",
-        Selection::SecondId => "2",
-        Selection::Id(n) => &n.to_string(),
-        Selection::All => "1:*",
-    };
+    let seq = sel.to_string();
 
     let modif = match modifier {
         StoreMod::None => "".into(),

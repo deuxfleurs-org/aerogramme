@@ -1098,6 +1098,50 @@ fn rfc2180_imap4_multiaccess() {
         Ok(())
     })
     .expect("test fully run");
+
+    // COPY + EXPUNGE
+    common::aerogramme_provider_daemon_dev_multisession(|server| {
+        // setup 2 sessions, populate inbox with 3 emails, create destination Archive mailbox
+
+        let (ref mut imap_socket, _, _) = server.connect()?;
+        connect(imap_socket).context("server says hello")?;
+        login(imap_socket, Account::Alice).context("login test")?;
+        create_mailbox(imap_socket, Mailbox::Archive).context("created mailbox archive")?;
+
+        select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select1")?;
+        append(imap_socket, Email::Basic)?;
+        append(imap_socket, Email::Basic)?;
+        append(imap_socket, Email::Basic)?;
+
+        let (ref mut imap_socket2, _, _) = server.connect()?;
+        connect(imap_socket2).context("server says hello")?;
+        login(imap_socket2, Account::Alice).context("login test")?;
+        select(imap_socket2, Mailbox::Inbox, SelectMod::None).context("select2")?;
+
+        // session 1: expunge email 2
+        store(
+            imap_socket,
+            Selection::SecondId,
+            Flag::Deleted,
+            StoreAction::AddFlags,
+            StoreMod::None,
+        )
+        .context("should add delete flag to the email")?;
+        expunge(imap_socket).context("expunge emails")?;
+
+        // session 2: attempt COPY of emails 1,2,3
+        let res = copy(imap_socket2, Selection::All, Mailbox::Archive)?;
+        assert!(res.contains("NO Some of the requested messages no longer exist"));
+        // COPY must emit EXPUNGE status
+        assert!(res.contains("2 EXPUNGE"));
+
+        // check that there is no email in Archive
+        let res = status(imap_socket2, Mailbox::Archive, StatusKind::Messages)?;
+        assert!(res.contains("MESSAGES 0"));
+
+        Ok(())
+    })
+    .expect("test fully run");
 }
 
 fn rfc3691_imapext_unselect() {
