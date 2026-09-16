@@ -13,6 +13,7 @@ fn main() {
     rfc3501_imap4rev1_search();
     rfc3501_imap4rev1_recent();
     rfc3501_imap4rev1_uidvalidity();
+    rfc2180_imap4_multiaccess();
     rfc6851_imapext_move();
     #[cfg(feature = "condstore")]
     rfc4551_imapext_condstore();
@@ -978,6 +979,125 @@ fn rfc3501_imap4rev1_uidvalidity() {
         Ok(())
     })
     .expect("test fully run")
+}
+
+// RFC2180 does not extend IMAP4rev1, but contains additional implementation
+// recommendations for some concurrent access patterns, notably wrt concurrently
+// EXPUNGEd messages.
+fn rfc2180_imap4_multiaccess() {
+    println!("🧪 rfc2180_imap4_multiaccess");
+
+    // FETCH + EXPUNGE
+    common::aerogramme_provider_daemon_dev_multisession(|server| {
+        let (ref mut imap_socket, _, _) = server.connect()?;
+        connect(imap_socket).context("server says hello")?;
+        login(imap_socket, Account::Alice).context("login test")?;
+        append(imap_socket, Email::Basic).context("append")?;
+        append(imap_socket, Email::Basic).context("append")?;
+        select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select1")?;
+
+        let (ref mut imap_socket2, _, _) = server.connect()?;
+        connect(imap_socket2).context("server says hello")?;
+        login(imap_socket2, Account::Alice).context("login test")?;
+        select(imap_socket2, Mailbox::Inbox, SelectMod::None).context("select2")?;
+
+        store(
+            imap_socket,
+            Selection::FirstId,
+            Flag::Deleted,
+            StoreAction::AddFlags,
+            StoreMod::None,
+        )
+        .context("add delete flags to the email")?;
+        expunge(imap_socket).context("expunge")?;
+
+        // Strategy 4.1.2:
+        // "The server MAY allow the EXPUNGE of a multi-accessed mailbox,
+        // and on subsequent FETCH commands return FETCH responses only for
+        // non-expunged messages and a tagged NO."
+        let res = fetch(
+            imap_socket2,
+            Selection::All,
+            FetchKind::Rfc822,
+            FetchMod::None,
+        )
+        .context("fetch flags")?;
+        assert!(!res.contains("EXPUNGE"));
+        assert!(!res.contains("1 FETCH"));
+        assert!(res.contains("2 FETCH"));
+        assert!(res.contains("NO Some of the requested messages no longer exist"));
+
+        Ok(())
+    })
+    .expect("test fully run");
+
+    // UID FETCH + EXPUNGE
+    //
+    // RFC2180 does not specify how UID FETCH should behave. UID FETCH does not
+    // take sequence IDs as arguments, but it *returns* them as parts as its
+    // untagged FETCH responses.
+    //
+    // - One possible interpretation could be that UID FETCH is a "normal"
+    // command (unlike fetch) that can emit EXPUNGE status updates, and thus
+    // would emit "up to date" sequence IDs after EXPUNGEs.
+    // - Another choice would be to make UID FETCH behave like FETCH, ie make it
+    // "not see" the concurrent EXPUNGEs. This is what dovecot does, and we do
+    // this as well for consistency with dovecot.
+    common::aerogramme_provider_daemon_dev_multisession(|server| {
+        let (ref mut imap_socket, _, _) = server.connect()?;
+        connect(imap_socket).context("server says hello")?;
+        login(imap_socket, Account::Alice).context("login test")?;
+        append(imap_socket, Email::Basic).context("append")?;
+        append(imap_socket, Email::Basic).context("append")?;
+        append(imap_socket, Email::Basic).context("append")?;
+        append(imap_socket, Email::Basic).context("append")?;
+        select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select1")?;
+
+        let (ref mut imap_socket2, _, _) = server.connect()?;
+        connect(imap_socket2).context("server says hello")?;
+        login(imap_socket2, Account::Alice).context("login test")?;
+        select(imap_socket2, Mailbox::Inbox, SelectMod::None).context("select2")?;
+
+        store(
+            imap_socket,
+            Selection::FirstId,
+            Flag::Deleted,
+            StoreAction::AddFlags,
+            StoreMod::None,
+        )
+        .context("add delete flags to the email")?;
+        store(
+            imap_socket,
+            Selection::Id(3),
+            Flag::Deleted,
+            StoreAction::AddFlags,
+            StoreMod::None,
+        )
+        .context("add delete flags to the email")?;
+        expunge(imap_socket).context("expunge")?;
+
+        let res = uid_fetch(
+            imap_socket2,
+            Selection::Id(2),
+            FetchKind::Uid,
+            FetchMod::None,
+        )
+        .context("fetch flags")?;
+        assert!(!res.contains("EXPUNGE"));
+        assert!(res.contains("OK FETCH"));
+        assert!(res.contains("2 FETCH (UID 2)"));
+        let res = uid_fetch(
+            imap_socket2,
+            Selection::Id(4),
+            FetchKind::Uid,
+            FetchMod::None,
+        )
+        .context("fetch flags")?;
+        assert!(res.contains("4 FETCH (UID 4)"));
+
+        Ok(())
+    })
+    .expect("test fully run");
 }
 
 fn rfc3691_imapext_unselect() {

@@ -50,14 +50,13 @@ impl Query {
                     meta_list
                         .into_iter()
                         .zip(&self.emails)
-                        .map(|(metadata, &uuid)| {
-                            match metadata {
-                                MailMetaResult::NotFound => Ok(QueryResult::NotFound),
-                                MailMetaResult::MailMeta(metadata) =>
-                                    Ok(QueryResult::MailData(MailData::Partial { uuid, metadata }))
+                        .map(|(metadata, &uuid)| match metadata {
+                            MailMetaResult::NotFound => Ok(QueryResult::NotFound),
+                            MailMetaResult::MailMeta(metadata) => {
+                                Ok(QueryResult::MailData(MailData::Partial { uuid, metadata }))
                             }
                         })
-                     .collect()
+                        .collect()
                 })
                 .unwrap_or_else(|e| vec![Err(e)]);
 
@@ -69,7 +68,7 @@ impl Query {
     fn full<'d>(&'d self) -> impl Stream<Item = Result<QueryResult>> + 'd + Send {
         self.partial().then(move |maybe_meta| async move {
             let meta = maybe_meta?;
-            
+
             match meta {
                 QueryResult::NotFound => Ok(QueryResult::NotFound),
                 QueryResult::MailData(meta) => {
@@ -85,10 +84,9 @@ impl Query {
                         .await?;
                     match content {
                         None => Ok(QueryResult::NotFound),
-                        Some(content) =>
-                            Ok(QueryResult::MailData(
-                                meta.into_full(content).expect("meta to be PartialResult")
-                            ))
+                        Some(content) => Ok(QueryResult::MailData(
+                            meta.into_full(content).expect("meta to be PartialResult"),
+                        )),
                     }
                 }
             }
@@ -105,7 +103,7 @@ pub enum QueryResult {
     /// been deleted in storage).
     NotFound,
 }
-    
+
 #[derive(Debug, Clone)]
 pub enum MailData {
     Index {

@@ -531,8 +531,9 @@ impl MailboxView {
             // Derive an IMAP-specific view from the results, apply the filters
             .map(|(maybe_qr, midx)| match maybe_qr {
                 Ok(QueryResult::NotFound) => Ok(None),
-                Ok(QueryResult::MailData(qr)) =>
-                    Ok(Some((MailView::new(&qr, &midx)?.filter(&ap)?, midx))),
+                Ok(QueryResult::MailData(qr)) => {
+                    Ok(Some((MailView::new(&qr, &midx)?.filter(&ap)?, midx)))
+                }
                 Err(e) => Err(e),
             })
             .try_collect::<Vec<_>>()
@@ -612,13 +613,14 @@ impl MailboxView {
                     // This implements the recommendation in §4.3 of RFC2180.
                     Ok(QueryResult::NotFound) => None,
                     Ok(QueryResult::MailData(maildat)) => {
-                        let keep_res = MailView::new(&maildat, midx).map(|mv| crit.is_keep_on_query(&mv)); 
+                        let keep_res =
+                            MailView::new(&maildat, midx).map(|mv| crit.is_keep_on_query(&mv));
                         match keep_res {
                             Ok(true) => Some(Ok(*midx)),
                             Ok(false) => None,
                             Err(e) => Some(Err(e)),
                         }
-                    },
+                    }
                     Err(e) => Some(Err(e)),
                 };
                 futures::future::ready(r)

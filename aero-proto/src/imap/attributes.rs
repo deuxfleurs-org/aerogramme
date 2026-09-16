@@ -61,32 +61,36 @@ impl AttributesProxy {
     }
 
     pub fn scope(&self) -> QueryScope {
-        self.attrs.iter().map(|x| match x {
-            MessageDataItemName::Body
-            | MessageDataItemName::Rfc822
-            | MessageDataItemName::Rfc822Text
-            | MessageDataItemName::BodyStructure => QueryScope::Full,
+        self.attrs
+            .iter()
+            .map(|x| match x {
+                MessageDataItemName::Body
+                | MessageDataItemName::Rfc822
+                | MessageDataItemName::Rfc822Text
+                | MessageDataItemName::BodyStructure => QueryScope::Full,
 
-            MessageDataItemName::BodyExt {
-                section: Some(section),
-                partial: _,
-                peek: _,
-            } => match section {
-                Section::Header(None)
-                | Section::HeaderFields(None, _)
-                | Section::HeaderFieldsNot(None, _) => QueryScope::Partial,
-                _ => QueryScope::Full,
-            },
-            MessageDataItemName::BodyExt { .. } => QueryScope::Full,
+                MessageDataItemName::BodyExt {
+                    section: Some(section),
+                    partial: _,
+                    peek: _,
+                } => match section {
+                    Section::Header(None)
+                    | Section::HeaderFields(None, _)
+                    | Section::HeaderFieldsNot(None, _) => QueryScope::Partial,
+                    _ => QueryScope::Full,
+                },
+                MessageDataItemName::BodyExt { .. } => QueryScope::Full,
 
-            MessageDataItemName::Envelope
-            | MessageDataItemName::InternalDate
-            | MessageDataItemName::Rfc822Header
-            | MessageDataItemName::Rfc822Size => QueryScope::Partial,
+                MessageDataItemName::Envelope
+                | MessageDataItemName::InternalDate
+                | MessageDataItemName::Rfc822Header
+                | MessageDataItemName::Rfc822Size => QueryScope::Partial,
 
-            MessageDataItemName::Flags
-            | MessageDataItemName::Uid
-            | MessageDataItemName::ModSeq => QueryScope::Index,
-        }).reduce(|q1, q2| q1.union(&q2)).unwrap_or(QueryScope::Index)
+                MessageDataItemName::Flags
+                | MessageDataItemName::Uid
+                | MessageDataItemName::ModSeq => QueryScope::Index,
+            })
+            .reduce(|q1, q2| q1.union(&q2))
+            .unwrap_or(QueryScope::Index)
     }
 }

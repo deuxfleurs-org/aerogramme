@@ -7,7 +7,7 @@ use aero_bayou::timestamp::now_msec;
 use aero_bayou::{Bayou, BayouWeak};
 use aero_user::cryptoblob::{self, gen_key, open_deserialize, seal_serialize, Key};
 use aero_user::login::Credentials;
-use aero_user::storage::{self, BlobRef, BlobVal, RowRef, RowVal, Selector, Store, StorageError};
+use aero_user::storage::{self, BlobRef, BlobVal, RowRef, RowVal, Selector, StorageError, Store};
 
 use crate::mail::query::{Query, QueryScope};
 use crate::mail::uidindex::*;
@@ -309,10 +309,8 @@ impl MailboxInternal {
                 let bytes = cryptoblob::open(&obj.value, message_key)?;
                 Ok(Some(bytes))
             }
-            Err(StorageError::NotFound) =>
-                Ok(None),
-            Err(e) =>
-                Err(e)?
+            Err(StorageError::NotFound) => Ok(None),
+            Err(e) => Err(e)?,
         }
     }
 
