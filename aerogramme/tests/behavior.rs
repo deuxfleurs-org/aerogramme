@@ -94,6 +94,22 @@ fn rfc3501_imap4rev1_base() {
             .expect("search should return something");
         search(imap_socket, SearchKind::UidRange(100, 4294967295))
             .expect("search should return something");
+
+        // Check flags status updates when updating flags
+        let srv_msg = store(
+            imap_socket,
+            Selection::FirstId,
+            Flag::Important,
+            StoreAction::SetFlags,
+            StoreMod::None,
+        )
+        .context("set flag Important")?;
+        // FLAGS update that adds \Important to the mailbox "known flags",
+        // followed by FETCH FLAGS for the message with flag changes
+        let lines = srv_msg.lines().collect::<Vec<_>>();
+        assert!(lines[0].starts_with("* FLAGS") && lines[0].contains("\\Important"));
+        assert!(lines[1].starts_with("* 1 FETCH (FLAGS (\\Important))"));
+
         store(
             imap_socket,
             Selection::FirstId,
