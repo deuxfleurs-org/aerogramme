@@ -16,3 +16,6 @@ ical_vcard.workspace = true
 tracing.workspace = true
 unicode-case-mapping.workspace = true
 unicode-normalization.workspace = true
+
+[lints]
+workspace = true

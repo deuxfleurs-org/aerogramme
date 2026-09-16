@@ -17,3 +17,6 @@ icalendar.workspace = true
 nom.workspace = true
 chrono.workspace = true
 tracing.workspace = true
+
+[lints]
+workspace = true

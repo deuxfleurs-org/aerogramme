@@ -6,6 +6,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+  RUSTDOCFLAGS: "-D warnings"
 
 jobs:
   rust_check:
@@ -21,7 +23,13 @@ jobs:
       - uses: https://github.com/dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ steps.get_rust_toolchain_version.outputs.rust_toolchain }}
-          components: rustfmt
+          components: clippy, rustfmt
+      - uses: https://github.com/Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true # useful for don't rebuild dependencies on fix after failure
       - name: "Cargo formatting"
         if: $${{ always() }}
         run: cargo fmt --all --check
+      - name: "Cargo clippy"
+        if: $${{ always() }}
+        run: cargo clippy --workspace --locked --all-targets --profile=test

@@ -31,11 +31,11 @@ pub fn write(
     mut w: &mut impl Write,
     lines: impl IntoIterator<Item = Contentline>,
 ) -> std::io::Result<()> {
-    w.write(b"BEGIN:VCARD\r\n")?;
+    w.write_all(b"BEGIN:VCARD\r\n")?;
     {
         let mut w = ical_vcard::Writer::new(&mut w);
         w.write_all(lines)?
     }
-    w.write(b"END:VCARD\r\n")?;
+    w.write_all(b"END:VCARD\r\n")?;
     Ok(())
 }

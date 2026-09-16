@@ -39,7 +39,7 @@ impl MetricServer {
         })
     }
 
-    pub async fn run(self: Self, mut must_exit: watch::Receiver<bool>) -> Result<()> {
+    pub async fn run(self, mut must_exit: watch::Receiver<bool>) -> Result<()> {
         tracing::info!("Metric server available at {:#}", self.bind_addr);
         PrometheusServer::run(
             self.registry,

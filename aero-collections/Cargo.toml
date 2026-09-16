@@ -27,3 +27,6 @@ im.workspace = true
 sodiumoxide.workspace = true
 eml-codec.workspace = true
 icalendar.workspace = true
+
+[lints]
+workspace = true

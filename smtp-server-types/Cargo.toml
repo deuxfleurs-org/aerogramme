@@ -20,3 +20,5 @@ smtp-message.workspace = true
 # external
 serde.workspace = true
 
+[lints]
+workspace = true

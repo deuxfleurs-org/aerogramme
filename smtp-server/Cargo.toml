@@ -27,3 +27,6 @@ smol.workspace = true
 
 [dev-dependencies]
 piper.workspace = true
+
+[lints]
+workspace = true
