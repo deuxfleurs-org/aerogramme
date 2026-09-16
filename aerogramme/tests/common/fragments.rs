@@ -56,6 +56,7 @@ pub enum Mailbox {
 pub enum Flag {
     Deleted,
     Important,
+    Custom,
 }
 
 pub enum Email {
@@ -578,6 +579,7 @@ pub fn store(
     let flags_str = match flag {
         Flag::Deleted => "(\\Deleted)",
         Flag::Important => "(\\Important)",
+        Flag::Custom => "($Custom)",
     };
 
     let action_str = match action {
