@@ -126,6 +126,24 @@ fn rfc3501_imap4rev1_base() {
         Ok(())
     })
     .expect("test fully run");
+
+    // Test for status messages when selecting a mailbox with new messages
+    common::aerogramme_provider_daemon_dev(|imap_socket, _, _| {
+        connect(imap_socket).context("server says hello")?;
+        capability(imap_socket, Extension::None).context("check server capabilities")?;
+        login(imap_socket, Account::Alice).context("login test")?;
+        append_not_seen(imap_socket, Email::Basic).context("append")?;
+        append_not_seen(imap_socket, Email::Basic).context("append")?;
+        let select_res =
+            select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
+        assert!(select_res.contains("2 EXISTS"));
+        assert!(select_res.contains("OK [UNSEEN 1]"));
+        assert!(select_res.contains("OK [UIDVALIDITY"));
+        assert!(select_res.contains("OK [UIDNEXT 3]"));
+
+        Ok(())
+    })
+    .expect("test fully run");
 }
 
 // FETCH BODY tests from imaptest's fetch-body-mime test
