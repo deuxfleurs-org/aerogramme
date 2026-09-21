@@ -159,6 +159,7 @@ dependencies = [
  "rmp-serde",
  "serde",
  "sodiumoxide",
+ "thiserror 1.0.69",
  "tokio",
  "toml",
  "tracing",

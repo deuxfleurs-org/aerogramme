@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(tag = "role", rename = "Companion")]
 pub struct CompanionConfig {
     pub pid: Option<PathBuf>,
     pub imap: ImapUnsecureConfig,
@@ -15,7 +17,8 @@ pub struct CompanionConfig {
     pub users: LoginStaticConfig,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(tag = "role", rename = "Provider")]
 pub struct ProviderConfig {
     pub pid: Option<PathBuf>,
     pub imap: Option<ImapConfig>,
@@ -28,7 +31,7 @@ pub struct ProviderConfig {
     pub users: UserManagement,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "user_driver")]
 pub enum UserManagement {
     Demo,
@@ -36,59 +39,59 @@ pub enum UserManagement {
     Ldap(LoginLdapConfig),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct AuthConfig {
     pub bind_addr: SocketAddr,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct LmtpConfig {
     pub bind_addr: SocketAddr,
     pub hostname: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct ImapConfig {
     pub bind_addr: SocketAddr,
     pub certs: PathBuf,
     pub key: PathBuf,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct DavUnsecureConfig {
     pub bind_addr: SocketAddr,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct DavConfig {
     pub bind_addr: SocketAddr,
     pub certs: PathBuf,
     pub key: PathBuf,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct ImapUnsecureConfig {
     pub bind_addr: SocketAddr,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct LoginStaticConfig {
     pub user_list: PathBuf,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct PrometheusEndpointConfig {
     pub bind_addr: SocketAddr,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "storage_driver")]
 pub enum LdapStorage {
     Garage(LdapGarageConfig),
     InMemory,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct LdapGarageConfig {
     pub s3_endpoint: String,
     pub k2v_endpoint: String,
@@ -100,7 +103,7 @@ pub struct LdapGarageConfig {
     pub default_bucket: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct LoginLdapConfig {
     // LDAP connection info
     pub ldap_server: String,
@@ -168,23 +171,47 @@ pub struct SetupEntry {
     pub storage: StaticStorage,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(tag = "role")]
 pub enum AnyConfig {
     Companion(CompanionConfig),
     Provider(ProviderConfig),
 }
 
+#[derive(Debug, Error)]
+#[error("failed to read config file `{filename}`")]
+pub struct ReadConfigError {
+    #[source]
+    source: ReadConfigInnerError,
+    filename: PathBuf,
+}
+#[derive(Debug, Error)]
+pub enum ReadConfigInnerError {
+    #[error(transparent)]
+    IO(#[from] std::io::Error),
+    #[error(transparent)]
+    Parse(#[from] toml::de::Error),
+}
+
 // ---
-pub fn read_config<T: serde::de::DeserializeOwned>(config_file: PathBuf) -> Result<T> {
-    let mut file = std::fs::OpenOptions::new()
-        .read(true)
-        .open(config_file.as_path())?;
+pub fn read_config<T: serde::de::DeserializeOwned>(
+    config_file: PathBuf,
+) -> Result<T, ReadConfigError> {
+    fn inner<T: serde::de::DeserializeOwned>(
+        config_file: &Path,
+    ) -> Result<T, ReadConfigInnerError> {
+        let mut file = std::fs::OpenOptions::new().read(true).open(config_file)?;
 
-    let mut config = String::new();
-    file.read_to_string(&mut config)?;
+        let mut config = String::new();
+        file.read_to_string(&mut config)?;
 
-    Ok(toml::from_str(&config)?)
+        Ok(toml::from_str(&config)?)
+    }
+
+    inner(config_file.as_path()).map_err(|source| ReadConfigError {
+        source,
+        filename: config_file,
+    })
 }
 
 pub fn write_config<T: Serialize>(config_file: PathBuf, config: &T) -> Result<()> {
@@ -201,4 +228,173 @@ pub fn write_config<T: Serialize>(config_file: PathBuf, config: &T) -> Result<()
 
 fn default_mail_attr() -> String {
     "mail".into()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use crate::config::{
+        AuthConfig, CompanionConfig, ImapConfig, ImapUnsecureConfig, LmtpConfig, LoginStaticConfig,
+        ProviderConfig, UserManagement,
+    };
+
+    #[test]
+    fn deserialize_provider_config() {
+        const PROVIDER_CONFIG: &str = r#"role = "Provider"
+        pid = "/var/run/aerogramme.pid"
+
+        [auth]
+        bind_addr = "[::1]:12345"
+
+        [imap_unsecure]
+        bind_addr="[::1]:143"
+
+        [imap]
+        bind_addr="[::]:993"
+        certs = "my-certs.pem"
+        key = "my-key.pem"
+
+        [lmtp]
+        bind_addr="[::1]:1025"
+        hostname="example.tld"
+
+        [users]
+        user_driver = "Demo"
+        "#;
+
+        let config = toml::from_str::<ProviderConfig>(PROVIDER_CONFIG)
+            .expect("failed to deserialize toml text into `ProviderConfig`");
+        assert_eq!(
+            config,
+            ProviderConfig {
+                pid: Some(PathBuf::from("/var/run/aerogramme.pid")),
+                imap: Some(ImapConfig {
+                    bind_addr: "[::]:993".parse().expect("failed to parse SocketAddr"),
+                    certs: PathBuf::from("my-certs.pem"),
+                    key: PathBuf::from("my-key.pem"),
+                }),
+                imap_unsecure: Some(ImapUnsecureConfig {
+                    bind_addr: "[::1]:143".parse().expect("failed to parse bind addr")
+                }),
+                lmtp: Some(LmtpConfig {
+                    bind_addr: "[::1]:1025".parse().expect("failed to parse SocketAddr"),
+                    hostname: "example.tld".into()
+                }),
+                auth: Some(AuthConfig {
+                    bind_addr: "[::1]:12345".parse().expect("failed to parse SocketAddr")
+                }),
+                dav: None,
+                dav_unsecure: None,
+                metrics: None,
+                users: UserManagement::Demo,
+            }
+        );
+
+        let _ = toml::from_str::<CompanionConfig>(PROVIDER_CONFIG)
+            .expect_err("`ProviderConfig` toml should not be parsed as `CompanionConfig`");
+    }
+
+    #[test]
+    fn serialize_provider_config() {
+        const PROVIDER_CONFIG: &str = r#"role = "Provider"
+pid = "/var/run/aerogramme.pid"
+
+[imap]
+bind_addr = "[::]:993"
+certs = "my-certs.pem"
+key = "my-key.pem"
+
+[imap_unsecure]
+bind_addr = "[::1]:143"
+
+[lmtp]
+bind_addr = "[::1]:1025"
+hostname = "example.tld"
+
+[auth]
+bind_addr = "[::1]:12345"
+
+[users]
+user_driver = "Demo"
+"#;
+
+        let config_toml = toml::to_string(&ProviderConfig {
+            pid: Some(PathBuf::from("/var/run/aerogramme.pid")),
+            imap: Some(ImapConfig {
+                bind_addr: "[::]:993".parse().expect("failed to parse SocketAddr"),
+                certs: PathBuf::from("my-certs.pem"),
+                key: PathBuf::from("my-key.pem"),
+            }),
+            imap_unsecure: Some(ImapUnsecureConfig {
+                bind_addr: "[::1]:143".parse().expect("failed to parse bind addr"),
+            }),
+            lmtp: Some(LmtpConfig {
+                bind_addr: "[::1]:1025".parse().expect("failed to parse SocketAddr"),
+                hostname: "example.tld".into(),
+            }),
+            auth: Some(AuthConfig {
+                bind_addr: "[::1]:12345".parse().expect("failed to parse SocketAddr"),
+            }),
+            dav: None,
+            dav_unsecure: None,
+            metrics: None,
+            users: UserManagement::Demo,
+        })
+        .expect("failed to serialize `ProviderConfig` in toml");
+        assert_eq!(config_toml, PROVIDER_CONFIG);
+    }
+
+    #[test]
+    fn deserialize_companion_config() {
+        const COMPANION_CONFIG: &str = r#"
+        role = "Companion"
+        pid = "/var/run/user/1000/aerogramme.pid"
+        user_list = "/home/user/.config/aerogramme-users.toml"
+
+        [imap]
+        bind_addr = "[::1]:1143"
+        "#;
+
+        let config = toml::from_str::<CompanionConfig>(COMPANION_CONFIG)
+            .expect("failed to deserialize toml text into `CompanionConfig`");
+        assert_eq!(
+            config,
+            CompanionConfig {
+                pid: Some(PathBuf::from("/var/run/user/1000/aerogramme.pid")),
+                imap: ImapUnsecureConfig {
+                    bind_addr: "[::1]:1143".parse().expect("failed to parse SocketAddr")
+                },
+                users: LoginStaticConfig {
+                    user_list: PathBuf::from("/home/user/.config/aerogramme-users.toml")
+                },
+            }
+        );
+
+        let _ = toml::from_str::<ProviderConfig>(COMPANION_CONFIG)
+            .expect_err("`CompanionConfig` toml text should not be parsed as `ProviderConfig`");
+    }
+
+    #[test]
+    fn serialize_companion_config() {
+        const COMPANION_CONFIG: &str = r#"role = "Companion"
+pid = "/var/run/user/1000/aerogramme.pid"
+user_list = "/home/user/.config/aerogramme-users.toml"
+
+[imap]
+bind_addr = "[::1]:1143"
+"#;
+
+        let config_toml = toml::to_string(&CompanionConfig {
+            pid: Some(PathBuf::from("/var/run/user/1000/aerogramme.pid")),
+            imap: ImapUnsecureConfig {
+                bind_addr: "[::1]:1143".parse().expect("failed to parse SocketAddr"),
+            },
+            users: LoginStaticConfig {
+                user_list: PathBuf::from("/home/user/.config/aerogramme-users.toml"),
+            },
+        })
+        .expect("failed to serialize `CompanionConfig` in toml");
+        assert_eq!(config_toml, COMPANION_CONFIG);
+    }
 }
