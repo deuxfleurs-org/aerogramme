@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::num::{NonZeroU32, NonZeroU64};
 
 use anyhow::{anyhow, Error, Result};
@@ -19,7 +19,7 @@ use aero_collections::unique_ident::UniqueIdent;
 
 use crate::imap::attributes::AttributesProxy;
 use crate::imap::flags;
-use crate::imap::index::UidIndexForImap;
+use crate::imap::index::{FetchBy, UidIndexForImap};
 use crate::imap::mail_view::{MailView, SeenFlag};
 use crate::imap::response::{Body, SyncError};
 use crate::imap::search;
@@ -164,6 +164,16 @@ impl MailboxView {
             data.push(self.uidvalidity_status()?);
             data.push(self.uidnext_status()?);
         } else {
+            // - if new flags are used in the mailbox, send an update.
+            //
+            // NOTE: do this *before* we send flag updates (the next bullet)
+            // that may use these new flags
+            let old_flags = old_snapshot.idx_by_flag.flags().collect::<HashSet<_>>();
+            let new_flags = new_snapshot.idx_by_flag.flags().collect::<HashSet<_>>();
+            if new_flags.difference(&old_flags).nth(0).is_some() {
+                data.push(self.known_flags_status()?)
+            }
+
             // - if flags changed for existing mails, tell client
             for (i, (_uid, uuid)) in new_snapshot.idx_by_uid.iter().enumerate() {
                 if params.silence.contains(uuid) {
@@ -205,13 +215,12 @@ impl MailboxView {
         data.push(self.exists_status()?);
         data.push(self.recent_status()?);
         data.extend(self.flags_status()?.into_iter());
+        data.extend(self.unseen_first_status()?);
         data.push(self.uidvalidity_status()?);
         data.push(self.uidnext_status()?);
         if self.is_condstore {
             data.push(self.highestmodseq_status()?);
         }
-        /*self.unseen_first_status()?
-        .map(|unseen_status| data.push(unseen_status));*/
 
         Ok(data)
     }
@@ -230,7 +239,7 @@ impl MailboxView {
     pub async fn append(
         &mut self,
         raw_mail: &[u8],
-        flags: &[String],
+        flags: &BTreeSet<String>,
     ) -> Result<(ImapUid, ImapUidvalidity, Vec<Body<'static>>)> {
         self.checked_sync().await?;
         let (uid, _modseq) = self.mailbox.append(raw_mail, flags).await?;
@@ -257,21 +266,24 @@ impl MailboxView {
         }
         let state = self.mailbox.current_uid_index();
 
-        let flags = flags.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let flags = flags.iter().map(|x| x.to_string()).collect();
 
-        let (editable, in_conflict) =
-            state.fetch_unchanged_since(sequence_set, unchanged_since, *is_uid_store);
+        let (editable, in_conflict) = state.fetch_unchanged_since(
+            sequence_set,
+            unchanged_since,
+            FetchBy::from_bool(*is_uid_store),
+        );
 
         for mi in editable.iter() {
             match kind {
                 StoreType::Add => {
-                    self.mailbox.add_flags(mi.uuid, &flags[..]).await?;
+                    self.mailbox.add_flags(mi.uuid, &flags).await?;
                 }
                 StoreType::Remove => {
-                    self.mailbox.del_flags(mi.uuid, &flags[..]).await?;
+                    self.mailbox.del_flags(mi.uuid, &flags).await?;
                 }
                 StoreType::Replace => {
-                    self.mailbox.set_flags(mi.uuid, &flags[..]).await?;
+                    self.mailbox.set_flags(mi.uuid, &flags).await?;
                 }
             }
         }
@@ -331,7 +343,7 @@ impl MailboxView {
 
         let deleted_flag = Flag::Deleted.to_string();
         let msgs = state
-            .fetch_by_uid(&seq)
+            .fetch(&seq, FetchBy::Uid)
             .into_iter()
             .filter(|midx| midx.flags.iter().any(|x| *x == deleted_flag))
             .map(|midx| midx.uuid);
@@ -356,7 +368,7 @@ impl MailboxView {
             self.checked_sync_no_update().await?
         }
         let state = self.mailbox.current_uid_index();
-        let mails = state.fetch(sequence_set, *is_uid_copy);
+        let mails = state.fetch(sequence_set, FetchBy::from_bool(*is_uid_copy));
 
         let mut new_uuids = vec![];
         for mi in mails.iter() {
@@ -390,7 +402,7 @@ impl MailboxView {
             self.checked_sync_no_update().await?
         };
         let state = self.mailbox.current_uid_index();
-        let mails = state.fetch(sequence_set, *is_uid_move);
+        let mails = state.fetch(sequence_set, FetchBy::from_bool(*is_uid_move));
 
         let mut new_uuids = vec![];
         for mi in mails.iter() {
@@ -444,7 +456,11 @@ impl MailboxView {
         };
         tracing::debug!("Query scope {:?}", query_scope);
         let state = self.mailbox.current_uid_index();
-        let mail_idx_list = state.fetch_changed_since(sequence_set, changed_since, *is_uid_fetch);
+        let mail_idx_list = state.fetch_changed_since(
+            sequence_set,
+            changed_since,
+            FetchBy::from_bool(*is_uid_fetch),
+        );
 
         // Fetch the emails
         let uuids = mail_idx_list
@@ -471,7 +487,9 @@ impl MailboxView {
             // Register the \Seen flags
             if matches!(seen, SeenFlag::MustAdd) {
                 let seen_flag = Flag::Seen.to_string();
-                self.mailbox.add_flags(midx.uuid, &[seen_flag]).await?;
+                self.mailbox
+                    .add_flags(midx.uuid, &BTreeSet::from([seen_flag]))
+                    .await?;
                 res.push(Body::Data(Data::Fetch {
                     seq: midx.seqid,
                     items: Vec1::from(MessageDataItem::Flags(vec![FlagFetch::Flag(Flag::Seen)])),
@@ -504,7 +522,7 @@ impl MailboxView {
         let state = self.mailbox.current_uid_index();
 
         // 2. Get the selection
-        let selection = state.fetch(&seq_set, seq_type.is_uid());
+        let selection = state.fetch(&seq_set, FetchBy::from_bool(seq_type.is_uid()));
 
         // 3. Filter the selection based on the ID / UID / Flags
         let (kept_idx, to_fetch) = crit.filter_on_idx(&selection);
@@ -658,28 +676,10 @@ impl MailboxView {
     /// the flags that are in `known_state` + default flags
     fn flags_status(&self) -> Result<Vec<Body<'static>>> {
         let mut body = vec![];
+        // 1. Add status for all known flags in the mailbox
+        body.push(self.known_flags_status()?);
 
-        // 1. Collecting all the possible flags in the mailbox
-        // 1.a Fetch them from our index
-        let mut known_flags: Vec<Flag> = self
-            .known_state
-            .idx_by_flag
-            .flags()
-            .filter_map(|f| match flags::from_str(f) {
-                Some(FlagFetch::Flag(fl)) => Some(fl),
-                _ => None,
-            })
-            .collect();
-        // 1.b Merge it with our default flags list
-        for f in DEFAULT_FLAGS.iter() {
-            if !known_flags.contains(f) {
-                known_flags.push(f.clone());
-            }
-        }
-        // 1.c Create the IMAP message
-        body.push(Body::Data(Data::Flags(known_flags.clone())));
-
-        // 2. Returning flags that are persisted
+        // 2. Return flags that are persisted
         // 2.a Always advertise our default flags
         let mut permanent = DEFAULT_FLAGS
             .iter()
@@ -698,6 +698,34 @@ impl MailboxView {
 
         // Done!
         Ok(body)
+    }
+
+    fn known_flags(&self) -> HashSet<Flag<'_>> {
+        // 1. Fetch them from our index
+        let mut known_flags: HashSet<Flag> = self
+            .known_state
+            .idx_by_flag
+            .flags()
+            .filter_map(|f| match flags::from_str(f) {
+                Some(FlagFetch::Flag(fl)) => Some(fl),
+                // Skip \Recent
+                // TODO: ensure that \Recent is never written by a client in the
+                // mailbox flags
+                _ => None,
+            })
+            .collect();
+        // 2. Merge it with our default flags list
+        for f in DEFAULT_FLAGS.iter() {
+            known_flags.insert(f.clone());
+        }
+        known_flags
+    }
+
+    // Status describing all flags used in the mailbox
+    fn known_flags_status(&self) -> Result<Body<'static>> {
+        use imap_codec::imap_types::bounded_static::IntoBoundedStatic;
+        let fs = self.known_flags().into_iter().map(|f| f.into_static());
+        Ok(Body::Data(Data::Flags(fs.collect())))
     }
 
     pub(crate) fn unseen_count(&self) -> usize {
@@ -753,7 +781,7 @@ mod tests {
             rfc822_size: 8usize,
         };
 
-        let index_entry = (NonZeroU32::MIN, NonZeroU64::MIN, vec![]);
+        let index_entry = (NonZeroU32::MIN, NonZeroU64::MIN, BTreeSet::new());
         let mail_in_idx = MailIndex {
             seqid: NonZeroU32::MIN,
             uid: index_entry.0,

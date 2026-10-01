@@ -94,6 +94,22 @@ fn rfc3501_imap4rev1_base() {
             .expect("search should return something");
         search(imap_socket, SearchKind::UidRange(100, 4294967295))
             .expect("search should return something");
+
+        // Check flags status updates when updating flags
+        let srv_msg = store(
+            imap_socket,
+            Selection::FirstId,
+            Flag::Important,
+            StoreAction::SetFlags,
+            StoreMod::None,
+        )
+        .context("set flag Important")?;
+        // FLAGS update that adds \Important to the mailbox "known flags",
+        // followed by FETCH FLAGS for the message with flag changes
+        let lines = srv_msg.lines().collect::<Vec<_>>();
+        assert!(lines[0].starts_with("* FLAGS") && lines[0].contains("\\Important"));
+        assert!(lines[1].starts_with("* 1 FETCH (FLAGS (\\Important))"));
+
         store(
             imap_socket,
             Selection::FirstId,
@@ -107,6 +123,24 @@ fn rfc3501_imap4rev1_base() {
         rename_mailbox(imap_socket, Mailbox::Archive, Mailbox::Drafts)
             .context("Archive mailbox is renamed Drafts")?;
         delete_mailbox(imap_socket, Mailbox::Drafts).context("Drafts mailbox is deleted")?;
+        Ok(())
+    })
+    .expect("test fully run");
+
+    // Test for status messages when selecting a mailbox with new messages
+    common::aerogramme_provider_daemon_dev(|imap_socket, _, _| {
+        connect(imap_socket).context("server says hello")?;
+        capability(imap_socket, Extension::None).context("check server capabilities")?;
+        login(imap_socket, Account::Alice).context("login test")?;
+        append_not_seen(imap_socket, Email::Basic).context("append")?;
+        append_not_seen(imap_socket, Email::Basic).context("append")?;
+        let select_res =
+            select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
+        assert!(select_res.contains("2 EXISTS"));
+        assert!(select_res.contains("OK [UNSEEN 1]"));
+        assert!(select_res.contains("OK [UIDVALIDITY"));
+        assert!(select_res.contains("OK [UIDNEXT 3]"));
+
         Ok(())
     })
     .expect("test fully run");
@@ -939,7 +973,7 @@ fn rfc4551_imapext_condstore() {
         assert!(store_res.contains("[MODIFIED 2]"));
         assert!(store_res.contains("* 1 FETCH (FLAGS (\\Important) MODSEQ (3))"));
         assert!(!store_res.contains("* 2 FETCH"));
-        assert_eq!(store_res.lines().count(), 2);
+        assert_eq!(store_res.lines().count(), 3);
 
         // RFC 3.1.4.  FETCH and UID FETCH Commands
         let fetch_res = fetch(
@@ -950,7 +984,7 @@ fn rfc4551_imapext_condstore() {
         )?;
         assert!(fetch_res.contains("* 1 FETCH (RFC822.SIZE 81 MODSEQ (3))"));
         assert!(!fetch_res.contains("* 2 FETCH"));
-        assert_eq!(store_res.lines().count(), 2);
+        assert_eq!(fetch_res.lines().count(), 2);
 
         // RFC 3.1.5.  MODSEQ Search Criterion in SEARCH
         let search_res = search(imap_socket, SearchKind::ModSeq(3))?;
