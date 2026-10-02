@@ -229,7 +229,7 @@ cargo fmt --all --check
 set -euxo pipefail
 
 export RUSTFLAGS="-D warnings"
-cargo clippy --workspace --locked --all-targets --profile=test
+cargo clippy --workspace --locked --all-targets --profile=test --no-deps
           '';
 
           ci = pkgs.writeScriptBin "aerogramme-ci" ''

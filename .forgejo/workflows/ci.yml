@@ -38,4 +38,4 @@ jobs:
         run: cargo fmt --all --check
       - name: "Cargo clippy"
         if: $${{ always() }}
-        run: cargo clippy --workspace --locked --all-targets --profile=test
+        run: cargo clippy --workspace --locked --all-targets --profile=test --no-deps
