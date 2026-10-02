@@ -680,7 +680,7 @@ impl MailboxView {
     }
 
     pub(crate) fn highestmodseq(&self) -> ModSeq {
-        self.known_state.highestmodseq
+        self.known_state.highestmodseq()
     }
 
     /// Produce an EXISTS message corresponding to the number of mails
