@@ -10,6 +10,9 @@ edition = "2021"
 license = "EUPL-1.2"
 description = "Binding between Aerogramme's internal components and well-known protocols"
 
+[features]
+condstore = ["aero-collections/condstore"]
+
 [dependencies]
 aero-collections.workspace = true
 aero-dav.workspace = true

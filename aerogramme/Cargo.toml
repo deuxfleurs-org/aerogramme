@@ -10,6 +10,9 @@ edition = "2021"
 license = "EUPL-1.2"
 description = "A robust email server"
 
+[features]
+condstore = ["aero-proto/condstore"]
+
 [dependencies]
 aero-user.workspace = true
 aero-proto.workspace = true

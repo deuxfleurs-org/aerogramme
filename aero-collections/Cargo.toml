@@ -10,6 +10,9 @@ edition = "2021"
 license = "EUPL-1.2"
 description = "Aerogramme own representation of the different objects it manipulates"
 
+[features]
+condstore = []
+
 [dependencies]
 aero-user.workspace = true
 aero-bayou.workspace = true

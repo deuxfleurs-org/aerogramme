@@ -13,6 +13,7 @@ fn main() {
     rfc3501_imap4rev1_search();
     rfc3501_imap4rev1_recent();
     rfc6851_imapext_move();
+    #[cfg(feature = "condstore")]
     rfc4551_imapext_condstore();
     rfc2177_imapext_idle();
     rfc5161_imapext_enable();
@@ -1072,6 +1073,7 @@ fn rfc7888_imapext_literal() {
     .expect("test fully run");
 }
 
+#[allow(dead_code)]
 fn rfc4551_imapext_condstore() {
     println!("🧪 rfc4551_imapext_condstore");
     common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket, _dav_socket| {

@@ -33,18 +33,21 @@ pub struct ServerCapability(HashSet<Capability<'static>>);
 
 impl Default for ServerCapability {
     fn default() -> Self {
-        Self(HashSet::from([
+        #[allow(unused_mut)]
+        let mut caps = HashSet::from([
             Capability::Imap4Rev1,
             Capability::Enable,
             Capability::Move,
             Capability::LiteralPlus,
             Capability::Idle,
             capability_unselect(),
-            capability_condstore(),
             capability_uidplus(),
             capability_liststatus(),
             //capability_qresync(),
-        ]))
+        ]);
+        #[cfg(feature = "condstore")]
+        caps.insert(capability_condstore());
+        Self(caps)
     }
 }
 
