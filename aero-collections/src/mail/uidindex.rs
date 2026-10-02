@@ -277,15 +277,18 @@ impl BayouState for UidIndex {
     fn apply(&self, op: &UidIndexOp) -> Self {
         let mut new = self.clone();
         match op {
-            UidIndexOp::MailAdd(ident, iseq, imodseq, flags) => {
+            UidIndexOp::MailAdd(ident, iseq, _imodseq, flags) => {
                 // Change UIDValidity if there is a UID conflict or a MODSEQ conflict
                 // The intuition: we increase the UIDValidity by the number of possible conflicts
                 // Proof: https://aerogramme.deuxfleurs.fr/documentation/internals/imap-uid/
-                if *iseq < new.internalseq || *imodseq < new.internalmodseq {
+                if *iseq < new.internalseq {
                     let bump_uid = new.internalseq - iseq;
-                    let bump_modseq = (new.internalmodseq - imodseq) as u32;
-                    new.uidvalidity =
-                        NonZeroU32::new(new.uidvalidity.get() + bump_uid + bump_modseq).unwrap();
+                    new.uidvalidity = NonZeroU32::new(new.uidvalidity.get() + bump_uid).unwrap();
+                }
+                #[cfg(feature = "condstore")]
+                if *imodseq < new.internalmodseq {
+                    let bump_modseq = (new.internalmodseq - _imodseq) as u32;
+                    new.uidvalidity = NonZeroU32::new(new.uidvalidity.get() + bump_modseq).unwrap();
                 }
 
                 // Assign the real uid of the email using uidnext(), then bump
@@ -307,11 +310,12 @@ impl BayouState for UidIndex {
                 // If the email is known locally, we remove its references in all our indexes
                 new.unreg_email(ident);
             }
-            UidIndexOp::FlagAdd(ident, imodseq, new_flags) => {
+            UidIndexOp::FlagAdd(ident, _imodseq, new_flags) => {
                 if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
                     // Bump UIDValidity if required
+                    #[cfg(feature = "condstore")]
                     if *imodseq < new.internalmodseq {
-                        let bump_modseq = (new.internalmodseq - imodseq) as u32;
+                        let bump_modseq = (new.internalmodseq - _imodseq) as u32;
                         new.uidvalidity =
                             NonZeroU32::new(new.uidvalidity.get() + bump_modseq).unwrap();
                     }
@@ -326,11 +330,12 @@ impl BayouState for UidIndex {
                     existing_flags.append(&mut new_flags.clone());
                 }
             }
-            UidIndexOp::FlagDel(ident, imodseq, rm_flags) => {
+            UidIndexOp::FlagDel(ident, _imodseq, rm_flags) => {
                 if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
                     // Bump UIDValidity if required
+                    #[cfg(feature = "condstore")]
                     if *imodseq < new.internalmodseq {
-                        let bump_modseq = (new.internalmodseq - imodseq) as u32;
+                        let bump_modseq = (new.internalmodseq - _imodseq) as u32;
                         new.uidvalidity =
                             NonZeroU32::new(new.uidvalidity.get() + bump_modseq).unwrap();
                     }
@@ -347,11 +352,12 @@ impl BayouState for UidIndex {
                     new.idx_by_modseq.insert(*email_modseq, *ident);
                 }
             }
-            UidIndexOp::FlagSet(ident, imodseq, new_flags) => {
+            UidIndexOp::FlagSet(ident, _imodseq, new_flags) => {
                 if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
                     // Bump UIDValidity if required
+                    #[cfg(feature = "condstore")]
                     if *imodseq < new.internalmodseq {
-                        let bump_modseq = (new.internalmodseq - imodseq) as u32;
+                        let bump_modseq = (new.internalmodseq - _imodseq) as u32;
                         new.uidvalidity =
                             NonZeroU32::new(new.uidvalidity.get() + bump_modseq).unwrap();
                     }
