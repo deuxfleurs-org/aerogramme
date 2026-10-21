@@ -15,62 +15,78 @@ pub type Etag = String;
 pub type FileName = String;
 pub type IndexEntry = (FileName, Etag);
 
-/// A `DavIndex` is the mutable part of a (flat) DAV collection.
-///
-/// It stores the mapping from resource path to its blob ID, and tracks
-/// modifications to these resources in a graph of changes, whre each node of
-/// the graph is labeled by a synchronization `Token`. This synchronization
-/// graph allows implementing the WebDAV synchronization primitives of RFC6578.
-#[derive(Clone, Default)]
-pub struct DavIndex {
-    /// Source of trust
-    pub table: OrdMap<BlobId, IndexEntry>,
+mod v06 {
+    use super::*;
+    use aero_user::migrate::InitialFormat;
 
-    /// Head nodes of the synchronization graph
-    heads: OrdSet<Token>,
-
-    // ------------ Below this line, data is ephemeral, ie. not checkpointed
-    /// Index for queries on `table` by filename
-    pub idx_by_filename: OrdMap<FileName, BlobId>,
-
-    /// Partial synchronization graph. The nodes of the graph are
-    /// `ancestors.keys()`, and each key-value pair in `ancestors` represents
-    /// directed edges from the key node to the set of its ancestor nodes.
+    /// A `DavIndex` is the mutable part of a (flat) DAV collection.
     ///
-    /// Note: ancestors are only persisted in the event log, not in the
-    /// checkpoints. Hence this is a *partial* graph: it only stores changes
-    /// after the last checkpoint. If a caller tries to use a token that relies
-    /// on a part of the graph that has been lost, the token is rejected and the
-    /// user needs to do obtain a newer token.
-    ancestors: OrdMap<Token, OrdSet<Token>>,
-    /// All nodes of the synchronization graph, as a set. Equal to
-    /// `ancestors.keys()`.
-    idx_all_nodes: OrdSet<Token>,
-    /// Nodes of the synchronization graph that have no ancestors. Equal to
-    /// `ancestors.iter().filter_map(|(k, v)| v.is_empty().then_some(k))`.
-    idx_origins: OrdSet<Token>,
+    /// It stores the mapping from resource path to its blob ID, and tracks
+    /// modifications to these resources in a graph of changes, whre each node of
+    /// the graph is labeled by a synchronization `Token`. This synchronization
+    /// graph allows implementing the WebDAV synchronization primitives of RFC6578.
+    #[derive(Clone, Default)]
+    pub struct DavIndex {
+        /// Source of trust
+        pub table: OrdMap<BlobId, IndexEntry>,
 
-    /// File change token by token
-    pub change: OrdMap<Token, SyncChange>,
+        /// Head nodes of the synchronization graph
+        pub(super) heads: OrdSet<Token>,
+
+        // ------------ Below this line, data is ephemeral, ie. not checkpointed
+        /// Index for queries on `table` by filename
+        pub idx_by_filename: OrdMap<FileName, BlobId>,
+
+        /// Partial synchronization graph. The nodes of the graph are
+        /// `ancestors.keys()`, and each key-value pair in `ancestors` represents
+        /// directed edges from the key node to the set of its ancestor nodes.
+        ///
+        /// Note: ancestors are only persisted in the event log, not in the
+        /// checkpoints. Hence this is a *partial* graph: it only stores changes
+        /// after the last checkpoint. If a caller tries to use a token that relies
+        /// on a part of the graph that has been lost, the token is rejected and the
+        /// user needs to do obtain a newer token.
+        pub(super) ancestors: OrdMap<Token, OrdSet<Token>>,
+        /// All nodes of the synchronization graph, as a set. Equal to
+        /// `ancestors.keys()`.
+        pub(super) idx_all_nodes: OrdSet<Token>,
+        /// Nodes of the synchronization graph that have no ancestors. Equal to
+        /// `ancestors.iter().filter_map(|(k, v)| v.is_empty().then_some(k))`.
+        pub(super) idx_origins: OrdSet<Token>,
+
+        /// File change token by token
+        pub change: OrdMap<Token, SyncChange>,
+    }
+
+    #[derive(Clone, Debug)]
+    pub enum SyncChange {
+        Ok((FileName, BlobId)),
+        NotFound(FileName),
+    }
+
+    impl InitialFormat for DavIndex {
+        const VERSION_MARKER: &'static [u8] = b"A06davidx";
+    }
+
+    #[derive(Clone, Serialize, Deserialize, Debug)]
+    pub enum DavIndexOp {
+        /// Merge is a virtual operation run when multiple heads are discovered
+        Merge(SyncDesc),
+
+        /// Add an item to the collection
+        Put(SyncDesc, BlobId, IndexEntry),
+
+        /// Delete an item from the collection
+        Delete(SyncDesc, BlobId),
+    }
+
+    impl InitialFormat for DavIndexOp {
+        const VERSION_MARKER: &'static [u8] = b"A06davop";
+    }
 }
 
-#[derive(Clone, Debug)]
-pub enum SyncChange {
-    Ok((FileName, BlobId)),
-    NotFound(FileName),
-}
+pub use v06::*;
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub enum DavIndexOp {
-    /// Merge is a virtual operation run when multiple heads are discovered
-    Merge(SyncDesc),
-
-    /// Add an item to the collection
-    Put(SyncDesc, BlobId, IndexEntry),
-
-    /// Delete an item from the collection
-    Delete(SyncDesc, BlobId),
-}
 impl DavIndexOp {
     pub fn token(&self) -> Token {
         match self {
