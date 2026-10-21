@@ -17,68 +17,95 @@ pub type IndexEntry = (ImapUid, ModSeq, Flags);
 pub type InternalSeq = u32;
 pub type InternalModSeq = u64;
 
-/// A UidIndex handles the mutable part of a mailbox
-/// It is built by running the event log on it
-/// Each applied log generates a new UidIndex by cloning the previous one
-/// and applying the event. This is why we use immutable datastructures:
-/// they are cheap to clone.
-#[derive(Clone)]
-pub struct UidIndex {
-    // Source of trust
-    pub table: OrdMap<UniqueIdent, IndexEntry>,
-    // Whether this index represents a mailbox that has been deleted.
-    pub deleted: bool,
+mod v06 {
+    use super::*;
+    use aero_user::migrate::InitialFormat;
 
-    // Indexes optimized for queries
-    pub idx_by_uid: OrdMap<ImapUid, UniqueIdent>,
-    pub idx_by_flag: FlagIndex,
-    pub idx_by_seqid: SeqidMap<UniqueIdent>,
-    // FIXME: can we remove this index which is somewhat expensive to maintain?
-    // it may be easier after refactoring SEARCH
-    pub idx_seqid_of_uuid: OrdMap<UniqueIdent, ImapSeqid>,
+    /// A UidIndex handles the mutable part of a mailbox
+    /// It is built by running the event log on it
+    /// Each applied log generates a new UidIndex by cloning the previous one
+    /// and applying the event. This is why we use immutable datastructures:
+    /// they are cheap to clone.
+    #[derive(Clone)]
+    pub struct UidIndex {
+        // Source of trust
+        pub table: OrdMap<UniqueIdent, IndexEntry>,
+        // Whether this index represents a mailbox that has been deleted.
+        pub deleted: bool,
 
-    // "Public" Counters
-    pub uidvalidity: ImapUidvalidity,
-    pub highestmodseq: ModSeq,
-    // Emails with an UID greater or equal than `recent_from` are "recent".
-    pub recent_from: ImapUid,
+        // Indexes optimized for queries
+        pub idx_by_uid: OrdMap<ImapUid, UniqueIdent>,
+        pub idx_by_flag: FlagIndex,
+        pub idx_by_seqid: SeqidMap<UniqueIdent>,
+        // FIXME: can we remove this index which is somewhat expensive to maintain?
+        // it may be easier after refactoring SEARCH
+        pub idx_seqid_of_uuid: OrdMap<UniqueIdent, ImapSeqid>,
 
-    // "Internal" Counters
+        // "Public" Counters
+        pub uidvalidity: ImapUidvalidity,
+        pub highestmodseq: ModSeq,
+        // Emails with an UID greater or equal than `recent_from` are "recent".
+        pub recent_from: ImapUid,
 
-    // `internalseq` counts the number of *added emails*: it is equal to
-    // count(MailAdd commands).
-    //
-    // This has two purposes:
-    // - generate mail UIDs
-    // - detect conflicts between concurrent MailAdd commands.
-    //
-    // NOTE: we do not count MailDel commands. This is an optimization to reduce
-    // uidvalidity changes, which relies on the assumption that an email is
-    // never added twice to the mailbox with the same UniqueIdent. The code in
-    // `mailbox.rs` (for append, copy, move) ensures that this assumption always
-    // holds.
-    //
-    // Reasoning: consider a MailDel operation. Bumping `internalseq` causes
-    // later MailAdd operations to be replayed with different `ImapUid`s.
-    // However, if we know that there is only one MailAdd possible for the same
-    // `UniqueIdent`, then either:
-    // - it occurs before the MailDel (and is not replayed),
-    // - it occurs after the MailDel, and thus the deletion is a no-op.
-    //
-    // In both cases, there is no actual `ImapUid` conflict: it is safe to keep
-    // `ImapUid`s as they were, and thus no need to bump `internalseq` and
-    // `uidvalidity`.
-    internalseq: InternalSeq,
+        // "Internal" Counters
 
-    // `internalmodseq` counts the number of added mails and modifications to
-    // mail flags in the entire mailbox: it is equal to count(MailAdd commands)
-    // + count(Flag{Add,Del,Set} commands).
-    //
-    // This is used to implement RFC4551 (CONDSTORE). It also serves two purposes:
-    // - generate MODSEQ numbers for emails
-    // - detect conflicts between concurrent Flag{Add,Del,Set} commands.
-    internalmodseq: InternalModSeq,
+        // `internalseq` counts the number of *added emails*: it is equal to
+        // count(MailAdd commands).
+        //
+        // This has two purposes:
+        // - generate mail UIDs
+        // - detect conflicts between concurrent MailAdd commands.
+        //
+        // NOTE: we do not count MailDel commands. This is an optimization to reduce
+        // uidvalidity changes, which relies on the assumption that an email is
+        // never added twice to the mailbox with the same UniqueIdent. The code in
+        // `mailbox.rs` (for append, copy, move) ensures that this assumption always
+        // holds.
+        //
+        // Reasoning: consider a MailDel operation. Bumping `internalseq` causes
+        // later MailAdd operations to be replayed with different `ImapUid`s.
+        // However, if we know that there is only one MailAdd possible for the same
+        // `UniqueIdent`, then either:
+        // - it occurs before the MailDel (and is not replayed),
+        // - it occurs after the MailDel, and thus the deletion is a no-op.
+        //
+        // In both cases, there is no actual `ImapUid` conflict: it is safe to keep
+        // `ImapUid`s as they were, and thus no need to bump `internalseq` and
+        // `uidvalidity`.
+        pub(super) internalseq: InternalSeq,
+
+        // `internalmodseq` counts the number of added mails and modifications to
+        // mail flags in the entire mailbox: it is equal to count(MailAdd commands)
+        // + count(Flag{Add,Del,Set} commands).
+        //
+        // This is used to implement RFC4551 (CONDSTORE). It also serves two purposes:
+        // - generate MODSEQ numbers for emails
+        // - detect conflicts between concurrent Flag{Add,Del,Set} commands.
+        pub(super) internalmodseq: InternalModSeq,
+    }
+
+    impl InitialFormat for UidIndex {
+        const VERSION_MARKER: &'static [u8] = b"A06uididx";
+    }
+
+    #[derive(Clone, Serialize, Deserialize, Debug)]
+    pub enum UidIndexOp {
+        MailAdd(UniqueIdent, InternalSeq, InternalModSeq, Flags),
+        MailDel(UniqueIdent),
+        FlagAdd(UniqueIdent, InternalModSeq, Flags),
+        FlagDel(UniqueIdent, InternalModSeq, Flags),
+        FlagSet(UniqueIdent, InternalModSeq, Flags),
+        BumpRecent,
+        UidvalidityAdd(u32),
+        MailboxDelete,
+    }
+
+    impl InitialFormat for UidIndexOp {
+        const VERSION_MARKER: &'static [u8] = b"A06uidop";
+    }
 }
+
+pub use v06::*;
 
 /// A map where keys are sequence IDs. Sequence IDs are non-zero integers.
 // Internally, we store the value of sequence ID `i` at offset `i-1` in the vector.
@@ -112,18 +139,6 @@ impl<T: Clone> SeqidMap<T> {
             (id, x)
         })
     }
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub enum UidIndexOp {
-    MailAdd(UniqueIdent, InternalSeq, InternalModSeq, Flags),
-    MailDel(UniqueIdent),
-    FlagAdd(UniqueIdent, InternalModSeq, Flags),
-    FlagDel(UniqueIdent, InternalModSeq, Flags),
-    FlagSet(UniqueIdent, InternalModSeq, Flags),
-    BumpRecent,
-    UidvalidityAdd(u32),
-    MailboxDelete,
 }
 
 impl UidIndex {

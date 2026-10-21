@@ -1,6 +1,7 @@
 pub mod config;
 pub mod cryptoblob;
 pub mod login;
+pub mod migrate;
 pub mod storage;
 
 // A user is composed of 3 things:

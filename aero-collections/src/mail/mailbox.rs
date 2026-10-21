@@ -5,8 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use aero_bayou::timestamp::now_msec;
 use aero_bayou::{Bayou, BayouWeak};
-use aero_user::cryptoblob::{self, gen_key, open_deserialize, seal_serialize, Key};
+use aero_user::cryptoblob::{self, gen_key, Key};
 use aero_user::login::Credentials;
+use aero_user::migrate::Migrate;
 use aero_user::storage::{self, BlobRef, BlobVal, RowRef, RowVal, Selector, StorageError, Store};
 
 use crate::mail::query::{Query, QueryScope};
@@ -263,7 +264,7 @@ impl MailboxInternal {
                 match v {
                     storage::Alternative::Tombstone => (),
                     storage::Alternative::Value(v) => {
-                        let meta = open_deserialize::<MailMeta>(v, &self.encryption_key)?;
+                        let meta = MailMeta::open_decode(v, &self.encryption_key)?;
                         match meta_opt.as_mut() {
                             None => {
                                 meta_opt = Some(meta);
@@ -362,7 +363,7 @@ impl MailboxInternal {
                     message_key: message_key.clone(),
                     rfc822_size: raw_mail.len(),
                 };
-                let meta_blob = seal_serialize(&meta, &self.encryption_key)?;
+                let meta_blob = meta.seal_encode(&self.encryption_key)?;
                 self.storage
                     .row_update(vec![RowVal::new(
                         RowRef::new(&self.mail_path, &ident.to_string()),
@@ -407,7 +408,7 @@ impl MailboxInternal {
                     message_key: message_key.clone(),
                     rfc822_size: raw_mail.len(),
                 };
-                let meta_blob = seal_serialize(&meta, &self.encryption_key)?;
+                let meta_blob = meta.seal_encode(&self.encryption_key)?;
                 self.storage
                     .row_update(vec![RowVal::new(
                         RowRef::new(&self.mail_path, &ident.to_string()),
@@ -501,7 +502,7 @@ impl MailboxInternal {
                     MailMetaResult::NotFound => bail!("metadata not found for id {}", source_id),
                     MailMetaResult::MailMeta(meta) => meta,
                 };
-                let meta_blob = seal_serialize(meta, &self.encryption_key)?;
+                let meta_blob = meta.seal_encode(&self.encryption_key)?;
                 self.storage
                     .row_update(vec![RowVal::new(
                         RowRef::new(&self.mail_path, &new_id.to_string()),
@@ -526,19 +527,31 @@ impl MailboxInternal {
 
 // ----
 
-/// The metadata of a message that is stored in K2V
-/// at pk = mail/<mailbox uuid>, sk = <message uuid>
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MailMeta {
-    /// INTERNALDATE field (milliseconds since epoch)
-    pub internaldate: u64,
-    /// Headers of the message. Used for search queries.
-    pub headers: Vec<u8>,
-    /// Secret key for decrypting entire message
-    pub message_key: Key,
-    /// RFC822 size
-    pub rfc822_size: usize,
+mod v06 {
+    use aero_user::cryptoblob::Key;
+    use aero_user::migrate::InitialFormat;
+    use serde::{Deserialize, Serialize};
+
+    /// The metadata of a message that is stored in K2V
+    /// at pk = mail/<mailbox uuid>, sk = <message uuid>
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct MailMeta {
+        /// INTERNALDATE field (milliseconds since epoch)
+        pub internaldate: u64,
+        /// Headers of the message. Used for search queries.
+        pub headers: Vec<u8>,
+        /// Secret key for decrypting entire message
+        pub message_key: Key,
+        /// RFC822 size
+        pub rfc822_size: usize,
+    }
+
+    impl InitialFormat for MailMeta {
+        const VERSION_MARKER: &'static [u8] = b"A06mailmt";
+    }
 }
+
+pub use v06::*;
 
 /// The result of fetching an email metadata entry (see `fetch_meta`).
 #[derive(Debug, Clone, Serialize, Deserialize)]

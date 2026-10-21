@@ -1,30 +1,38 @@
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-
+use crate::crdt::Crdt;
 use aero_bayou::timestamp::now_msec;
 
-use crate::crdt::Crdt;
-use crate::mail::uidindex::ImapUidvalidity;
-use crate::unique_ident::UniqueIdent;
+mod v06 {
+    use crate::mail::uidindex::ImapUidvalidity;
+    use crate::unique_ident::UniqueIdent;
+    use aero_user::migrate::InitialFormat;
+    use serde::{Deserialize, Serialize};
+    use std::collections::BTreeMap;
 
-/// A list of mailbox names in a user namespace, designed to be serialized as a
-/// single K2V entry.
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub(crate) struct MailboxList(BTreeMap<String, MailboxListEntry>);
+    /// A list of mailbox names in a user namespace, designed to be serialized as a
+    /// single K2V entry.
+    #[derive(Debug, Default, Serialize, Deserialize)]
+    pub(crate) struct MailboxList(pub(super) BTreeMap<String, MailboxListEntry>);
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
-struct MailboxListEntry {
-    id_lww: (u64, MailboxListVal),
+    #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+    pub(super) struct MailboxListEntry {
+        pub id_lww: (u64, MailboxListVal),
+    }
+
+    #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, PartialOrd)]
+    pub(crate) enum MailboxListVal {
+        /// Deleted entry with this ID; we remember the uidvalidity value to avoid
+        /// reusing it if the mailbox is later re-created with the same name
+        Deleted { prev_uidvalidity: ImapUidvalidity },
+        /// Active entry with this ID
+        Active { id: UniqueIdent },
+    }
+
+    impl InitialFormat for MailboxList {
+        const VERSION_MARKER: &'static [u8] = b"A06mboxs";
+    }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, PartialOrd)]
-pub enum MailboxListVal {
-    /// Deleted entry with this ID; we remember the uidvalidity value to avoid
-    /// reusing it if the mailbox is later re-created with the same name
-    Deleted { prev_uidvalidity: ImapUidvalidity },
-    /// Active entry with this ID
-    Active { id: UniqueIdent },
-}
+pub(crate) use v06::*;
 
 impl MailboxListEntry {
     fn merge(&mut self, other: &Self) {

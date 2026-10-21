@@ -1,20 +1,31 @@
 use anyhow::{bail, Result};
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 use aero_bayou::timestamp::now_msec;
 
 use crate::crdt::Crdt;
 use crate::unique_ident::{gen_ident, UniqueIdent};
 
-/// A list of DAV collection names, designed to be serialized as a single K2V entry.
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub(crate) struct CollectionList(BTreeMap<String, CollectionListEntry>);
+mod v06 {
+    use crate::unique_ident::UniqueIdent;
+    use aero_user::migrate::InitialFormat;
+    use serde::{Deserialize, Serialize};
+    use std::collections::BTreeMap;
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
-struct CollectionListEntry {
-    id_lww: (u64, Option<UniqueIdent>),
+    /// A list of DAV collection names, designed to be serialized as a single K2V entry.
+    #[derive(Debug, Default, Serialize, Deserialize)]
+    pub(crate) struct CollectionList(pub(super) BTreeMap<String, CollectionListEntry>);
+
+    #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+    pub(crate) struct CollectionListEntry {
+        pub(super) id_lww: (u64, Option<UniqueIdent>),
+    }
+
+    impl InitialFormat for CollectionList {
+        const VERSION_MARKER: &'static [u8] = b"A06cols";
+    }
 }
+
+pub(crate) use v06::*;
 
 impl CollectionListEntry {
     fn merge(&mut self, other: &Self) {
