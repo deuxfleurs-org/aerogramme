@@ -120,7 +120,11 @@ impl MailboxView {
     /// called at the beginning of each IMAP operation.
     async fn checked_sync(&mut self) -> Result<()> {
         self.mailbox.sync().await?;
-        let uidvalidity = self.mailbox.current_uid_index().uidvalidity;
+        let index = self.mailbox.current_uid_index();
+        let uidvalidity = index.uidvalidity;
+        if index.deleted {
+            return Err(SyncError::MailboxDeleted.into());
+        }
         if uidvalidity != self.known_state.uidvalidity {
             return Err(SyncError::UidvalidityChanged(uidvalidity).into());
         }
@@ -140,7 +144,11 @@ impl MailboxView {
     async fn checked_sync_no_update(&self) -> Result<()> {
         let mut mbox = self.mailbox.clone();
         mbox.sync().await?;
-        let uidvalidity = mbox.current_uid_index().uidvalidity;
+        let index = mbox.current_uid_index();
+        let uidvalidity = index.uidvalidity;
+        if index.deleted {
+            return Err(SyncError::MailboxDeleted.into());
+        }
         if uidvalidity != self.known_state.uidvalidity {
             return Err(SyncError::UidvalidityChanged(uidvalidity).into());
         }
