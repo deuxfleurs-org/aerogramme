@@ -114,6 +114,33 @@ fn rfc3501_imap4rev1_base() {
         assert!(lines[0].starts_with("* FLAGS") && lines[0].contains("\\Important"));
         assert!(lines[1].starts_with("* 1 FETCH (FLAGS (\\Important))"));
 
+        // This store modifies the set of "known flags" in the mailbox, both by
+        // deleting \Important and adding $Custom. It triggers 3 status updates:
+        // - FLAGS adding $Custom (do not remove \Important at this step because it is
+        //   still "in use": the client has not seen the FETCH FLAGS update)
+        // - FETCH FLAGS for the message
+        // - FLAGS removing \Important
+        let srv_msg = store(
+            imap_socket,
+            Selection::FirstId,
+            Flag::Custom,
+            StoreAction::SetFlags,
+            StoreMod::None,
+        )
+        .context("set flag Custom")?;
+        let lines = srv_msg.lines().collect::<Vec<_>>();
+        assert!(
+            lines[0].starts_with("* FLAGS")
+                && lines[0].contains("\\Important")
+                && lines[0].contains("$Custom")
+        );
+        assert!(lines[1].starts_with("* 1 FETCH (FLAGS ($Custom))"));
+        assert!(
+            lines[2].starts_with("* FLAGS")
+                && !lines[2].contains("\\Important")
+                && lines[2].contains("$Custom")
+        );
+
         store(
             imap_socket,
             Selection::FirstId,

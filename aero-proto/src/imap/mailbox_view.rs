@@ -194,6 +194,7 @@ impl MailboxView {
         // In other words:
         // - notify client of expunged mails
         // - if new mails arrived, notify client of number of existing mails
+        // - if the set of flags used in the mailbox changed, tell client
         // - if flags changed for existing mails, tell client
         //   (for this last step: if uidvalidity changed, do nothing,
         //   just notify of new uidvalidity and they will resync)
@@ -223,14 +224,22 @@ impl MailboxView {
             data.push(self.uidvalidity_status()?);
             data.push(self.uidnext_status()?);
         } else {
-            // - if new flags are used in the mailbox, send an update.
-            //
-            // NOTE: do this *before* we send flag updates (the next bullet)
-            // that may use these new flags
-            let old_flags = old_snapshot.idx_by_flag.flags().collect::<HashSet<_>>();
-            let new_flags = new_snapshot.idx_by_flag.flags().collect::<HashSet<_>>();
+            // - if new flags are used in the mailbox, send a "known flags" update.
+
+            // NOTE: do this *before* we send message flag updates (the next
+            // bullet) that may use these new flags. Also, `new_flags` may be
+            // *missing* flags that are in `old_flags`: we must first send a
+            // "known flags" update with both old and new flags, then send
+            // message flag updates, then send another "known flags" update with
+            // only the new flags.
+            let old_flags = uidindex_known_flags(&old_snapshot);
+            let new_flags = uidindex_known_flags(&new_snapshot);
+
+            // If `new_flags` contains flags that are not in `old_flags`, send
+            // an update.
             if new_flags.difference(&old_flags).nth(0).is_some() {
-                data.push(self.known_flags_status()?)
+                let new_old_flags = new_flags.union(&old_flags);
+                data.push(flags_status(new_old_flags.cloned()));
             }
 
             // - if flags changed for existing mails, tell client
@@ -262,6 +271,11 @@ impl MailboxView {
                     }
                 }
             }
+
+            // - if some flags are not used anymore, send an update.
+            if old_flags.difference(&new_flags).nth(0).is_some() {
+                data.push(flags_status(new_flags.into_iter()))
+            }
         }
         Ok(data)
     }
@@ -277,7 +291,7 @@ impl MailboxView {
         let mut data = Vec::<Body>::new();
         data.push(self.exists_status()?);
         data.push(self.recent_status()?);
-        data.extend(self.flags_status()?.into_iter());
+        data.extend(self.mailbox_flags_status()?.into_iter());
         data.extend(self.unseen_first_status()?);
         data.push(self.uidvalidity_status()?);
         data.push(self.uidnext_status()?);
@@ -837,10 +851,12 @@ impl MailboxView {
 
     /// Produce a FLAGS and a PERMANENTFLAGS message that indicates
     /// the flags that are in `known_state` + default flags
-    fn flags_status(&self) -> Result<Vec<Body<'static>>> {
+    fn mailbox_flags_status(&self) -> Result<Vec<Body<'static>>> {
         let mut body = vec![];
         // 1. Add status for all known flags in the mailbox
-        body.push(self.known_flags_status()?);
+        body.push(flags_status(
+            uidindex_known_flags(&self.known_state).into_iter(),
+        ));
 
         // 2. Return flags that are persisted
         // 2.a Always advertise our default flags
@@ -863,34 +879,6 @@ impl MailboxView {
         Ok(body)
     }
 
-    fn known_flags(&self) -> HashSet<Flag<'_>> {
-        // 1. Fetch them from our index
-        let mut known_flags: HashSet<Flag> = self
-            .known_state
-            .idx_by_flag
-            .flags()
-            .filter_map(|f| match flags::from_str(f) {
-                Some(FlagFetch::Flag(fl)) => Some(fl),
-                // Skip \Recent
-                // TODO: ensure that \Recent is never written by a client in the
-                // mailbox flags
-                _ => None,
-            })
-            .collect();
-        // 2. Merge it with our default flags list
-        for f in DEFAULT_FLAGS.iter() {
-            known_flags.insert(f.clone());
-        }
-        known_flags
-    }
-
-    // Status describing all flags used in the mailbox
-    fn known_flags_status(&self) -> Result<Body<'static>> {
-        use imap_codec::imap_types::bounded_static::IntoBoundedStatic;
-        let fs = self.known_flags().into_iter().map(|f| f.into_static());
-        Ok(Body::Data(Data::Flags(fs.collect())))
-    }
-
     pub(crate) fn unseen_count(&self) -> usize {
         let total = self.known_state.table.len();
         let seen = self
@@ -901,6 +889,36 @@ impl MailboxView {
             .unwrap_or(0);
         total - seen
     }
+}
+
+/// The IMAP status item for a set of flags.
+fn flags_status<'a>(flags: impl Iterator<Item = Flag<'a>>) -> Body<'static> {
+    use imap_codec::imap_types::bounded_static::IntoBoundedStatic;
+    let fs = flags.into_iter().map(|f| f.into_static());
+    Body::Data(Data::Flags(fs.collect()))
+}
+
+/// The set of flags that are used in the given UidIndex. Always includes a base
+/// set of default flags.
+fn uidindex_known_flags(uidindex: &UidIndex) -> HashSet<Flag<'_>> {
+    // 1. Fetch them from `uidindex`
+    let mut known_flags: HashSet<Flag> = uidindex
+        .idx_by_flag
+        .flags()
+        .filter_map(|f| match flags::from_str(f) {
+            Some(FlagFetch::Flag(fl)) => Some(fl),
+            // Skip \Recent
+            // TODO: ensure that \Recent is never written by a client in a
+            // mailbox uidindex
+            Some(FlagFetch::Recent) => None,
+            None => None,
+        })
+        .collect();
+    // 2. Merge it with our default flags list
+    for f in DEFAULT_FLAGS.iter() {
+        known_flags.insert(f.clone());
+    }
+    known_flags
 }
 
 #[cfg(test)]
