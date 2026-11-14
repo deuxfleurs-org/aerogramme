@@ -1,12 +1,11 @@
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
 use std::future::Future;
 
-use aero_user::cryptoblob::{open_deserialize, seal_serialize};
 use aero_user::login::Credentials;
+use aero_user::migrate::Migrate;
 use aero_user::storage;
 
-pub trait Crdt: Default + Serialize + for<'de> Deserialize<'de> + Sync {
+pub trait Crdt: Default + Migrate + Sync {
     fn merge(&mut self, other: Self);
 
     fn load_from_storage(
@@ -24,7 +23,7 @@ pub trait Crdt: Default + Serialize + for<'de> Deserialize<'de> + Sync {
 
                     for v in row_vals {
                         if let storage::Alternative::Value(vbytes) = v {
-                            let crdt2 = open_deserialize::<Self>(&vbytes, &creds.keys.master)?;
+                            let crdt2 = Self::open_decode(&vbytes, &creds.keys.master)?;
                             crdt.merge(crdt2);
                         }
                     }
@@ -42,7 +41,7 @@ pub trait Crdt: Default + Serialize + for<'de> Deserialize<'de> + Sync {
         ct: Option<storage::RowRef>,
     ) -> impl Future<Output = Result<()>> + Send {
         async move {
-            let list_blob = seal_serialize(self, &creds.keys.master)?;
+            let list_blob = self.seal_encode(&creds.keys.master)?;
             let rref = ct.unwrap_or(storage::RowRef::new(pk, sk));
             let row_val = storage::RowVal::new(rref, list_blob);
             creds.storage.row_update(vec![row_val]).await?;

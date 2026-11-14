@@ -5,11 +5,11 @@ use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail, Result};
 use log::error;
-use serde::{Deserialize, Serialize};
 use tokio::sync::{Notify, RwLock};
 
 use aero_user::cryptoblob::*;
 use aero_user::login::Credentials;
+use aero_user::migrate::Migrate;
 use aero_user::storage;
 
 use crate::timestamp::*;
@@ -32,10 +32,8 @@ const CHECKPOINT_MIN_OPS: usize = 16;
 // between processes doing .checkpoint() and those doing .sync()
 const CHECKPOINTS_TO_KEEP: usize = 3;
 
-pub trait BayouState:
-    Default + Clone + Serialize + for<'de> Deserialize<'de> + Send + Sync + 'static
-{
-    type Op: Clone + Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Send + Sync + 'static;
+pub trait BayouState: Default + Clone + Migrate + Send + Sync {
+    type Op: Clone + Migrate + std::fmt::Debug + Send + Sync;
 
     fn apply(&self, op: &Self::Op) -> Self;
 }
@@ -236,7 +234,7 @@ impl<S: BayouState> BayouEngine<S> {
                     .value;
                 tracing::debug!("(sync) checkpoint body length: {}", buf.len());
 
-                let ck = open_deserialize::<S>(&buf, &self.key)?;
+                let ck = S::open_decode(&buf, &self.key)?;
                 (*ts, Some(ck))
             }
         } else {
@@ -287,7 +285,7 @@ impl<S: BayouState> BayouEngine<S> {
             }
             match &val[0] {
                 storage::Alternative::Value(v) => {
-                    let op = open_deserialize::<S::Op>(v, &self.key)?;
+                    let op = S::Op::open_decode(v, &self.key)?;
                     tracing::trace!("(sync) operation {}: {:?}", sort_key, op);
                     ops.push((ts, op));
                 }
@@ -365,7 +363,7 @@ impl<S: BayouState> BayouEngine<S> {
 
             let row_val = storage::RowVal::new(
                 storage::RowRef::new(&self.path, &ts.to_string()),
-                seal_serialize(&op, &self.key)?,
+                op.seal_encode(&self.key)?,
             );
             self.storage.row_update(vec![row_val]).await?;
 
@@ -476,7 +474,7 @@ impl<S: BayouState> BayouEngine<S> {
         };
 
         // Serialize and save checkpoint
-        let cryptoblob = seal_serialize(&state_cp, &self.key)?;
+        let cryptoblob = state_cp.seal_encode(&self.key)?;
         tracing::debug!("(cp) checkpoint body length: {}", cryptoblob.len());
 
         let blob_val = storage::BlobVal::new(
