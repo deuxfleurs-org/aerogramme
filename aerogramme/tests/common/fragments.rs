@@ -71,6 +71,17 @@ pub enum Selection {
     All,
 }
 
+impl ToString for Selection {
+    fn to_string(&self) -> String {
+        match self {
+            Self::FirstId => "1".to_string(),
+            Self::SecondId => "2".to_string(),
+            Self::Id(n) => n.to_string(),
+            Self::All => "1:*".to_string(),
+        }
+    }
+}
+
 pub enum SelectMod {
     None,
     Condstore,
@@ -97,6 +108,24 @@ pub enum FetchKind {
     Rfc822Text,
     Body(Option<FetchBodySection>),
     Flags,
+    Uid,
+}
+
+impl ToString for FetchKind {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Rfc822 => "RFC822".to_string(),
+            Self::Rfc822Size => "RFC822.SIZE".to_string(),
+            Self::Rfc822Header => "RFC822.HEADER".to_string(),
+            Self::Rfc822Text => "RFC822.TEXT".to_string(),
+            Self::Body(None) => "BODY[]".to_string(),
+            Self::Body(Some(section)) => {
+                format!("BODY[{}]", section.to_string())
+            }
+            Self::Flags => "FLAGS".to_string(),
+            Self::Uid => "UID".to_string(),
+        }
+    }
 }
 
 pub struct FetchBodySection {
@@ -162,6 +191,7 @@ pub enum StatusKind {
     HighestModSeq,
     Recent,
     UidValidity,
+    Messages,
 }
 
 pub enum MbxSelect {
@@ -322,6 +352,7 @@ pub fn status(imap: &mut TcpStream, mbx: Mailbox, sk: StatusKind) -> Result<Stri
         StatusKind::HighestModSeq => "(HIGHESTMODSEQ)",
         StatusKind::Recent => "(RECENT)",
         StatusKind::UidValidity => "(UIDVALIDITY)",
+        StatusKind::Messages => "(MESSAGES)",
     };
     imap.write_all(format!("25 STATUS {} {}\r\n", mbx_str, sk_str).as_bytes())?;
     let mut buffer: [u8; 6000] = [0; 6000];
@@ -411,31 +442,51 @@ pub fn fetch(
 ) -> Result<String> {
     let mut buffer: [u8; 65535] = [0; 65535];
 
-    let sel_str = match selection {
-        Selection::FirstId => "1",
-        Selection::SecondId => "2",
-        Selection::Id(n) => &n.to_string(),
-        Selection::All => "1:*",
+    let mod_str = match modifier {
+        FetchMod::None => "".into(),
+        FetchMod::ChangedSince(val) => format!(" (CHANGEDSINCE {})", val),
     };
 
-    let kind_str = match kind {
-        FetchKind::Rfc822 => "RFC822",
-        FetchKind::Rfc822Size => "RFC822.SIZE",
-        FetchKind::Rfc822Header => "RFC822.HEADER",
-        FetchKind::Rfc822Text => "RFC822.TEXT",
-        FetchKind::Body(None) => "BODY[]",
-        FetchKind::Body(Some(section)) => &format!("BODY[{}]", section.to_string()),
-        FetchKind::Flags => "FLAGS",
-    };
+    imap.write_all(
+        format!(
+            "40 fetch {} {}{}\r\n",
+            selection.to_string(),
+            kind.to_string(),
+            mod_str
+        )
+        .as_bytes(),
+    )?;
+
+    let read = read_lines(imap, &mut buffer, Some(&b"40 "[..]))?;
+    let srv_msg = std::str::from_utf8(read)?;
+
+    Ok(srv_msg.to_string())
+}
+
+pub fn uid_fetch(
+    imap: &mut TcpStream,
+    selection: Selection,
+    kind: FetchKind,
+    modifier: FetchMod,
+) -> Result<String> {
+    let mut buffer: [u8; 65535] = [0; 65535];
 
     let mod_str = match modifier {
         FetchMod::None => "".into(),
         FetchMod::ChangedSince(val) => format!(" (CHANGEDSINCE {})", val),
     };
 
-    imap.write_all(format!("40 fetch {} {}{}\r\n", sel_str, kind_str, mod_str).as_bytes())?;
+    imap.write_all(
+        format!(
+            "41 uid fetch {} {}{}\r\n",
+            selection.to_string(),
+            kind.to_string(),
+            mod_str
+        )
+        .as_bytes(),
+    )?;
 
-    let read = read_lines(imap, &mut buffer, Some(&b"40 OK FETCH"[..]))?;
+    let read = read_lines(imap, &mut buffer, Some(&b"41 "[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
 
     Ok(srv_msg.to_string())
@@ -443,12 +494,11 @@ pub fn fetch(
 
 pub fn copy(imap: &mut TcpStream, selection: Selection, to: Mailbox) -> Result<String> {
     let mut buffer: [u8; 65535] = [0; 65535];
-    assert!(matches!(selection, Selection::FirstId));
+    let sel_str = selection.to_string();
     assert!(matches!(to, Mailbox::Archive));
 
-    imap.write_all(&b"45 copy 1 ArchiveCustom\r\n"[..])?;
-    let read = read_lines(imap, &mut buffer, None)?;
-    assert_eq!(&read[..5], &b"45 OK"[..]);
+    imap.write_all(format!("45 copy {} ArchiveCustom\r\n", sel_str).as_bytes())?;
+    let read = read_lines(imap, &mut buffer, Some(&b"45 "[..]))?;
     let srv_msg = std::str::from_utf8(read)?;
 
     Ok(srv_msg.to_string())
@@ -518,12 +568,7 @@ pub fn store(
 ) -> Result<String> {
     let mut buffer: [u8; 6000] = [0; 6000];
 
-    let seq = match sel {
-        Selection::FirstId => "1",
-        Selection::SecondId => "2",
-        Selection::Id(n) => &n.to_string(),
-        Selection::All => "1:*",
-    };
+    let seq = sel.to_string();
 
     let modif = match modifier {
         StoreMod::None => "".into(),

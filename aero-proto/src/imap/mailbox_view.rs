@@ -13,7 +13,7 @@ use imap_codec::imap_types::search::SearchKey;
 use imap_codec::imap_types::sequence::SequenceSet;
 
 use aero_collections::mail::mailbox::Mailbox;
-use aero_collections::mail::query::QueryScope;
+use aero_collections::mail::query::QueryResult;
 use aero_collections::mail::uidindex::{ImapUid, ImapUidvalidity, ModSeq, UidIndex};
 use aero_collections::unique_ident::UniqueIdent;
 
@@ -45,6 +45,19 @@ impl Default for UpdateParameters {
             with_uid: false,
         }
     }
+}
+
+/// The result of a COPY or MOVE operation
+#[derive(Debug, Clone)]
+pub enum CopyMoveResult {
+    /// All messages could be successfully copied.
+    Success {
+        dest_uidvalidity: ImapUidvalidity,
+        uid_map: Vec<(ImapUid, ImapUid)>,
+    },
+    /// Copy failed because some of the messages were deleted. The entire copy
+    /// operation is a no-op.
+    MessagesDeleted,
 }
 
 /// A MailboxView is responsible for giving the client the information it needs
@@ -309,11 +322,7 @@ impl MailboxView {
         unchanged_since: Option<NonZeroU64>,
         is_uid_store: &bool,
     ) -> Result<(Vec<Body<'static>>, Vec<NonZeroU32>)> {
-        if *is_uid_store {
-            self.checked_sync().await?;
-        } else {
-            self.checked_sync_no_update().await?;
-        }
+        self.checked_sync_no_update().await?;
         let state = self.mailbox.current_uid_index();
 
         let flags = flags.iter().map(|x| x.to_string()).collect();
@@ -411,37 +420,76 @@ impl MailboxView {
         sequence_set: &SequenceSet,
         to: &mut Mailbox,
         is_uid_copy: &bool,
-    ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>)> {
-        if *is_uid_copy {
-            self.checked_sync().await?
-        } else {
-            // TODO: is this correct? cf RFC2180?
-            self.checked_sync_no_update().await?
-        }
-        let state = self.mailbox.current_uid_index();
-        let mails = state.fetch(
-            sequence_set,
-            self.recent_from,
-            FetchBy::from_bool(*is_uid_copy),
-        );
+    ) -> Result<(CopyMoveResult, Vec<Body<'static>>)> {
+        self.checked_sync().await?;
+        // If the arguments are sequence IDs, we need to resolve them against
+        // the client known state; the new sync'd state can have different
+        // seqids if mails were expunged.
+        let mails = {
+            let state = if *is_uid_copy {
+                self.mailbox.current_uid_index()
+            } else {
+                self.known_state.clone()
+            };
+            state.fetch(
+                sequence_set,
+                self.recent_from,
+                FetchBy::from_bool(*is_uid_copy),
+            )
+        };
 
         let mut new_uuids = vec![];
+        let mut errored = false;
         for mi in mails.iter() {
-            new_uuids.push(to.copy_from(&self.mailbox, mi.uuid).await?);
+            // this can fail if the mail was expunged concurrently
+            let copy_res = to.copy_from(&self.mailbox, mi.uuid).await;
+            match copy_res {
+                Ok(copy_uuid) => new_uuids.push(copy_uuid),
+                Err(_err) => errored = true,
+            }
         }
 
-        let mut ret = vec![];
-        let to_state = to.current_uid_index();
-        for (mi, new_uuid) in mails.iter().zip(new_uuids.iter()) {
-            let dest_uid = to_state
-                .table
-                .get(new_uuid)
-                .ok_or(anyhow!("copied mail not in destination mailbox"))?
-                .0;
-            ret.push((mi.uid, dest_uid));
-        }
+        let res = if errored {
+            // Cleanup any copies that did work.
+            //
+            // from RFC3501: "If the COPY command is unsuccessful for any
+            // reason, server implementations MUST restore the destination
+            // mailbox to its state before the COPY attempt."
+            for copy_uuid in new_uuids {
+                // XXX defensively avoid erroring out at this step; is there a
+                // better way?
+                let _ = to.delete(copy_uuid).await;
+            }
+            CopyMoveResult::MessagesDeleted
+        } else {
+            let mut uid_map = vec![];
+            let to_state = to.current_uid_index();
+            for (mi, new_uuid) in mails.iter().zip(new_uuids.iter()) {
+                let dest_uid = to_state
+                    .table
+                    .get(new_uuid)
+                    .ok_or(anyhow!("copied mail not in destination mailbox"))?
+                    .0;
+                uid_map.push((mi.uid, dest_uid));
+            }
+            CopyMoveResult::Success {
+                dest_uidvalidity: to_state.uidvalidity,
+                uid_map,
+            }
+        };
 
-        Ok((to_state.uidvalidity, ret))
+        // Emit updates since we sync'd the mailbox.
+        //
+        // RFC2180: "COPY is the only IMAP4 sequence number command that is safe
+        // to allow an EXPUNGE response on."
+        let update = self
+            .update(UpdateParameters {
+                with_uid: *is_uid_copy,
+                ..UpdateParameters::default()
+            })
+            .await?;
+
+        Ok((res, update))
     }
 
     pub async fn r#move(
@@ -449,36 +497,73 @@ impl MailboxView {
         sequence_set: &SequenceSet,
         to: &mut Mailbox,
         is_uid_move: &bool,
-    ) -> Result<(ImapUidvalidity, Vec<(ImapUid, ImapUid)>, Vec<Body<'static>>)> {
-        if *is_uid_move {
-            self.checked_sync().await?
-        } else {
-            // TODO: is this correct? cf RFC2180?
-            self.checked_sync_no_update().await?
+    ) -> Result<(CopyMoveResult, Vec<Body<'static>>)> {
+        self.checked_sync().await?;
+        // If the arguments are sequence IDs, we need to resolve them against
+        // the client known state (like for COPY).
+        let mails = {
+            let state = if *is_uid_move {
+                self.mailbox.current_uid_index()
+            } else {
+                self.known_state.clone()
+            };
+            state.fetch(
+                sequence_set,
+                self.recent_from,
+                FetchBy::from_bool(*is_uid_move),
+            )
         };
-        let state = self.mailbox.current_uid_index();
-        let mails = state.fetch(
-            sequence_set,
-            self.recent_from,
-            FetchBy::from_bool(*is_uid_move),
-        );
 
+        // Like COPY, try to either: succeed in moving all the messages, or fail
+        // and do nothing
+
+        // First copy:
         let mut new_uuids = vec![];
+        let mut errored = false;
         for mi in mails.iter() {
-            let new_uuid = to.move_from(&mut self.mailbox, mi.uuid).await?;
-            new_uuids.push((mi.uid, new_uuid));
+            // NOTE: it is necessary to generate a fresh ID for the moved email
+            // (which `copy_from` does). See the comment in uidindex.rs for
+            // `internalseq` related to the MailDel optimization.
+            let copy_res = to.copy_from(&mut self.mailbox, mi.uuid).await;
+            match copy_res {
+                Ok(new_uuid) => new_uuids.push((mi, new_uuid)),
+                Err(_err) => errored = true,
+            }
         }
 
-        let mut ret = vec![];
-        let to_state = to.current_uid_index();
-        for (uid, new_uuid) in new_uuids {
-            let dest_uid = to_state
-                .table
-                .get(&new_uuid)
-                .ok_or(anyhow!("moved mail not in destination mailbox"))?
-                .0;
-            ret.push((uid, dest_uid));
-        }
+        // Then: cleanup if copy failed, or else complete the move
+        let res = if errored {
+            // If some copy failed, cleanup
+            for (_, new_uuid) in new_uuids {
+                // XXX drop the errors to avoid failing at this point; is there
+                // a better way?
+                let _ = to.delete(new_uuid).await;
+            }
+            CopyMoveResult::MessagesDeleted
+        } else {
+            // otherwise delete the source messages to complete the MOVE
+            for (mi, _) in &new_uuids {
+                // XXX also drop the errors... TODO: perhaps at least
+                // Mailbox::delete() should not fail when deleting a
+                // non-existing email?
+                let _ = self.mailbox.delete(mi.uuid).await;
+            }
+
+            let mut uid_map = vec![];
+            let to_state = to.current_uid_index();
+            for (mi, new_uuid) in new_uuids {
+                let dest_uid = to_state
+                    .table
+                    .get(&new_uuid)
+                    .ok_or(anyhow!("moved mail not in destination mailbox"))?
+                    .0;
+                uid_map.push((mi.uid, dest_uid));
+            }
+            CopyMoveResult::Success {
+                dest_uidvalidity: to_state.uidvalidity,
+                uid_map,
+            }
+        };
 
         let update = self
             .update(UpdateParameters {
@@ -487,32 +572,29 @@ impl MailboxView {
             })
             .await?;
 
-        Ok((to_state.uidvalidity, ret, update))
+        Ok((res, update))
     }
 
     /// Looks up state changes in the mailbox and produces a set of IMAP
     /// responses describing the new state.
+    ///
+    /// Returns (response, complete), where `response`: IMAP responses;
+    /// `complete`: false if some required messages metadata/bodies could not be
+    /// fetched from storage because they have been deleted. (See §4.1 of
+    /// RFC2180 "Fetching of expunged messages".)
     pub async fn fetch<'b>(
         &mut self,
         sequence_set: &SequenceSet,
         ap: &AttributesProxy,
         changed_since: Option<NonZeroU64>,
         is_uid_fetch: &bool,
-    ) -> Result<Vec<Body<'static>>> {
-        if *is_uid_fetch {
-            self.checked_sync().await?;
-        } else {
-            self.checked_sync_no_update().await?;
-        }
+    ) -> Result<(Vec<Body<'static>>, bool)> {
+        self.checked_sync_no_update().await?;
 
         // Pre-compute data
         //  a. what are the uuids of the emails we want?
         //  b. do we need to fetch the full body?
-        //let ap = AttributesProxy::new(attributes, *is_uid_fetch);
-        let query_scope = match ap.need_body() {
-            true => QueryScope::Full,
-            _ => QueryScope::Partial,
-        };
+        let query_scope = ap.scope();
         tracing::debug!("Query scope {:?}", query_scope);
         let state = self.mailbox.current_uid_index();
         let mail_idx_list = state.fetch_changed_since(
@@ -535,7 +617,10 @@ impl MailboxView {
             .zip(futures::stream::iter(mail_idx_list))
             // Derive an IMAP-specific view from the results, apply the filters
             .map(|(maybe_qr, midx)| match maybe_qr {
-                Ok(qr) => Ok((MailView::new(&qr, &midx)?.filter(&ap)?, midx)),
+                Ok(QueryResult::NotFound) => Ok(None),
+                Ok(QueryResult::MailData(qr)) => {
+                    Ok(Some((MailView::new(&qr, &midx)?.filter(&ap)?, midx)))
+                }
                 Err(e) => Err(e),
             })
             .try_collect::<Vec<_>>()
@@ -543,7 +628,16 @@ impl MailboxView {
 
         // Process the result of the query
         let mut res = vec![];
-        for ((body, seen), midx) in query_res {
+        let mut complete = true;
+        for qr in query_res {
+            let ((body, seen), midx) = match qr {
+                Some(qr) => qr,
+                None => {
+                    complete = false;
+                    continue;
+                }
+            };
+
             // Register the \Seen flags
             if matches!(seen, SeenFlag::MustAdd) {
                 let seen_flag = Flag::Seen.to_string();
@@ -559,7 +653,7 @@ impl MailboxView {
             res.push(body);
         }
 
-        Ok(res)
+        Ok((res, complete))
     }
 
     /// A naive search implementation...
@@ -569,11 +663,7 @@ impl MailboxView {
         search_key: &SearchKey<'a>,
         uid: bool,
     ) -> Result<(Vec<Body<'static>>, bool)> {
-        if uid {
-            self.checked_sync().await?;
-        } else {
-            self.checked_sync_no_update().await?;
-        }
+        self.checked_sync_no_update().await?;
 
         // 1. Compute the subset of sequence identifiers we need to fetch
         // based on the search query
@@ -606,11 +696,18 @@ impl MailboxView {
             // Here we release a lot of memory, this is the most important part ^^
             .filter_map(|(maybe_qr, midx)| {
                 let r = match maybe_qr {
-                    Ok(qr) => match MailView::new(&qr, midx).map(|mv| crit.is_keep_on_query(&mv)) {
-                        Ok(true) => Some(Ok(*midx)),
-                        Ok(_) => None,
-                        Err(e) => Some(Err(e)),
-                    },
+                    // Skip mails that are in the index but have been deleted since.
+                    // This implements the recommendation in §4.3 of RFC2180.
+                    Ok(QueryResult::NotFound) => None,
+                    Ok(QueryResult::MailData(maildat)) => {
+                        let keep_res =
+                            MailView::new(&maildat, midx).map(|mv| crit.is_keep_on_query(&mv));
+                        match keep_res {
+                            Ok(true) => Some(Ok(*midx)),
+                            Ok(false) => None,
+                            Err(e) => Some(Err(e)),
+                        }
+                    }
                     Err(e) => Some(Err(e)),
                 };
                 futures::future::ready(r)
@@ -818,7 +915,7 @@ mod tests {
     use std::fs;
 
     use aero_collections::mail::mailbox::MailMeta;
-    use aero_collections::mail::query::QueryResult;
+    use aero_collections::mail::query::MailData;
     use aero_collections::unique_ident;
     use aero_user::cryptoblob;
 
@@ -858,7 +955,7 @@ mod tests {
             largest_uid: index_entry.0,
         };
         let rfc822 = b"Subject: hello\r\nFrom: a@a.a\r\nTo: b@b.b\r\nDate: Thu, 12 Oct 2023 08:45:28 +0000\r\n\r\nhello world";
-        let qr = QueryResult::FullResult {
+        let qr = MailData::Full {
             uuid: mail_in_idx.uuid.clone(),
             metadata: meta,
             content: rfc822.to_vec(),

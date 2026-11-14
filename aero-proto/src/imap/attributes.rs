@@ -1,6 +1,8 @@
 use imap_codec::imap_types::command::FetchModifier;
 use imap_codec::imap_types::fetch::{MacroOrMessageDataItemNames, MessageDataItemName, Section};
 
+use aero_collections::mail::query::QueryScope;
+
 /// Internal decisions based on fetched attributes
 /// passed by the client
 
@@ -31,7 +33,12 @@ impl AttributesProxy {
             MacroOrMessageDataItemNames::MessageDataItemNames(a) => a.clone(),
         };
 
-        // Handle uids
+        // Include a UID request if this is a UID command
+        //
+        // "server implementations MUST implicitly include the UID message data
+        // item as part of any FETCH response caused by a UID command,
+        // regardless of whether a UID was specified as a message data item to
+        // the FETCH."
         if is_uid_fetch && !fetch_attrs.contains(&MessageDataItemName::Uid) {
             fetch_attrs.push(MessageDataItemName::Uid);
         }
@@ -53,25 +60,37 @@ impl AttributesProxy {
             .any(|x| matches!(x, MessageDataItemName::ModSeq))
     }
 
-    pub fn need_body(&self) -> bool {
-        self.attrs.iter().any(|x| match x {
-            MessageDataItemName::Body
-            | MessageDataItemName::Rfc822
-            | MessageDataItemName::Rfc822Text
-            | MessageDataItemName::BodyStructure => true,
+    pub fn scope(&self) -> QueryScope {
+        self.attrs
+            .iter()
+            .map(|x| match x {
+                MessageDataItemName::Body
+                | MessageDataItemName::Rfc822
+                | MessageDataItemName::Rfc822Text
+                | MessageDataItemName::BodyStructure => QueryScope::Full,
 
-            MessageDataItemName::BodyExt {
-                section: Some(section),
-                partial: _,
-                peek: _,
-            } => match section {
-                Section::Header(None)
-                | Section::HeaderFields(None, _)
-                | Section::HeaderFieldsNot(None, _) => false,
-                _ => true,
-            },
-            MessageDataItemName::BodyExt { .. } => true,
-            _ => false,
-        })
+                MessageDataItemName::BodyExt {
+                    section: Some(section),
+                    partial: _,
+                    peek: _,
+                } => match section {
+                    Section::Header(None)
+                    | Section::HeaderFields(None, _)
+                    | Section::HeaderFieldsNot(None, _) => QueryScope::Partial,
+                    _ => QueryScope::Full,
+                },
+                MessageDataItemName::BodyExt { .. } => QueryScope::Full,
+
+                MessageDataItemName::Envelope
+                | MessageDataItemName::InternalDate
+                | MessageDataItemName::Rfc822Header
+                | MessageDataItemName::Rfc822Size => QueryScope::Partial,
+
+                MessageDataItemName::Flags
+                | MessageDataItemName::Uid
+                | MessageDataItemName::ModSeq => QueryScope::Index,
+            })
+            .reduce(|q1, q2| q1.union(&q2))
+            .unwrap_or(QueryScope::Index)
     }
 }
