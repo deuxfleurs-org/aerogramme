@@ -1666,11 +1666,11 @@ dependencies = [
 
 [[package]]
 name = "eml-codec"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea76db3e7c50b4c3011192be35971f2508824c265e97b80f347880a6bc738510"
+checksum = "4152dcb0132104f45d31399062adfa54952b4680f44ea10aef0e2a8f8e37f42c"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.22.1",
  "bounded-static 0.8.0",
  "charset",
  "chrono",
@@ -1685,13 +1685,13 @@ dependencies = [
 
 [[package]]
 name = "eml_codec_derives"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57f8e21403f861571647262a4826b947aaf1ca7b748f65d2d7c0c96ee867d59a"
+checksum = "06079abbb291f33a678d485c5335e2b05705ecfa3e56f4335ae234123cbc6a9f"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.10",
 ]
 
 [[package]]
@@ -2632,7 +2632,7 @@ dependencies = [
 [[package]]
 name = "k2v-client"
 version = "0.0.4"
-source = "git+https://git.deuxfleurs.fr/Deuxfleurs/garage.git?branch=main-v2#ed3befd8d70eac09795e973a9477f60440de1a3e"
+source = "git+https://git.deuxfleurs.fr/Deuxfleurs/garage.git?branch=main-v2#aca0de5b819634994f15819ddb9abb3be97c8e0f"
 dependencies = [
  "aws-sdk-config",
  "aws-sigv4",
@@ -3372,7 +3372,7 @@ checksum = "95c589f335db0f6aaa168a7cd27b1fc6920f5e1470c804f814d9cd6e62a0f70b"
 dependencies = [
  "env_logger",
  "log",
- "rand 0.10.3",
+ "rand 0.10.4",
 ]
 
 [[package]]
@@ -3430,9 +3430,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.10.3"
+version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65c9fb96cbc91e3478eaae79a69fcd3f1ae4ad052e471fe6732fff548984b4af"
+checksum = "8f6fa277c67e6ea590466f04c3fe82cb509f0864fe470643e5570de9514a9b11"
 dependencies = [
  "getrandom 0.4.3",
  "rand_core 0.10.1",
