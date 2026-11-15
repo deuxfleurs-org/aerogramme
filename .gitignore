@@ -1,4 +1,6 @@
 /target
+/static
+/docker
 .vimrc
 env.sh
 aerogramme.toml
