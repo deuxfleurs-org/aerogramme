@@ -23,13 +23,15 @@ A resilient & standards-compliant open-source IMAP server with built-in encrypti
   - ✅ 0.3 CalDAV support.
   - ✅ 0.4 Improve low-level synchronization correctness (bayou)
   - ✅ 0.5 CardDAV support.
-  - ⌛0.6 Webmail.
-  - ⌛0.7 Polish phase.
-  - ⌛0.8 Public beta.
+  - ✅ 0.6 IMAP4 polishing.
+  - ⌛ Webmail.
+  - ⌛ Public beta.
 
 ## Sponsors and funding
 
-[Aerogramme project](https://nlnet.nl/project/Aerogramme/) is funded through the NGI Assure Fund, a fund established by NLnet with financial support from the European Commission's Next Generation Internet programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement No 957073.
+The [Aerogramme project grant (2022-2024)](https://nlnet.nl/project/Aerogramme/) was funded through the NGI Assure Fund, a fund established by NLnet with financial support from the European Commission's Next Generation Internet programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement No 957073.
+
+The [Aerogramme 1.0 grant (2025-)](https://nlnet.nl/project/Aerogramme-1.0/) was funded through the NGI0 Commons Fund, a fund established by NLnet with financial support from the European Commission's Next Generation Internet programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement No 101135429. Additional funding is made available by the Swiss State Secretariat for Education, Research and Innovation (SERI).
 
 ![NLnet logo](https://aerogramme.deuxfleurs.fr/images/nlnet.svg)
 
