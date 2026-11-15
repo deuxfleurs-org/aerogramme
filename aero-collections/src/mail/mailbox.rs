@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
@@ -245,8 +245,10 @@ impl MailboxInternal {
     // ---- Functions for reading the mailbox ----
 
     async fn fetch_meta(&self, ids: &[UniqueIdent]) -> Result<Vec<MailMetaResult>> {
-        let ids = ids.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        let sort_list = ids.iter().map(|x| x.as_str()).collect::<Vec<_>>();
+        let offsets: HashMap<_, _> = ids.iter().enumerate().map(|(i, id)| (id, i)).collect();
+
+        let ids_str = ids.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let sort_list = ids_str.iter().map(|x| x.as_str()).collect::<Vec<_>>();
         let res_vec = self
             .storage
             .row_fetch_batch(&Selector::List {
@@ -255,9 +257,19 @@ impl MailboxInternal {
             })
             .await?;
 
-        let mut meta_vec = vec![];
+        // `res_vec` may not contain all the ids in `sort_list`: some may have
+        // been deleted. Some effort is thus needed to construct the resulting
+        // Vec so that it has an element for each id.
+        let mut meta_vec = vec![MailMetaResult::NotFound; ids.len()];
+
         for res in res_vec.into_iter() {
             let mut meta_opt = None;
+            let uid = res
+                .row_ref
+                .uid
+                .sort
+                .parse::<UniqueIdent>()
+                .map_err(|e| anyhow!("Could not decode storage row id: {e}"))?;
 
             // Resolve conflicts
             for v in res.value.iter() {
@@ -277,9 +289,14 @@ impl MailboxInternal {
                 }
             }
             if let Some(meta) = meta_opt {
-                meta_vec.push(MailMetaResult::MailMeta(meta));
-            } else {
-                meta_vec.push(MailMetaResult::NotFound)
+                let offset = offsets
+                    .get(&uid)
+                    .ok_or_else(|| anyhow!("row_fetch_batch returned unexpected id"))?;
+
+                // SAFETY: `offset` is in `0..ids.len()` (cf definition of
+                // `offsets`), and `meta_vec` has length `ids.len()` (cf its
+                // definition).
+                *meta_vec.get_mut(*offset).unwrap() = MailMetaResult::MailMeta(meta);
             }
         }
 
