@@ -89,25 +89,6 @@ unnecessary_wraps = "warn"
 EOF
 '';
 
-          smtpMessageManifest = drv: drv.overrideCargoManifest + ''
-# Rewrite Cargo.toml to disable LTO in release mode
-# LTO breaks our build system with errors like "undefined reference to alloc::sync::Arc::<_>::drop_slow"
-cat > Cargo.toml <<EOF
-[workspace]
-members = ["smtp-message/"]
-EOF
-'';
-
-
-          smtpServerManifest = drv: drv.overrideCargoManifest + ''
-# Rewrite Cargo.toml to disable LTO in release mode
-# LTO breaks our build system with errors like "undefined reference to alloc::sync::Arc::<_>::drop_slow
-cat > Cargo.toml <<EOF
-[workspace]
-members = ["smtp-server/"]
-EOF
-'';
-
           # [i] Cargo2nix build declaration
           project = pkgsCross.rustBuilder.makePackageSet({
             packageFun = import ./Cargo.nix;
@@ -115,18 +96,6 @@ EOF
             release = true;
             rustChannel = rust_version;
             packageOverrides = pkgs: pkgs.rustBuilder.overrides.all ++ [
-              (pkgs.rustBuilder.rustLib.makeOverride {
-                name = "smtp-message";
-                overrideAttrs = drv: {
-                    overrideCargoManifest = smtpMessageManifest drv;
-                };
-              })
-              (pkgs.rustBuilder.rustLib.makeOverride {
-                name = "smtp-server";
-                overrideAttrs = drv: {
-                    overrideCargoManifest = smtpServerManifest drv;
-                };
-              })
               (pkgs.rustBuilder.rustLib.makeOverride {
                 name = "k2v-client";
                 overrideAttrs = drv: {
