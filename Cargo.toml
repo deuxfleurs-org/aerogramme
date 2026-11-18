@@ -142,3 +142,6 @@ correctness = "warn"
 perf = "allow"
 style = "allow"
 suspicious = "allow"
+
+[profile.release]
+debug = "full"
