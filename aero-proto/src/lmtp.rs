@@ -39,7 +39,7 @@ impl LmtpServer {
         })
     }
 
-    pub async fn run(self: &Arc<Self>, mut must_exit: watch::Receiver<bool>) -> Result<()> {
+    pub async fn run(self: Arc<Self>, mut must_exit: watch::Receiver<bool>) -> Result<()> {
         let tcp = TcpListener::bind(self.bind_addr).await?;
         tracing::info!("LMTP server listening on {:#}", self.bind_addr);
 

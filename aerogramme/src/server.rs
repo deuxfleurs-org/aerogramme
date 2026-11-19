@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
-use futures::try_join;
+use futures::{FutureExt, TryFutureExt};
 use log::*;
 use tokio::sync::watch;
 
@@ -105,55 +105,81 @@ impl Server {
         }
 
         let (exit_signal, provoke_exit) = watch_ctrl_c();
-        let _exit_on_err = move |err: anyhow::Error| {
+        let exit_on_err = move |err: anyhow::Error| {
             error!("Error: {}", err);
             let _ = provoke_exit.send(true);
         };
 
-        try_join!(
-            async {
-                match self.lmtp_server.as_ref() {
-                    None => Ok(()),
-                    Some(s) => s.run(exit_signal.clone()).await,
-                }
-            },
-            async {
-                match self.imap_unsecure_server {
-                    None => Ok(()),
-                    Some(s) => s.run(exit_signal.clone()).await,
-                }
-            },
-            async {
-                match self.imap_server {
-                    None => Ok(()),
-                    Some(s) => s.run(exit_signal.clone()).await,
-                }
-            },
-            async {
-                match self.auth_server {
-                    None => Ok(()),
-                    Some(a) => a.run(exit_signal.clone()).await,
-                }
-            },
-            async {
-                match self.dav_unsecure_server {
-                    None => Ok(()),
-                    Some(s) => s.run(exit_signal.clone()).await,
-                }
-            },
-            async {
-                match self.dav_server {
-                    None => Ok(()),
-                    Some(s) => s.run(exit_signal.clone()).await,
-                }
-            },
-            async {
-                match self.metric_server {
-                    None => Ok(()),
-                    Some(m) => m.run(exit_signal.clone()).await,
-                }
-            }
-        )?;
+        let lmtp_task = match self.lmtp_server {
+            None => tokio::spawn(async {}),
+            Some(s) => tokio::spawn(
+                s.run(exit_signal.clone())
+                 .map_err(exit_on_err.clone())
+                 .then(|_| async { tracing::info!("LMTP server exited") })
+            )
+        };
+
+        let imap_unsecure_task = match self.imap_unsecure_server {
+            None => tokio::spawn(async {}),
+            Some(s) => tokio::spawn(
+                s.run(exit_signal.clone())
+                 .map_err(exit_on_err.clone())
+                 .then(|_| async { tracing::info!("IMAP unsecure server exited") })
+            )
+        };
+
+        let imap_task = match self.imap_server {
+            None => tokio::spawn(async {}),
+            Some(s) => tokio::spawn(
+                s.run(exit_signal.clone())
+                 .map_err(exit_on_err.clone())
+                 .then(|_| async { tracing::info!("IMAP server exited") })
+            )
+        };
+
+        let auth_task = match self.auth_server {
+            None => tokio::spawn(async {}),
+            Some(s) => tokio::spawn(
+                s.run(exit_signal.clone())
+                 .map_err(exit_on_err.clone())
+                 .then(|_| async { tracing::info!("Auth server exited") })
+            )
+        };
+
+        let dav_unsecure_task = match self.dav_unsecure_server {
+            None => tokio::spawn(async {}),
+            Some(s) => tokio::spawn(
+                s.run(exit_signal.clone())
+                 .map_err(exit_on_err.clone())
+                 .then(|_| async { tracing::info!("DAV unsecure server exited") })
+            )
+        };
+
+        let dav_task = match self.dav_server {
+            None => tokio::spawn(async {}),
+            Some(s) => tokio::spawn(
+                s.run(exit_signal.clone())
+                 .map_err(exit_on_err.clone())
+                 .then(|_| async { tracing::info!("DAV server exited") })
+            )
+        };
+
+        let metric_task = match self.metric_server {
+            None => tokio::spawn(async {}),
+            Some(s) => tokio::spawn(
+                s.run(exit_signal.clone())
+                 .map_err(exit_on_err.clone())
+                 .then(|_| async { tracing::info!("Metrics server exited") })
+            )
+        };
+
+        lmtp_task.await.expect("Tokio task await failure");
+        imap_unsecure_task.await.expect("Tokio task await failure");
+        imap_task.await.expect("Tokio task await failure");
+        auth_task.await.expect("Tokio task await failure");
+        dav_unsecure_task.await.expect("Tokio task await failure");
+        dav_task.await.expect("Tokio task await failure");
+        metric_task.await.expect("Tokio task await failure");
 
         Ok(())
     }
