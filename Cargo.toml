@@ -37,10 +37,12 @@ aero-vcard = { version = "0.6.0", path = "aero-vcard" }
 metrics = { version = "0.6.0", path = "metrics" }
 aerogramme = { version = "0.6.0", path = "aerogramme" }
 
+console-subscriber = "0.5.0"
+
 # async runtime
 smol = "1" # Used by Kannader imported crates; maybe we'll want to rewrite to tokio.
 piper = "0.1" # Used by Kannader imported crates; maybe we'll want to rewrite code using it with a tokio primitive
-tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "io-util", "net", "time", "macros", "sync", "signal", "fs"] }
+tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "io-util", "net", "time", "macros", "sync", "signal", "fs", "tracing"] }
 tokio-util = { version = "0.7", features = [ "compat" ]  }
 tokio-stream = { version = "0.1" }
 futures = { version = "0.3", features = ["write-all-vectored"] }
@@ -144,4 +146,7 @@ style = "allow"
 suspicious = "allow"
 
 [profile.release]
+debug = "full"
+
+[profile.dev]
 debug = "full"
