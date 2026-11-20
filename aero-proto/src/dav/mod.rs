@@ -9,6 +9,7 @@ mod resource;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Result;
 use futures::future::FutureExt;
@@ -89,53 +90,11 @@ impl Server {
                 _ = must_exit.changed() => continue,
             };
             tracing::info!("Accepted connection from {}", remote_addr);
-            let stream = match self.build_stream(socket).await {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::error!(err=?e, "TLS acceptor failed");
-                    continue;
-                }
-            };
-
-            let login = self.login_provider.clone();
-            let conn = tokio::spawn(async move {
-                //@FIXME should create a generic "public web" server on which "routers" could be
-                //abitrarily bound
-                //@FIXME replace with a handler supporting http2
-
-                match http::Builder::new()
-                    .serve_connection(
-                        stream,
-                        service_fn(|req: Request<hyper::body::Incoming>| {
-                            let login = login.clone();
-                            tracing::info!("{:?} {:?}", req.method(), req.uri());
-                            tracing::debug!(req=?req, "full request");
-                            async {
-                                let response =
-                                    match middleware::auth(login, req, |user, request| {
-                                        async { Controller::route(user, request).await }.boxed()
-                                    })
-                                    .await
-                                    {
-                                        Ok(v) => Ok(v),
-                                        Err(e) => {
-                                            tracing::error!(err=?e, "internal error");
-                                            Response::builder()
-                                                .status(500)
-                                                .body(codec::text_body("Internal error"))
-                                        }
-                                    };
-                                tracing::debug!(resp=?response, "full response");
-                                response
-                            }
-                        }),
-                    )
-                    .await
-                {
-                    Err(e) => tracing::warn!(err=?e, "connection failed"),
-                    Ok(()) => tracing::trace!("connection terminated with success"),
-                }
-            });
+            let conn = tokio::spawn(handler(
+                socket,
+                self.tls.clone(),
+                self.login_provider.clone(),
+            ));
             connections.push(conn);
         }
         drop(tcp);
@@ -145,15 +104,63 @@ impl Server {
 
         Ok(())
     }
+}
 
-    async fn build_stream(&self, socket: TcpStream) -> Result<Box<dyn Stream>> {
-        match self.tls.clone() {
-            Some(acceptor) => {
-                let stream = acceptor.accept(socket).await?;
-                Ok(Box::new(TokioIo::new(stream)))
-            }
-            None => Ok(Box::new(TokioIo::new(socket))),
+async fn handler(socket: TcpStream, tls: Option<TlsAcceptor>, login: ArcLoginProvider) {
+    //@FIXME should create a generic "public web" server on which "routers" could be
+    //abitrarily bound
+    //@FIXME replace with a handler supporting http2
+
+    // TLS handshake. Note the timeout, as the client may not complete the handshake.
+    let stream: Box<dyn Stream> = match tls {
+        Some(acceptor) => {
+            let handshake = tokio::time::timeout(Duration::from_secs(60), acceptor.accept(socket));
+            let stream = match handshake.await {
+                Ok(Ok(v)) => v,
+                Ok(Err(e)) => {
+                    tracing::error!(err=?e, "TLS negociation failed");
+                    return;
+                }
+                Err(elapsed) => {
+                    tracing::warn!(?elapsed, "TLS handshake timeout");
+                    return;
+                }
+            };
+            Box::new(TokioIo::new(stream))
         }
+        None => Box::new(TokioIo::new(socket)),
+    };
+
+    match http::Builder::new()
+        .serve_connection(
+            stream,
+            service_fn(|req: Request<hyper::body::Incoming>| {
+                let login = login.clone();
+                tracing::info!("{:?} {:?}", req.method(), req.uri());
+                tracing::debug!(req=?req, "full request");
+                async {
+                    let response = match middleware::auth(login, req, |user, request| {
+                        async { Controller::route(user, request).await }.boxed()
+                    })
+                    .await
+                    {
+                        Ok(v) => Ok(v),
+                        Err(e) => {
+                            tracing::error!(err=?e, "internal error");
+                            Response::builder()
+                                .status(500)
+                                .body(codec::text_body("Internal error"))
+                        }
+                    };
+                    tracing::debug!(resp=?response, "full response");
+                    response
+                }
+            }),
+        )
+        .await
+    {
+        Err(e) => tracing::warn!(err=?e, "connection failed"),
+        Ok(()) => tracing::trace!("connection terminated with success"),
     }
 }
 
