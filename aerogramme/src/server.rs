@@ -5,8 +5,10 @@ use std::sync::Arc;
 use anyhow::Result;
 use futures::{FutureExt, TryFutureExt};
 use log::*;
+use tokio::runtime::Handle;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::watch;
+use tokio::time::{timeout, Duration};
 
 use aero_proto::dav;
 use aero_proto::imap;
@@ -174,16 +176,30 @@ impl Server {
             ),
         };
 
-        use tokio::runtime::Handle;
-        use tokio::time::{timeout, Duration};
         let backtrace_task = tokio::spawn(async move {
+            let mut must_exit = exit_signal.clone();
+            let mut sigusr1 = match signal(SignalKind::user_defined1()) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!("SIGUSR1 not supported. {}", e);
+                    return;
+                }
+            };
+
             loop {
-                // @FIXME: add select! and look at exit_signal
-                signal(SignalKind::user_defined1())
-                    .expect("signal to register properly")
-                    .recv()
-                    .await
-                    .expect("failed to install SIGUSR1 signal handler");
+                let maybe_sig = tokio::select! {
+                    sigres = sigusr1.recv() => sigres,
+                    _ = must_exit.changed() => {
+                        tracing::info!("Quitting backtrace loop");
+                        return;
+                    },
+                };
+
+                if maybe_sig.is_none() {
+                    tracing::warn!("Failed to instantiate SIGUSR1 signal handler");
+                    return;
+                }
+
                 info!("Received SIGUSR1, dumping a backtrace.");
 
                 let handle = Handle::current();
