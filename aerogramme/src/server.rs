@@ -5,6 +5,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use futures::{FutureExt, TryFutureExt};
 use log::*;
+use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::watch;
 
 use aero_proto::dav;
@@ -114,72 +115,102 @@ impl Server {
             None => tokio::spawn(async {}),
             Some(s) => tokio::spawn(
                 s.run(exit_signal.clone())
-                 .map_err(exit_on_err.clone())
-                 .then(|_| async { tracing::info!("LMTP server exited") })
-            )
+                    .map_err(exit_on_err.clone())
+                    .then(|_| async { tracing::info!("LMTP server exited") }),
+            ),
         };
 
         let imap_unsecure_task = match self.imap_unsecure_server {
             None => tokio::spawn(async {}),
             Some(s) => tokio::spawn(
                 s.run(exit_signal.clone())
-                 .map_err(exit_on_err.clone())
-                 .then(|_| async { tracing::info!("IMAP unsecure server exited") })
-            )
+                    .map_err(exit_on_err.clone())
+                    .then(|_| async { tracing::info!("IMAP unsecure server exited") }),
+            ),
         };
 
         let imap_task = match self.imap_server {
             None => tokio::spawn(async {}),
             Some(s) => tokio::spawn(
                 s.run(exit_signal.clone())
-                 .map_err(exit_on_err.clone())
-                 .then(|_| async { tracing::info!("IMAP server exited") })
-            )
+                    .map_err(exit_on_err.clone())
+                    .then(|_| async { tracing::info!("IMAP server exited") }),
+            ),
         };
 
         let auth_task = match self.auth_server {
             None => tokio::spawn(async {}),
             Some(s) => tokio::spawn(
                 s.run(exit_signal.clone())
-                 .map_err(exit_on_err.clone())
-                 .then(|_| async { tracing::info!("Auth server exited") })
-            )
+                    .map_err(exit_on_err.clone())
+                    .then(|_| async { tracing::info!("Auth server exited") }),
+            ),
         };
 
         let dav_unsecure_task = match self.dav_unsecure_server {
             None => tokio::spawn(async {}),
             Some(s) => tokio::spawn(
                 s.run(exit_signal.clone())
-                 .map_err(exit_on_err.clone())
-                 .then(|_| async { tracing::info!("DAV unsecure server exited") })
-            )
+                    .map_err(exit_on_err.clone())
+                    .then(|_| async { tracing::info!("DAV unsecure server exited") }),
+            ),
         };
 
         let dav_task = match self.dav_server {
             None => tokio::spawn(async {}),
             Some(s) => tokio::spawn(
                 s.run(exit_signal.clone())
-                 .map_err(exit_on_err.clone())
-                 .then(|_| async { tracing::info!("DAV server exited") })
-            )
+                    .map_err(exit_on_err.clone())
+                    .then(|_| async { tracing::info!("DAV server exited") }),
+            ),
         };
 
         let metric_task = match self.metric_server {
             None => tokio::spawn(async {}),
             Some(s) => tokio::spawn(
                 s.run(exit_signal.clone())
-                 .map_err(exit_on_err.clone())
-                 .then(|_| async { tracing::info!("Metrics server exited") })
-            )
+                    .map_err(exit_on_err.clone())
+                    .then(|_| async { tracing::info!("Metrics server exited") }),
+            ),
         };
 
-        lmtp_task.await.expect("Tokio task await failure");
-        imap_unsecure_task.await.expect("Tokio task await failure");
-        imap_task.await.expect("Tokio task await failure");
-        auth_task.await.expect("Tokio task await failure");
-        dav_unsecure_task.await.expect("Tokio task await failure");
-        dav_task.await.expect("Tokio task await failure");
-        metric_task.await.expect("Tokio task await failure");
+        use tokio::runtime::Handle;
+        use tokio::time::{timeout, Duration};
+        let backtrace_task = tokio::spawn(async move {
+            loop {
+                // @FIXME: add select! and look at exit_signal
+                signal(SignalKind::user_defined1())
+                    .expect("signal to register properly")
+                    .recv()
+                    .await
+                    .expect("failed to install SIGUSR1 signal handler");
+                info!("Received SIGUSR1, dumping a backtrace.");
+
+                let handle = Handle::current();
+                if let Ok(dump) = timeout(Duration::from_secs(2), handle.dump()).await {
+                    for (i, task) in dump.tasks().iter().enumerate() {
+                        let trace = task.trace();
+                        println!("TASK {i}:");
+                        println!("{trace}\n");
+                    }
+                }
+            }
+        });
+
+        lmtp_task.await.expect("Tokio LMTP task await failure");
+        imap_unsecure_task
+            .await
+            .expect("Tokio IMAP unsecure task await failure");
+        imap_task.await.expect("Tokio IMAP task await failure");
+        auth_task.await.expect("Tokio Auth task await failure");
+        dav_unsecure_task
+            .await
+            .expect("Tokio DAV unsecure task await failure");
+        dav_task.await.expect("Tokio DAV task await failure");
+        metric_task.await.expect("Tokio metrics task await failure");
+        backtrace_task
+            .await
+            .expect("Tokio backtrace task await failure");
 
         Ok(())
     }

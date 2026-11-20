@@ -139,12 +139,6 @@ enum AccountManagement {
     },
 }
 
-#[cfg(tokio_unstable)]
-fn tracer() {
-    console_subscriber::init();
-}
-
-#[cfg(not(tokio_unstable))]
 fn tracer() {
     tracing_subscriber::fmt::init();
 }
