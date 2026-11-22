@@ -1176,14 +1176,14 @@ fn rfc3691_imapext_unselect() {
     common::aerogramme_provider_daemon_dev(|imap_socket, lmtp_socket, _dav_socket| {
         connect(imap_socket).context("server says hello")?;
 
-        lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
-        lmtp_deliver_email(lmtp_socket, Email::Basic).context("mail delivered successfully")?;
-
         capability(imap_socket, Extension::Unselect).context("check server capabilities")?;
         login(imap_socket, Account::Alice).context("login test")?;
         let select_res =
             select(imap_socket, Mailbox::Inbox, SelectMod::None).context("select inbox")?;
         assert!(select_res.contains("* 0 EXISTS"));
+
+        lmtp_handshake(lmtp_socket).context("handshake lmtp done")?;
+        lmtp_deliver_email(lmtp_socket, Email::Basic).context("mail delivered successfully")?;
 
         noop_exists(imap_socket, 1).context("noop loop must detect a new email")?;
         store(
