@@ -96,12 +96,22 @@ EOF
             release = true;
             rustChannel = rust_version;
             packageOverrides = pkgs: pkgs.rustBuilder.overrides.all ++ [
+	      # Allow tokio_unstable in all our crates
+	      (pkgs.rustBuilder.rustLib.makeOverride {
+                overrideAttrs = drv: {
+                  RUSTFLAGS = (drv.RUSTFLAGS or "") + " --cfg tokio_unstable";
+                };
+              })
+
+	      # Fix a k2v incompatibility due to the workspace approach in garage
               (pkgs.rustBuilder.rustLib.makeOverride {
                 name = "k2v-client";
                 overrideAttrs = drv: {
                     overrideCargoManifest = k2vManifest drv;
                 };
               })
+
+	      # aws-lc-sys needs more packages on armv6l
               (pkgs.rustBuilder.rustLib.makeOverride {
                 name = "aws-lc-sys";
                 overrideAttrs = drv: {
