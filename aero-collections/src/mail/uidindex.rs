@@ -312,7 +312,7 @@ impl BayouState for UidIndex {
                     new.uidvalidity = NonZeroU32::new(new.uidvalidity.get() + bump_uid).unwrap();
                 }
                 #[cfg(feature = "condstore")]
-                if *imodseq < new.internalmodseq {
+                if *_imodseq < new.internalmodseq {
                     let bump_modseq = (new.internalmodseq - _imodseq) as u32;
                     new.uidvalidity = NonZeroU32::new(new.uidvalidity.get() + bump_modseq).unwrap();
                 }
