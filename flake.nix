@@ -89,8 +89,14 @@ unnecessary_wraps = "warn"
 EOF
 '';
 
+          # [i] Select the feature set. Some features are not compatible with some architectures.
+          rootFeatures =
+            [ "aerogramme/condstore" ]
+            ++ pkgs.lib.optional (triple.go != "arm") "aerogramme/backtrace";
+
           # [i] Cargo2nix build declaration
           project = pkgsCross.rustBuilder.makePackageSet({
+	    inherit rootFeatures;
             packageFun = import ./Cargo.nix;
             target = triple.rust;
             release = true;
