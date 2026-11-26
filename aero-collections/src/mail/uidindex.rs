@@ -340,7 +340,7 @@ impl BayouState for UidIndex {
                 if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
                     // Bump UIDValidity if required
                     #[cfg(feature = "condstore")]
-                    if *imodseq < new.internalmodseq {
+                    if *_imodseq < new.internalmodseq {
                         let bump_modseq = (new.internalmodseq - _imodseq) as u32;
                         new.uidvalidity =
                             NonZeroU32::new(new.uidvalidity.get() + bump_modseq).unwrap();
@@ -358,7 +358,7 @@ impl BayouState for UidIndex {
                 if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
                     // Bump UIDValidity if required
                     #[cfg(feature = "condstore")]
-                    if *imodseq < new.internalmodseq {
+                    if *_imodseq < new.internalmodseq {
                         let bump_modseq = (new.internalmodseq - _imodseq) as u32;
                         new.uidvalidity =
                             NonZeroU32::new(new.uidvalidity.get() + bump_modseq).unwrap();
@@ -378,7 +378,7 @@ impl BayouState for UidIndex {
                 if let Some((uid, email_modseq, existing_flags)) = new.table.get_mut(ident) {
                     // Bump UIDValidity if required
                     #[cfg(feature = "condstore")]
-                    if *imodseq < new.internalmodseq {
+                    if *_imodseq < new.internalmodseq {
                         let bump_modseq = (new.internalmodseq - _imodseq) as u32;
                         new.uidvalidity =
                             NonZeroU32::new(new.uidvalidity.get() + bump_modseq).unwrap();
