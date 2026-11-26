@@ -28,7 +28,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "aero-bayou"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "aero-user",
  "anyhow",
@@ -42,7 +42,7 @@ dependencies = [
 
 [[package]]
 name = "aero-collections"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "aero-bayou",
  "aero-user",
@@ -63,7 +63,7 @@ dependencies = [
 
 [[package]]
 name = "aero-dav"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "chrono",
  "futures",
@@ -76,7 +76,7 @@ dependencies = [
 
 [[package]]
 name = "aero-ical"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "aero-dav",
  "chrono",
@@ -87,7 +87,7 @@ dependencies = [
 
 [[package]]
 name = "aero-proto"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "aero-collections",
  "aero-dav",
@@ -126,7 +126,7 @@ dependencies = [
 
 [[package]]
 name = "aero-sasl"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -141,7 +141,7 @@ dependencies = [
 
 [[package]]
 name = "aero-user"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "argon2",
@@ -168,7 +168,7 @@ dependencies = [
 
 [[package]]
 name = "aero-vcard"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "aero-dav",
  "ical_vcard",
@@ -179,7 +179,7 @@ dependencies = [
 
 [[package]]
 name = "aerogramme"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "aero-dav",
  "aero-proto",
@@ -2810,7 +2810,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "metrics"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "aero-user",
  "anyhow",
@@ -4099,7 +4099,7 @@ dependencies = [
 
 [[package]]
 name = "smtp-message"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "auto_enums",
  "futures",
@@ -4117,7 +4117,7 @@ dependencies = [
 
 [[package]]
 name = "smtp-server"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4131,7 +4131,7 @@ dependencies = [
 
 [[package]]
 name = "smtp-server-types"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde",
  "smtp-message",

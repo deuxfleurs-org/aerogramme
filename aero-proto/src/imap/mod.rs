@@ -15,6 +15,7 @@ mod session;
 
 use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use anyhow::{anyhow, bail, Result};
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -23,7 +24,7 @@ use imap_codec::imap_types::{core::Text, response::Greeting};
 use imap_flow::server::{ServerFlow, ServerFlowEvent, ServerFlowOptions, ServerFlowResponseHandle};
 use imap_flow::stream::AnyStream;
 use rustls_pemfile::{certs, private_key};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio::sync::watch;
 use tokio_rustls::TlsAcceptor;
@@ -105,27 +106,13 @@ impl Server {
                 _ = must_exit.changed() => continue,
             };
             tracing::info!("IMAP: accepted connection from {}", remote_addr);
-            let stream = match self.tls.clone() {
-                Some(acceptor) => {
-                    let stream = match acceptor.accept(socket).await {
-                        Ok(v) => v,
-                        Err(e) => {
-                            tracing::error!(err=?e, "TLS negociation failed");
-                            continue;
-                        }
-                    };
-                    AnyStream::new(stream)
-                }
-                None => AnyStream::new(socket),
-            };
-
             let client = ClientContext {
                 addr: remote_addr.clone(),
                 login_provider: self.login_provider.clone(),
                 must_exit: must_exit.clone(),
                 server_capabilities: self.capabilities.clone(),
             };
-            let conn = tokio::spawn(NetLoop::handler(client, stream));
+            let conn = tokio::spawn(NetLoop::handler(client, socket, self.tls.clone()));
             connections.push(conn);
         }
         drop(tcp);
@@ -154,10 +141,31 @@ struct NetLoop {
 }
 
 impl NetLoop {
-    async fn handler(ctx: ClientContext, sock: AnyStream) {
+    async fn handler(ctx: ClientContext, socket: TcpStream, tls: Option<TlsAcceptor>) {
         let addr = ctx.addr.clone();
 
-        let mut nl = match Self::new(ctx, sock).await {
+        // TLS handshake. Note the timeout, as the client may not complete the handshake.
+        let stream = match tls {
+            Some(acceptor) => {
+                let handshake =
+                    tokio::time::timeout(Duration::from_secs(60), acceptor.accept(socket));
+                let stream = match handshake.await {
+                    Ok(Ok(v)) => v,
+                    Ok(Err(e)) => {
+                        tracing::error!(err=?e, "TLS negociation failed");
+                        return;
+                    }
+                    Err(elapsed) => {
+                        tracing::warn!(?elapsed, "TLS handshake timeout");
+                        return;
+                    }
+                };
+                AnyStream::new(stream)
+            }
+            None => AnyStream::new(socket),
+        };
+
+        let mut nl = match Self::new(ctx, stream).await {
             Ok(nl) => {
                 tracing::debug!(addr=?addr, "netloop successfully initialized");
                 nl

@@ -38,7 +38,7 @@ args@{
   cargoConfig ? {},
 }:
 let
-  nixifiedLockHash = "a259e686f23f77913018e6b41bc8b3e95eddd179fbd8bf170e07e45b70c048c8";
+  nixifiedLockHash = "3b266ffdcf196cc869588a39837a09927bebe4983619c085f25ce8af963f6d7f";
   workspaceSrc = if args.workspaceSrc == null then ./. else args.workspaceSrc;
   currentLockHash = builtins.hashFile "sha256" (workspaceSrc + /Cargo.lock);
   lockHashIgnored = if ignoreLockHash
@@ -66,20 +66,20 @@ in
 {
   cargo2nixVersion = "0.12.0";
   workspace = {
-    aero-bayou = rustPackages.unknown.aero-bayou."0.6.0";
-    aero-user = rustPackages.unknown.aero-user."0.6.0";
-    aero-collections = rustPackages.unknown.aero-collections."0.6.0";
-    aero-dav = rustPackages.unknown.aero-dav."0.6.0";
-    aero-ical = rustPackages.unknown.aero-ical."0.6.0";
-    aero-proto = rustPackages.unknown.aero-proto."0.6.0";
-    aero-sasl = rustPackages.unknown.aero-sasl."0.6.0";
-    aero-vcard = rustPackages.unknown.aero-vcard."0.6.0";
-    metrics = rustPackages.unknown.metrics."0.6.0";
-    smtp-message = rustPackages.unknown.smtp-message."0.6.0";
-    smtp-server = rustPackages.unknown.smtp-server."0.6.0";
-    smtp-server-types = rustPackages.unknown.smtp-server-types."0.6.0";
+    aero-bayou = rustPackages.unknown.aero-bayou."0.6.1";
+    aero-user = rustPackages.unknown.aero-user."0.6.1";
+    aero-collections = rustPackages.unknown.aero-collections."0.6.1";
+    aero-dav = rustPackages.unknown.aero-dav."0.6.1";
+    aero-ical = rustPackages.unknown.aero-ical."0.6.1";
+    aero-proto = rustPackages.unknown.aero-proto."0.6.1";
+    aero-sasl = rustPackages.unknown.aero-sasl."0.6.1";
+    aero-vcard = rustPackages.unknown.aero-vcard."0.6.1";
+    metrics = rustPackages.unknown.metrics."0.6.1";
+    smtp-message = rustPackages.unknown.smtp-message."0.6.1";
+    smtp-server = rustPackages.unknown.smtp-server."0.6.1";
+    smtp-server-types = rustPackages.unknown.smtp-server-types."0.6.1";
     aerogramme-fuzz = rustPackages.unknown.aerogramme-fuzz."0.0.0";
-    aerogramme = rustPackages.unknown.aerogramme."0.6.0";
+    aerogramme = rustPackages.unknown.aerogramme."0.6.1";
   };
   "registry+https://github.com/rust-lang/crates.io-index".abnf-core."0.6.1" = overridableMkRustCrate (profileName: rec {
     name = "abnf-core";
@@ -108,13 +108,13 @@ in
     src = fetchCratesIo { inherit name version; sha256 = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"; };
   });
   
-  "unknown".aero-bayou."0.6.0" = overridableMkRustCrate (profileName: rec {
+  "unknown".aero-bayou."0.6.1" = overridableMkRustCrate (profileName: rec {
     name = "aero-bayou";
-    version = "0.6.0";
+    version = "0.6.1";
     registry = "unknown";
     src = fetchCrateLocal workspaceSrc;
     dependencies = {
-      aero_user = (rustPackages."unknown".aero-user."0.6.0" { inherit profileName; }).out;
+      aero_user = (rustPackages."unknown".aero-user."0.6.1" { inherit profileName; }).out;
       anyhow = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".anyhow."1.0.105" { inherit profileName; }).out;
       hex = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".hex."0.4.3" { inherit profileName; }).out;
       log = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".log."0.4.35" { inherit profileName; }).out;
@@ -125,17 +125,17 @@ in
     };
   });
   
-  "unknown".aero-collections."0.6.0" = overridableMkRustCrate (profileName: rec {
+  "unknown".aero-collections."0.6.1" = overridableMkRustCrate (profileName: rec {
     name = "aero-collections";
-    version = "0.6.0";
+    version = "0.6.1";
     registry = "unknown";
     src = fetchCrateLocal workspaceSrc;
     features = builtins.concatLists [
       (lib.optional (rootFeatures' ? "aero-collections/condstore" || rootFeatures' ? "aero-proto/condstore" || rootFeatures' ? "aerogramme/condstore") "condstore")
     ];
     dependencies = {
-      aero_bayou = (rustPackages."unknown".aero-bayou."0.6.0" { inherit profileName; }).out;
-      aero_user = (rustPackages."unknown".aero-user."0.6.0" { inherit profileName; }).out;
+      aero_bayou = (rustPackages."unknown".aero-bayou."0.6.1" { inherit profileName; }).out;
+      aero_user = (rustPackages."unknown".aero-user."0.6.1" { inherit profileName; }).out;
       anyhow = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".anyhow."1.0.105" { inherit profileName; }).out;
       base64 = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".base64."0.22.1" { inherit profileName; }).out;
       eml_codec = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".eml-codec."0.4.2" { inherit profileName; }).out;
@@ -152,9 +152,9 @@ in
     };
   });
   
-  "unknown".aero-dav."0.6.0" = overridableMkRustCrate (profileName: rec {
+  "unknown".aero-dav."0.6.1" = overridableMkRustCrate (profileName: rec {
     name = "aero-dav";
-    version = "0.6.0";
+    version = "0.6.1";
     registry = "unknown";
     src = fetchCrateLocal workspaceSrc;
     dependencies = {
@@ -170,13 +170,13 @@ in
     };
   });
   
-  "unknown".aero-ical."0.6.0" = overridableMkRustCrate (profileName: rec {
+  "unknown".aero-ical."0.6.1" = overridableMkRustCrate (profileName: rec {
     name = "aero-ical";
-    version = "0.6.0";
+    version = "0.6.1";
     registry = "unknown";
     src = fetchCrateLocal workspaceSrc;
     dependencies = {
-      aero_dav = (rustPackages."unknown".aero-dav."0.6.0" { inherit profileName; }).out;
+      aero_dav = (rustPackages."unknown".aero-dav."0.6.1" { inherit profileName; }).out;
       chrono = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".chrono."0.4.45" { inherit profileName; }).out;
       icalendar = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".icalendar."0.16.17" { inherit profileName; }).out;
       nom = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".nom."7.1.3" { inherit profileName; }).out;
@@ -184,21 +184,21 @@ in
     };
   });
   
-  "unknown".aero-proto."0.6.0" = overridableMkRustCrate (profileName: rec {
+  "unknown".aero-proto."0.6.1" = overridableMkRustCrate (profileName: rec {
     name = "aero-proto";
-    version = "0.6.0";
+    version = "0.6.1";
     registry = "unknown";
     src = fetchCrateLocal workspaceSrc;
     features = builtins.concatLists [
       (lib.optional (rootFeatures' ? "aero-proto/condstore" || rootFeatures' ? "aerogramme/condstore") "condstore")
     ];
     dependencies = {
-      aero_collections = (rustPackages."unknown".aero-collections."0.6.0" { inherit profileName; }).out;
-      aero_dav = (rustPackages."unknown".aero-dav."0.6.0" { inherit profileName; }).out;
-      aero_ical = (rustPackages."unknown".aero-ical."0.6.0" { inherit profileName; }).out;
-      aero_sasl = (rustPackages."unknown".aero-sasl."0.6.0" { inherit profileName; }).out;
-      aero_user = (rustPackages."unknown".aero-user."0.6.0" { inherit profileName; }).out;
-      aero_vcard = (rustPackages."unknown".aero-vcard."0.6.0" { inherit profileName; }).out;
+      aero_collections = (rustPackages."unknown".aero-collections."0.6.1" { inherit profileName; }).out;
+      aero_dav = (rustPackages."unknown".aero-dav."0.6.1" { inherit profileName; }).out;
+      aero_ical = (rustPackages."unknown".aero-ical."0.6.1" { inherit profileName; }).out;
+      aero_sasl = (rustPackages."unknown".aero-sasl."0.6.1" { inherit profileName; }).out;
+      aero_user = (rustPackages."unknown".aero-user."0.6.1" { inherit profileName; }).out;
+      aero_vcard = (rustPackages."unknown".aero-vcard."0.6.1" { inherit profileName; }).out;
       anyhow = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".anyhow."1.0.105" { inherit profileName; }).out;
       async_trait = (buildRustPackages."registry+https://github.com/rust-lang/crates.io-index".async-trait."0.1.92" { profileName = "__noProfile"; }).out;
       base64 = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".base64."0.22.1" { inherit profileName; }).out;
@@ -213,13 +213,13 @@ in
       imap_codec = (rustPackages."git+https://github.com/superboum/imap-codec".imap-codec."2.0.0" { inherit profileName; }).out;
       imap_flow = (rustPackages."git+https://github.com/duesee/imap-next.git".imap-flow."0.1.0" { inherit profileName; }).out;
       lazy_static = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".lazy_static."1.5.1" { inherit profileName; }).out;
-      metrics = (rustPackages."unknown".metrics."0.6.0" { inherit profileName; }).out;
+      metrics = (rustPackages."unknown".metrics."0.6.1" { inherit profileName; }).out;
       prometheus = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".prometheus."0.14.0" { inherit profileName; }).out;
       quick_xml = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".quick-xml."0.38.4" { inherit profileName; }).out;
       rustls = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".rustls."0.23.46" { inherit profileName; }).out;
       rustls_pemfile = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".rustls-pemfile."2.2.0" { inherit profileName; }).out;
-      smtp_message = (rustPackages."unknown".smtp-message."0.6.0" { inherit profileName; }).out;
-      smtp_server = (rustPackages."unknown".smtp-server."0.6.0" { inherit profileName; }).out;
+      smtp_message = (rustPackages."unknown".smtp-message."0.6.1" { inherit profileName; }).out;
+      smtp_server = (rustPackages."unknown".smtp-server."0.6.1" { inherit profileName; }).out;
       thiserror = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".thiserror."1.0.69" { inherit profileName; }).out;
       tokio = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".tokio."1.54.1" { inherit profileName; }).out;
       tokio_rustls = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".tokio-rustls."0.26.6" { inherit profileName; }).out;
@@ -229,9 +229,9 @@ in
     };
   });
   
-  "unknown".aero-sasl."0.6.0" = overridableMkRustCrate (profileName: rec {
+  "unknown".aero-sasl."0.6.1" = overridableMkRustCrate (profileName: rec {
     name = "aero-sasl";
-    version = "0.6.0";
+    version = "0.6.1";
     registry = "unknown";
     src = fetchCrateLocal workspaceSrc;
     dependencies = {
@@ -247,9 +247,9 @@ in
     };
   });
   
-  "unknown".aero-user."0.6.0" = overridableMkRustCrate (profileName: rec {
+  "unknown".aero-user."0.6.1" = overridableMkRustCrate (profileName: rec {
     name = "aero-user";
-    version = "0.6.0";
+    version = "0.6.1";
     registry = "unknown";
     src = fetchCrateLocal workspaceSrc;
     dependencies = {
@@ -277,13 +277,13 @@ in
     };
   });
   
-  "unknown".aero-vcard."0.6.0" = overridableMkRustCrate (profileName: rec {
+  "unknown".aero-vcard."0.6.1" = overridableMkRustCrate (profileName: rec {
     name = "aero-vcard";
-    version = "0.6.0";
+    version = "0.6.1";
     registry = "unknown";
     src = fetchCrateLocal workspaceSrc;
     dependencies = {
-      aero_dav = (rustPackages."unknown".aero-dav."0.6.0" { inherit profileName; }).out;
+      aero_dav = (rustPackages."unknown".aero-dav."0.6.1" { inherit profileName; }).out;
       ical_vcard = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".ical_vcard."0.5.0" { inherit profileName; }).out;
       tracing = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".tracing."0.1.44" { inherit profileName; }).out;
       unicode_case_mapping = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".unicode-case-mapping."1.0.0" { inherit profileName; }).out;
@@ -291,9 +291,9 @@ in
     };
   });
   
-  "unknown".aerogramme."0.6.0" = overridableMkRustCrate (profileName: rec {
+  "unknown".aerogramme."0.6.1" = overridableMkRustCrate (profileName: rec {
     name = "aerogramme";
-    version = "0.6.0";
+    version = "0.6.1";
     registry = "unknown";
     src = fetchCrateLocal workspaceSrc;
     features = builtins.concatLists [
@@ -301,14 +301,14 @@ in
       (lib.optional (rootFeatures' ? "aerogramme/condstore") "condstore")
     ];
     dependencies = {
-      aero_proto = (rustPackages."unknown".aero-proto."0.6.0" { inherit profileName; }).out;
-      aero_user = (rustPackages."unknown".aero-user."0.6.0" { inherit profileName; }).out;
+      aero_proto = (rustPackages."unknown".aero-proto."0.6.1" { inherit profileName; }).out;
+      aero_user = (rustPackages."unknown".aero-user."0.6.1" { inherit profileName; }).out;
       anyhow = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".anyhow."1.0.105" { inherit profileName; }).out;
       backtrace = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".backtrace."0.3.77" { inherit profileName; }).out;
       clap = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".clap."3.2.25" { inherit profileName; }).out;
       futures = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".futures."0.3.34" { inherit profileName; }).out;
       log = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".log."0.4.35" { inherit profileName; }).out;
-      metrics = (rustPackages."unknown".metrics."0.6.0" { inherit profileName; }).out;
+      metrics = (rustPackages."unknown".metrics."0.6.1" { inherit profileName; }).out;
       nix = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".nix."0.30.1" { inherit profileName; }).out;
       rpassword = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".rpassword."7.5.5" { inherit profileName; }).out;
       rustls = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".rustls."0.23.46" { inherit profileName; }).out;
@@ -317,7 +317,7 @@ in
       tracing_subscriber = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".tracing-subscriber."0.3.23" { inherit profileName; }).out;
     };
     devDependencies = {
-      aero_dav = (rustPackages."unknown".aero-dav."0.6.0" { inherit profileName; }).out;
+      aero_dav = (rustPackages."unknown".aero-dav."0.6.1" { inherit profileName; }).out;
       quick_xml = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".quick-xml."0.38.4" { inherit profileName; }).out;
       reqwest = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".reqwest."0.12.28" { inherit profileName; }).out;
     };
@@ -332,7 +332,7 @@ in
       (lib.optional (rootFeatures' ? "aerogramme-fuzz/arbitrary") "arbitrary")
     ];
     dependencies = {
-      aero_dav = (rustPackages."unknown".aero-dav."0.6.0" { inherit profileName; }).out;
+      aero_dav = (rustPackages."unknown".aero-dav."0.6.1" { inherit profileName; }).out;
       ${ if rootFeatures' ? "aerogramme-fuzz/arbitrary" then "arbitrary" else null } = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".arbitrary."1.5.0" { inherit profileName; }).out;
       libfuzzer_sys = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".libfuzzer-sys."0.4.13" { inherit profileName; }).out;
       quick_xml = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".quick-xml."0.38.4" { inherit profileName; }).out;
@@ -3962,13 +3962,13 @@ in
     ];
   });
   
-  "unknown".metrics."0.6.0" = overridableMkRustCrate (profileName: rec {
+  "unknown".metrics."0.6.1" = overridableMkRustCrate (profileName: rec {
     name = "metrics";
-    version = "0.6.0";
+    version = "0.6.1";
     registry = "unknown";
     src = fetchCrateLocal workspaceSrc;
     dependencies = {
-      aero_user = (rustPackages."unknown".aero-user."0.6.0" { inherit profileName; }).out;
+      aero_user = (rustPackages."unknown".aero-user."0.6.1" { inherit profileName; }).out;
       anyhow = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".anyhow."1.0.105" { inherit profileName; }).out;
       futures = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".futures."0.3.34" { inherit profileName; }).out;
       lazy_static = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".lazy_static."1.5.1" { inherit profileName; }).out;
@@ -5834,9 +5834,9 @@ in
     };
   });
   
-  "unknown".smtp-message."0.6.0" = overridableMkRustCrate (profileName: rec {
+  "unknown".smtp-message."0.6.1" = overridableMkRustCrate (profileName: rec {
     name = "smtp-message";
-    version = "0.6.0";
+    version = "0.6.1";
     registry = "unknown";
     src = fetchCrateLocal workspaceSrc;
     features = builtins.concatLists [
@@ -5860,9 +5860,9 @@ in
     };
   });
   
-  "unknown".smtp-server."0.6.0" = overridableMkRustCrate (profileName: rec {
+  "unknown".smtp-server."0.6.1" = overridableMkRustCrate (profileName: rec {
     name = "smtp-server";
-    version = "0.6.0";
+    version = "0.6.1";
     registry = "unknown";
     src = fetchCrateLocal workspaceSrc;
     dependencies = {
@@ -5871,22 +5871,22 @@ in
       duplexify = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".duplexify."1.2.2" { inherit profileName; }).out;
       futures = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".futures."0.3.34" { inherit profileName; }).out;
       smol = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".smol."1.3.0" { inherit profileName; }).out;
-      smtp_message = (rustPackages."unknown".smtp-message."0.6.0" { inherit profileName; }).out;
-      smtp_server_types = (rustPackages."unknown".smtp-server-types."0.6.0" { inherit profileName; }).out;
+      smtp_message = (rustPackages."unknown".smtp-message."0.6.1" { inherit profileName; }).out;
+      smtp_server_types = (rustPackages."unknown".smtp-server-types."0.6.1" { inherit profileName; }).out;
     };
     devDependencies = {
       piper = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".piper."0.1.3" { inherit profileName; }).out;
     };
   });
   
-  "unknown".smtp-server-types."0.6.0" = overridableMkRustCrate (profileName: rec {
+  "unknown".smtp-server-types."0.6.1" = overridableMkRustCrate (profileName: rec {
     name = "smtp-server-types";
-    version = "0.6.0";
+    version = "0.6.1";
     registry = "unknown";
     src = fetchCrateLocal workspaceSrc;
     dependencies = {
       serde = (rustPackages."registry+https://github.com/rust-lang/crates.io-index".serde."1.0.229" { inherit profileName; }).out;
-      smtp_message = (rustPackages."unknown".smtp-message."0.6.0" { inherit profileName; }).out;
+      smtp_message = (rustPackages."unknown".smtp-message."0.6.1" { inherit profileName; }).out;
     };
   });
   
