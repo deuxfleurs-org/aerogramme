@@ -90,17 +90,38 @@ EOF
 '';
 
           # [i] Select the feature set. Some features are not compatible with some architectures.
-          rootFeatures =
-            [ "aerogramme/condstore" ]
-            ++ pkgs.lib.optional (triple.go != "arm") "aerogramme/backtrace";
+          rootFeatures = [ 
+	      # -- global features --
+	      # "aerogramme/condstore"  # @FIXME: disabled as we want to improve the design before.
+	    ] ++ pkgs.lib.optionals (triple.go != "arm") [
+	      # -- features for amd64 and arm64 only --
+              "aerogramme/backtrace"
+            ];
+
+	  # [i] cargo2nix misses a feature to dynamically switch a dependency.
+	  # Here we introduce a hotfix for the backtrace crate.
+	  # @FIXME: it's a hack and a fix should be upstreamed in cargo2nix instead
+	  # @FIXME: the simpler/proper approach would be to extend cargo2nix so it supports features
+	  # and generate a per-feature Cargo.nix file.
+	  # @FIXME: another option would be to accept the per-crate compilation approach failed
+	  # and switch to naersk/crate2nix/crane/etc.; accept that cargo is a black box; and pile build systems upon each other.
+	  # @REF: https://github.com/cargo2nix/cargo2nix/issues/248
+	  cargoNix =
+            let
+	      oldStr = "\${ if false then \"backtrace\" else null }";
+              newStr = "\${ if builtins.elem \"taskdump\" features then \"backtrace\" else null }";
+              content = builtins.readFile ./Cargo.nix;
+            in
+            import (pkgsCross.writeText "Cargo.nix" (builtins.replaceStrings [ oldStr ] [ newStr ] content));
 
           # [i] Cargo2nix build declaration
           project = pkgsCross.rustBuilder.makePackageSet({
 	    inherit rootFeatures;
-            packageFun = import ./Cargo.nix;
+            packageFun = cargoNix;
             target = triple.rust;
             release = true;
             rustChannel = rust_version;
+	    workspaceSrc = ./.;
             packageOverrides = pkgs: pkgs.rustBuilder.overrides.all ++ [
 	      # Allow tokio_unstable in all our crates
 	      (pkgs.rustBuilder.rustLib.makeOverride {
