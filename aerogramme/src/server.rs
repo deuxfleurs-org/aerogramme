@@ -5,9 +5,12 @@ use std::sync::Arc;
 use anyhow::Result;
 use futures::{FutureExt, TryFutureExt};
 use log::*;
+
+#[cfg(feature = "backtrace")]
 use tokio::runtime::Handle;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::watch;
+#[cfg(feature = "backtrace")]
 use tokio::time::{timeout, Duration};
 
 use aero_proto::dav;
