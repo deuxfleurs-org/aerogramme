@@ -40,7 +40,7 @@ aerogramme = { version = "0.6.0", path = "aerogramme" }
 # async runtime
 smol = "1" # Used by Kannader imported crates; maybe we'll want to rewrite to tokio.
 piper = "0.1" # Used by Kannader imported crates; maybe we'll want to rewrite code using it with a tokio primitive
-tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "io-util", "net", "time", "macros", "sync", "signal", "fs", "taskdump"] }
+tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "io-util", "net", "time", "macros", "sync", "signal", "fs"] }
 tokio-util = { version = "0.7", features = [ "compat" ]  }
 tokio-stream = { version = "0.1" }
 futures = { version = "0.3", features = ["write-all-vectored"] }

@@ -12,6 +12,7 @@ description = "A robust email server"
 
 [features]
 condstore = ["aero-proto/condstore"]
+backtrace = ["tokio/taskdump"]
 
 [dependencies]
 aero-user.workspace = true

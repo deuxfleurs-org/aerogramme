@@ -202,13 +202,23 @@ impl Server {
 
                 info!("Received SIGUSR1, dumping a backtrace.");
 
-                let handle = Handle::current();
-                if let Ok(dump) = timeout(Duration::from_secs(2), handle.dump()).await {
-                    for (i, task) in dump.tasks().iter().enumerate() {
-                        let trace = task.trace();
-                        println!("TASK {i}:");
-                        println!("{trace}\n");
+                #[cfg(feature = "backtrace")]
+                {
+                    let handle = Handle::current();
+                    if let Ok(dump) = timeout(Duration::from_secs(2), handle.dump()).await {
+                        for (i, task) in dump.tasks().iter().enumerate() {
+                            let trace = task.trace();
+                            println!("TASK {i}:");
+                            println!("{trace}\n");
+                        }
                     }
+                }
+
+                #[cfg(not(feature = "backtrace"))]
+                {
+                    tracing::warn!(
+                        "Task backtrace dump is not enabled or not supported on this architecture."
+                    );
                 }
             }
         });
